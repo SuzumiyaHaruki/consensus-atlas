@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "toy-quorum-basic-v1",
+  "protocol": "toy-quorum-v1",
+  "nodes": ["n1", "n2", "n3"],
+  "coverage": {
+    "weights": {
+      "transition": 0.25,
+      "ordering": 0.25,
+      "fault": 0.20,
+      "boundary": 0.15,
+      "property": 0.15
+    },
+    "atoms": [
+      {
+        "id": "transition.campaign",
+        "category": "transition",
+        "description": "A follower becomes a candidate",
+        "witness_label": "transition:follower->candidate",
+        "monitor": "trace-integrity",
+        "status": "supported"
+      },
+      {
+        "id": "transition.leader",
+        "category": "transition",
+        "description": "A candidate becomes a leader",
+        "witness_label": "transition:candidate->leader",
+        "monitor": "agreement",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.persist-before-vote",
+        "category": "ordering",
+        "description": "A vote is durable before its dependent response is enabled",
+        "witness_label": "persist:vote",
+        "monitor": "trace-integrity",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash",
+        "category": "fault",
+        "description": "A live node crashes",
+        "witness_label": "fault:crash",
+        "monitor": "trace-integrity",
+        "status": "supported"
+      },
+      {
+        "id": "fault.restart",
+        "category": "fault",
+        "description": "A crashed node restarts",
+        "witness_label": "fault:restart",
+        "monitor": "trace-integrity",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.quorum",
+        "category": "boundary",
+        "description": "Exactly a quorum is sufficient to commit",
+        "witness_label": "transition:candidate->leader",
+        "monitor": "agreement",
+        "status": "supported"
+      },
+      {
+        "id": "property.agreement-activated",
+        "category": "property",
+        "description": "The agreement monitor observes at least one commit",
+        "witness_label": "commit",
+        "monitor": "agreement",
+        "status": "supported"
+      }
+    ]
+  },
+  "threshold": {
+    "score": 85,
+    "min_category": 0.70
+  }
+}
