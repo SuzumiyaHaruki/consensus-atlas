@@ -26,13 +26,16 @@ type Step struct {
 	Count   int             `json:"count,omitempty"`
 	Payload json.RawMessage `json:"payload,omitempty"`
 	Match   *Selector       `json:"match,omitempty"`
+	Groups  [][]string      `json:"groups,omitempty"`
 }
 
 type Selector struct {
-	ID     string         `json:"id,omitempty"`
-	Kind   core.EventKind `json:"kind,omitempty"`
-	Source string         `json:"source,omitempty"`
-	Target string         `json:"target,omitempty"`
+	ID       string         `json:"id,omitempty"`
+	Kind     core.EventKind `json:"kind,omitempty"`
+	Source   string         `json:"source,omitempty"`
+	Target   string         `json:"target,omitempty"`
+	Group    string         `json:"group,omitempty"`
+	TypeHint string         `json:"type_hint,omitempty"`
 }
 
 func (s Spec) Validate() error {
@@ -88,6 +91,18 @@ func runStep(ctx context.Context, e *engine.Engine, step Step) error {
 		}
 		_, err = e.Drop(event.ID)
 		return err
+	case "duplicate_match":
+		event, err := find(e.Pending(), step.Match)
+		if err != nil {
+			return err
+		}
+		_, err = e.Duplicate(event.ID)
+		return err
+	case "partition":
+		return e.Partition(step.Groups)
+	case "heal":
+		e.Heal()
+		return nil
 	case "advance":
 		e.Advance(step.Ticks)
 		return nil
@@ -117,6 +132,12 @@ func find(events []core.Event, selector *Selector) (core.Event, error) {
 			continue
 		}
 		if selector.Target != "" && event.Target != selector.Target {
+			continue
+		}
+		if selector.Group != "" && event.Group != selector.Group {
+			continue
+		}
+		if selector.TypeHint != "" && (event.Message == nil || event.Message.TypeHint != selector.TypeHint) {
 			continue
 		}
 		return event, nil

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "raft-family-pss-v1",
+  "family": "raft",
+  "description": "A lightweight, implementation-facing semantic skeleton for bounded Raft exploration.",
+  "sampling": {
+    "included_boundaries": [
+      "acknowledge",
+      "crash",
+      "restart"
+    ],
+    "excluded_microsteps": [
+      "persist",
+      "sync",
+      "emit",
+      "apply"
+    ],
+    "rationale": "Sample completed Ready batches and lifecycle changes without rewarding a search method for traversing host integration microsteps."
+  },
+  "state_dimensions": [
+    "node running relation",
+    "role relation",
+    "relative term order",
+    "leader and vote relation",
+    "durable log shape",
+    "commit/durable/applied frontier relation",
+    "snapshot frontier relation",
+    "voter relation"
+  ],
+  "normalization": {
+    "nodes": "lexicographically minimal representation over all node permutations",
+    "terms": "rank of non-zero term values; absolute term numbers are discarded",
+    "indexes": "rank of non-zero log/frontier indexes; absolute index numbers are discarded",
+    "values": "renamed by first appearance in each candidate canonical representation",
+    "event_ids": "not part of the protocol state key",
+    "sender_epochs": "not part of the protocol state key"
+  },
+  "limits": {
+    "max_nodes_for_exact_permutation": 8,
+    "membership_transitions": "v1 records voter relations but does not interpret joint-consensus phases",
+    "snapshots": "v1 records snapshot frontiers but does not reconstruct compacted entry contents",
+    "liveness": "not represented",
+    "integration_state": "outstanding Ready and mailbox state are intentionally excluded from this protocol-level key",
+    "measurement_window": "the per-trace ledger includes bootstrap; cross-method evaluation must exclude or separately report the shared initialization prefix"
+  }
+}

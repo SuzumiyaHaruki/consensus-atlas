@@ -40,6 +40,26 @@ func (a *Adapter) Protocol() string { return Protocol }
 
 func (a *Adapter) Nodes() []string { return append([]string(nil), a.order...) }
 
+func (a *Adapter) Enabled(event core.Event) (bool, string) {
+	n, exists := a.nodes[event.Target]
+	if event.Target != "" && !exists {
+		return false, "unknown target"
+	}
+	switch event.Kind {
+	case core.EventStart:
+		return true, ""
+	case core.EventCrash:
+		return n != nil && n.Alive, "node is already stopped"
+	case core.EventRestart:
+		return n != nil && !n.Alive, "node is already running"
+	default:
+		if n != nil && !n.Alive {
+			return false, "target node is stopped"
+		}
+		return true, ""
+	}
+}
+
 func (a *Adapter) CheckConformance() error {
 	if len(a.order) < 3 {
 		return fmt.Errorf("toy quorum requires at least three nodes")
@@ -64,6 +84,8 @@ func (a *Adapter) Snapshot() any {
 
 func (a *Adapter) Apply(_ context.Context, event core.Event) (core.ApplyResult, error) {
 	switch event.Kind {
+	case core.EventStart:
+		return core.ApplyResult{Status: core.StatusApplied}, nil
 	case core.EventCampaign:
 		return a.campaign(event)
 	case core.EventMessage:
@@ -74,7 +96,7 @@ func (a *Adapter) Apply(_ context.Context, event core.Event) (core.ApplyResult, 
 		return a.crash(event)
 	case core.EventRestart:
 		return a.restart(event)
-	case core.EventTimeout, core.EventPropose:
+	case core.EventTimeout, core.EventPropose, core.EventSync, core.EventEmit, core.EventApply, core.EventAcknowledge:
 		return core.ApplyResult{Status: core.StatusIgnored}, nil
 	default:
 		return core.ApplyResult{}, fmt.Errorf("unsupported event kind %q", event.Kind)

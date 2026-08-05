@@ -9,15 +9,17 @@ import (
 )
 
 type CanonicalEvent struct {
-	Index        int                `json:"index"`
-	Kind         core.EventKind     `json:"kind"`
-	Source       string             `json:"source,omitempty"`
-	Target       string             `json:"target,omitempty"`
-	At           uint64             `json:"at"`
-	Dependencies []int              `json:"dependencies,omitempty"`
-	Payload      json.RawMessage    `json:"payload,omitempty"`
-	Outcome      string             `json:"outcome"`
-	Observations []core.Observation `json:"observations,omitempty"`
+	Index        int                   `json:"index"`
+	Kind         core.EventKind        `json:"kind"`
+	Source       string                `json:"source,omitempty"`
+	Target       string                `json:"target,omitempty"`
+	At           uint64                `json:"at"`
+	Group        string                `json:"group,omitempty"`
+	Dependencies []int                 `json:"dependencies,omitempty"`
+	Payload      json.RawMessage       `json:"payload,omitempty"`
+	Message      *core.MessageEnvelope `json:"message,omitempty"`
+	Outcome      string                `json:"outcome"`
+	Observations []core.Observation    `json:"observations,omitempty"`
 }
 
 // StructuralCanonicalize is deliberately conservative: it renames node IDs by
@@ -51,7 +53,9 @@ func StructuralCanonicalize(trace []core.TraceRecord) []CanonicalEvent {
 			Source:       alias(record.Event.Source),
 			Target:       alias(record.Event.Target),
 			At:           record.Event.At,
+			Group:        record.Event.Group,
 			Payload:      append([]byte(nil), record.Event.Payload...),
+			Message:      canonicalMessage(record.Event.Message, alias),
 			Outcome:      record.Outcome,
 			Observations: observations,
 		}
@@ -61,6 +65,28 @@ func StructuralCanonicalize(trace []core.TraceRecord) []CanonicalEvent {
 		out = append(out, canonical)
 	}
 	return out
+}
+
+func canonicalMessage(message *core.MessageEnvelope, alias func(string) string) *core.MessageEnvelope {
+	if message == nil {
+		return nil
+	}
+	cloned := *message
+	// Raw event IDs and physical link sequence are replay evidence, not part of
+	// the protocol scenario class.
+	cloned.CausationID = ""
+	cloned.CloneOf = ""
+	cloned.LinkSequence = 0
+	cloned.From = alias(message.From)
+	cloned.To = alias(message.To)
+	cloned.Payload = append([]byte(nil), message.Payload...)
+	if message.Metadata != nil {
+		cloned.Metadata = make(map[string]string, len(message.Metadata))
+		for key, value := range message.Metadata {
+			cloned.Metadata[key] = value
+		}
+	}
+	return &cloned
 }
 
 // CanonicalFingerprint identifies the current conservative structural scenario

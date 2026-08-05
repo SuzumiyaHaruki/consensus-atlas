@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "name": "etcdraft-vote-drop-and-duplicate",
+  "steps": [
+    {"op": "inject", "kind": "start", "target": "n1"},
+    {"op": "inject", "kind": "start", "target": "n2"},
+    {"op": "inject", "kind": "start", "target": "n3"},
+    {"op": "run", "count": 100},
+    {"op": "inject", "kind": "campaign", "target": "n1"},
+    {"op": "execute_match", "match": {"kind": "campaign", "target": "n1"}},
+    {"op": "execute_match", "match": {"kind": "persist", "target": "n1"}},
+    {"op": "execute_match", "match": {"kind": "sync", "target": "n1"}},
+    {"op": "execute_match", "match": {"kind": "emit", "target": "n1"}},
+    {"op": "execute_match", "match": {"kind": "emit", "target": "n1"}},
+    {"op": "execute_match", "match": {"kind": "apply", "target": "n1"}},
+    {"op": "execute_match", "match": {"kind": "acknowledge", "target": "n1"}},
+    {
+      "op": "duplicate_match",
+      "match": {"kind": "message", "source": "n1", "target": "n2", "type_hint": "MsgVote"}
+    },
+    {
+      "op": "drop_match",
+      "match": {"kind": "message", "source": "n1", "target": "n3", "type_hint": "MsgVote"}
+    },
+    {"op": "run", "count": 400},
+    {
+      "op": "inject",
+      "kind": "propose",
+      "target": "n1",
+      "payload": {"value": "after-drop-duplicate"}
+    },
+    {"op": "run", "count": 400}
+  ]
+}
