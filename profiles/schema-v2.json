@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/profile-v2.json",
+  "title": "ConsensusAtlas Coverage Profile v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "protocol", "nodes", "coverage", "threshold"],
+  "properties": {
+    "version": {"const": 2},
+    "id": {"type": "string", "minLength": 1},
+    "protocol": {"type": "string", "minLength": 1},
+    "pss_id": {"type": "string", "minLength": 1},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "required_capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "threshold": {"$ref": "#/$defs/threshold"}
+  },
+  "$defs": {
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weights", "obligations"],
+      "properties": {
+        "weights": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "number", "exclusiveMinimum": 0}
+        },
+        "obligations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/obligation"}
+        }
+      }
+    },
+    "threshold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "min_category"],
+      "properties": {
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "min_category": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "description", "evidence", "monitors", "risk", "status"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "evidence": {"$ref": "#/$defs/evidence"},
+        "monitors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "requires": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "weight": {"type": "number", "exclusiveMinimum": 0},
+        "risk": {"enum": ["low", "standard", "high", "critical"]},
+        "status": {"enum": ["supported", "unsupported"]}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reach", "observe"],
+      "properties": {
+        "reach": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/predicate"}
+        },
+        "observe": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/predicate"}
+        },
+        "orderings": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ordering"}
+        },
+        "counts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/count"}
+        }
+      }
+    },
+    "ordering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "after"],
+      "properties": {
+        "before": {"$ref": "#/$defs/predicate"},
+        "after": {"$ref": "#/$defs/predicate"},
+        "without": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/predicate"}
+        },
+        "same_group": {"type": "boolean"},
+        "same_target": {"type": "boolean"},
+        "same_message": {"type": "boolean"}
+      }
+    },
+    "count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predicate", "at_least"],
+      "properties": {
+        "predicate": {"$ref": "#/$defs/predicate"},
+        "at_least": {"type": "integer", "minimum": 1},
+        "at_most": {"type": "integer", "minimum": 0},
+        "distinct_by": {
+          "type": "string",
+          "pattern": "^(event_source|event_target|observation_node|observation_evidence:.+)$"
+        }
+      }
+    },
+    "predicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "event_kind": {
+          "enum": [
+            "start", "campaign", "propose", "message", "timeout", "persist", "sync",
+            "emit", "apply", "acknowledge", "crash", "restart", "duplicate", "partition", "heal"
+          ]
+        },
+        "event_source": {"type": "string", "minLength": 1},
+        "event_target": {"type": "string", "minLength": 1},
+        "message_type": {"type": "string", "minLength": 1},
+        "outcome": {"type": "string", "minLength": 1},
+        "host_cutpoint": {
+          "enum": [
+            "before-persist", "persist-before-sync", "sync-before-release",
+            "release-before-ack", "apply-before-ack"
+          ]
+        },
+        "observation_kind": {"type": "string", "minLength": 1},
+        "observation_label": {"type": "string", "minLength": 1},
+        "observation_node": {"type": "string", "minLength": 1},
+        "observation_value": {"type": "string", "minLength": 1},
+        "observation_evidence": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string"}
+        },
+        "semantic": {"$ref": "#/$defs/semantic"}
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain", "relation"],
+      "properties": {
+        "domain": {"type": "string", "minLength": 1},
+        "relation": {"type": "string", "minLength": 1},
+        "value": {"type": "string"},
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    }
+  }
+}

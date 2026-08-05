@@ -1,0 +1,1257 @@
+{
+  "status": "validated",
+  "attempts": [
+    {
+      "number": 1,
+      "binding_id": "etcdraft-embedded-binding-v1",
+      "generation": {
+        "provider": "static",
+        "model": "checked-in-binding"
+      },
+      "report": {
+        "version": 1,
+        "status": "validated",
+        "contract_id": "etcdraft-protocol-contract-v1",
+        "contract_digest": "47bf45884a6b2e935e466ad85ad9fe9166a656f8c4d03b10d2b52a28bb6a36c5",
+        "binding_id": "etcdraft-embedded-binding-v1",
+        "driver": "embedded-etcdraft",
+        "fully_supported": false,
+        "capability_support": 0.7777777777777778,
+        "obligation_support": 0.8333333333333334,
+        "validated_capabilities": [
+          "application-apply",
+          "explicit-campaign",
+          "message-drop-duplicate-partition",
+          "message-release-control",
+          "power-loss-restart",
+          "ready-crash-cutpoints",
+          "visible-write-durable-sync"
+        ],
+        "unsupported_capabilities": [
+          "exact-ready-send-barriers",
+          "natural-election-timeout-replay"
+        ],
+        "validated_obligations": [
+          "boundary.quorum",
+          "fault.crash",
+          "fault.restart",
+          "ordering.persist",
+          "ordering.release",
+          "ordering.sync",
+          "property.agreement-activated",
+          "property.apply",
+          "transition.campaign",
+          "transition.leader"
+        ],
+        "unsupported_obligations": [
+          "ordering.exact-ready-barrier",
+          "transition.natural-timeout"
+        ],
+        "witnesses": [
+          {
+            "id": "election-propose-crash-restart",
+            "scenario": "scenarios/etcdraft-election-crash.json",
+            "passed": true,
+            "replay_stable": true,
+            "conformant": true,
+            "observed_labels": [
+              "commit",
+              "fault:crash",
+              "fault:restart",
+              "host:acknowledge",
+              "host:apply",
+              "host:persist",
+              "host:sync",
+              "message:delivered",
+              "message:released",
+              "node:started",
+              "raft:conf-change-applied",
+              "transition:candidate-\u003eleader",
+              "transition:follower-\u003ecandidate"
+            ],
+            "checked_monitors": [
+              "trace-integrity",
+              "agreement"
+            ],
+            "violation_count": 0,
+            "covered_obligations": [
+              "transition.campaign",
+              "transition.leader",
+              "ordering.persist",
+              "ordering.sync",
+              "ordering.release",
+              "fault.crash",
+              "fault.restart",
+              "boundary.quorum",
+              "property.agreement-activated",
+              "property.apply"
+            ],
+            "capability_claims": [
+              "explicit-campaign",
+              "message-release-control",
+              "visible-write-durable-sync",
+              "power-loss-restart",
+              "ready-crash-cutpoints",
+              "application-apply"
+            ]
+          },
+          {
+            "id": "transport-drop-duplicate",
+            "scenario": "scenarios/etcdraft-vote-drop-duplicate.json",
+            "passed": true,
+            "replay_stable": true,
+            "conformant": true,
+            "observed_labels": [
+              "commit",
+              "host:acknowledge",
+              "host:apply",
+              "host:persist",
+              "host:sync",
+              "message:delivered",
+              "message:dropped",
+              "message:duplicated",
+              "message:released",
+              "node:started",
+              "raft:conf-change-applied",
+              "transition:candidate-\u003eleader",
+              "transition:follower-\u003ecandidate"
+            ],
+            "checked_monitors": [
+              "trace-integrity",
+              "agreement"
+            ],
+            "violation_count": 0,
+            "capability_claims": [
+              "message-drop-duplicate-partition"
+            ]
+          },
+          {
+            "id": "transport-partition-heal",
+            "scenario": "scenarios/etcdraft-partition-heal.json",
+            "passed": true,
+            "replay_stable": true,
+            "conformant": true,
+            "observed_labels": [
+              "commit",
+              "host:acknowledge",
+              "host:apply",
+              "host:persist",
+              "host:sync",
+              "message:delivered",
+              "message:released",
+              "network:heal",
+              "network:partition",
+              "node:started",
+              "raft:conf-change-applied",
+              "transition:candidate-\u003eleader",
+              "transition:follower-\u003ecandidate"
+            ],
+            "checked_monitors": [
+              "trace-integrity",
+              "agreement"
+            ],
+            "violation_count": 0,
+            "capability_claims": [
+              "message-drop-duplicate-partition"
+            ]
+          }
+        ],
+        "findings": [
+          {
+            "code": "runtime.capability-unsupported",
+            "subject": "exact-ready-send-barriers",
+            "message": "v1 conservatively syncs the current Ready before release",
+            "actionable": false
+          },
+          {
+            "code": "runtime.capability-unsupported",
+            "subject": "natural-election-timeout-replay",
+            "message": "official v3.6 does not expose its randomized election timeout",
+            "actionable": false
+          }
+        ],
+        "profile": {
+          "version": 2,
+          "id": "etcdraft-protocol-contract-v1-compiled",
+          "protocol": "etcd-raft-v3.6",
+          "pss_id": "raft-family-pss-v1",
+          "nodes": [
+            "n1",
+            "n2",
+            "n3"
+          ],
+          "required_capabilities": [
+            "application-apply",
+            "exact-ready-send-barriers",
+            "explicit-campaign",
+            "message-drop-duplicate-partition",
+            "message-release-control",
+            "natural-election-timeout-replay",
+            "power-loss-restart",
+            "ready-crash-cutpoints",
+            "visible-write-durable-sync"
+          ],
+          "coverage": {
+            "weights": {
+              "boundary": 0.15,
+              "fault": 0.2,
+              "ordering": 0.25,
+              "property": 0.15,
+              "transition": 0.25
+            },
+            "obligations": [
+              {
+                "id": "transition.campaign",
+                "category": "transition",
+                "description": "campaign transitions from follower to candidate",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "campaign",
+                      "observation_label": "transition:follower-\u003ecandidate"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "event_kind": "campaign",
+                      "observation_label": "transition:follower-\u003ecandidate"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "explicit-campaign"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "transition.leader",
+                "category": "transition",
+                "description": "deliver transitions from candidate to leader",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "message",
+                      "observation_label": "transition:candidate-\u003eleader"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "event_kind": "message",
+                      "observation_label": "transition:candidate-\u003eleader"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "agreement"
+                ],
+                "requires": [
+                  "explicit-campaign",
+                  "message-release-control"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "transition.natural-timeout",
+                "category": "transition",
+                "description": "timeout transitions from follower to candidate",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "timeout",
+                      "observation_label": "timeout:natural-election"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "event_kind": "timeout",
+                      "observation_label": "timeout:natural-election"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "natural-election-timeout-replay"
+                ],
+                "risk": "standard",
+                "status": "unsupported"
+              },
+              {
+                "id": "ordering.persist",
+                "category": "ordering",
+                "description": "A native output batch reaches visible storage before acknowledgement.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "persist"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "host:persist"
+                    }
+                  ],
+                  "orderings": [
+                    {
+                      "before": {
+                        "event_kind": "persist"
+                      },
+                      "after": {
+                        "event_kind": "acknowledge"
+                      }
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "visible-write-durable-sync"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "ordering.sync",
+                "category": "ordering",
+                "description": "A native output batch crosses a durable sync boundary.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "sync"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "host:sync"
+                    }
+                  ],
+                  "orderings": [
+                    {
+                      "before": {
+                        "event_kind": "sync"
+                      },
+                      "after": {
+                        "event_kind": "acknowledge"
+                      }
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "visible-write-durable-sync"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "ordering.release",
+                "category": "ordering",
+                "description": "An outbound message is released only after its declared host barrier.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "sync"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "message:released"
+                    }
+                  ],
+                  "orderings": [
+                    {
+                      "before": {
+                        "event_kind": "sync"
+                      },
+                      "after": {
+                        "event_kind": "emit"
+                      }
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "visible-write-durable-sync",
+                  "message-release-control"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "ordering.exact-ready-barrier",
+                "category": "ordering",
+                "description": "All legal native Ready send/write overlaps are represented.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "persist"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "host:exact-ready-barrier"
+                    }
+                  ],
+                  "orderings": [
+                    {
+                      "before": {
+                        "event_kind": "persist"
+                      },
+                      "after": {
+                        "event_kind": "emit"
+                      }
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "exact-ready-send-barriers"
+                ],
+                "risk": "standard",
+                "status": "unsupported"
+              },
+              {
+                "id": "fault.crash",
+                "category": "fault",
+                "description": "A running node crashes and loses volatile state.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "crash",
+                      "observation_label": "fault:crash"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "event_kind": "crash",
+                      "observation_label": "fault:crash"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "ready-crash-cutpoints"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "fault.restart",
+                "category": "fault",
+                "description": "A stopped node restarts from its durable image.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "event_kind": "restart",
+                      "observation_label": "fault:restart"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "event_kind": "restart",
+                      "observation_label": "fault:restart"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "power-loss-restart"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "boundary.quorum",
+                "category": "boundary",
+                "description": "A minimal three-node quorum elects one leader.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "observation_label": "transition:candidate-\u003eleader"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "transition:candidate-\u003eleader"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "agreement"
+                ],
+                "requires": [
+                  "explicit-campaign",
+                  "message-release-control"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "property.agreement-activated",
+                "category": "property",
+                "description": "At least one non-empty committed entry activates agreement.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "observation_label": "commit"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "commit"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "agreement"
+                ],
+                "requires": [
+                  "message-release-control",
+                  "application-apply"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              },
+              {
+                "id": "property.apply",
+                "category": "property",
+                "description": "Committed output reaches the application apply boundary.",
+                "evidence": {
+                  "reach": [
+                    {
+                      "observation_label": "host:apply"
+                    }
+                  ],
+                  "observe": [
+                    {
+                      "observation_label": "host:apply"
+                    }
+                  ]
+                },
+                "monitors": [
+                  "trace-integrity"
+                ],
+                "requires": [
+                  "application-apply"
+                ],
+                "risk": "standard",
+                "status": "supported"
+              }
+            ]
+          },
+          "threshold": {
+            "score": 80,
+            "min_category": 0.65
+          }
+        }
+      }
+    }
+  ],
+  "final_binding": {
+    "version": 1,
+    "id": "etcdraft-embedded-binding-v1",
+    "contract_id": "etcdraft-protocol-contract-v1",
+    "contract_digest": "47bf45884a6b2e935e466ad85ad9fe9166a656f8c4d03b10d2b52a28bb6a36c5",
+    "protocol": "etcd-raft-v3.6",
+    "driver": "embedded-etcdraft",
+    "capabilities": [
+      {
+        "contract_id": "explicit-campaign",
+        "runtime_id": "explicit-campaign"
+      },
+      {
+        "contract_id": "message-release-control",
+        "runtime_id": "message-release-control"
+      },
+      {
+        "contract_id": "message-drop-duplicate-partition",
+        "runtime_id": "message-drop-duplicate-partition"
+      },
+      {
+        "contract_id": "visible-write-durable-sync",
+        "runtime_id": "visible-write-durable-sync"
+      },
+      {
+        "contract_id": "power-loss-restart",
+        "runtime_id": "power-loss-restart"
+      },
+      {
+        "contract_id": "ready-crash-cutpoints",
+        "runtime_id": "ready-crash-cutpoints"
+      },
+      {
+        "contract_id": "application-apply",
+        "runtime_id": "application-apply"
+      },
+      {
+        "contract_id": "exact-ready-send-barriers",
+        "runtime_id": "exact-ready-send-barriers"
+      },
+      {
+        "contract_id": "natural-election-timeout-replay",
+        "runtime_id": "natural-election-timeout-replay"
+      }
+    ],
+    "operations": [
+      {
+        "operation_id": "boot",
+        "runtime_kind": "start"
+      },
+      {
+        "operation_id": "campaign",
+        "runtime_kind": "campaign"
+      },
+      {
+        "operation_id": "propose",
+        "runtime_kind": "propose"
+      },
+      {
+        "operation_id": "deliver",
+        "runtime_kind": "message"
+      },
+      {
+        "operation_id": "persist",
+        "runtime_kind": "persist"
+      },
+      {
+        "operation_id": "sync",
+        "runtime_kind": "sync"
+      },
+      {
+        "operation_id": "release",
+        "runtime_kind": "emit"
+      },
+      {
+        "operation_id": "apply",
+        "runtime_kind": "apply"
+      },
+      {
+        "operation_id": "ack",
+        "runtime_kind": "acknowledge"
+      },
+      {
+        "operation_id": "crash",
+        "runtime_kind": "crash"
+      },
+      {
+        "operation_id": "restart",
+        "runtime_kind": "restart"
+      },
+      {
+        "operation_id": "timeout",
+        "runtime_kind": "timeout"
+      }
+    ],
+    "witnesses": [
+      {
+        "id": "election-propose-crash-restart",
+        "scenario": "scenarios/etcdraft-election-crash.json",
+        "covers": [
+          "transition.campaign",
+          "transition.leader",
+          "ordering.persist",
+          "ordering.sync",
+          "ordering.release",
+          "fault.crash",
+          "fault.restart",
+          "boundary.quorum",
+          "property.agreement-activated",
+          "property.apply"
+        ],
+        "validates_capabilities": [
+          "explicit-campaign",
+          "message-release-control",
+          "visible-write-durable-sync",
+          "power-loss-restart",
+          "ready-crash-cutpoints",
+          "application-apply"
+        ]
+      },
+      {
+        "id": "transport-drop-duplicate",
+        "scenario": "scenarios/etcdraft-vote-drop-duplicate.json",
+        "validates_capabilities": [
+          "message-drop-duplicate-partition"
+        ]
+      },
+      {
+        "id": "transport-partition-heal",
+        "scenario": "scenarios/etcdraft-partition-heal.json",
+        "validates_capabilities": [
+          "message-drop-duplicate-partition"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "version": 1,
+    "status": "validated",
+    "contract_id": "etcdraft-protocol-contract-v1",
+    "contract_digest": "47bf45884a6b2e935e466ad85ad9fe9166a656f8c4d03b10d2b52a28bb6a36c5",
+    "binding_id": "etcdraft-embedded-binding-v1",
+    "driver": "embedded-etcdraft",
+    "fully_supported": false,
+    "capability_support": 0.7777777777777778,
+    "obligation_support": 0.8333333333333334,
+    "validated_capabilities": [
+      "application-apply",
+      "explicit-campaign",
+      "message-drop-duplicate-partition",
+      "message-release-control",
+      "power-loss-restart",
+      "ready-crash-cutpoints",
+      "visible-write-durable-sync"
+    ],
+    "unsupported_capabilities": [
+      "exact-ready-send-barriers",
+      "natural-election-timeout-replay"
+    ],
+    "validated_obligations": [
+      "boundary.quorum",
+      "fault.crash",
+      "fault.restart",
+      "ordering.persist",
+      "ordering.release",
+      "ordering.sync",
+      "property.agreement-activated",
+      "property.apply",
+      "transition.campaign",
+      "transition.leader"
+    ],
+    "unsupported_obligations": [
+      "ordering.exact-ready-barrier",
+      "transition.natural-timeout"
+    ],
+    "witnesses": [
+      {
+        "id": "election-propose-crash-restart",
+        "scenario": "scenarios/etcdraft-election-crash.json",
+        "passed": true,
+        "replay_stable": true,
+        "conformant": true,
+        "observed_labels": [
+          "commit",
+          "fault:crash",
+          "fault:restart",
+          "host:acknowledge",
+          "host:apply",
+          "host:persist",
+          "host:sync",
+          "message:delivered",
+          "message:released",
+          "node:started",
+          "raft:conf-change-applied",
+          "transition:candidate-\u003eleader",
+          "transition:follower-\u003ecandidate"
+        ],
+        "checked_monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violation_count": 0,
+        "covered_obligations": [
+          "transition.campaign",
+          "transition.leader",
+          "ordering.persist",
+          "ordering.sync",
+          "ordering.release",
+          "fault.crash",
+          "fault.restart",
+          "boundary.quorum",
+          "property.agreement-activated",
+          "property.apply"
+        ],
+        "capability_claims": [
+          "explicit-campaign",
+          "message-release-control",
+          "visible-write-durable-sync",
+          "power-loss-restart",
+          "ready-crash-cutpoints",
+          "application-apply"
+        ]
+      },
+      {
+        "id": "transport-drop-duplicate",
+        "scenario": "scenarios/etcdraft-vote-drop-duplicate.json",
+        "passed": true,
+        "replay_stable": true,
+        "conformant": true,
+        "observed_labels": [
+          "commit",
+          "host:acknowledge",
+          "host:apply",
+          "host:persist",
+          "host:sync",
+          "message:delivered",
+          "message:dropped",
+          "message:duplicated",
+          "message:released",
+          "node:started",
+          "raft:conf-change-applied",
+          "transition:candidate-\u003eleader",
+          "transition:follower-\u003ecandidate"
+        ],
+        "checked_monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violation_count": 0,
+        "capability_claims": [
+          "message-drop-duplicate-partition"
+        ]
+      },
+      {
+        "id": "transport-partition-heal",
+        "scenario": "scenarios/etcdraft-partition-heal.json",
+        "passed": true,
+        "replay_stable": true,
+        "conformant": true,
+        "observed_labels": [
+          "commit",
+          "host:acknowledge",
+          "host:apply",
+          "host:persist",
+          "host:sync",
+          "message:delivered",
+          "message:released",
+          "network:heal",
+          "network:partition",
+          "node:started",
+          "raft:conf-change-applied",
+          "transition:candidate-\u003eleader",
+          "transition:follower-\u003ecandidate"
+        ],
+        "checked_monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violation_count": 0,
+        "capability_claims": [
+          "message-drop-duplicate-partition"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "code": "runtime.capability-unsupported",
+        "subject": "exact-ready-send-barriers",
+        "message": "v1 conservatively syncs the current Ready before release",
+        "actionable": false
+      },
+      {
+        "code": "runtime.capability-unsupported",
+        "subject": "natural-election-timeout-replay",
+        "message": "official v3.6 does not expose its randomized election timeout",
+        "actionable": false
+      }
+    ],
+    "profile": {
+      "version": 2,
+      "id": "etcdraft-protocol-contract-v1-compiled",
+      "protocol": "etcd-raft-v3.6",
+      "pss_id": "raft-family-pss-v1",
+      "nodes": [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      "required_capabilities": [
+        "application-apply",
+        "exact-ready-send-barriers",
+        "explicit-campaign",
+        "message-drop-duplicate-partition",
+        "message-release-control",
+        "natural-election-timeout-replay",
+        "power-loss-restart",
+        "ready-crash-cutpoints",
+        "visible-write-durable-sync"
+      ],
+      "coverage": {
+        "weights": {
+          "boundary": 0.15,
+          "fault": 0.2,
+          "ordering": 0.25,
+          "property": 0.15,
+          "transition": 0.25
+        },
+        "obligations": [
+          {
+            "id": "transition.campaign",
+            "category": "transition",
+            "description": "campaign transitions from follower to candidate",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "campaign",
+                  "observation_label": "transition:follower-\u003ecandidate"
+                }
+              ],
+              "observe": [
+                {
+                  "event_kind": "campaign",
+                  "observation_label": "transition:follower-\u003ecandidate"
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "explicit-campaign"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "transition.leader",
+            "category": "transition",
+            "description": "deliver transitions from candidate to leader",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "message",
+                  "observation_label": "transition:candidate-\u003eleader"
+                }
+              ],
+              "observe": [
+                {
+                  "event_kind": "message",
+                  "observation_label": "transition:candidate-\u003eleader"
+                }
+              ]
+            },
+            "monitors": [
+              "agreement"
+            ],
+            "requires": [
+              "explicit-campaign",
+              "message-release-control"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "transition.natural-timeout",
+            "category": "transition",
+            "description": "timeout transitions from follower to candidate",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "timeout",
+                  "observation_label": "timeout:natural-election"
+                }
+              ],
+              "observe": [
+                {
+                  "event_kind": "timeout",
+                  "observation_label": "timeout:natural-election"
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "natural-election-timeout-replay"
+            ],
+            "risk": "standard",
+            "status": "unsupported"
+          },
+          {
+            "id": "ordering.persist",
+            "category": "ordering",
+            "description": "A native output batch reaches visible storage before acknowledgement.",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "persist"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "host:persist"
+                }
+              ],
+              "orderings": [
+                {
+                  "before": {
+                    "event_kind": "persist"
+                  },
+                  "after": {
+                    "event_kind": "acknowledge"
+                  }
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "visible-write-durable-sync"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "ordering.sync",
+            "category": "ordering",
+            "description": "A native output batch crosses a durable sync boundary.",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "sync"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "host:sync"
+                }
+              ],
+              "orderings": [
+                {
+                  "before": {
+                    "event_kind": "sync"
+                  },
+                  "after": {
+                    "event_kind": "acknowledge"
+                  }
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "visible-write-durable-sync"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "ordering.release",
+            "category": "ordering",
+            "description": "An outbound message is released only after its declared host barrier.",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "sync"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "message:released"
+                }
+              ],
+              "orderings": [
+                {
+                  "before": {
+                    "event_kind": "sync"
+                  },
+                  "after": {
+                    "event_kind": "emit"
+                  }
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "visible-write-durable-sync",
+              "message-release-control"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "ordering.exact-ready-barrier",
+            "category": "ordering",
+            "description": "All legal native Ready send/write overlaps are represented.",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "persist"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "host:exact-ready-barrier"
+                }
+              ],
+              "orderings": [
+                {
+                  "before": {
+                    "event_kind": "persist"
+                  },
+                  "after": {
+                    "event_kind": "emit"
+                  }
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "exact-ready-send-barriers"
+            ],
+            "risk": "standard",
+            "status": "unsupported"
+          },
+          {
+            "id": "fault.crash",
+            "category": "fault",
+            "description": "A running node crashes and loses volatile state.",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "crash",
+                  "observation_label": "fault:crash"
+                }
+              ],
+              "observe": [
+                {
+                  "event_kind": "crash",
+                  "observation_label": "fault:crash"
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "ready-crash-cutpoints"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "fault.restart",
+            "category": "fault",
+            "description": "A stopped node restarts from its durable image.",
+            "evidence": {
+              "reach": [
+                {
+                  "event_kind": "restart",
+                  "observation_label": "fault:restart"
+                }
+              ],
+              "observe": [
+                {
+                  "event_kind": "restart",
+                  "observation_label": "fault:restart"
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "power-loss-restart"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "boundary.quorum",
+            "category": "boundary",
+            "description": "A minimal three-node quorum elects one leader.",
+            "evidence": {
+              "reach": [
+                {
+                  "observation_label": "transition:candidate-\u003eleader"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "transition:candidate-\u003eleader"
+                }
+              ]
+            },
+            "monitors": [
+              "agreement"
+            ],
+            "requires": [
+              "explicit-campaign",
+              "message-release-control"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "property.agreement-activated",
+            "category": "property",
+            "description": "At least one non-empty committed entry activates agreement.",
+            "evidence": {
+              "reach": [
+                {
+                  "observation_label": "commit"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "commit"
+                }
+              ]
+            },
+            "monitors": [
+              "agreement"
+            ],
+            "requires": [
+              "message-release-control",
+              "application-apply"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          },
+          {
+            "id": "property.apply",
+            "category": "property",
+            "description": "Committed output reaches the application apply boundary.",
+            "evidence": {
+              "reach": [
+                {
+                  "observation_label": "host:apply"
+                }
+              ],
+              "observe": [
+                {
+                  "observation_label": "host:apply"
+                }
+              ]
+            },
+            "monitors": [
+              "trace-integrity"
+            ],
+            "requires": [
+              "application-apply"
+            ],
+            "risk": "standard",
+            "status": "supported"
+          }
+        ]
+      },
+      "threshold": {
+        "score": 80,
+        "min_category": 0.65
+      }
+    }
+  }
+}

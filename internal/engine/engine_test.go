@@ -11,10 +11,11 @@ import (
 
 type dependencyAdapter struct{}
 
-func (dependencyAdapter) Protocol() string        { return "dependency-test" }
-func (dependencyAdapter) Nodes() []string         { return []string{"n1"} }
-func (dependencyAdapter) Snapshot() any           { return struct{}{} }
-func (dependencyAdapter) CheckConformance() error { return nil }
+func (dependencyAdapter) Protocol() string                  { return "dependency-test" }
+func (dependencyAdapter) Nodes() []string                   { return []string{"n1"} }
+func (dependencyAdapter) Snapshot() any                     { return struct{}{} }
+func (dependencyAdapter) CheckConformance() error           { return nil }
+func (dependencyAdapter) Enabled(core.Event) (bool, string) { return true, "" }
 func (dependencyAdapter) Apply(_ context.Context, event core.Event) (core.ApplyResult, error) {
 	if event.Kind != core.EventCampaign {
 		return core.ApplyResult{Status: core.StatusApplied}, nil
@@ -61,5 +62,47 @@ func TestDroppedDependencyBlocksDependentEvent(t *testing.T) {
 	}
 	if got := e.Enabled(); len(got) != 0 {
 		t.Fatalf("enabled = %#v, want no event after dropping dependency", got)
+	}
+}
+
+func TestMessageDuplicateHasStableLineageAndPartitionBlocksDelivery(t *testing.T) {
+	e := engine.New(dependencyAdapter{})
+	originalID := e.Schedule(core.Event{
+		Kind: core.EventMessage, Source: "n1", Target: "n2", Payload: json.RawMessage(`{"type":"vote"}`),
+	})
+	cloneID, err := e.Duplicate(originalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := e.Pending()
+	if len(pending) != 2 {
+		t.Fatalf("pending messages = %d, want 2", len(pending))
+	}
+	if pending[0].Message.LinkSequence != 1 || pending[1].Message.LinkSequence != 2 {
+		t.Fatalf("link sequences = %d, %d, want 1, 2",
+			pending[0].Message.LinkSequence, pending[1].Message.LinkSequence)
+	}
+	if pending[1].ID != cloneID || pending[1].Message.CloneOf != originalID {
+		t.Fatalf("clone lineage = %#v, want clone_of %s", pending[1].Message, originalID)
+	}
+	if err := e.Partition([][]string{{"n1"}, {"n2"}}); err != nil {
+		t.Fatal(err)
+	}
+	if enabled := e.Enabled(); len(enabled) != 0 {
+		t.Fatalf("enabled across partition = %#v, want none", enabled)
+	}
+	e.Heal()
+	if enabled := e.Enabled(); len(enabled) != 2 {
+		t.Fatalf("enabled after heal = %d, want 2", len(enabled))
+	}
+	trace := e.Trace()
+	wantKinds := []core.EventKind{core.EventDuplicate, core.EventPartition, core.EventHeal}
+	if len(trace) != len(wantKinds) {
+		t.Fatalf("control trace length = %d, want %d", len(trace), len(wantKinds))
+	}
+	for index, want := range wantKinds {
+		if trace[index].Event.Kind != want {
+			t.Fatalf("control trace[%d] = %s, want %s", index, trace[index].Event.Kind, want)
+		}
 	}
 }

@@ -36,21 +36,26 @@ type Agreement struct{}
 func (Agreement) Name() string { return "agreement" }
 
 func (Agreement) Check(trace []core.TraceRecord) []Violation {
-	committed := ""
+	committed := make(map[string]string)
 	for _, record := range trace {
 		for _, observation := range record.Observations {
 			if observation.Kind != "commit" {
 				continue
 			}
-			if committed == "" {
-				committed = observation.Value
+			index := "single-value"
+			if observation.Evidence != nil && observation.Evidence["index"] != "" {
+				index = observation.Evidence["index"]
+			}
+			value, exists := committed[index]
+			if !exists {
+				committed[index] = observation.Value
 				continue
 			}
-			if committed != observation.Value {
+			if value != observation.Value {
 				return []Violation{{
 					Monitor: "agreement",
 					Step:    record.Step,
-					Message: fmt.Sprintf("observed commits for %q and %q", committed, observation.Value),
+					Message: fmt.Sprintf("observed conflicting commits at index %s: %q and %q", index, value, observation.Value),
 				}}
 			}
 		}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.dev/schema/onboarding-binding-v1.json",
+  "title": "Consensus Atlas Onboarding Binding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "contract_id", "contract_digest", "protocol", "driver", "capabilities", "operations", "witnesses"],
+  "properties": {
+    "version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "contract_id": {"type": "string", "minLength": 1},
+    "contract_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "protocol": {"type": "string", "minLength": 1},
+    "driver": {"type": "string", "minLength": 1},
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["contract_id", "runtime_id"],
+        "properties": {"contract_id": {"type": "string", "minLength": 1}, "runtime_id": {"type": "string", "minLength": 1}}
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["operation_id", "runtime_kind"],
+        "properties": {"operation_id": {"type": "string", "minLength": 1}, "runtime_kind": {"type": "string", "minLength": 1}}
+      }
+    },
+    "witnesses": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "scenario"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "scenario": {"type": "string", "minLength": 1},
+          "covers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "validates_capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    }
+  }
+}
