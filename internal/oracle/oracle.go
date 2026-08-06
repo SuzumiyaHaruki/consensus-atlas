@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
@@ -22,6 +23,34 @@ type Monitor interface {
 	Check([]core.TraceRecord) []Violation
 }
 
+// EvidenceValidator is implemented by monitors whose typed observations need
+// schema checks before semantic evaluation. Invalid Driver evidence is a
+// conformance failure, not a protocol-property violation, and therefore must
+// never create defect-kill credit.
+type EvidenceValidator interface {
+	ValidateEvidence([]core.TraceRecord) error
+}
+
+func ValidateEvidence(trace []core.TraceRecord, monitors ...Monitor) error {
+	for _, monitor := range monitors {
+		validator, ok := monitor.(EvidenceValidator)
+		if !ok {
+			continue
+		}
+		if err := validator.ValidateEvidence(trace); err != nil {
+			return fmt.Errorf("monitor %s evidence: %w", monitor.Name(), err)
+		}
+	}
+	return nil
+}
+
+func EvidenceError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 func Check(trace []core.TraceRecord, monitors ...Monitor) Result {
 	result := Result{}
 	for _, monitor := range monitors {
@@ -31,26 +60,33 @@ func Check(trace []core.TraceRecord, monitors ...Monitor) Result {
 	return result
 }
 
+var ErrMalformedEvidence = errors.New("malformed monitor evidence")
+
 type Agreement struct{}
 
 func (Agreement) Name() string { return "agreement" }
 
 func (Agreement) Check(trace []core.TraceRecord) []Violation {
-	committed := ""
+	committed := make(map[string]string)
 	for _, record := range trace {
 		for _, observation := range record.Observations {
 			if observation.Kind != "commit" {
 				continue
 			}
-			if committed == "" {
-				committed = observation.Value
+			index := "single-value"
+			if observation.Evidence != nil && observation.Evidence["index"] != "" {
+				index = observation.Evidence["index"]
+			}
+			value, exists := committed[index]
+			if !exists {
+				committed[index] = observation.Value
 				continue
 			}
-			if committed != observation.Value {
+			if value != observation.Value {
 				return []Violation{{
 					Monitor: "agreement",
 					Step:    record.Step,
-					Message: fmt.Sprintf("observed commits for %q and %q", committed, observation.Value),
+					Message: fmt.Sprintf("observed conflicting commits at index %s: %q and %q", index, value, observation.Value),
 				}}
 			}
 		}

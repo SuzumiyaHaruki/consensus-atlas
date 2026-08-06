@@ -1,0 +1,6 @@
+00966973c8e3d3169af05fd39945161577f28bd968d6ca0473754138a5735a44  agent-campaigns/deepseek-etcdraft-v0.1.json.gz
+61e5e8e9f818fc71ae5167f50d02486cede688c076d877dabfc15e0f6242bc3f  campaigns/etcdraft-partition-random-256-v1.json.gz
+2978e9c7e665e0919f2bde5b49b760b73129e1b5e97f176ce485e59fc41bc691  campaigns/etcdraft-partition-dfs-256-v1.json.gz
+c58c3cb6c76a9a685951508ea9ed409630bca18ccc4db0efe1ab691ab8f0d85f  campaigns/etcdraft-expert-v1.json.gz
+ae7bda8ce42f588d4487380780b880906eb19052e9b5991f270cc280e052aee3  profiles/etcdraft-campaign-v1.json
+b774cf6c9792d293683509b3fbe001af8a6b9a10112ef6474dd335a78c75263a  onboarding/etcdraft-v1.json

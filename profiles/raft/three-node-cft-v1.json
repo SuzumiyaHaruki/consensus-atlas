@@ -1,0 +1,81 @@
+{
+  "$schema": "./campaign-schema-v1.json",
+  "version": 1,
+  "id": "raft-three-node-cft-v1",
+  "family": "raft",
+  "pss_id": "raft-family-pss-v1",
+  "fault_model": "cft",
+  "bounds": {
+    "nodes": 3,
+    "election_rounds": 2,
+    "proposals": 2,
+    "crashes": 1,
+    "restarts": 1,
+    "partitions": 1
+  },
+  "transitions": [
+    {
+      "id": "explicit-election",
+      "from": "follower",
+      "to": "candidate",
+      "trigger": "campaign",
+      "requires": ["explicit-campaign"]
+    },
+    {
+      "id": "quorum-election",
+      "from": "candidate",
+      "to": "leader",
+      "trigger": "message",
+      "message_type": "MsgVoteResp",
+      "requires": ["explicit-campaign", "message-release-control"]
+    },
+    {
+      "id": "candidate-stepdown",
+      "from": "candidate",
+      "to": "follower",
+      "trigger": "message",
+      "message_type": "MsgVote",
+      "requires": ["message-release-control"]
+    },
+    {
+      "id": "leader-stepdown",
+      "from": "leader",
+      "to": "follower",
+      "trigger": "message",
+      "message_type": "MsgApp",
+      "requires": ["message-release-control"]
+    },
+    {
+      "id": "natural-election-timeout",
+      "from": "follower",
+      "to": "candidate",
+      "trigger": "timeout",
+      "requires": ["natural-election-timeout-replay"]
+    }
+  ],
+  "message_types": ["MsgVote", "MsgVoteResp", "MsgApp", "MsgAppResp"],
+  "fault_message_types": ["MsgVote", "MsgApp"],
+  "crash_roles": ["follower", "candidate", "leader"],
+  "storage_cutpoints": [
+    "before-persist",
+    "persist-before-sync",
+    "sync-before-release",
+    "release-before-ack",
+    "apply-before-ack"
+  ],
+  "log_relations": ["same-nonempty", "strict-prefix"],
+  "partition_shapes": ["minority-vs-quorum", "isolate-leader"],
+  "evaluation": {
+    "weights": {
+      "transition": 0.20,
+      "ordering": 0.20,
+      "fault": 0.20,
+      "boundary": 0.20,
+      "property": 0.20
+    },
+    "threshold": {
+      "score": 80,
+      "min_category": 0.60
+    }
+  }
+}

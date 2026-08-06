@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/defect-benchmark-v1.json",
+  "title": "ConsensusAtlas private defect benchmark manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "id", "blinding_nonce", "protocol", "profile_id", "profile_digest",
+    "budget", "kill_policy", "variants"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "blinding_nonce": {"$ref": "#/$defs/digest"},
+    "protocol": {"type": "string", "minLength": 1},
+    "profile_id": {"type": "string", "minLength": 1},
+    "profile_digest": {"$ref": "#/$defs/digest"},
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_runs", "max_decisions", "max_primary_work_units"],
+      "properties": {
+        "max_runs": {"type": "integer", "minimum": 1},
+        "max_decisions": {"type": "integer", "minimum": 1},
+        "max_primary_work_units": {"type": "integer", "minimum": 1}
+      }
+    },
+    "kill_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_monitors", "require_replay_stable", "require_conformant"],
+      "properties": {
+        "allowed_monitors": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "not": {"const": "trace-integrity"}}
+        },
+        "require_replay_stable": {"const": true},
+        "require_conformant": {"const": true}
+      }
+    },
+    "variants": {
+      "type": "array", "minItems": 2,
+      "items": {"$ref": "#/$defs/variant"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "trial_id", "kind", "category", "provenance",
+        "source_digest", "sut_manifest_digest"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "trial_id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["control", "defect"]},
+        "root_cause_id": {"$ref": "#/$defs/id"},
+        "category": {"type": "string", "minLength": 1},
+        "provenance": {"enum": ["historical", "semantic-mutant", "fixture"]},
+        "source_digest": {"$ref": "#/$defs/digest"},
+        "sut_manifest_digest": {"$ref": "#/$defs/digest"},
+        "build_audit_digest": {"$ref": "#/$defs/digest"},
+        "binary_digest": {"$ref": "#/$defs/digest"}
+      },
+      "dependentRequired": {
+        "build_audit_digest": ["binary_digest"],
+        "binary_digest": ["build_audit_digest"]
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "defect"}}},
+          "then": {"required": ["root_cause_id"]},
+          "else": {"not": {"required": ["root_cause_id"]}}
+        }
+      ]
+    }
+  }
+}

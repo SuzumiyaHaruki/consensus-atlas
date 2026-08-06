@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "trial_id": "trial-ready-must-sync-candidate-v1",
+  "build_spec_digest": "2ddd88389b9e5dea7e81b3ea0575f8f1238ab89397fdd79a56e3a1847a37733c",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source_path": "rawnode.go",
+  "input_source_digest": "40862955319a6dd7327ce417737fe856db5a2ceed6dda615aab9cb49cf9b0ce3",
+  "output_source_digest": "591bd2db43799b87b6401db31bc400e12872e6a6c989953f6f429eaaaea73384",
+  "input_module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "output_module_digest": "4aebbaa0ff3617be8b2a01b0ad347e0a26b5b18670f8dc70826e14bfa7ef104c",
+  "sut_build_identity": "sut-a277bf530a06feb0",
+  "binary_path": "artifacts/pilots/etcdraft-ready-must-sync-v1/bin/sut-a277bf530a06feb0",
+  "binary_digest": "528fc8cfce31a6c61a593970f2cfcb58138e7036bf613b717de5a16b5a9aad61",
+  "command_identity": "c0ef02b97eba4d3c78070a3b6111848a317b000296e422ec4631ca1c34141a39",
+  "commands": [
+    {
+      "identity": "go-list-module",
+      "digest": "31180163a6c1039d91283d0e6033726684c7630e6a022010380d5fe2c7b5bb5d",
+      "executable": "go",
+      "logical_args": [
+        "list",
+        "-mod=readonly",
+        "-m",
+        "-json",
+        "go.etcd.io/raft/v3"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    },
+    {
+      "identity": "go-build",
+      "digest": "b8a65a0c4bad6789bec4e481770c758a74241d67c6a7fa2be66d026d66008790",
+      "executable": "go",
+      "logical_args": [
+        "build",
+        "-mod=readonly",
+        "-trimpath",
+        "-buildvcs=false",
+        "-modfile=\u003cgenerated\u003e",
+        "-ldflags=-buildid= -X=github.com/SuzumiyaHaruki/consensus-atlas/drivers/etcdraft.SUTBuildIdentity=sut-a277bf530a06feb0",
+        "-o",
+        "artifacts/pilots/etcdraft-ready-must-sync-v1/bin/sut-a277bf530a06feb0",
+        "./cmd/campaign"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    }
+  ],
+  "toolchain_identity": "go1.25.8/linux/amd64",
+  "module_cache_unmodified": true,
+  "offline_readonly_build": true,
+  "exact_match_count": 1
+}

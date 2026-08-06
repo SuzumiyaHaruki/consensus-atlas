@@ -1,0 +1,2145 @@
+{
+  "version": 2,
+  "id": "raft-campaign/raft-three-node-cft-v1",
+  "protocol": "etcd-raft-v3.6",
+  "pss_id": "raft-family-pss-v1",
+  "nodes": [
+    "n1",
+    "n2",
+    "n3"
+  ],
+  "required_capabilities": [
+    "application-apply",
+    "exact-ready-send-barriers",
+    "explicit-campaign",
+    "message-drop-duplicate-partition",
+    "message-release-control",
+    "natural-election-timeout-replay",
+    "power-loss-restart",
+    "ready-crash-cutpoints",
+    "visible-write-durable-sync"
+  ],
+  "coverage": {
+    "weights": {
+      "boundary": 0.2,
+      "fault": 0.2,
+      "ordering": 0.2,
+      "property": 0.2,
+      "transition": 0.2
+    },
+    "obligations": [
+      {
+        "id": "boundary.all-peer-vote-responses",
+        "category": "boundary",
+        "description": "Deliver vote responses from every peer in the bounded cluster.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "observation_kind": "transport",
+              "observation_label": "message:delivered"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "observation_kind": "transport",
+              "observation_label": "message:delivered"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "message",
+                "message_type": "MsgVoteResp",
+                "observation_kind": "transport",
+                "observation_label": "message:delivered"
+              },
+              "at_least": 2,
+              "distinct_by": "event_source"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "explicit-campaign",
+          "message-release-control"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.crashes.1",
+        "category": "boundary",
+        "description": "Exercise at least 1 crashes in one campaign.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "crash",
+                "observation_label": "fault:crash"
+              },
+              "at_least": 1
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "ready-crash-cutpoints"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.election-rounds.1",
+        "category": "boundary",
+        "description": "Reach at least 1 distinct Raft election terms.",
+        "evidence": {
+          "reach": [
+            {
+              "observation_kind": "transition",
+              "observation_label": "transition:follower-\u003ecandidate"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "transition",
+              "observation_label": "transition:follower-\u003ecandidate"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "observation_kind": "transition",
+                "observation_label": "transition:follower-\u003ecandidate"
+              },
+              "at_least": 1,
+              "distinct_by": "observation_evidence:term"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "explicit-campaign"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.election-rounds.2",
+        "category": "boundary",
+        "description": "Reach at least 2 distinct Raft election terms.",
+        "evidence": {
+          "reach": [
+            {
+              "observation_kind": "transition",
+              "observation_label": "transition:follower-\u003ecandidate"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "transition",
+              "observation_label": "transition:follower-\u003ecandidate"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "observation_kind": "transition",
+                "observation_label": "transition:follower-\u003ecandidate"
+              },
+              "at_least": 2,
+              "distinct_by": "observation_evidence:term"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "explicit-campaign"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.log.same-nonempty.1",
+        "category": "boundary",
+        "description": "Observe Raft durable application logs in relation same-nonempty at depth 1.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "same-nonempty",
+                "parameters": {
+                  "min_entries": "1"
+                }
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "same-nonempty",
+                "parameters": {
+                  "min_entries": "1"
+                }
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.log.same-nonempty.2",
+        "category": "boundary",
+        "description": "Observe Raft durable application logs in relation same-nonempty at depth 2.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "same-nonempty",
+                "parameters": {
+                  "min_entries": "2"
+                }
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "same-nonempty",
+                "parameters": {
+                  "min_entries": "2"
+                }
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.log.strict-prefix.1",
+        "category": "boundary",
+        "description": "Observe Raft durable application logs in relation strict-prefix at depth 1.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "strict-prefix",
+                "parameters": {
+                  "min_entries": "1"
+                }
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "strict-prefix",
+                "parameters": {
+                  "min_entries": "1"
+                }
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.log.strict-prefix.2",
+        "category": "boundary",
+        "description": "Observe Raft durable application logs in relation strict-prefix at depth 2.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "strict-prefix",
+                "parameters": {
+                  "min_entries": "2"
+                }
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "acknowledge",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "durable-normal-log-relation-after",
+                "value": "strict-prefix",
+                "parameters": {
+                  "min_entries": "2"
+                }
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.partition.isolate-leader",
+        "category": "boundary",
+        "description": "Install the Raft partition shape isolate-leader.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "partition",
+              "observation_label": "network:partition",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "partition-shape",
+                "value": "isolate-leader"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "partition",
+              "observation_label": "network:partition",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "partition-shape",
+                "value": "isolate-leader"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.partition.minority-vs-quorum",
+        "category": "boundary",
+        "description": "Install the Raft partition shape minority-vs-quorum.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "partition",
+              "observation_label": "network:partition",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "partition-shape",
+                "value": "minority-vs-quorum"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "partition",
+              "observation_label": "network:partition",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "partition-shape",
+                "value": "minority-vs-quorum"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.partitions.1",
+        "category": "boundary",
+        "description": "Exercise at least 1 partitions in one campaign.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "partition",
+              "observation_label": "network:partition"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "partition",
+              "observation_label": "network:partition"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "partition",
+                "observation_label": "network:partition"
+              },
+              "at_least": 1
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.proposals.1",
+        "category": "boundary",
+        "description": "Execute at least 1 application proposals.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "propose",
+              "outcome": "applied"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "propose",
+              "outcome": "applied"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "propose",
+                "outcome": "applied"
+              },
+              "at_least": 1
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.proposals.2",
+        "category": "boundary",
+        "description": "Execute at least 2 application proposals.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "propose",
+              "outcome": "applied"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "propose",
+              "outcome": "applied"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "propose",
+                "outcome": "applied"
+              },
+              "at_least": 2
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.quorum-election",
+        "category": "boundary",
+        "description": "Elect a leader with a minimal legal quorum of vote responses.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "observation_kind": "transition",
+              "observation_label": "transition:candidate-\u003eleader"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "observation_kind": "transition",
+              "observation_label": "transition:candidate-\u003eleader"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "message",
+                "message_type": "MsgVoteResp",
+                "observation_kind": "transport",
+                "observation_label": "message:delivered"
+              },
+              "at_least": 1,
+              "distinct_by": "event_source"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "explicit-campaign",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "boundary.restarts.1",
+        "category": "boundary",
+        "description": "Exercise at least 1 restarts in one campaign.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "restart",
+              "observation_label": "fault:restart"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "restart",
+              "observation_label": "fault:restart"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "event_kind": "restart",
+                "observation_label": "fault:restart"
+              },
+              "at_least": 1
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "power-loss-restart"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-cutpoint.apply-before-ack",
+        "category": "fault",
+        "description": "Crash at host cutpoint apply-before-ack.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "apply-before-ack",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "apply-before-ack",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-cutpoint.before-persist",
+        "category": "fault",
+        "description": "Crash at host cutpoint before-persist.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "before-persist",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "before-persist",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-cutpoint.persist-before-sync",
+        "category": "fault",
+        "description": "Crash at host cutpoint persist-before-sync.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "persist-before-sync",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "persist-before-sync",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-cutpoint.release-before-ack",
+        "category": "fault",
+        "description": "Crash at host cutpoint release-before-ack.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "release-before-ack",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "release-before-ack",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-cutpoint.sync-before-release",
+        "category": "fault",
+        "description": "Crash at host cutpoint sync-before-release.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "sync-before-release",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "host_cutpoint": "sync-before-release",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints",
+          "visible-write-durable-sync"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-restart",
+        "category": "fault",
+        "description": "Restart the same node after a power-loss crash.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "observation_label": "fault:crash"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "restart",
+              "observation_label": "fault:restart"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "crash",
+                "observation_label": "fault:crash"
+              },
+              "after": {
+                "event_kind": "restart",
+                "observation_label": "fault:restart"
+              },
+              "same_target": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "power-loss-restart",
+          "ready-crash-cutpoints"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-role.candidate",
+        "category": "fault",
+        "description": "Crash a node while it is a Raft candidate.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "candidate"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "candidate"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-role.follower",
+        "category": "fault",
+        "description": "Crash a node while it is a Raft follower.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "follower"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "follower"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.crash-role.leader",
+        "category": "fault",
+        "description": "Crash a node while it is a Raft leader.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "crash",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "leader"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "crash",
+              "observation_kind": "fault",
+              "observation_label": "fault:crash",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "leader"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "ready-crash-cutpoints"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.message-drop.msgapp",
+        "category": "fault",
+        "description": "Drop one captured MsgApp message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgApp",
+              "outcome": "dropped",
+              "observation_kind": "transport",
+              "observation_label": "message:dropped"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgApp",
+              "outcome": "dropped",
+              "observation_kind": "transport",
+              "observation_label": "message:dropped"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.message-drop.msgvote",
+        "category": "fault",
+        "description": "Drop one captured MsgVote message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVote",
+              "outcome": "dropped",
+              "observation_kind": "transport",
+              "observation_label": "message:dropped"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVote",
+              "outcome": "dropped",
+              "observation_kind": "transport",
+              "observation_label": "message:dropped"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.message-duplicate.msgapp",
+        "category": "fault",
+        "description": "Duplicate one captured MsgApp message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "duplicate",
+              "message_type": "MsgApp",
+              "observation_kind": "transport",
+              "observation_label": "message:duplicated",
+              "observation_evidence": {
+                "type": "MsgApp"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "duplicate",
+              "message_type": "MsgApp",
+              "observation_kind": "transport",
+              "observation_label": "message:duplicated",
+              "observation_evidence": {
+                "type": "MsgApp"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "fault.message-duplicate.msgvote",
+        "category": "fault",
+        "description": "Duplicate one captured MsgVote message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "duplicate",
+              "message_type": "MsgVote",
+              "observation_kind": "transport",
+              "observation_label": "message:duplicated",
+              "observation_evidence": {
+                "type": "MsgVote"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "duplicate",
+              "message_type": "MsgVote",
+              "observation_kind": "transport",
+              "observation_label": "message:duplicated",
+              "observation_evidence": {
+                "type": "MsgVote"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.host.apply-ack",
+        "category": "ordering",
+        "description": "Application precedes acknowledgement in one output batch.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "apply"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "acknowledge"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "apply"
+              },
+              "after": {
+                "event_kind": "acknowledge"
+              },
+              "same_group": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "visible-write-durable-sync"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.host.persist-sync",
+        "category": "ordering",
+        "description": "Visible persistence precedes durable synchronization in one output batch.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "persist"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "sync"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "persist"
+              },
+              "after": {
+                "event_kind": "sync"
+              },
+              "same_group": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "visible-write-durable-sync"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.host.release-ack",
+        "category": "ordering",
+        "description": "Message release precedes acknowledgement in one output batch.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "emit"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "acknowledge"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "emit"
+              },
+              "after": {
+                "event_kind": "acknowledge"
+              },
+              "same_group": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "visible-write-durable-sync"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.host.sync-apply",
+        "category": "ordering",
+        "description": "Durable synchronization precedes application in one output batch.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "sync"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "apply"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "sync"
+              },
+              "after": {
+                "event_kind": "apply"
+              },
+              "same_group": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "visible-write-durable-sync"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.host.sync-release",
+        "category": "ordering",
+        "description": "Durable synchronization precedes message release in one output batch.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "sync"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "emit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "sync"
+              },
+              "after": {
+                "event_kind": "emit"
+              },
+              "same_group": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "visible-write-durable-sync"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.message-release-delivery.msgapp",
+        "category": "ordering",
+        "description": "A captured MsgApp message is released before the same message is delivered.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "emit",
+              "message_type": "MsgApp",
+              "observation_label": "message:released"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgApp",
+              "observation_label": "message:delivered"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "emit",
+                "message_type": "MsgApp",
+                "observation_label": "message:released"
+              },
+              "after": {
+                "event_kind": "message",
+                "message_type": "MsgApp",
+                "observation_label": "message:delivered"
+              },
+              "same_message": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.message-release-delivery.msgappresp",
+        "category": "ordering",
+        "description": "A captured MsgAppResp message is released before the same message is delivered.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "emit",
+              "message_type": "MsgAppResp",
+              "observation_label": "message:released"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgAppResp",
+              "observation_label": "message:delivered"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "emit",
+                "message_type": "MsgAppResp",
+                "observation_label": "message:released"
+              },
+              "after": {
+                "event_kind": "message",
+                "message_type": "MsgAppResp",
+                "observation_label": "message:delivered"
+              },
+              "same_message": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.message-release-delivery.msgvote",
+        "category": "ordering",
+        "description": "A captured MsgVote message is released before the same message is delivered.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "emit",
+              "message_type": "MsgVote",
+              "observation_label": "message:released"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVote",
+              "observation_label": "message:delivered"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "emit",
+                "message_type": "MsgVote",
+                "observation_label": "message:released"
+              },
+              "after": {
+                "event_kind": "message",
+                "message_type": "MsgVote",
+                "observation_label": "message:delivered"
+              },
+              "same_message": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.message-release-delivery.msgvoteresp",
+        "category": "ordering",
+        "description": "A captured MsgVoteResp message is released before the same message is delivered.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "emit",
+              "message_type": "MsgVoteResp",
+              "observation_label": "message:released"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "observation_label": "message:delivered"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "emit",
+                "message_type": "MsgVoteResp",
+                "observation_label": "message:released"
+              },
+              "after": {
+                "event_kind": "message",
+                "message_type": "MsgVoteResp",
+                "observation_label": "message:delivered"
+              },
+              "same_message": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.partition-heal",
+        "category": "ordering",
+        "description": "A network partition is installed and later healed.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "partition"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "heal"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "partition"
+              },
+              "after": {
+                "event_kind": "heal"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-drop-duplicate-partition"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.propose-commit",
+        "category": "ordering",
+        "description": "A proposal precedes a non-empty committed application value.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "propose"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "propose"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-release-control"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "ordering.ready-release-before-sync",
+        "category": "ordering",
+        "description": "Exercise a legal native Ready overlap in which message release precedes synchronization.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "emit"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "sync"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "emit"
+              },
+              "after": {
+                "event_kind": "sync"
+              },
+              "same_group": true
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "exact-ready-send-barriers"
+        ],
+        "risk": "high",
+        "status": "unsupported"
+      },
+      {
+        "id": "property.agreement-activated",
+        "category": "property",
+        "description": "Activate agreement checking with a non-empty committed entry.",
+        "evidence": {
+          "reach": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ]
+        },
+        "monitors": [
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.agreement-multiple-indexes",
+        "category": "property",
+        "description": "Activate agreement checking at multiple committed log indexes.",
+        "evidence": {
+          "reach": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "counts": [
+            {
+              "predicate": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              },
+              "at_least": 2,
+              "distinct_by": "observation_evidence:index"
+            }
+          ]
+        },
+        "monitors": [
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.apply-activated",
+        "category": "property",
+        "description": "Drive committed output across the application boundary.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "apply",
+              "observation_label": "host:apply"
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "apply",
+              "observation_label": "host:apply"
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply"
+        ],
+        "risk": "high",
+        "status": "supported"
+      },
+      {
+        "id": "property.progress-after-drop.msgapp",
+        "category": "property",
+        "description": "Commit after dropping a MsgApp message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgApp",
+              "outcome": "dropped"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "message",
+                "message_type": "MsgApp",
+                "outcome": "dropped"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.progress-after-drop.msgvote",
+        "category": "property",
+        "description": "Commit after dropping a MsgVote message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVote",
+              "outcome": "dropped"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "message",
+                "message_type": "MsgVote",
+                "outcome": "dropped"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.progress-after-duplicate.msgapp",
+        "category": "property",
+        "description": "Commit after duplicating a MsgApp message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "duplicate",
+              "message_type": "MsgApp"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "duplicate",
+                "message_type": "MsgApp"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.progress-after-duplicate.msgvote",
+        "category": "property",
+        "description": "Commit after duplicating a MsgVote message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "duplicate",
+              "message_type": "MsgVote"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "duplicate",
+                "message_type": "MsgVote"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.progress-after-heal",
+        "category": "property",
+        "description": "Commit after healing a partition.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "heal",
+              "observation_label": "network:heal"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "heal",
+                "observation_label": "network:heal"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-drop-duplicate-partition",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.progress-after-restart",
+        "category": "property",
+        "description": "Commit after restarting a crashed node.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "restart",
+              "observation_label": "fault:restart"
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "commit",
+              "observation_label": "commit"
+            }
+          ],
+          "orderings": [
+            {
+              "before": {
+                "event_kind": "restart",
+                "observation_label": "fault:restart"
+              },
+              "after": {
+                "observation_kind": "commit",
+                "observation_label": "commit"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "application-apply",
+          "message-release-control",
+          "power-loss-restart"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "property.single-leader-activated",
+        "category": "property",
+        "description": "Observe a leader transition while the frozen state contains exactly one running leader.",
+        "evidence": {
+          "reach": [
+            {
+              "observation_kind": "transition",
+              "observation_label": "transition:candidate-\u003eleader",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "leader-count-after",
+                "parameters": {
+                  "max": "1",
+                  "min": "1"
+                }
+              }
+            }
+          ],
+          "observe": [
+            {
+              "observation_kind": "transition",
+              "observation_label": "transition:candidate-\u003eleader",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "leader-count-after",
+                "parameters": {
+                  "max": "1",
+                  "min": "1"
+                }
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "requires": [
+          "explicit-campaign",
+          "message-release-control"
+        ],
+        "risk": "critical",
+        "status": "supported"
+      },
+      {
+        "id": "transition.candidate-stepdown",
+        "category": "transition",
+        "description": "Reach the Raft role transition candidate -\u003e follower through message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVote",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "candidate"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVote",
+              "observation_kind": "transition",
+              "observation_label": "transition:candidate-\u003efollower",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-after",
+                "value": "follower"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "transition.explicit-election",
+        "category": "transition",
+        "description": "Reach the Raft role transition follower -\u003e candidate through campaign.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "campaign",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "follower"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "campaign",
+              "observation_kind": "transition",
+              "observation_label": "transition:follower-\u003ecandidate",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-after",
+                "value": "candidate"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "explicit-campaign"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "transition.leader-stepdown",
+        "category": "transition",
+        "description": "Reach the Raft role transition leader -\u003e follower through message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgApp",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "leader"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgApp",
+              "observation_kind": "transition",
+              "observation_label": "transition:leader-\u003efollower",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-after",
+                "value": "follower"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      },
+      {
+        "id": "transition.natural-election-timeout",
+        "category": "transition",
+        "description": "Reach the Raft role transition follower -\u003e candidate through timeout.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "timeout",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "follower"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "timeout",
+              "observation_kind": "transition",
+              "observation_label": "transition:follower-\u003ecandidate",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-after",
+                "value": "candidate"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "natural-election-timeout-replay"
+        ],
+        "risk": "standard",
+        "status": "unsupported"
+      },
+      {
+        "id": "transition.quorum-election",
+        "category": "transition",
+        "description": "Reach the Raft role transition candidate -\u003e leader through message.",
+        "evidence": {
+          "reach": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-before",
+                "value": "candidate"
+              }
+            }
+          ],
+          "observe": [
+            {
+              "event_kind": "message",
+              "message_type": "MsgVoteResp",
+              "observation_kind": "transition",
+              "observation_label": "transition:candidate-\u003eleader",
+              "semantic": {
+                "domain": "raft-family-pss-v1",
+                "relation": "event-target-role-after",
+                "value": "leader"
+              }
+            }
+          ]
+        },
+        "monitors": [
+          "trace-integrity"
+        ],
+        "requires": [
+          "explicit-campaign",
+          "message-release-control"
+        ],
+        "risk": "standard",
+        "status": "supported"
+      }
+    ]
+  },
+  "threshold": {
+    "score": 80,
+    "min_category": 0.6
+  }
+}

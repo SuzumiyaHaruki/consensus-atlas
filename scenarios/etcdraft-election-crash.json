@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "name": "etcdraft-explicit-election-propose-crash-restart",
+  "steps": [
+    {"op": "inject", "kind": "start", "target": "n1"},
+    {"op": "inject", "kind": "start", "target": "n2"},
+    {"op": "inject", "kind": "start", "target": "n3"},
+    {"op": "run", "count": 100},
+    {
+      "op": "inject",
+      "kind": "campaign",
+      "target": "n1"
+    },
+    {
+      "op": "run",
+      "count": 300
+    },
+    {
+      "op": "inject",
+      "kind": "propose",
+      "target": "n1",
+      "payload": {"value": "alpha"}
+    },
+    {
+      "op": "run",
+      "count": 300
+    },
+    {
+      "op": "inject",
+      "kind": "crash",
+      "target": "n2"
+    },
+    {
+      "op": "execute_match",
+      "match": {"kind": "crash", "target": "n2"}
+    },
+    {
+      "op": "inject",
+      "kind": "restart",
+      "target": "n2"
+    },
+    {
+      "op": "execute_match",
+      "match": {"kind": "restart", "target": "n2"}
+    },
+    {
+      "op": "run",
+      "count": 300
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "version": 3,
+  "trial_id": "trial-fixed-63903dd",
+  "build_spec_digest": "973c7753344ffb8eb6f3bca0679f53bffb8d79c65f465e4c79df774b26f2403c",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source_path": "\u003cmultiple\u003e",
+  "input_source_digest": "7133d036a58adc3bdda7fb8719b8dbaee7e66d59bddd869a0a871ff0f8c1abc3",
+  "output_source_digest": "74be03960d0f22ef27ae2dde4491418c19d6bac7722aa8db85a8f1790f1ca624",
+  "input_module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "output_module_digest": "b42aa3709d4da48a60a225704dea0316580e98b9acd415bca214a71d90ab6935",
+  "sut_build_identity": "sut-f2bfe81563cb2739",
+  "binary_path": "artifacts/pilots/etcdraft-readindex-v1/bin/sut-f2bfe81563cb2739",
+  "binary_digest": "a7faf1d44a20bc9d5e13ee871aff7d6bfc47b389d5c4b76ac7d15565399d5760",
+  "command_identity": "ca8a24a3a49ce3713cdafe5f3fc2d1e7162311bd77028efea48247e7355a13a3",
+  "commands": [
+    {
+      "identity": "go-list-module",
+      "digest": "31180163a6c1039d91283d0e6033726684c7630e6a022010380d5fe2c7b5bb5d",
+      "executable": "go",
+      "logical_args": [
+        "list",
+        "-mod=readonly",
+        "-m",
+        "-json",
+        "go.etcd.io/raft/v3"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    },
+    {
+      "identity": "go-build",
+      "digest": "33c296c22ac9ad1102fda19f52455ceba94684149d7ea8943c5d5b8345733b6f",
+      "executable": "go",
+      "logical_args": [
+        "build",
+        "-mod=readonly",
+        "-trimpath",
+        "-buildvcs=false",
+        "-modfile=\u003cgenerated\u003e",
+        "-ldflags=-buildid= -X=github.com/SuzumiyaHaruki/consensus-atlas/drivers/etcdraft.SUTBuildIdentity=sut-f2bfe81563cb2739",
+        "-o",
+        "artifacts/pilots/etcdraft-readindex-v1/bin/sut-f2bfe81563cb2739",
+        "./cmd/campaign"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    }
+  ],
+  "toolchain_identity": "go1.25.8/linux/amd64",
+  "module_cache_unmodified": true,
+  "offline_readonly_build": true,
+  "exact_match_count": 5,
+  "sources": [
+    {
+      "relative_path": "raft.go",
+      "input_digest": "4283c10e12c6da14964c6d6784a69851af1312245aa83925ec0e9426a07ed7bb",
+      "output_digest": "be1e864df2d13bce326cb98132999f87ddae08d877a39ecd7d29fac7ba353185",
+      "exact_match_count": 3
+    },
+    {
+      "relative_path": "read_only.go",
+      "input_digest": "298b7d3edf32eecfc96172ced95506e9f3ac0964ec39068c32c572d95f782dc5",
+      "output_digest": "70531ba4967c397969a1a8189fc496cd7b2d9d8f6e4f45af6f3d4d6d9aa8fb42",
+      "exact_match_count": 2
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "etcdraft-partition-dfs-256-v1",
+  "profile_id": "raft-campaign/raft-three-node-cft-v1",
+  "profile_digest": "09e9e507c84234c15cebf942d5d43aa08511cc0d6a48d7c3dc36aa3399dc14b6",
+  "max_total_runs": 4,
+  "max_total_decisions": 256,
+  "plans": [
+    {
+      "id": "partition-recovery-dfs",
+      "targets": [
+        "boundary.partition.minority-vs-quorum",
+        "boundary.partitions.1",
+        "ordering.partition-heal",
+        "property.progress-after-heal"
+      ],
+      "prepare": [
+        {"op": "partition", "groups": [["n1"], ["n2", "n3"]]},
+        {"op": "inject", "kind": "campaign", "target": "n1"},
+        {"op": "drain", "count": 200},
+        {"op": "heal"}
+      ],
+      "stimuli": [
+        {"kind": "propose", "target": "n1", "payload": {"value": "partition-recovery"}}
+      ],
+      "search": {
+        "strategy": "dfs",
+        "config": {
+          "max_runs": 4,
+          "budget_per_run": 96,
+          "decision_budget": 256,
+          "seed": 0,
+          "actions": {
+            "drop_messages": false,
+            "duplicate_messages": false,
+            "max_duplicates_per_run": 0
+          }
+        }
+      }
+    }
+  ]
+}

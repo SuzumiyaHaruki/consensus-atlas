@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "id": "etcdraft-expert-v1",
+  "profile_id": "raft-campaign/raft-three-node-cft-v1",
+  "profile_digest": "09e9e507c84234c15cebf942d5d43aa08511cc0d6a48d7c3dc36aa3399dc14b6",
+  "max_total_runs": 40,
+  "max_total_decisions": 2304,
+  "plans": [
+    {
+      "id": "partition-recovery",
+      "targets": [
+        "boundary.partition.minority-vs-quorum",
+        "boundary.partitions.1",
+        "ordering.partition-heal",
+        "property.progress-after-heal"
+      ],
+      "prepare": [
+        {"op": "partition", "groups": [["n1"], ["n2", "n3"]]},
+        {"op": "inject", "kind": "campaign", "target": "n1"},
+        {"op": "drain", "count": 200},
+        {"op": "heal"}
+      ],
+      "stimuli": [
+        {"kind": "propose", "target": "n1", "payload": {"value": "partition-recovery"}}
+      ],
+      "search": {
+        "strategy": "dfs",
+        "config": {
+          "max_runs": 4,
+          "budget_per_run": 96,
+          "decision_budget": 256,
+          "seed": 0,
+          "actions": {
+            "drop_messages": false,
+            "duplicate_messages": false,
+            "max_duplicates_per_run": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "ready-crash-recovery",
+      "targets": [
+        "boundary.crashes.1",
+        "boundary.restarts.1",
+        "fault.crash-cutpoint.before-persist",
+        "fault.crash-cutpoint.persist-before-sync",
+        "fault.crash-cutpoint.sync-before-release",
+        "fault.crash-cutpoint.release-before-ack",
+        "fault.crash-cutpoint.apply-before-ack",
+        "fault.crash-restart",
+        "fault.crash-role.candidate",
+        "property.progress-after-restart"
+      ],
+      "prepare": [
+        {"op": "inject", "kind": "campaign", "target": "n1"},
+        {"op": "execute", "match": {"kind": "campaign", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}}
+      ],
+      "stimuli": [
+        {"kind": "crash", "target": "n1"},
+        {"kind": "restart", "target": "n1"},
+        {"kind": "campaign", "target": "n1"},
+        {"kind": "propose", "target": "n1", "payload": {"value": "after-restart"}}
+      ],
+      "search": {
+        "strategy": "random",
+        "config": {
+          "max_runs": 16,
+          "budget_per_run": 96,
+          "decision_budget": 768,
+          "seed": 41,
+          "actions": {
+            "drop_messages": false,
+            "duplicate_messages": false,
+            "max_duplicates_per_run": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "vote-message-faults",
+      "targets": [
+        "fault.message-drop.msgvote",
+        "fault.message-duplicate.msgvote",
+        "property.progress-after-drop.msgvote",
+        "property.progress-after-duplicate.msgvote"
+      ],
+      "prepare": [
+        {"op": "inject", "kind": "campaign", "target": "n1"},
+        {"op": "execute", "match": {"kind": "campaign", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n1"}}
+      ],
+      "stimuli": [
+        {"kind": "propose", "target": "n1", "payload": {"value": "after-vote-fault"}}
+      ],
+      "search": {
+        "strategy": "random",
+        "config": {
+          "max_runs": 8,
+          "budget_per_run": 96,
+          "decision_budget": 512,
+          "seed": 23,
+          "actions": {
+            "drop_messages": true,
+            "duplicate_messages": true,
+            "max_duplicates_per_run": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "election-contention-depth",
+      "targets": [
+        "boundary.election-rounds.2",
+        "boundary.log.same-nonempty.2",
+        "boundary.log.strict-prefix.2",
+        "boundary.proposals.2",
+        "property.agreement-multiple-indexes",
+        "transition.candidate-stepdown",
+        "transition.leader-stepdown"
+      ],
+      "stimuli": [
+        {"kind": "campaign", "target": "n1"},
+        {"kind": "campaign", "target": "n2"},
+        {"kind": "propose", "target": "n1", "payload": {"value": "contention-a"}},
+        {"kind": "propose", "target": "n2", "payload": {"value": "contention-b"}}
+      ],
+      "search": {
+        "strategy": "random",
+        "config": {
+          "max_runs": 12,
+          "budget_per_run": 96,
+          "decision_budget": 768,
+          "seed": 67,
+          "actions": {
+            "drop_messages": true,
+            "duplicate_messages": false,
+            "max_duplicates_per_run": 0
+          }
+        }
+      }
+    }
+  ]
+}
