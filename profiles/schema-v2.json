@@ -10,6 +10,7 @@
     "id": {"type": "string", "minLength": 1},
     "protocol": {"type": "string", "minLength": 1},
     "pss_id": {"type": "string", "minLength": 1},
+    "runtime_profile": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
     "nodes": {
       "type": "array",
       "minItems": 1,
@@ -138,8 +139,8 @@
       "properties": {
         "event_kind": {
           "enum": [
-            "start", "campaign", "propose", "message", "timeout", "persist", "sync",
-            "emit", "apply", "acknowledge", "crash", "restart", "duplicate", "partition", "heal"
+            "start", "protocol-input", "campaign", "propose", "query", "message", "timeout", "persist", "sync",
+            "emit", "apply", "acknowledge", "crash", "restart", "duplicate", "partition", "heal", "clock-advance"
           ]
         },
         "event_source": {"type": "string", "minLength": 1},

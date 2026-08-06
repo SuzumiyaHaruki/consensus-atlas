@@ -26,14 +26,20 @@ func (a *fixtureAdapter) Apply(_ context.Context, _ core.Event) (core.ApplyResul
 }
 
 func twoEventFactory(_ context.Context) (*engine.Engine, error) {
-	e := engine.New(&fixtureAdapter{})
+	e, err := engine.New(&fixtureAdapter{})
+	if err != nil {
+		return nil, err
+	}
 	e.Schedule(core.Event{Kind: core.EventCampaign, Target: "n1"})
 	e.Schedule(core.Event{Kind: core.EventCampaign, Target: "n2"})
 	return e, nil
 }
 
 func messageFactory(_ context.Context) (*engine.Engine, error) {
-	e := engine.New(&fixtureAdapter{})
+	e, err := engine.New(&fixtureAdapter{})
+	if err != nil {
+		return nil, err
+	}
 	e.Schedule(core.Event{
 		Kind: core.EventMessage, Source: "n1", Target: "n2", Payload: json.RawMessage(`"vote"`),
 	})

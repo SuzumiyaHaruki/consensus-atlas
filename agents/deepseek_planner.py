@@ -30,13 +30,13 @@ Return only one JSON object with exactly this shape, without markdown:
   "id": "proposal-a1",
   "plan": {
     "id": "agent-plan-a1",
-    "targets": ["exact current coverage_debt obligation id"],
+    "targets": ["exact current coverage_debt opaque ref"],
     "prepare": [
-      {"op": "inject", "kind": "campaign", "target": "n1"},
-      {"op": "execute", "match": {"kind": "campaign", "target": "n1"}}
+      {"op": "inject", "kind": "protocol-input", "operation": "one ID from dsl_policy.protocol_inputs", "target": "n1"},
+      {"op": "execute", "match": {"kind": "protocol-input", "target": "n1"}}
     ],
     "stimuli": [
-      {"kind": "propose", "target": "n1", "payload": {"value": "agent-a1"}}
+      {"kind": "protocol-input", "operation": "one ID from dsl_policy.protocol_inputs", "target": "n1", "payload": {"opaque": "agent-a1"}}
     ],
     "search": {
       "strategy": "random",
@@ -56,37 +56,43 @@ Return only one JSON object with exactly this shape, without markdown:
 }
 
 Hard rules:
-- Select only exact IDs currently present in coverage_debt. Prefer critical or
-  high-risk debt with few attempts, and no more than six coherent targets.
+- Select only exact opaque refs currently present in coverage_debt. A ref is a
+  target handle, not a protocol fact: do not try to infer its hidden meaning.
+  Prefer critical or high-risk debt with few attempts, and no more than six
+  coherent targets.
 - Use a new lowercase proposal id and plan id on every attempt. Do not evade
   duplicate detection by merely renaming an unchanged plan.
 - Obey remaining_budget. decision_budget must be positive, no greater than
   max_plan_decisions, and no greater than max_runs * budget_per_run. max_runs
   must not exceed max_plan_runs. Use modest budgets so later repair attempts
   retain resources.
-- Runtime automatically starts all profile nodes and drains bootstrap Ready
-  work before prepare. Never inject start.
-- Allowed protocol inputs are campaign, propose, timeout, crash, restart.
-  Message, persist, sync, emit, apply and acknowledge may be selected for
-  execute/drop/duplicate only after the real implementation produced them;
-  never inject them.
+- Runtime automatically starts all profile nodes and drains bootstrap host work
+  before prepare. Never inject start.
+- Inject only the exact input shapes listed in dsl_policy.protocol_inputs.
+  For a protocol-input, put its listed ID in `operation`; obey payload_mode
+  (`required`, `optional`, or `forbidden`). For any non-protocol input, omit
+  `operation`. Do not invent an input kind or operation ID.
+- Messages and host work may be selected for execute/drop/duplicate only after
+  the real implementation produced them; never inject them.
 - prepare is deterministic and runs before search. `inject` schedules an input;
   `execute` requires a stable match with kind and optional source/target/
   type_hint; `drop` and `duplicate` select only message; `drain` requires count;
   partition requires complete disjoint groups containing all nodes; heal has no
   arguments. Event IDs and host batch groups are forbidden selectors.
-- stimuli must contain at least one protocol input and are left pending for
-  Random/DFS. Proposal payload must be JSON and contain a non-empty value for
-  etcd/raft. A proposal becomes enabled only when its target is leader.
-- To expose Raft Ready host work, inject and execute campaign/proposal/message;
-  then real persist/sync/emit/apply/acknowledge events become selectable. Do not
-  assume every Ready contains every operation: over-specific prepare selectors
-  can fail mechanically.
+- stimuli must contain at least one allowed input and are left pending for
+  Random/DFS. Any payload must be valid JSON. Use only node IDs and input
+  shapes exposed in the immutable request; the trusted Runtime decides whether
+  a pending input is currently enabled.
+- `inject` schedules a protocol input; real host work and messages become
+  selectable only after the implementation produces them. Do not assume a
+  particular output batch, persistence policy, role, message type, or host
+  operation is present: over-specific prepare selectors can fail mechanically.
 - Random/DFS may drop or duplicate only when the corresponding action flag is
   enabled. Set max_duplicates_per_run positive iff duplicate_messages is true.
-- Read previous_proposals and previous_findings. Repair exact validation or
-  execution failures. If a valid plan made no progress, change the causal setup
-  or targeted debt, not just ids, seed, or budget.
+- Read previous_proposals and previous_findings. They contain only mechanical
+  codes and aggregate counts, not traces or Oracle text. Repair a rejected
+  schema/budget/duplicate shape. If a valid plan made no progress, change the
+  causal setup or targeted opaque ref, not just ids, seed, or budget.
 - A target is intent, never evidence. Do not output score, covered status,
   Oracle conclusions, explanations, confidence, or unknown fields.
 """.strip()

@@ -10,7 +10,7 @@ class DeepSeekPlannerTest(unittest.TestCase):
         request = {
             "attempt": 1,
             "remaining_budget": {"tokens": 4000},
-            "coverage_debt": [{"obligation": {"id": "fault.crash"}}],
+            "coverage_debt": [{"ref": "debt-opaque-ref", "category": "property", "risk": "high"}],
         }
         left = deepseek_planner.build_api_request(request, "deepseek-v4-flash")
         right = deepseek_planner.build_api_request(request, "deepseek-v4-flash")
@@ -20,6 +20,10 @@ class DeepSeekPlannerTest(unittest.TestCase):
         self.assertEqual(left["response_format"], {"type": "json_object"})
         self.assertEqual(left["max_tokens"], 4000)
         self.assertNotIn("api_key", str(left).lower())
+        self.assertIn("opaque refs", left["messages"][0]["content"])
+        self.assertNotIn("obligation id", left["messages"][0]["content"])
+        self.assertNotIn("raft", left["messages"][0]["content"].lower())
+        self.assertNotIn("leader", left["messages"][0]["content"].lower())
 
     def test_completion_token_bound_is_capped(self) -> None:
         request = {"remaining_budget": {"tokens": 100000}}

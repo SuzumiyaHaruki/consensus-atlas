@@ -19,6 +19,7 @@
 | Start | `HasReady` + `Ready` |
 | Campaign | `RawNode.Campaign` |
 | Propose | `RawNode.Propose` |
+| Query | `RawNode.ReadIndex` |
 | Deliver | protobuf decode + `RawNode.Step` |
 | Poll | `RawNode.HasReady/Ready` |
 | Persist | `ApplySnapshot/SetHardState/Append` |
@@ -46,6 +47,15 @@ all emit ----> ack
 `Ready.Messages` 在 Poll 时立即执行确定性 protobuf marshal 并深拷贝。这样后续 Ready 或 RawNode 状态变化不会修改已冻结消息。
 
 当前 DAG 比官方允许的部分发送/写入并行关系更保守：所有消息等待当前 batch sync。这保证顺序合法，但会遗漏部分有效执行，因此 `exact-ready-send-barriers=false`。
+
+M4.11 增加了仅由 Profile digest 绑定启用的 Ready sync 策略：
+
+- 默认 Driver 仍然保守地 sync 当前 Ready 后再 release/apply；
+- `runtime_profile=etcdraft-ready-must-sync-v1` 时，host sync 跟随 native `Ready.MustSync`；
+- 同一 opt-in 模式才输出 `ready-must-sync` typed observation；
+- 默认 Campaign monitor 集不包含 `ready-must-sync`，避免影响 M4.9 等冻结路径。
+
+该模式只用于 Ready.MustSync 语义评测，不改变默认 etcd/raft 接入。
 
 ## Durable 模型
 
@@ -83,6 +93,10 @@ Driver 的只读 snapshot 额外公开当前角色/term/vote/leader、commit/app
 
 官方 v3.6 不公开每个节点随机 election timeout 的 RNG。第一版 Profile 不调用 `Tick`，只使用显式 campaign。`natural-election-timeout-replay` 被明确标为 Unsupported。
 
+Runtime 已有通用、可选的虚拟 `TimerSource` queue，但该机制不会自行调用 `Tick`，也不会为未实现
+`TimerSource` 的 Driver 生成 timeout。因而 etcd/raft v3.6 仍只能在公开 RNG/timeout 注入、完整随机
+decision capture/replay，或独立 instrumented variant 之一成立后，才启用自然 timeout 覆盖。
+
 后续只有在以下条件之一满足后才能启用自然 timeout 强覆盖：
 
 1. 官方版本公开 RNG/timeout 注入；
@@ -106,6 +120,8 @@ Driver 的只读 snapshot 额外公开当前角色/term/vote/leader、commit/app
 - restart 后 Driver conformance 通过；
 - agreement 按相同 log index 比较值，不把顺序提交的不同值误报为冲突。
 - 真实 etcd/raft trace 可以通过 Raft PSS 投影，并产生可审计的状态 witness。
+- ReadIndex query 和 `Ready.ReadStates` observation 可用于 `linearizable-read` monitor。
+- opt-in Ready.MustSync observation 可用于区分 message-only Ready 的历史语义重构。
 
 ## Unsupported
 
@@ -113,7 +129,6 @@ Driver 的只读 snapshot 额外公开当前角色/term/vote/leader、commit/app
 - natural election timeout replay；
 - `AsyncStorageWrites`；
 - `ReportSnapshot` 成功/失败反馈；
-- ReadIndex；
 - 完整 snapshot 生成/压缩场景；
 - 完整 joint-consensus 生成器；
 - process crash 与 power loss 的区分；

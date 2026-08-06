@@ -132,7 +132,10 @@ func run(
 		if err != nil {
 			return nil, err
 		}
-		e := engine.New(protocolAdapter)
+		e, err := engine.New(protocolAdapter)
+		if err != nil {
+			return nil, err
+		}
 		if err := scenario.Run(factoryCtx, e, setup); err != nil {
 			return nil, err
 		}

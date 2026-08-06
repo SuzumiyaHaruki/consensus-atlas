@@ -54,6 +54,26 @@ func (a *Adapter) Nodes() []string { return append([]string(nil), a.order...) }
 
 func (a *Adapter) Capabilities() driver.Manifest { return a.driver.Capabilities() }
 
+// Timers forwards the optional declaration interface without making it a
+// requirement for every native driver. The host remains a passive bridge: the
+// Engine, not this adapter or the driver, owns pending timer delivery.
+func (a *Adapter) Timers(now uint64) ([]core.Timer, error) {
+	source, ok := a.driver.(driver.TimerSource)
+	if !ok {
+		return nil, nil
+	}
+	timers, err := source.Timers(now)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]core.Timer, len(timers))
+	for index, timer := range timers {
+		result[index] = timer
+		result[index].Payload = append([]byte(nil), timer.Payload...)
+	}
+	return result, nil
+}
+
 func (a *Adapter) Enabled(event core.Event) (bool, string) {
 	state, ok := a.nodes[event.Target]
 	if !ok {
@@ -84,7 +104,7 @@ func (a *Adapter) Enabled(event core.Event) (bool, string) {
 		}
 		_, reason := a.operationFor(state, event)
 		return reason == "", reason
-	case core.EventCampaign, core.EventPropose, core.EventMessage, core.EventTimeout:
+	case core.EventProtocolInput, core.EventCampaign, core.EventPropose, core.EventQuery, core.EventMessage, core.EventTimeout:
 		if !state.Running {
 			return false, "target node is stopped"
 		}
@@ -105,7 +125,7 @@ func (a *Adapter) Apply(ctx context.Context, event core.Event) (core.ApplyResult
 			Status: core.StatusApplied, Effects: effects,
 			Observations: []core.Observation{{Kind: "lifecycle", Label: "node:started", Node: event.Target}},
 		}, err
-	case core.EventCampaign, core.EventPropose, core.EventMessage, core.EventTimeout:
+	case core.EventProtocolInput, core.EventCampaign, core.EventPropose, core.EventQuery, core.EventMessage, core.EventTimeout:
 		observations, err := a.driver.Invoke(ctx, event)
 		if err != nil {
 			return core.ApplyResult{}, err

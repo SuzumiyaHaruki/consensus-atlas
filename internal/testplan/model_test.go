@@ -7,6 +7,7 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/coverage"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/driver"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/explore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/scenario"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/testplan"
@@ -94,6 +95,71 @@ func TestSuiteRejectsControlBoundaryEscapes(t *testing.T) {
 	}}
 	if err := suite.Validate(profile); err == nil {
 		t.Fatal("suite accepted an invented event kind")
+	}
+
+	suite = validSuite(t, profile)
+	suite.Plans[0].Prepare = []testplan.Action{{
+		Op: testplan.OpCaptureMessage, Ref: "old-message", Match: &scenario.Selector{Kind: core.EventMessage},
+	}, {
+		Op: testplan.OpExecuteRef, Ref: "old-message",
+	}}
+	if err := suite.Validate(profile); err != nil {
+		t.Fatalf("suite rejected a selector-derived message reference: %v", err)
+	}
+
+	suite = validSuite(t, profile)
+	suite.Plans[0].Prepare = []testplan.Action{{Op: testplan.OpExecuteRef, Ref: "not-captured"}}
+	if err := suite.Validate(profile); err == nil {
+		t.Fatal("suite accepted a reference before capture")
+	}
+
+	suite = validSuite(t, profile)
+	suite.Plans[0].Prepare = []testplan.Action{{
+		Op: testplan.OpCaptureMessage, Ref: "not-message", Match: &scenario.Selector{Kind: core.EventCampaign},
+	}}
+	if err := suite.Validate(profile); err == nil {
+		t.Fatal("suite captured a non-message event")
+	}
+
+	suite = validSuite(t, profile)
+	suite.Plans[0].Prepare = []testplan.Action{{
+		Op: testplan.OpExecuteOptional, Match: &scenario.Selector{Kind: core.EventPersist, Target: "n1"},
+	}}
+	if err := suite.Validate(profile); err != nil {
+		t.Fatalf("suite rejected optional host work: %v", err)
+	}
+
+	suite = validSuite(t, profile)
+	suite.Plans[0].Prepare = []testplan.Action{{
+		Op: testplan.OpExecuteOptional, Match: &scenario.Selector{Kind: core.EventMessage, Target: "n1"},
+	}}
+	if err := suite.Validate(profile); err == nil {
+		t.Fatal("suite accepted optional message delivery")
+	}
+}
+
+func TestValidateInputCapabilitiesUsesDriverDeclaredVocabulary(t *testing.T) {
+	plan := testplan.Plan{
+		ID: "generic-input",
+		Stimuli: []testplan.Input{{
+			Kind: core.EventProtocolInput, Operation: "submit", Target: "n1",
+			Payload: json.RawMessage(`{"value":"x"}`),
+		}},
+	}
+	manifest := driver.Manifest{Inputs: []driver.InputCapability{{
+		ID: "submit", Kind: core.EventProtocolInput, PayloadMode: "required",
+	}}}
+	if err := testplan.ValidateInputCapabilities(plan, manifest); err != nil {
+		t.Fatalf("declared generic input rejected: %v", err)
+	}
+	plan.Stimuli[0].Operation = "invented"
+	if err := testplan.ValidateInputCapabilities(plan, manifest); err == nil {
+		t.Fatal("undeclared generic input was accepted")
+	}
+	plan.Stimuli[0].Operation = "submit"
+	plan.Stimuli[0].Payload = nil
+	if err := testplan.ValidateInputCapabilities(plan, manifest); err == nil {
+		t.Fatal("required input payload was accepted as absent")
 	}
 }
 

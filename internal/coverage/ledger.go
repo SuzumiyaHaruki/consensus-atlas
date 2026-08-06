@@ -210,7 +210,10 @@ func (ledger *Ledger) AddRun(profile Profile, run RunEvidence) error {
 	if len(evaluated.Obligations) != len(ledger.entries) {
 		return errors.New("coverage evaluator changed the frozen denominator")
 	}
-	traceDigest := digestTrace(run.Trace)
+	traceDigest, err := core.CanonicalTraceDigest(run.Trace)
+	if err != nil {
+		return fmt.Errorf("coverage run %q trace cannot be persisted: %w", run.ID, err)
+	}
 	ledger.runs = append(ledger.runs, RunReference{
 		ID: run.ID, Scenario: run.Scenario, Artifact: run.Artifact,
 		Targets: append([]string(nil), run.Targets...), TraceDigest: traceDigest,

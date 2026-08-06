@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "id": "etcdraft-63903dd-readindex-v1",
+  "profile_id": "raft-campaign/raft-three-node-cft-v1",
+  "profile_digest": "09e9e507c84234c15cebf942d5d43aa08511cc0d6a48d7c3dc36aa3399dc14b6",
+  "max_total_runs": 1,
+  "max_total_decisions": 1,
+  "plans": [
+    {
+      "id": "delayed-readindex-response",
+      "targets": [
+        "boundary.election-rounds.2",
+        "boundary.partitions.1",
+        "boundary.proposals.1",
+        "property.agreement-multiple-indexes"
+      ],
+      "prepare": [
+        {"op": "inject", "kind": "campaign", "target": "n1"},
+        {"op": "drain", "count": 200},
+
+        {"op": "inject", "kind": "query", "target": "n1", "payload": {"operation": "linearizable-read", "request_id": "A"}},
+        {"op": "execute", "match": {"kind": "query", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n1"}},
+
+        {"op": "execute", "match": {"kind": "message", "source": "n1", "target": "n2", "type_hint": "MsgHeartbeat"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n2"}},
+        {"op": "capture_message", "ref": "old-a-n2", "match": {"kind": "message", "source": "n2", "target": "n1", "type_hint": "MsgHeartbeatResp"}},
+
+        {"op": "execute", "match": {"kind": "message", "source": "n1", "target": "n3", "type_hint": "MsgHeartbeat"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n3"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n3"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n3"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n3"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n3"}},
+        {"op": "capture_message", "ref": "old-a-n3", "match": {"kind": "message", "source": "n3", "target": "n1", "type_hint": "MsgHeartbeatResp"}},
+
+        {"op": "inject", "kind": "query", "target": "n1", "payload": {"operation": "linearizable-read", "request_id": "A"}},
+        {"op": "execute", "match": {"kind": "query", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "message", "source": "n1", "target": "n2", "type_hint": "MsgHeartbeat"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n2"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n2"}},
+        {"op": "capture_message", "ref": "confirm-a-n2", "match": {"kind": "message", "source": "n2", "target": "n1", "type_hint": "MsgHeartbeatResp"}},
+        {"op": "execute_ref", "ref": "confirm-a-n2"},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n1"}},
+
+        {"op": "partition", "groups": [["n1"], ["n2", "n3"]]},
+        {"op": "inject", "kind": "campaign", "target": "n2"},
+        {"op": "drain", "count": 200},
+        {"op": "inject", "kind": "propose", "target": "n2", "payload": {"value": "new-leader-entry"}},
+        {"op": "drain", "count": 200},
+
+        {"op": "inject", "kind": "query", "target": "n1", "payload": {"operation": "linearizable-read", "request_id": "B"}},
+        {"op": "execute", "match": {"kind": "query", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n1"}},
+
+        {"op": "inject", "kind": "query", "target": "n1", "payload": {"operation": "linearizable-read", "request_id": "A"}},
+        {"op": "execute", "match": {"kind": "query", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "emit", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute", "match": {"kind": "acknowledge", "target": "n1"}},
+        {"op": "heal"},
+        {"op": "execute_ref", "ref": "old-a-n2"},
+        {"op": "execute_optional", "match": {"kind": "persist", "target": "n1"}},
+        {"op": "execute_optional", "match": {"kind": "sync", "target": "n1"}},
+        {"op": "execute_optional", "match": {"kind": "apply", "target": "n1"}},
+        {"op": "execute_optional", "match": {"kind": "acknowledge", "target": "n1"}}
+      ],
+      "stimuli": [
+        {"kind": "query", "target": "n2", "payload": {"operation": "linearizable-read", "request_id": "measurement"}}
+      ],
+      "search": {
+        "strategy": "dfs",
+        "config": {
+          "max_runs": 1,
+          "budget_per_run": 1,
+          "decision_budget": 1,
+          "seed": 0,
+          "actions": {
+            "drop_messages": false,
+            "duplicate_messages": false,
+            "max_duplicates_per_run": 0
+          }
+        }
+      }
+    }
+  ]
+}

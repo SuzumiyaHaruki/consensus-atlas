@@ -19,12 +19,16 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/testplan"
 )
 
-const ReportVersion = 1
+const ReportVersion = 2
 
 type AdapterFactory func() (adapter.Adapter, error)
 
 type Options struct {
 	Artifact string
+	// Monitors are selected by the trusted CLI composition boundary, never by
+	// an Agent-authored Test Plan. Empty preserves the generic Agreement
+	// baseline for fixtures and callers without a protocol family.
+	Monitors []oracle.Monitor
 }
 
 type Progress struct {
@@ -35,17 +39,36 @@ type Progress struct {
 	Debt        int     `json:"actionable_debt"`
 }
 
+// PhaseCost separates repeated fresh-SUT/setup work from measurement work.
+// WorkUnits charges one unit for every fresh SUT attempt, every scenario step
+// (or Runtime event when a step drains several events), and every Explorer
+// measurement event. It is an implementation-neutral execution budget, not a
+// wall-clock or CPU-time estimate.
+type PhaseCost struct {
+	SetupAttempts      int `json:"setup_attempts"`
+	SetupSteps         int `json:"setup_steps"`
+	SetupRuntimeEvents int `json:"setup_runtime_events"`
+	MeasurementEvents  int `json:"measurement_events"`
+	WorkUnits          int `json:"work_units"`
+}
+
+type ExecutionCost struct {
+	Primary PhaseCost `json:"primary"`
+	Replay  PhaseCost `json:"replay"`
+}
+
 type RunReport struct {
-	ID               string            `json:"id"`
-	DeclaredTargets  []string          `json:"declared_targets"`
-	ActiveTargets    []string          `json:"active_targets,omitempty"`
-	ReplayStable     bool              `json:"replay_stable"`
-	ReplayError      string            `json:"replay_error,omitempty"`
-	AcceptedEvidence bool              `json:"accepted_evidence"`
-	NewlyCovered     []string          `json:"newly_covered,omitempty"`
-	After            Progress          `json:"after"`
-	Oracle           oracle.Result     `json:"oracle"`
-	Explorer         explore.RunResult `json:"explorer"`
+	ID                   string            `json:"id"`
+	DeclaredTargets      []string          `json:"declared_targets"`
+	ActiveTargets        []string          `json:"active_targets,omitempty"`
+	ReplayStable         bool              `json:"replay_stable"`
+	ReplayError          string            `json:"replay_error,omitempty"`
+	MonitorEvidenceError string            `json:"monitor_evidence_error,omitempty"`
+	AcceptedEvidence     bool              `json:"accepted_evidence"`
+	NewlyCovered         []string          `json:"newly_covered,omitempty"`
+	After                Progress          `json:"after"`
+	Oracle               oracle.Result     `json:"oracle"`
+	Explorer             explore.RunResult `json:"explorer"`
 }
 
 type PlanReport struct {
@@ -62,6 +85,7 @@ type PlanReport struct {
 	ChargedDecisions int                   `json:"charged_decisions"`
 	BudgetReached    bool                  `json:"budget_reached"`
 	StopReason       string                `json:"stop_reason,omitempty"`
+	Cost             ExecutionCost         `json:"execution_cost"`
 	SetupTrace       []core.TraceRecord    `json:"setup_trace,omitempty"`
 	Runs             []RunReport           `json:"runs,omitempty"`
 }
@@ -79,6 +103,7 @@ type Report struct {
 	Final            Progress              `json:"final"`
 	ChargedRuns      int                   `json:"charged_runs"`
 	ChargedDecisions int                   `json:"charged_decisions"`
+	Cost             ExecutionCost         `json:"execution_cost"`
 	Plans            []PlanReport          `json:"plans"`
 	Ledger           coverage.LedgerReport `json:"coverage_ledger"`
 	Debt             []coverage.Debt       `json:"coverage_debt"`
@@ -95,12 +120,14 @@ type Session struct {
 	manifest         driver.Manifest
 	newAdapter       AdapterFactory
 	options          Options
+	monitors         []oracle.Monitor
 	ledger           *coverage.Ledger
 	initial          Progress
 	plans            []PlanReport
 	planIDs          map[string]bool
 	chargedRuns      int
 	chargedDecisions int
+	cost             ExecutionCost
 }
 
 func NewSession(
@@ -126,10 +153,14 @@ func NewSession(
 	if err != nil {
 		return nil, fmt.Errorf("create coverage ledger: %w", err)
 	}
+	monitors, err := campaignMonitors(options.Monitors)
+	if err != nil {
+		return nil, err
+	}
 	session := &Session{
 		id: id, digest: digest, profile: profile, profileDigest: profileDigest,
 		manifest: manifest, newAdapter: newAdapter, options: options, ledger: ledger,
-		planIDs: make(map[string]bool),
+		monitors: monitors, planIDs: make(map[string]bool),
 	}
 	session.initial = progress(ledger)
 	return session, nil
@@ -173,6 +204,9 @@ func (session *Session) ExecutePlan(ctx context.Context, proposed testplan.Plan)
 	if session.planIDs[proposed.ID] {
 		return PlanReport{}, fmt.Errorf("campaign plan id %q was already executed", proposed.ID)
 	}
+	if err := testplan.ValidateInputCapabilities(proposed, session.manifest); err != nil {
+		return PlanReport{}, fmt.Errorf("validate plan %s against driver inputs: %w", proposed.ID, err)
+	}
 	concrete, err := testplan.Concretize(session.profile, proposed)
 	if err != nil {
 		return PlanReport{}, fmt.Errorf("concretize plan %s: %w", proposed.ID, err)
@@ -194,21 +228,11 @@ func (session *Session) ExecutePlan(ctx context.Context, proposed testplan.Plan)
 	if err != nil {
 		return PlanReport{}, err
 	}
-	factory := func(factoryCtx context.Context) (*engine.Engine, error) {
-		protocolAdapter, err := session.newAdapter()
-		if err != nil {
-			return nil, err
-		}
-		execution := engine.New(protocolAdapter)
-		if err := scenario.Run(factoryCtx, execution, concrete.Setup); err != nil {
-			return nil, fmt.Errorf("plan %s setup: %w", proposed.ID, err)
-		}
-		if err := execution.CheckConformance(); err != nil {
-			return nil, fmt.Errorf("plan %s setup conformance: %w", proposed.ID, err)
-		}
-		return execution, nil
-	}
-	explored, err := searcher.Explore(ctx, factory, concrete.Search.Config)
+	var primaryCost, replayCost PhaseCost
+	primaryFactory := session.engineFactory(proposed.ID, concrete.Setup, &primaryCost)
+	replayFactory := session.engineFactory(proposed.ID, concrete.Setup, &replayCost)
+	explored, err := searcher.Explore(ctx, primaryFactory, concrete.Search.Config)
+	planReport.Cost.Primary = primaryCost
 	if err != nil {
 		if ctx.Err() != nil {
 			return PlanReport{}, ctx.Err()
@@ -223,6 +247,9 @@ func (session *Session) ExecutePlan(ctx context.Context, proposed testplan.Plan)
 	}
 	planReport.TargetDecisions = explored.TargetDecisionBudget
 	planReport.ChargedDecisions = explored.ChargedDecisions
+	primaryCost.MeasurementEvents += explored.ChargedDecisions
+	primaryCost.WorkUnits += explored.ChargedDecisions
+	planReport.Cost.Primary = primaryCost
 	planReport.BudgetReached = explored.BudgetReached
 	planReport.StopReason = explored.StopReason
 	for _, current := range explored.Runs {
@@ -232,34 +259,92 @@ func (session *Session) ExecutePlan(ctx context.Context, proposed testplan.Plan)
 		runID := fmt.Sprintf("%s/%s/run-%d", session.id, proposed.ID, current.Run)
 		replayStable := true
 		replayError := ""
-		if _, replayErr := explore.ReplayRun(ctx, factory, concrete.Search.Config.Actions, current); replayErr != nil {
+		replayed, replayErr := explore.ReplayRun(ctx, replayFactory, concrete.Search.Config.Actions, current)
+		replayCost.MeasurementEvents += len(replayed.Decisions)
+		replayCost.WorkUnits += len(replayed.Decisions)
+		if replayErr != nil {
 			replayStable = false
 			replayError = replayErr.Error()
 		}
-		checked := oracle.Check(current.FullTrace, oracle.TraceIntegrity{}, oracle.Agreement{})
+		monitorEvidenceErr := oracle.ValidateEvidence(current.FullTrace, session.monitors...)
+		checked := oracle.Check(current.FullTrace, append([]oracle.Monitor{oracle.TraceIntegrity{}}, session.monitors...)...)
 		active = activeTargets(session.ledger.Debts(), proposed.Targets)
 		before := coveredSet(session.ledger.Report())
-		accepted := replayStable && current.Conform && current.ExecutionError == ""
+		accepted := replayStable && current.Conform && current.ExecutionError == "" && monitorEvidenceErr == nil
 		if err := session.ledger.AddRun(session.profile, coverage.RunEvidence{
 			ID: runID, Scenario: concrete.Setup.Name, Artifact: session.options.Artifact,
 			Targets: active, Trace: current.FullTrace, Oracle: checked,
-			ReplayStable: replayStable, Conformant: current.Conform && current.ExecutionError == "",
+			ReplayStable: replayStable, Conformant: current.Conform && current.ExecutionError == "" && monitorEvidenceErr == nil,
 			Manifest: session.manifest,
 		}); err != nil {
 			return PlanReport{}, fmt.Errorf("record plan %s run %d: %w", proposed.ID, current.Run, err)
 		}
 		planReport.Runs = append(planReport.Runs, RunReport{
 			ID: runID, DeclaredTargets: append([]string(nil), proposed.Targets...), ActiveTargets: active,
-			ReplayStable: replayStable, ReplayError: replayError, AcceptedEvidence: accepted,
+			ReplayStable: replayStable, ReplayError: replayError,
+			MonitorEvidenceError: oracle.EvidenceError(monitorEvidenceErr), AcceptedEvidence: accepted,
 			NewlyCovered: newlyCovered(before, session.ledger.Report()), After: progress(session.ledger), Oracle: checked,
 			Explorer: current,
 		})
 		session.chargedRuns++
 		session.chargedDecisions += len(current.Decisions)
 	}
+	planReport.Cost.Replay = replayCost
 	planReport.After = progress(session.ledger)
 	session.appendPlan(planReport)
 	return clonePlanReport(planReport), nil
+}
+
+func campaignMonitors(configured []oracle.Monitor) ([]oracle.Monitor, error) {
+	if len(configured) == 0 {
+		return []oracle.Monitor{oracle.Agreement{}}, nil
+	}
+	seen := make(map[string]bool, len(configured))
+	result := make([]oracle.Monitor, 0, len(configured))
+	for _, monitor := range configured {
+		if monitor == nil || monitor.Name() == "" {
+			return nil, errors.New("campaign monitor names must be non-empty")
+		}
+		if monitor.Name() == (oracle.TraceIntegrity{}).Name() {
+			return nil, errors.New("trace-integrity is always enforced by the Campaign runtime")
+		}
+		if seen[monitor.Name()] {
+			return nil, fmt.Errorf("duplicate campaign monitor %q", monitor.Name())
+		}
+		seen[monitor.Name()] = true
+		result = append(result, monitor)
+	}
+	return result, nil
+}
+
+func (session *Session) engineFactory(
+	planID string,
+	setup scenario.Spec,
+	cost *PhaseCost,
+) explore.Factory {
+	return func(factoryCtx context.Context) (*engine.Engine, error) {
+		cost.SetupAttempts++
+		cost.WorkUnits++
+		protocolAdapter, err := session.newAdapter()
+		if err != nil {
+			return nil, err
+		}
+		execution, err := engine.New(protocolAdapter)
+		if err != nil {
+			return nil, fmt.Errorf("plan %s initialize engine: %w", planID, err)
+		}
+		setupCost, err := scenario.RunWithCost(factoryCtx, execution, setup)
+		cost.SetupSteps += setupCost.Steps
+		cost.SetupRuntimeEvents += setupCost.RuntimeEvents
+		cost.WorkUnits += setupCost.WorkUnits
+		if err != nil {
+			return nil, fmt.Errorf("plan %s setup: %w", planID, err)
+		}
+		if err := execution.CheckConformance(); err != nil {
+			return nil, fmt.Errorf("plan %s setup conformance: %w", planID, err)
+		}
+		return execution, nil
+	}
 }
 
 func (session *Session) Debts() []coverage.Debt {
@@ -279,6 +364,7 @@ func (session *Session) Report() Report {
 		Protocol: session.profile.Protocol, PSSID: session.profile.PSSID,
 		Manifest: session.manifest, Initial: session.initial, Final: progress(session.ledger),
 		ChargedRuns: session.chargedRuns, ChargedDecisions: session.chargedDecisions,
+		Cost:  session.cost,
 		Plans: session.plans, Ledger: session.ledger.Report(), Debt: session.ledger.Debts(),
 	}
 	encoded, err := json.Marshal(report)
@@ -293,7 +379,21 @@ func (session *Session) Report() Report {
 }
 
 func (session *Session) appendPlan(report PlanReport) {
+	addExecutionCost(&session.cost, report.Cost)
 	session.plans = append(session.plans, clonePlanReport(report))
+}
+
+func addExecutionCost(total *ExecutionCost, delta ExecutionCost) {
+	addPhaseCost(&total.Primary, delta.Primary)
+	addPhaseCost(&total.Replay, delta.Replay)
+}
+
+func addPhaseCost(total *PhaseCost, delta PhaseCost) {
+	total.SetupAttempts += delta.SetupAttempts
+	total.SetupSteps += delta.SetupSteps
+	total.SetupRuntimeEvents += delta.SetupRuntimeEvents
+	total.MeasurementEvents += delta.MeasurementEvents
+	total.WorkUnits += delta.WorkUnits
 }
 
 func clonePlanReport(report PlanReport) PlanReport {

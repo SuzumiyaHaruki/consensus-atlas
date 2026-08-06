@@ -22,6 +22,17 @@ type Manifest struct {
 	SUT          string       `json:"sut"`
 	SUTVersion   string       `json:"sut_version"`
 	Capabilities []Capability `json:"capabilities"`
+	// Inputs is the complete trusted vocabulary for EventProtocolInput. The
+	// generic Runtime stores the operation ID but never interprets it.
+	Inputs []InputCapability `json:"inputs,omitempty"`
+}
+
+// InputCapability declares one Driver-controlled protocol input. PayloadMode
+// is one of required, optional, or forbidden.
+type InputCapability struct {
+	ID          string         `json:"id"`
+	Kind        core.EventKind `json:"kind"`
+	PayloadMode string         `json:"payload_mode"`
 }
 
 // Operation is protocol-neutral host work frozen from one implementation
@@ -155,4 +166,11 @@ type ProtocolDriver interface {
 	Restart(context.Context, string) ([]core.Observation, error)
 	Snapshot() any
 	CheckConformance() error
+}
+
+// TimerSource is optional. Drivers that implement it expose a complete,
+// deterministic declaration of live native timers for a given logical time.
+// They must not advance time, invoke the protocol, or release messages here.
+type TimerSource interface {
+	Timers(now uint64) ([]core.Timer, error)
 }

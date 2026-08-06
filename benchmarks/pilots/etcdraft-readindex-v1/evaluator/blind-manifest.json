@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "benchmark_id": "etcdraft-readindex-63903dd-v1",
+  "benchmark_digest": "22443821b000099a9446b7c6df7b339e76b7751171b189a35bf6b9736a5c7fbf",
+  "protocol": "etcd-raft-v3.6",
+  "profile_id": "raft-campaign/raft-three-node-cft-v1",
+  "profile_digest": "09e9e507c84234c15cebf942d5d43aa08511cc0d6a48d7c3dc36aa3399dc14b6",
+  "budget": {
+    "max_runs": 1,
+    "max_decisions": 1,
+    "max_primary_work_units": 218
+  },
+  "trials": [
+    {
+      "trial_id": "trial-candidate-v3.6.0-v2"
+    },
+    {
+      "trial_id": "trial-fixed-63903dd-v3"
+    }
+  ]
+}

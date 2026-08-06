@@ -14,6 +14,7 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/coverage"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/driver"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/explore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/scenario"
 )
@@ -33,14 +34,20 @@ const (
 )
 
 const (
-	OpInject    = "inject"
-	OpExecute   = "execute"
-	OpDrop      = "drop"
-	OpDuplicate = "duplicate"
-	OpPartition = "partition"
-	OpHeal      = "heal"
-	OpDrain     = "drain"
-	OpAdvance   = "advance"
+	OpInject          = "inject"
+	OpExecute         = "execute"
+	OpExecuteOptional = "execute_optional"
+	OpDrop            = "drop"
+	OpDuplicate       = "duplicate"
+	OpPartition       = "partition"
+	OpHeal            = "heal"
+	OpDrain           = "drain"
+	OpAdvance         = "advance"
+	// OpCaptureMessage resolves one currently Runtime-owned message through a
+	// stable selector and stores its opaque execution-local reference. Plans
+	// cannot provide an event ID or payload for the captured message.
+	OpCaptureMessage = "capture_message"
+	OpExecuteRef     = "execute_ref"
 )
 
 var safeID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -69,20 +76,23 @@ type Search struct {
 }
 
 type Input struct {
-	Kind    core.EventKind  `json:"kind"`
-	Target  string          `json:"target"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	Kind      core.EventKind  `json:"kind"`
+	Operation string          `json:"operation,omitempty"`
+	Target    string          `json:"target"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
 }
 
 type Action struct {
-	Op      string             `json:"op"`
-	Kind    core.EventKind     `json:"kind,omitempty"`
-	Target  string             `json:"target,omitempty"`
-	Payload json.RawMessage    `json:"payload,omitempty"`
-	Match   *scenario.Selector `json:"match,omitempty"`
-	Groups  [][]string         `json:"groups,omitempty"`
-	Count   int                `json:"count,omitempty"`
-	Ticks   uint64             `json:"ticks,omitempty"`
+	Op        string             `json:"op"`
+	Kind      core.EventKind     `json:"kind,omitempty"`
+	Operation string             `json:"operation,omitempty"`
+	Target    string             `json:"target,omitempty"`
+	Payload   json.RawMessage    `json:"payload,omitempty"`
+	Match     *scenario.Selector `json:"match,omitempty"`
+	Groups    [][]string         `json:"groups,omitempty"`
+	Count     int                `json:"count,omitempty"`
+	Ticks     uint64             `json:"ticks,omitempty"`
+	Ref       string             `json:"ref,omitempty"`
 }
 
 type ConcretePlan struct {
@@ -171,9 +181,22 @@ func (plan Plan) validate(obligations map[string]coverage.Obligation, nodes map[
 	if len(plan.Prepare) > MaxPrepareActions {
 		return fmt.Errorf("plan has more than %d preparation actions", MaxPrepareActions)
 	}
+	refs := make(map[string]bool)
 	for index, action := range plan.Prepare {
 		if err := action.validate(nodes, nodeOrder); err != nil {
 			return fmt.Errorf("prepare[%d]: %w", index, err)
+		}
+		switch action.Op {
+		case OpCaptureMessage:
+			if refs[action.Ref] {
+				return fmt.Errorf("prepare[%d]: duplicate captured reference %q", index, action.Ref)
+			}
+			refs[action.Ref] = true
+		case OpExecuteRef:
+			if !refs[action.Ref] {
+				return fmt.Errorf("prepare[%d]: reference %q was not captured first", index, action.Ref)
+			}
+			delete(refs, action.Ref)
 		}
 	}
 	if len(plan.Stimuli) == 0 || len(plan.Stimuli) > MaxStimuliPerPlan {
@@ -210,10 +233,16 @@ func (input Input) validate(nodes map[string]bool) error {
 	if len(input.Payload) > MaxPayloadBytes || (len(input.Payload) > 0 && !json.Valid(input.Payload)) {
 		return errors.New("input payload is invalid or too large")
 	}
-	if input.Kind == core.EventPropose && len(input.Payload) == 0 {
-		return errors.New("proposal input requires a bounded JSON payload")
+	if input.Kind == core.EventProtocolInput && !safeID.MatchString(input.Operation) {
+		return errors.New("protocol-input requires a safe operation ID")
 	}
-	if input.Kind != core.EventPropose && len(input.Payload) != 0 {
+	if input.Kind != core.EventProtocolInput && input.Operation != "" {
+		return fmt.Errorf("input kind %q cannot declare a protocol operation", input.Kind)
+	}
+	if (input.Kind == core.EventPropose || input.Kind == core.EventQuery) && len(input.Payload) == 0 {
+		return fmt.Errorf("%s input requires a bounded JSON payload", input.Kind)
+	}
+	if input.Kind != core.EventProtocolInput && input.Kind != core.EventPropose && input.Kind != core.EventQuery && len(input.Payload) != 0 {
 		return fmt.Errorf("input kind %q cannot carry an Agent-defined payload", input.Kind)
 	}
 	return nil
@@ -222,43 +251,73 @@ func (input Input) validate(nodes map[string]bool) error {
 func (action Action) validate(nodes map[string]bool, nodeOrder []string) error {
 	switch action.Op {
 	case OpInject:
-		if action.Match != nil || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 {
+		if action.Match != nil || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 || action.Ref != "" {
 			return errors.New("inject contains fields owned by another operation")
 		}
-		return (Input{Kind: action.Kind, Target: action.Target, Payload: action.Payload}).validate(nodes)
-	case OpExecute, OpDrop, OpDuplicate:
-		if action.Kind != "" || action.Target != "" || len(action.Payload) != 0 || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 {
+		return (Input{Kind: action.Kind, Operation: action.Operation, Target: action.Target, Payload: action.Payload}).validate(nodes)
+	case OpExecute, OpExecuteOptional, OpDrop, OpDuplicate:
+		if action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 || action.Ref != "" {
 			return fmt.Errorf("%s contains fields owned by another operation", action.Op)
 		}
 		if err := validateSelector(action.Match, nodes); err != nil {
 			return err
 		}
+		if action.Op == OpExecuteOptional && !optionalHostOperation(action.Match.Kind) {
+			return errors.New("execute_optional may select only a host output operation")
+		}
 		if (action.Op == OpDrop || action.Op == OpDuplicate) && action.Match.Kind != core.EventMessage {
 			return fmt.Errorf("%s may select only a message", action.Op)
 		}
 		return nil
+	case OpCaptureMessage:
+		if action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 ||
+			action.Ref == "" || !safeID.MatchString(action.Ref) {
+			return errors.New("capture_message requires only a safe non-empty ref and message selector")
+		}
+		if err := validateSelector(action.Match, nodes); err != nil {
+			return err
+		}
+		if action.Match.Kind != core.EventMessage {
+			return errors.New("capture_message may select only a Runtime-owned message")
+		}
+		return nil
+	case OpExecuteRef:
+		if action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 ||
+			action.Ref == "" || !safeID.MatchString(action.Ref) {
+			return errors.New("execute_ref requires only a previously captured safe ref")
+		}
+		return nil
 	case OpPartition:
-		if action.Kind != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || action.Count != 0 || action.Ticks != 0 {
+		if action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || action.Count != 0 || action.Ticks != 0 || action.Ref != "" {
 			return errors.New("partition contains fields owned by another operation")
 		}
 		return validatePartition(action.Groups, nodeOrder)
 	case OpHeal:
-		if action.Kind != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 {
+		if action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Count != 0 || action.Ticks != 0 || action.Ref != "" {
 			return errors.New("heal cannot contain arguments")
 		}
 		return nil
 	case OpDrain:
-		if action.Count < 1 || action.Count > 1000 || action.Kind != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Ticks != 0 {
+		if action.Count < 1 || action.Count > 1000 || action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Ticks != 0 || action.Ref != "" {
 			return errors.New("drain requires only a count between 1 and 1000")
 		}
 		return nil
 	case OpAdvance:
-		if action.Ticks < 1 || action.Ticks > 1_000_000 || action.Kind != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Count != 0 {
+		if action.Ticks < 1 || action.Ticks > 1_000_000 || action.Kind != "" || action.Operation != "" || action.Target != "" || len(action.Payload) != 0 || action.Match != nil || len(action.Groups) != 0 || action.Count != 0 || action.Ref != "" {
 			return errors.New("advance requires only ticks between 1 and 1000000")
 		}
 		return nil
 	default:
 		return fmt.Errorf("preparation operation %q is not allowed", action.Op)
+	}
+}
+
+func optionalHostOperation(kind core.EventKind) bool {
+	switch kind {
+	case core.EventPersist, core.EventSync, core.EventEmit, core.EventApply, core.EventAcknowledge:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -268,6 +327,9 @@ func validateSelector(selector *scenario.Selector, nodes map[string]bool) error 
 	}
 	if !knownEventKind(selector.Kind) {
 		return fmt.Errorf("selector event kind %q is unknown", selector.Kind)
+	}
+	if selector.Operation != "" && (selector.Kind != core.EventProtocolInput || !safeID.MatchString(selector.Operation)) {
+		return errors.New("selector operation requires protocol-input and a safe operation ID")
 	}
 	if selector.ID != "" || selector.Group != "" {
 		return errors.New("plans cannot select transient event IDs or host batch groups")
@@ -286,10 +348,10 @@ func validateSelector(selector *scenario.Selector, nodes map[string]bool) error 
 
 func knownEventKind(kind core.EventKind) bool {
 	switch kind {
-	case core.EventStart, core.EventCampaign, core.EventPropose, core.EventMessage,
+	case core.EventStart, core.EventProtocolInput, core.EventCampaign, core.EventPropose, core.EventQuery, core.EventMessage,
 		core.EventTimeout, core.EventPersist, core.EventSync, core.EventEmit,
 		core.EventApply, core.EventAcknowledge, core.EventCrash, core.EventRestart,
-		core.EventDuplicate, core.EventPartition, core.EventHeal:
+		core.EventDuplicate, core.EventPartition, core.EventHeal, core.EventClockAdvance:
 		return true
 	default:
 		return false
@@ -324,7 +386,7 @@ func validatePartition(groups [][]string, nodeOrder []string) error {
 
 func allowedInputKind(kind core.EventKind) bool {
 	switch kind {
-	case core.EventCampaign, core.EventPropose, core.EventTimeout, core.EventCrash, core.EventRestart:
+	case core.EventProtocolInput, core.EventCampaign, core.EventPropose, core.EventQuery, core.EventTimeout, core.EventCrash, core.EventRestart:
 		return true
 	default:
 		return false
@@ -350,4 +412,77 @@ func SupportedTargetIDs(profile coverage.Profile) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// ValidateInputCapabilities adds the trusted Driver vocabulary check to the
+// profile-only schema validation. Keeping it separate preserves replay of
+// historical plan files whose old event kinds predate protocol-input.
+func ValidateInputCapabilities(plan Plan, manifest driver.Manifest) error {
+	for index, action := range plan.Prepare {
+		if action.Op != OpInject {
+			continue
+		}
+		if err := validateInputCapability(Input{Kind: action.Kind, Operation: action.Operation, Target: action.Target, Payload: action.Payload}, manifest); err != nil {
+			return fmt.Errorf("prepare[%d]: %w", index, err)
+		}
+	}
+	for index, input := range plan.Stimuli {
+		if err := validateInputCapability(input, manifest); err != nil {
+			return fmt.Errorf("stimuli[%d]: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func validateInputCapability(input Input, manifest driver.Manifest) error {
+	// A manifest without Inputs predates the extensible input boundary. It is
+	// accepted only for historical fixtures and replay; all newly onboarded
+	// Drivers must publish a non-empty vocabulary.
+	if len(manifest.Inputs) == 0 {
+		return nil
+	}
+	wantedKind, wantedID := input.Kind, input.Operation
+	if input.Kind != core.EventProtocolInput {
+		// Existing v1 trace and plan files use named inputs. They resolve only
+		// through a matching modern protocol-input declaration, never through a
+		// Raft check in the generic validator.
+		if legacy := legacyProtocolOperation(input.Kind); legacy != "" {
+			wantedKind, wantedID = core.EventProtocolInput, legacy
+		} else {
+			wantedID = string(input.Kind)
+		}
+	}
+	for _, declared := range manifest.Inputs {
+		if declared.Kind != wantedKind || declared.ID != wantedID {
+			continue
+		}
+		switch declared.PayloadMode {
+		case "required":
+			if len(input.Payload) == 0 {
+				return fmt.Errorf("input %q requires a payload", declared.ID)
+			}
+		case "optional":
+		case "forbidden":
+			if len(input.Payload) != 0 {
+				return fmt.Errorf("input %q forbids a payload", declared.ID)
+			}
+		default:
+			return fmt.Errorf("driver declares input %q with invalid payload mode %q", declared.ID, declared.PayloadMode)
+		}
+		return nil
+	}
+	return fmt.Errorf("input kind %q operation %q is not declared by the Driver manifest", input.Kind, input.Operation)
+}
+
+func legacyProtocolOperation(kind core.EventKind) string {
+	switch kind {
+	case core.EventCampaign:
+		return "campaign"
+	case core.EventPropose:
+		return "propose"
+	case core.EventQuery:
+		return "query"
+	default:
+		return ""
+	}
 }

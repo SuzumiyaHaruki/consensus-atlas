@@ -380,7 +380,10 @@ func execute(ctx context.Context, profile coverage.Profile, spec scenario.Spec, 
 		return execution{}, err
 	}
 	conformant := runtimeAdapter.CheckConformance() == nil
-	e := engine.New(runtimeAdapter)
+	e, err := engine.New(runtimeAdapter)
+	if err != nil {
+		return execution{}, err
+	}
 	if err := scenario.Run(ctx, e, spec); err != nil {
 		return execution{trace: e.Trace(), conformant: runtimeAdapter.CheckConformance() == nil}, err
 	}

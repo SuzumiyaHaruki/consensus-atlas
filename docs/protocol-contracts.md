@@ -92,15 +92,3 @@ make run-raft-llm
 每轮报告记录 provider/model、endpoint、temperature、thinking mode、token 上限与实际用量、prompt/request/response digest、响应 ID/fingerprint 和耗时。`make test` 只运行 mock/offline 测试，不会自动产生 API 调用与费用。
 
 API 实现依据 [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion) 和 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/)。
-
-## etcd/raft Contract-only 实验
-
-```bash
-make contract-only-etcdraft
-```
-
-该实验不向模型提供 `drivers/etcdraft`、`bindings`、`onboarding/etcdraft-binding-v1.json` 或现有 `etcdraft-*` 场景。输入是 Contract、Raft Family PSS、通用接口与官方 v3.6.0 源码上下文。每轮记录 Contract/API/target-source/proposal/prompt/request/response digest，生成内容只能进入新建的 artifact 工作区。
-
-实验首先暴露了 Contract v1 缺少初始成员关系：仅有 `nodes` 不能确定 fresh cluster 是否以及如何 bootstrap。Schema 现已加入 `initial_membership.voters/learners`，etcd/raft 明确以 n1/n2/n3 为初始 voters。
-
-在强化 PSS 和可信 evidence 后，代表性 live run `etcdraft-contract-only-v5` 的第 2 轮通过编译并执行了 bootstrap persist/sync/release，但场景未先建立 leader 就 propose，触发 `raft proposal dropped`。第 3–7 轮生成文件不变，因此最终状态是 `exhausted` 而非伪造的 validated。下一版将 Driver synthesis/API fixtures 与 witness synthesis 分成两个 Coordinator 阶段。

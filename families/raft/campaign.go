@@ -215,6 +215,7 @@ func CompileCampaign(base coverage.Profile, manifest driver.Manifest, spec Campa
 		ID:                   "raft-campaign/" + spec.ID,
 		Protocol:             base.Protocol,
 		PSSID:                spec.PSSID,
+		RuntimeProfile:       base.RuntimeProfile,
 		Nodes:                append([]string(nil), base.Nodes...),
 		RequiredCapabilities: required,
 		Coverage: coverage.CoverageDefinition{

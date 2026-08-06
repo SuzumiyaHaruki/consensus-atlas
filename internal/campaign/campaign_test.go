@@ -2,9 +2,6 @@ package campaign_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/adapter"
@@ -52,6 +49,14 @@ func TestCampaignReplaysRunsUpdatesLedgerAndSkipsSatisfiedPlan(t *testing.T) {
 	if report.ChargedRuns != 1 || report.ChargedDecisions != 1 || len(report.Ledger.Runs) != 1 {
 		t.Fatalf("campaign charges are wrong: runs=%d decisions=%d ledger=%d", report.ChargedRuns, report.ChargedDecisions, len(report.Ledger.Runs))
 	}
+	if report.Version != campaign.ReportVersion || report.Cost.Primary.SetupAttempts != 1 ||
+		report.Cost.Primary.MeasurementEvents != 1 || report.Cost.Primary.WorkUnits <= report.ChargedDecisions {
+		t.Fatalf("primary execution cost did not include repeated setup work: %+v", report.Cost.Primary)
+	}
+	if report.Cost.Replay.SetupAttempts != 1 || report.Cost.Replay.MeasurementEvents != 1 ||
+		report.Cost.Replay.WorkUnits <= 1 {
+		t.Fatalf("replay cost was not reported separately: %+v", report.Cost.Replay)
+	}
 	first := report.Plans[0].Runs[0]
 	if !first.ReplayStable || !first.AcceptedEvidence || len(first.NewlyCovered) != 1 || first.NewlyCovered[0] != "transition.campaign" {
 		t.Fatalf("first run lacks replayed coverage evidence: %+v", first)
@@ -65,9 +70,11 @@ func TestCampaignReplaysRunsUpdatesLedgerAndSkipsSatisfiedPlan(t *testing.T) {
 	}
 	reconstructed := append([]core.TraceRecord(nil), report.Plans[0].SetupTrace...)
 	reconstructed = append(reconstructed, first.Explorer.Trace...)
-	encoded, _ := json.Marshal(reconstructed)
-	sum := sha256.Sum256(encoded)
-	if got := hex.EncodeToString(sum[:]); got != entry.CoveredBy.TraceDigest {
+	got, err := core.CanonicalTraceDigest(reconstructed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != entry.CoveredBy.TraceDigest {
 		t.Fatalf("stored setup + measurement traces digest to %s, Ledger references %s", got, entry.CoveredBy.TraceDigest)
 	}
 }
@@ -100,6 +107,10 @@ func TestCampaignRecordsRuntimePlanFailureWithoutChangingLedger(t *testing.T) {
 	if report.Plans[0].ExecutionError == "" || report.Final.Covered != 0 || report.Final.Debt != 1 ||
 		report.ChargedRuns != 0 || len(report.Ledger.Runs) != 0 {
 		t.Fatalf("runtime-invalid proposal affected trusted coverage state: %+v", report)
+	}
+	if report.Cost.Primary.SetupAttempts != 1 || report.Cost.Primary.SetupSteps == 0 ||
+		report.Cost.Primary.WorkUnits == 0 || report.Cost.Primary.MeasurementEvents != 0 {
+		t.Fatalf("failed setup was treated as free work: %+v", report.Cost.Primary)
 	}
 }
 

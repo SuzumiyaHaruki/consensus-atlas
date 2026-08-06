@@ -24,6 +24,11 @@ type scheduledEvent struct {
 	seq   uint64
 }
 
+type timerBinding struct {
+	timer   core.Timer
+	eventID string
+}
+
 type Engine struct {
 	adapter   adapter.Adapter
 	clock     uint64
@@ -35,21 +40,56 @@ type Engine struct {
 	trace     []core.TraceRecord
 	linkSeq   map[string]uint64
 	partition map[string]int
+	timers    map[string]timerBinding
 }
 
-func New(a adapter.Adapter) *Engine {
-	return &Engine{
+func New(a adapter.Adapter) (*Engine, error) {
+	if a == nil {
+		return nil, errors.New("engine adapter is required")
+	}
+	e := &Engine{
 		adapter:   a,
 		pending:   make(map[string]scheduledEvent),
 		succeeded: make(map[string]bool),
 		linkSeq:   make(map[string]uint64),
 		partition: make(map[string]int),
+		timers:    make(map[string]timerBinding),
 	}
+	if _, err := e.syncTimers(); err != nil {
+		return nil, fmt.Errorf("initialize virtual timers: %w", err)
+	}
+	return e, nil
 }
 
 func (e *Engine) Clock() uint64 { return e.clock }
 
-func (e *Engine) Advance(ticks uint64) { e.clock += ticks }
+// Advance moves the Engine's logical clock and records the boundary in the
+// trace. It only makes due timers eligible for the normal scheduler; it never
+// invokes them by itself.
+func (e *Engine) Advance(ticks uint64) error {
+	if ^uint64(0)-e.clock < ticks {
+		return errors.New("logical clock overflow")
+	}
+	before := e.timeSnapshot()
+	from := e.clock
+	e.clock += ticks
+	timerObservations, err := e.syncTimers()
+	if err != nil {
+		e.clock = from
+		return fmt.Errorf("advance virtual time: %w", err)
+	}
+	observations := []core.Observation{{
+		Kind: "time", Label: "clock:advanced",
+		Evidence: map[string]string{
+			"from":  strconv.FormatUint(from, 10),
+			"to":    strconv.FormatUint(e.clock, 10),
+			"ticks": strconv.FormatUint(ticks, 10),
+		},
+	}}
+	observations = append(observations, timerObservations...)
+	e.recordControl(core.Event{Kind: core.EventClockAdvance}, observations, before, e.timeSnapshot())
+	return nil
+}
 
 func (e *Engine) Schedule(event core.Event) string {
 	e.nextID++
@@ -211,8 +251,16 @@ func (e *Engine) Execute(ctx context.Context, id string) (core.TraceRecord, erro
 	}
 
 	record.Cancelled = e.cancelGroups(result.CancelGroups)
-	e.trace[len(e.trace)-1] = record
 	e.scheduleEffects(item.event, result.Effects)
+	timerObservations, timerErr := e.syncTimers()
+	if timerErr != nil {
+		e.succeeded[id] = false
+		record.Outcome = "error: timer reconciliation: " + timerErr.Error()
+		e.trace[len(e.trace)-1] = record
+		return record, fmt.Errorf("event %s timer reconciliation: %w", id, timerErr)
+	}
+	record.Observations = append(record.Observations, timerObservations...)
+	e.trace[len(e.trace)-1] = record
 	return record, nil
 }
 
@@ -220,6 +268,9 @@ func (e *Engine) Drop(id string) (core.TraceRecord, error) {
 	item, ok := e.pending[id]
 	if !ok {
 		return core.TraceRecord{}, fmt.Errorf("%w: %s", ErrUnknownEvent, id)
+	}
+	if item.event.TimerID != "" {
+		return core.TraceRecord{}, fmt.Errorf("declared timer event %s cannot be dropped", id)
 	}
 	delete(e.pending, id)
 	e.succeeded[id] = false
@@ -258,6 +309,21 @@ func (e *Engine) Run(ctx context.Context, limit int) error {
 
 func (e *Engine) Trace() []core.TraceRecord {
 	return append([]core.TraceRecord(nil), e.trace...)
+}
+
+// Timers returns a detached, ID-sorted view of the Engine-owned timer queue.
+// It is evidence for replay and diagnostics, not a protocol control API.
+func (e *Engine) Timers() []core.Timer {
+	ids := make([]string, 0, len(e.timers))
+	for id := range e.timers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	result := make([]core.Timer, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, cloneTimer(e.timers[id].timer))
+	}
+	return result
 }
 
 // Snapshot exposes read-only evidence at an explicit measurement boundary.
@@ -319,6 +385,117 @@ func (e *Engine) scheduleEffects(parent core.Event, effects []core.Effect) {
 		}
 		item.event.Dependencies = deps
 		e.pending[id] = item
+	}
+}
+
+// syncTimers reconciles a complete, side-effect-free timer declaration with
+// Engine-owned pending events. It validates the entire next declaration before
+// mutating the queue, so an invalid declaration never leaves a partial update.
+func (e *Engine) syncTimers() ([]core.Observation, error) {
+	source, ok := e.adapter.(adapter.TimerSource)
+	if !ok {
+		return nil, nil
+	}
+	declared, err := source.Timers(e.clock)
+	if err != nil {
+		return nil, fmt.Errorf("timer source: %w", err)
+	}
+	nodes := make(map[string]bool, len(e.adapter.Nodes()))
+	for _, node := range e.adapter.Nodes() {
+		nodes[node] = true
+	}
+	wanted := make(map[string]core.Timer, len(declared))
+	for _, raw := range declared {
+		timer, err := raw.Normalize()
+		if err != nil {
+			return nil, err
+		}
+		if timer.Deadline < e.clock {
+			return nil, fmt.Errorf("timer %q deadline %d is before logical time %d", timer.ID, timer.Deadline, e.clock)
+		}
+		if !nodes[timer.Target] {
+			return nil, fmt.Errorf("timer %q targets unknown node %q", timer.ID, timer.Target)
+		}
+		if _, exists := wanted[timer.ID]; exists {
+			return nil, fmt.Errorf("duplicate timer id %q", timer.ID)
+		}
+		wanted[timer.ID] = timer
+	}
+
+	var removeIDs, replaceIDs, addIDs []string
+	for id, binding := range e.timers {
+		timer, exists := wanted[id]
+		if !exists {
+			removeIDs = append(removeIDs, id)
+			continue
+		}
+		if timersEqual(binding.timer, timer) {
+			if _, pending := e.pending[binding.eventID]; !pending {
+				return nil, fmt.Errorf("timer %q remained declared after timeout event %s was consumed", id, binding.eventID)
+			}
+			continue
+		}
+		replaceIDs = append(replaceIDs, id)
+	}
+	for id := range wanted {
+		if _, exists := e.timers[id]; !exists {
+			addIDs = append(addIDs, id)
+		}
+	}
+	sort.Strings(removeIDs)
+	sort.Strings(replaceIDs)
+	sort.Strings(addIDs)
+
+	observations := make([]core.Observation, 0, len(removeIDs)+len(replaceIDs)+len(addIDs))
+	for _, id := range removeIDs {
+		binding := e.timers[id]
+		_, pending := e.pending[binding.eventID]
+		if pending {
+			delete(e.pending, binding.eventID)
+			e.succeeded[binding.eventID] = false
+		}
+		delete(e.timers, id)
+		action := "completed"
+		if pending {
+			action = "cancelled"
+		}
+		observations = append(observations, timerObservation(action, binding.timer))
+	}
+	for _, id := range replaceIDs {
+		binding := e.timers[id]
+		if _, pending := e.pending[binding.eventID]; pending {
+			delete(e.pending, binding.eventID)
+			e.succeeded[binding.eventID] = false
+		}
+		timer := wanted[id]
+		e.timers[id] = timerBinding{timer: cloneTimer(timer), eventID: e.scheduleTimer(timer)}
+		observations = append(observations, timerObservation("rearmed", timer))
+	}
+	for _, id := range addIDs {
+		timer := wanted[id]
+		e.timers[id] = timerBinding{timer: cloneTimer(timer), eventID: e.scheduleTimer(timer)}
+		observations = append(observations, timerObservation("scheduled", timer))
+	}
+	return observations, nil
+}
+
+func (e *Engine) scheduleTimer(timer core.Timer) string {
+	return e.Schedule(core.Event{
+		Kind: core.EventTimeout, Target: timer.Target, At: timer.Deadline,
+		Payload: append([]byte(nil), timer.Payload...), TimerID: timer.ID,
+	})
+}
+
+func timersEqual(left, right core.Timer) bool {
+	return left.ID == right.ID && left.Target == right.Target &&
+		left.Deadline == right.Deadline && string(left.Payload) == string(right.Payload)
+}
+
+func timerObservation(action string, timer core.Timer) core.Observation {
+	return core.Observation{
+		Kind: "time", Label: "timer:" + action, Node: timer.Target,
+		Value:    strconv.FormatUint(timer.Deadline, 10),
+		Evidence: map[string]string{"id": timer.ID, "deadline": strconv.FormatUint(timer.Deadline, 10)},
 	}
 }
 
@@ -399,6 +576,18 @@ func (e *Engine) controlSnapshot() any {
 	}
 }
 
+// timeSnapshot is deliberately separate from controlSnapshot. Existing
+// transport controls retain their frozen snapshot shape; only an explicit
+// clock-advance record carries virtual-time queue evidence.
+func (e *Engine) timeSnapshot() any {
+	return map[string]any{
+		"logical_time": e.clock,
+		"system":       e.adapter.Snapshot(),
+		"network":      e.networkSnapshot(),
+		"timers":       e.Timers(),
+	}
+}
+
 func sortScheduled(items []scheduledEvent) {
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].event.At != items[j].event.At {
@@ -413,6 +602,11 @@ func cloneEvent(event core.Event) core.Event {
 	event.Payload = append([]byte(nil), event.Payload...)
 	event.Message = cloneMessage(event.Message)
 	return event
+}
+
+func cloneTimer(timer core.Timer) core.Timer {
+	timer.Payload = append([]byte(nil), timer.Payload...)
+	return timer
 }
 
 func cloneMessage(message *core.MessageEnvelope) *core.MessageEnvelope {

@@ -451,9 +451,10 @@ func uniqueNonEmpty(values []string) bool {
 
 func validEventKind(kind core.EventKind) bool {
 	switch kind {
-	case core.EventStart, core.EventCampaign, core.EventPropose, core.EventMessage, core.EventTimeout,
+	case core.EventStart, core.EventCampaign, core.EventPropose, core.EventQuery, core.EventMessage, core.EventTimeout,
 		core.EventPersist, core.EventSync, core.EventEmit, core.EventApply, core.EventAcknowledge,
-		core.EventCrash, core.EventRestart, core.EventDuplicate, core.EventPartition, core.EventHeal:
+		core.EventCrash, core.EventRestart, core.EventDuplicate, core.EventPartition, core.EventHeal,
+		core.EventClockAdvance:
 		return true
 	default:
 		return false

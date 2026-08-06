@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/sut-build-v2.json",
+  "title": "ConsensusAtlas controlled SUT build input v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "trial_id", "module", "package", "sut_build_identity", "command_allowlist", "output_path"],
+  "properties": {
+    "version": {"enum": [2, 3]},
+    "id": {"type": "string", "minLength": 1},
+    "trial_id": {"type": "string", "minLength": 1},
+    "module": {"$ref": "#/$defs/module"},
+    "module_digest": {"$ref": "#/$defs/digest"},
+    "source": {"$ref": "#/$defs/source"},
+    "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/multi_source"}},
+    "package": {"type": "string", "minLength": 1},
+    "sut_build_identity": {"type": "string", "minLength": 1},
+    "command_allowlist": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"enum": ["go-build", "go-list-module"]}},
+    "output_path": {"type": "string", "minLength": 1}
+  },
+  "oneOf": [
+    {
+      "properties": {"version": {"const": 2}},
+      "required": ["sources"],
+      "not": {"anyOf": [{"required": ["source"]}, {"required": ["module_digest"]}]}
+    },
+    {
+      "properties": {"version": {"const": 3}},
+      "required": ["module_digest"],
+      "not": {"anyOf": [{"required": ["source"]}, {"required": ["sources"]}]}
+    }
+  ],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "module": {
+      "type": "object", "additionalProperties": false, "required": ["path", "version"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}}
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relative_path", "original_digest", "match", "replacement", "transformed_digest"],
+      "properties": {
+        "relative_path": {"type": "string", "minLength": 1},
+        "original_digest": {"$ref": "#/$defs/digest"},
+        "match": {"type": "string", "minLength": 1},
+        "replacement": {"type": "string", "minLength": 1},
+        "transformed_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "replacement": {
+      "type": "object", "additionalProperties": false, "required": ["match", "replacement"],
+      "properties": {"match": {"type": "string", "minLength": 1}, "replacement": {"type": "string", "minLength": 1}}
+    },
+    "multi_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relative_path", "original_digest", "transformed_digest"],
+      "properties": {
+        "relative_path": {"type": "string", "minLength": 1},
+        "original_digest": {"$ref": "#/$defs/digest"},
+        "transformed_digest": {"$ref": "#/$defs/digest"},
+        "match": {"type": "string", "minLength": 1},
+        "replacement": {"type": "string"},
+        "replacements": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/replacement"}}
+      },
+      "oneOf": [
+        {"required": ["match", "replacement"], "not": {"required": ["replacements"]}},
+        {"required": ["replacements"], "not": {"anyOf": [{"required": ["match"]}, {"required": ["replacement"]}]}}
+      ]
+    }
+  }
+}

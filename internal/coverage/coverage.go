@@ -30,10 +30,16 @@ const (
 )
 
 type Profile struct {
-	Version              int                `json:"version"`
-	ID                   string             `json:"id"`
-	Protocol             string             `json:"protocol"`
-	PSSID                string             `json:"pss_id,omitempty"`
+	Version  int    `json:"version"`
+	ID       string `json:"id"`
+	Protocol string `json:"protocol"`
+	PSSID    string `json:"pss_id,omitempty"`
+	// RuntimeProfile is a curator-selected, registry-resolved execution
+	// binding. It is part of the Profile digest so an evaluator never relies on
+	// an environment variable or an unrecorded Driver switch. An empty value is
+	// the binding's conservative default and keeps existing frozen profiles
+	// byte-for-byte and digest-for-digest compatible.
+	RuntimeProfile       string             `json:"runtime_profile,omitempty"`
 	Nodes                []string           `json:"nodes"`
 	RequiredCapabilities []string           `json:"required_capabilities,omitempty"`
 	Coverage             CoverageDefinition `json:"coverage"`
@@ -217,8 +223,12 @@ func (p Profile) Validate() error {
 	if !uniqueNonEmpty(p.Nodes) {
 		return errors.New("profile nodes must be non-empty and unique")
 	}
+	if p.RuntimeProfile != "" && !validRuntimeProfile(p.RuntimeProfile) {
+		return fmt.Errorf("runtime profile %q is not a stable identifier", p.RuntimeProfile)
+	}
 	weightSum := 0.0
-	for category, weight := range p.Coverage.Weights {
+	for _, category := range sortedCategories(p.Coverage.Weights) {
+		weight := p.Coverage.Weights[category]
 		if category == "" || weight < 0 {
 			return errors.New("coverage categories must be named and weights cannot be negative")
 		}
@@ -266,6 +276,18 @@ func (p Profile) Validate() error {
 		}
 	}
 	return nil
+}
+
+func validRuntimeProfile(value string) bool {
+	for index, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			if index != 0 || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				continue
+			}
+		}
+		return false
+	}
+	return value != ""
 }
 
 // Digest is the immutable identity of the complete denominator and its scope.
@@ -451,10 +473,10 @@ func uniqueNonEmpty(values []string) bool {
 
 func validEventKind(kind core.EventKind) bool {
 	switch kind {
-	case core.EventStart, core.EventCampaign, core.EventPropose, core.EventMessage,
+	case core.EventStart, core.EventCampaign, core.EventPropose, core.EventQuery, core.EventMessage,
 		core.EventTimeout, core.EventPersist, core.EventSync, core.EventEmit,
 		core.EventApply, core.EventAcknowledge, core.EventCrash, core.EventRestart,
-		core.EventDuplicate, core.EventPartition, core.EventHeal:
+		core.EventDuplicate, core.EventPartition, core.EventHeal, core.EventClockAdvance:
 		return true
 	default:
 		return false
@@ -489,7 +511,7 @@ func EvaluateWithSemanticMatcher(
 	}
 	items, _ := profile.denominator()
 	results := make([]ObligationResult, 0, len(items))
-	traceDigest := digestTrace(trace)
+	traceDigest, _ := core.CanonicalTraceDigest(trace)
 	for _, obligation := range items {
 		matched := matchEvidence(profile.Version, obligation, trace, matcher)
 		monitorChecked := monitorsChecked(obligationMonitors(profile.Version, obligation), checked.Checked)
@@ -542,7 +564,8 @@ func summarize(profile Profile, profileDigest string, results []ObligationResult
 	}
 
 	minimum := 1.0
-	for _, category := range counts {
+	for _, name := range sortedCategories(counts) {
+		category := counts[name]
 		if category.TotalWeight > 0 {
 			category.Ratio = category.CoveredWeight / category.TotalWeight
 		}
@@ -558,6 +581,15 @@ func summarize(profile Profile, profileDigest string, results []ObligationResult
 	summary.High = summary.Score >= profile.Threshold.Score && minimum >= profile.Threshold.MinCategory &&
 		summary.CapabilitySupport >= 0.90
 	return summary
+}
+
+func sortedCategories[T any](categories map[string]T) []string {
+	result := make([]string, 0, len(categories))
+	for category := range categories {
+		result = append(result, category)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func capabilitySupport(required []string, manifest driver.Manifest) (float64, []CapabilityResult) {
@@ -596,10 +628,4 @@ func monitorsChecked(required, checked []string) bool {
 		}
 	}
 	return true
-}
-
-func digestTrace(trace []core.TraceRecord) string {
-	encoded, _ := json.Marshal(trace)
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:])
 }

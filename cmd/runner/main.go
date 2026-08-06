@@ -41,10 +41,14 @@ type runOutput struct {
 }
 
 func main() {
-	profilePath := flag.String("profile", "profiles/toy-v1.json", "coverage profile JSON")
-	scenarioPath := flag.String("scenario", "scenarios/toy-election.json", "scenario JSON")
+	profilePath := flag.String("profile", "", "coverage profile JSON (required)")
+	scenarioPath := flag.String("scenario", "", "scenario JSON (required)")
 	outPath := flag.String("out", "", "write the full result to this path; stdout when empty")
 	flag.Parse()
+	if *profilePath == "" || *scenarioPath == "" {
+		fmt.Fprintln(os.Stderr, "runner: -profile and -scenario are required")
+		os.Exit(2)
+	}
 
 	if err := run(*profilePath, *scenarioPath, *outPath); err != nil {
 		fmt.Fprintln(os.Stderr, "runner:", err)
@@ -185,7 +189,10 @@ func execute(profile coverage.Profile, spec scenario.Spec) (execution, bool, err
 		return execution{}, false, err
 	}
 	conform := protocolAdapter.CheckConformance() == nil
-	e := engine.New(protocolAdapter)
+	e, err := engine.New(protocolAdapter)
+	if err != nil {
+		return execution{}, conform, err
+	}
 	if err := scenario.Run(context.Background(), e, spec); err != nil {
 		return execution{}, conform, err
 	}

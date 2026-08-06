@@ -30,8 +30,17 @@ func (dependencyAdapter) Apply(_ context.Context, event core.Event) (core.ApplyR
 	}, nil
 }
 
+func newDependencyEngine(t *testing.T) *engine.Engine {
+	t.Helper()
+	e, err := engine.New(dependencyAdapter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
 func TestDependencyMustCompleteBeforeMessage(t *testing.T) {
-	e := engine.New(dependencyAdapter{})
+	e := newDependencyEngine(t)
 	e.Schedule(core.Event{Kind: core.EventCampaign, Target: "n1"})
 	if _, err := e.ExecuteNext(context.Background()); err != nil {
 		t.Fatal(err)
@@ -51,7 +60,7 @@ func TestDependencyMustCompleteBeforeMessage(t *testing.T) {
 }
 
 func TestDroppedDependencyBlocksDependentEvent(t *testing.T) {
-	e := engine.New(dependencyAdapter{})
+	e := newDependencyEngine(t)
 	e.Schedule(core.Event{Kind: core.EventCampaign, Target: "n1"})
 	if _, err := e.ExecuteNext(context.Background()); err != nil {
 		t.Fatal(err)
@@ -66,7 +75,7 @@ func TestDroppedDependencyBlocksDependentEvent(t *testing.T) {
 }
 
 func TestMessageDuplicateHasStableLineageAndPartitionBlocksDelivery(t *testing.T) {
-	e := engine.New(dependencyAdapter{})
+	e := newDependencyEngine(t)
 	originalID := e.Schedule(core.Event{
 		Kind: core.EventMessage, Source: "n1", Target: "n2", Payload: json.RawMessage(`{"type":"vote"}`),
 	})

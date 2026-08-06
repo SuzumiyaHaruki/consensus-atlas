@@ -20,3 +20,11 @@ type Adapter interface {
 	Snapshot() any
 	CheckConformance() error
 }
+
+// TimerSource is an optional, side-effect-free declaration boundary for
+// virtual time. It returns the complete set of currently live timers at now;
+// it neither invokes a protocol API nor schedules transport. The Engine owns
+// the resulting pending timeout events.
+type TimerSource interface {
+	Timers(now uint64) ([]core.Timer, error)
+}

@@ -22,13 +22,32 @@ import (
 const (
 	Protocol = "etcd-raft-v3.6"
 	Version  = "v3.6.0"
+
+	// ReadySyncConservative preserves the original v1 host model: every
+	// captured Ready receives persist then sync before release/apply. It remains
+	// the default because frozen campaigns depend on its exact trace shape.
+	ReadySyncConservative ReadySyncPolicy = "conservative"
+	// ReadySyncMustSync uses the native Ready.MustSync decision when building
+	// host operations and emits its evidence at acknowledge. It is opt-in for
+	// a dedicated historical-regression harness, not a global policy change.
+	ReadySyncMustSync ReadySyncPolicy = "must-sync"
 )
 
+// SUTBuildIdentity is set only at link time by the controlled SUT builder.
+// Normal development builds retain the official module version identity.
+var SUTBuildIdentity = Version
+
 type Config struct {
-	Nodes         []string
-	ElectionTick  int
-	HeartbeatTick int
+	Nodes           []string
+	ElectionTick    int
+	HeartbeatTick   int
+	ReadySyncPolicy ReadySyncPolicy
 }
+
+// ReadySyncPolicy controls only the host representation of an already frozen
+// native Ready. It never changes the Raft API calls, message scheduling, or
+// persistence implementation under test.
+type ReadySyncPolicy string
 
 type Driver struct {
 	order      []string
@@ -87,6 +106,12 @@ func NewWithConfig(config Config) (*Driver, error) {
 	if config.HeartbeatTick == 0 {
 		config.HeartbeatTick = 1
 	}
+	if config.ReadySyncPolicy == "" {
+		config.ReadySyncPolicy = ReadySyncConservative
+	}
+	if config.ReadySyncPolicy != ReadySyncConservative && config.ReadySyncPolicy != ReadySyncMustSync {
+		return nil, fmt.Errorf("unsupported Ready sync policy %q", config.ReadySyncPolicy)
+	}
 	ids := make(map[string]uint64, len(order))
 	names := make(map[uint64]string, len(order))
 	peers := make([]raft.Peer, 0, len(order))
@@ -102,23 +127,39 @@ func NewWithConfig(config Config) (*Driver, error) {
 		names[id] = name
 		peers = append(peers, raft.Peer{ID: id})
 	}
+	capabilities := []driver.Capability{
+		{ID: "explicit-campaign", Supported: true},
+		{ID: "message-release-control", Supported: true},
+		{ID: "message-drop-duplicate-partition", Supported: true},
+		{ID: "visible-write-durable-sync", Supported: true},
+		{ID: "power-loss-restart", Supported: true},
+		{ID: "ready-crash-cutpoints", Supported: true},
+		{ID: "application-apply", Supported: true, Detail: "application apply is modeled as an atomic durable operation"},
+		{ID: "read-index-input", Supported: true, Detail: "query inputs invoke RawNode.ReadIndex with a bounded request context"},
+		{ID: "read-state-observation", Supported: true, Detail: "Ready.ReadStates are emitted as typed observations before Advance"},
+		{ID: "exact-ready-send-barriers", Supported: false, Detail: "v1 conservatively syncs the current Ready before release"},
+		{ID: "natural-election-timeout-replay", Supported: false, Detail: "official v3.6 does not expose its randomized election timeout"},
+		{ID: "async-storage-writes", Supported: false, Detail: "v1 disables etcd/raft AsyncStorageWrites"},
+		{ID: "snapshot-delivery-feedback", Supported: false, Detail: "message drop feedback is not yet routed to ReportSnapshot"},
+	}
+	if config.ReadySyncPolicy == ReadySyncMustSync {
+		capabilities = append(capabilities,
+			driver.Capability{ID: "conditional-ready-sync", Supported: true, Detail: "host sync follows captured Ready.MustSync"},
+			driver.Capability{ID: "ready-must-sync-observation", Supported: true, Detail: "captured Ready.MustSync evidence is emitted at acknowledge"},
+		)
+	}
 	d := &Driver{
 		order: order, ids: ids, names: names, peers: peers, config: config,
 		nodes: make(map[string]*node, len(order)),
 		capability: driver.Manifest{
-			Driver: "embedded-etcdraft", SUT: "go.etcd.io/raft/v3", SUTVersion: Version,
-			Capabilities: []driver.Capability{
-				{ID: "explicit-campaign", Supported: true},
-				{ID: "message-release-control", Supported: true},
-				{ID: "message-drop-duplicate-partition", Supported: true},
-				{ID: "visible-write-durable-sync", Supported: true},
-				{ID: "power-loss-restart", Supported: true},
-				{ID: "ready-crash-cutpoints", Supported: true},
-				{ID: "application-apply", Supported: true, Detail: "application apply is modeled as an atomic durable operation"},
-				{ID: "exact-ready-send-barriers", Supported: false, Detail: "v1 conservatively syncs the current Ready before release"},
-				{ID: "natural-election-timeout-replay", Supported: false, Detail: "official v3.6 does not expose its randomized election timeout"},
-				{ID: "async-storage-writes", Supported: false, Detail: "v1 disables etcd/raft AsyncStorageWrites"},
-				{ID: "snapshot-delivery-feedback", Supported: false, Detail: "message drop feedback is not yet routed to ReportSnapshot"},
+			Driver: "embedded-etcdraft", SUT: "go.etcd.io/raft/v3", SUTVersion: SUTBuildIdentity,
+			Capabilities: capabilities,
+			Inputs: []driver.InputCapability{
+				{ID: "campaign", Kind: core.EventProtocolInput, PayloadMode: "forbidden"},
+				{ID: "propose", Kind: core.EventProtocolInput, PayloadMode: "required"},
+				{ID: "query", Kind: core.EventProtocolInput, PayloadMode: "required"},
+				{ID: "crash", Kind: core.EventCrash, PayloadMode: "forbidden"},
+				{ID: "restart", Kind: core.EventRestart, PayloadMode: "forbidden"},
 			},
 		},
 	}
@@ -139,6 +180,10 @@ func (d *Driver) Nodes() []string { return append([]string(nil), d.order...) }
 func (d *Driver) Capabilities() driver.Manifest { return d.capability }
 
 func (d *Driver) EnabledInput(event core.Event) (bool, string) {
+	var err error
+	if event, err = d.normalizeInput(event); err != nil {
+		return false, err.Error()
+	}
 	n, ok := d.nodes[event.Target]
 	if !ok {
 		return false, "unknown target node"
@@ -150,7 +195,7 @@ func (d *Driver) EnabledInput(event core.Event) (bool, string) {
 		return false, "native Ready is outstanding"
 	}
 	switch event.Kind {
-	case core.EventCampaign, core.EventMessage:
+	case core.EventCampaign, core.EventQuery, core.EventMessage:
 		return true, ""
 	case core.EventPropose:
 		if n.raw.BasicStatus().RaftState != raft.StateLeader {
@@ -165,9 +210,12 @@ func (d *Driver) EnabledInput(event core.Event) (bool, string) {
 }
 
 func (d *Driver) Invoke(_ context.Context, event core.Event) ([]core.Observation, error) {
+	var err error
+	if event, err = d.normalizeInput(event); err != nil {
+		return nil, err
+	}
 	n := d.nodes[event.Target]
 	before := n.raw.BasicStatus()
-	var err error
 	switch event.Kind {
 	case core.EventCampaign:
 		err = n.raw.Campaign()
@@ -182,6 +230,21 @@ func (d *Driver) Invoke(_ context.Context, event core.Event) ([]core.Observation
 			return nil, errors.New("proposal value is required")
 		}
 		err = n.raw.Propose([]byte(request.Value))
+	case core.EventQuery:
+		var request struct {
+			Operation string `json:"operation"`
+			RequestID string `json:"request_id"`
+		}
+		if decodeErr := json.Unmarshal(event.Payload, &request); decodeErr != nil {
+			return nil, fmt.Errorf("decode query: %w", decodeErr)
+		}
+		if request.Operation != "linearizable-read" || request.RequestID == "" {
+			return nil, errors.New("query requires operation linearizable-read and a non-empty request_id")
+		}
+		if len(request.RequestID) > 256 {
+			return nil, errors.New("query request_id exceeds 256 bytes")
+		}
+		n.raw.ReadIndex([]byte(request.RequestID))
 	case core.EventMessage:
 		message, decodeErr := d.decodeMessage(event)
 		if decodeErr != nil {
@@ -198,6 +261,26 @@ func (d *Driver) Invoke(_ context.Context, event core.Event) ([]core.Observation
 	}
 	after := n.raw.BasicStatus()
 	return transitionObservations(n.name, before, after), nil
+}
+
+// normalizeInput gives the generic Runtime boundary a stable operation
+// vocabulary while retaining legacy event kinds for frozen v1 traces. Only
+// this concrete Driver maps an operation ID to an etcd/raft API call.
+func (d *Driver) normalizeInput(event core.Event) (core.Event, error) {
+	if event.Kind != core.EventProtocolInput {
+		return event, nil
+	}
+	switch event.Operation {
+	case "campaign":
+		event.Kind = core.EventCampaign
+	case "propose":
+		event.Kind = core.EventPropose
+	case "query":
+		event.Kind = core.EventQuery
+	default:
+		return core.Event{}, fmt.Errorf("unsupported etcd/raft protocol input %q", event.Operation)
+	}
+	return event, nil
 }
 
 func (d *Driver) Poll(nodeName string) (*driver.OutputBatch, error) {
@@ -262,9 +345,13 @@ func (d *Driver) ExecuteHostOp(_ context.Context, nodeName, batchToken string, o
 	case core.EventAcknowledge:
 		n.raw.Advance(ready)
 		n.outstanding = nil
-		return []core.Observation{{
+		observations := []core.Observation{{
 			Kind: "host", Label: "host:acknowledge", Node: nodeName, Value: batchToken,
-		}}, nil
+		}}
+		if d.config.ReadySyncPolicy == ReadySyncMustSync {
+			observations = append(observations, readyMustSyncObservation(nodeName, ready))
+		}
+		return observations, nil
 	default:
 		return nil, fmt.Errorf("unsupported host operation %q", operation.Kind)
 	}
@@ -380,7 +467,8 @@ func (d *Driver) boot(n *node) error {
 	config := &raft.Config{
 		ID: n.id, ElectionTick: d.config.ElectionTick, HeartbeatTick: d.config.HeartbeatTick,
 		Storage: storage, Applied: n.app.Applied, MaxSizePerMsg: math.MaxUint64,
-		MaxInflightMsgs: 256, MaxUncommittedEntriesSize: 1 << 30, Logger: raftLogger(),
+		MaxInflightMsgs: 256, MaxUncommittedEntriesSize: 1 << 30,
+		ReadOnlyOption: raft.ReadOnlySafe, Logger: raftLogger(),
 	}
 	raw, err := raft.NewRawNode(config)
 	if err != nil {
@@ -402,6 +490,9 @@ func raftLogger() raft.Logger {
 }
 
 func (d *Driver) operationsFor(n *node, ready raft.Ready) ([]driver.Operation, error) {
+	if d.config.ReadySyncPolicy == ReadySyncMustSync {
+		return d.operationsForMustSync(n, ready)
+	}
 	operations := []driver.Operation{
 		{Token: "persist", Kind: core.EventPersist},
 		{Token: "sync", Kind: core.EventSync, After: []string{"persist"}},
@@ -443,8 +534,96 @@ func (d *Driver) operationsFor(n *node, ready raft.Ready) ([]driver.Operation, e
 	return operations, nil
 }
 
+// operationsForMustSync exposes the native Ready.MustSync decision while
+// retaining Runtime ownership of persist/sync/release/apply ordering. A sync
+// with no preceding persist represents the historical empty synchronous write
+// that the Ready.MustSync regression caused.
+func (d *Driver) operationsForMustSync(n *node, ready raft.Ready) ([]driver.Operation, error) {
+	operations := make([]driver.Operation, 0, len(ready.Messages)+4)
+	barrier := make([]string, 0, 1)
+	if readyNeedsPersist(ready) {
+		operations = append(operations, driver.Operation{Token: "persist", Kind: core.EventPersist})
+		barrier = append(barrier, "persist")
+	}
+	if ready.MustSync {
+		operations = append(operations, driver.Operation{
+			Token: "sync", Kind: core.EventSync, After: append([]string(nil), barrier...),
+		})
+		barrier = []string{"sync"}
+	}
+	completion := append([]string(nil), barrier...)
+	for index, message := range ready.Messages {
+		operation, err := d.emitOperation(n, message, index, barrier)
+		if err != nil {
+			return nil, err
+		}
+		operations = append(operations, operation)
+		completion = append(completion, operation.Token)
+	}
+	operations = append(operations, driver.Operation{
+		Token: "apply", Kind: core.EventApply, After: append([]string(nil), barrier...),
+	})
+	completion = append(completion, "apply")
+	operations = append(operations, driver.Operation{
+		Token: "ack", Kind: core.EventAcknowledge, After: completion,
+	})
+	return operations, nil
+}
+
+func readyNeedsPersist(ready raft.Ready) bool {
+	return len(ready.Entries) != 0 || !raft.IsEmptyHardState(ready.HardState) || !raft.IsEmptySnap(ready.Snapshot)
+}
+
+func (d *Driver) emitOperation(n *node, message pb.Message, index int, after []string) (driver.Operation, error) {
+	encoded, err := message.Marshal()
+	if err != nil {
+		return driver.Operation{}, err
+	}
+	from, fromOK := d.names[message.From]
+	to, toOK := d.names[message.To]
+	if !fromOK || !toOK {
+		return driver.Operation{}, fmt.Errorf("Ready contains message with unknown route %d -> %d", message.From, message.To)
+	}
+	digest := sha256.Sum256(encoded)
+	return driver.Operation{
+		Token: fmt.Sprintf("emit-%03d", index), Kind: core.EventEmit, After: append([]string(nil), after...),
+		Message: &core.MessageEnvelope{
+			From: from, To: to, SenderEpoch: n.epoch, TypeHint: message.Type.String(),
+			Payload: encoded, PayloadDigest: hex.EncodeToString(digest[:]),
+			Metadata: map[string]string{
+				"term":   strconv.FormatUint(message.Term, 10),
+				"index":  strconv.FormatUint(message.Index, 10),
+				"commit": strconv.FormatUint(message.Commit, 10),
+			},
+		},
+	}, nil
+}
+
+func readyMustSyncObservation(nodeName string, ready raft.Ready) core.Observation {
+	return core.Observation{
+		Kind: "ready", Label: "ready:must-sync", Node: nodeName,
+		Value: strconv.FormatBool(ready.MustSync),
+		Evidence: map[string]string{
+			"entries":          strconv.Itoa(len(ready.Entries)),
+			"hard_state_empty": strconv.FormatBool(raft.IsEmptyHardState(ready.HardState)),
+			"must_sync":        strconv.FormatBool(ready.MustSync),
+			"snapshot_empty":   strconv.FormatBool(raft.IsEmptySnap(ready.Snapshot)),
+		},
+	}
+}
+
 func (d *Driver) applyReady(n *node, ready raft.Ready) ([]core.Observation, error) {
 	var observations []core.Observation
+	for _, state := range ready.ReadStates {
+		requestID := string(state.RequestCtx)
+		observations = append(observations, core.Observation{
+			Kind: "read-state", Label: "read-state", Node: n.name, Value: requestID,
+			Evidence: map[string]string{
+				"request_id": requestID,
+				"index":      strconv.FormatUint(state.Index, 10),
+			},
+		})
+	}
 	if !raft.IsEmptySnap(ready.Snapshot) && ready.Snapshot.Metadata.Index > n.app.Applied {
 		n.app.Applied = ready.Snapshot.Metadata.Index
 		n.app.ConfState = cloneConfState(ready.Snapshot.Metadata.ConfState)

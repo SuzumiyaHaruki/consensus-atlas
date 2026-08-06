@@ -16,6 +16,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/adapter"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/campaign"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/coverage"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/testplan"
 )
 
@@ -23,14 +24,18 @@ func main() {
 	profilePath := flag.String("profile", "artifacts/profiles/etcdraft-campaign-v1.json", "frozen Campaign Profile v2")
 	suitePath := flag.String("plans", "plans/etcdraft-expert-v1.json", "bounded Test Plan Suite v1")
 	outPath := flag.String("out", "artifacts/campaigns/etcdraft-expert-v1.json", "campaign report output")
+	artifact := flag.String("artifact", "", "stable logical artifact label; defaults to -out")
 	flag.Parse()
-	if err := run(context.Background(), *profilePath, *suitePath, *outPath); err != nil {
+	if *artifact == "" {
+		*artifact = *outPath
+	}
+	if err := run(context.Background(), *profilePath, *suitePath, *outPath, *artifact); err != nil {
 		fmt.Fprintln(os.Stderr, "campaign:", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, profilePath, suitePath, outPath string) error {
+func run(ctx context.Context, profilePath, suitePath, outPath, artifact string) error {
 	var profile coverage.Profile
 	if err := readStrictJSON(profilePath, &profile); err != nil {
 		return err
@@ -47,8 +52,13 @@ func run(ctx context.Context, profilePath, suitePath, outPath string) error {
 		return err
 	}
 	var matcher coverage.SemanticMatcher
+	var monitors []oracle.Monitor
 	if profile.PSSID != "" {
 		matcher, err = families.CoverageMatcher(profile.PSSID)
+		if err != nil {
+			return err
+		}
+		monitors, err = families.CampaignMonitors(profile.PSSID, manifest)
 		if err != nil {
 			return err
 		}
@@ -57,7 +67,9 @@ func run(ctx context.Context, profilePath, suitePath, outPath string) error {
 		protocolAdapter, _, createErr := bindings.New(profile)
 		return protocolAdapter, createErr
 	}
-	report, err := campaign.Run(ctx, profile, manifest, matcher, suite, newAdapter, campaign.Options{Artifact: outPath})
+	report, err := campaign.Run(ctx, profile, manifest, matcher, suite, newAdapter, campaign.Options{
+		Artifact: artifact, Monitors: monitors,
+	})
 	if err != nil {
 		return err
 	}
@@ -87,9 +99,10 @@ func run(ctx context.Context, profilePath, suitePath, outPath string) error {
 			}
 		}
 	}
-	fmt.Printf("wrote %s\ncoverage: %d/%d, score: %.2f, debt: %d, runs: %d, decisions: %d, plan errors: %d, unstable: %d, violations: %d\n",
+	fmt.Printf("wrote %s\ncoverage: %d/%d, score: %.2f, debt: %d, runs: %d, decisions: %d, primary-work: %d, replay-work: %d, plan errors: %d, unstable: %d, violations: %d\n",
 		outPath, report.Final.Covered, report.Final.Total, report.Final.Score, report.Final.Debt,
-		report.ChargedRuns, report.ChargedDecisions, planErrors, unstable, violations)
+		report.ChargedRuns, report.ChargedDecisions, report.Cost.Primary.WorkUnits,
+		report.Cost.Replay.WorkUnits, planErrors, unstable, violations)
 	return nil
 }
 

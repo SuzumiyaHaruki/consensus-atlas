@@ -1,19 +1,12 @@
-// Package agentcampaign coordinates untrusted Test Plan proposals against a
-// trusted incremental campaign Session.
+// Package agentcampaign coordinates untrusted blind test-plan proposals
+// against a trusted incremental Campaign Session.
 package agentcampaign
 
 import (
-	"context"
 	"errors"
-	"fmt"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/campaign"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/coverage"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/driver"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/testplan"
 )
-
-const Version = 1
 
 const (
 	StatusComplete       = "complete"
@@ -73,12 +66,6 @@ type ProfileScope struct {
 	Nodes    []string `json:"nodes"`
 }
 
-type DebtView struct {
-	Obligation coverage.Obligation `json:"obligation"`
-	Status     string              `json:"status"`
-	Attempts   int                 `json:"attempts"`
-}
-
 type RemainingBudget struct {
 	Attempts         int `json:"attempts"`
 	Runs             int `json:"runs"`
@@ -89,62 +76,16 @@ type RemainingBudget struct {
 }
 
 type DSLPolicy struct {
-	AllowedInputs       []string `json:"allowed_inputs"`
-	AllowedPrepareOps   []string `json:"allowed_prepare_ops"`
-	AllowedStrategies   []string `json:"allowed_strategies"`
-	DirectMessageInject bool     `json:"direct_message_inject"`
-	TransientSelectors  bool     `json:"transient_selectors"`
-	MaxTargets          int      `json:"max_targets"`
-	MaxPrepareActions   int      `json:"max_prepare_actions"`
-	MaxStimuli          int      `json:"max_stimuli"`
-	MaxDuplicatesPerRun int      `json:"max_duplicates_per_run"`
-}
-
-type GenerationRequest struct {
-	Version           int               `json:"version"`
-	CampaignID        string            `json:"campaign_id"`
-	Attempt           int               `json:"attempt"`
-	Profile           ProfileScope      `json:"profile"`
-	Manifest          driver.Manifest   `json:"manifest"`
-	Progress          campaign.Progress `json:"progress"`
-	Debt              []DebtView        `json:"coverage_debt"`
-	PreviousProposals []Proposal        `json:"previous_proposals,omitempty"`
-	PreviousFindings  []Finding         `json:"previous_findings,omitempty"`
-	Remaining         RemainingBudget   `json:"remaining_budget"`
-	Policy            DSLPolicy         `json:"dsl_policy"`
-}
-
-type Proposal struct {
-	Version int           `json:"version"`
-	ID      string        `json:"id"`
-	Plan    testplan.Plan `json:"plan"`
-}
-
-func (proposal Proposal) Validate() error {
-	if proposal.Version != Version || proposal.ID == "" || proposal.Plan.ID == "" {
-		return errors.New("proposal version, id, and plan id are required")
-	}
-	return nil
-}
-
-type Finding struct {
-	Code             string   `json:"code"`
-	Attempt          int      `json:"attempt"`
-	ProposalID       string   `json:"proposal_id,omitempty"`
-	PlanID           string   `json:"plan_id,omitempty"`
-	Message          string   `json:"message"`
-	Targeted         []string `json:"targeted,omitempty"`
-	NewlyCovered     []string `json:"newly_covered,omitempty"`
-	RemainingTargets []string `json:"remaining_targets,omitempty"`
-	ScoreBefore      float64  `json:"score_before,omitempty"`
-	ScoreAfter       float64  `json:"score_after,omitempty"`
-	CoveredBefore    int      `json:"covered_before,omitempty"`
-	CoveredAfter     int      `json:"covered_after,omitempty"`
-	Runs             int      `json:"runs,omitempty"`
-	Decisions        int      `json:"decisions,omitempty"`
-	ReplayFailures   int      `json:"replay_failures,omitempty"`
-	ExecutionErrors  int      `json:"execution_errors,omitempty"`
-	OracleViolations int      `json:"oracle_violations,omitempty"`
+	AllowedInputs       []string     `json:"allowed_inputs"`
+	ProtocolInputs      []BlindInput `json:"protocol_inputs,omitempty"`
+	AllowedPrepareOps   []string     `json:"allowed_prepare_ops"`
+	AllowedStrategies   []string     `json:"allowed_strategies"`
+	DirectMessageInject bool         `json:"direct_message_inject"`
+	TransientSelectors  bool         `json:"transient_selectors"`
+	MaxTargets          int          `json:"max_targets"`
+	MaxPrepareActions   int          `json:"max_prepare_actions"`
+	MaxStimuli          int          `json:"max_stimuli"`
+	MaxDuplicatesPerRun int          `json:"max_duplicates_per_run"`
 }
 
 type GenerationAudit struct {
@@ -167,59 +108,4 @@ type GenerationAudit struct {
 	DurationMillis        int64    `json:"duration_millis,omitempty"`
 	RequestDigest         string   `json:"request_digest,omitempty"`
 	ResponseDigest        string   `json:"response_digest,omitempty"`
-}
-
-type Planner interface {
-	Generate(context.Context, GenerationRequest) (*Proposal, error)
-}
-
-type AuditProvider interface {
-	LastGenerationAudit() GenerationAudit
-}
-
-type ExecutionSummary struct {
-	PlanID           string            `json:"plan_id"`
-	Before           campaign.Progress `json:"before"`
-	After            campaign.Progress `json:"after"`
-	Runs             int               `json:"runs"`
-	Decisions        int               `json:"decisions"`
-	ExecutionError   string            `json:"execution_error,omitempty"`
-	NewlyCovered     []string          `json:"newly_covered,omitempty"`
-	ReplayFailures   int               `json:"replay_failures"`
-	ExecutionErrors  int               `json:"execution_errors"`
-	OracleViolations int               `json:"oracle_violations"`
-}
-
-type Round struct {
-	Attempt   int               `json:"attempt"`
-	Proposal  *Proposal         `json:"proposal,omitempty"`
-	Audit     GenerationAudit   `json:"generation"`
-	Execution *ExecutionSummary `json:"execution,omitempty"`
-	Finding   Finding           `json:"finding"`
-}
-
-type Report struct {
-	Version               int              `json:"version"`
-	Status                string           `json:"status"`
-	StopReason            string           `json:"stop_reason"`
-	Config                Config           `json:"config"`
-	Profile               ProfileScope     `json:"profile"`
-	TotalTokens           int              `json:"total_tokens"`
-	ConsecutiveNoProgress int              `json:"consecutive_no_progress"`
-	Rounds                []Round          `json:"rounds"`
-	Blackboard            BlackboardReport `json:"blackboard"`
-	Campaign              campaign.Report  `json:"campaign"`
-}
-
-type proposalBudgetError struct {
-	kind                 string
-	requested, remaining int
-}
-
-func (failure proposalBudgetError) Error() string {
-	return fmt.Sprintf("proposal %s budget %d exceeds remaining %d", failure.kind, failure.requested, failure.remaining)
-}
-
-func budgetError(kind string, requested, remaining int) error {
-	return proposalBudgetError{kind: kind, requested: requested, remaining: remaining}
 }

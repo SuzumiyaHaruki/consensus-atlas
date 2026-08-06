@@ -12,7 +12,7 @@ D_m(b) = | union of PSS state keys discovered by m within budget b |
 
 The curve answers: under the same budget, which method discovers semantically different protocol states faster?
 
-This is the appropriate primary metric for comparing random, DFS/DPOR, greybox and Agent-guided exploration. It is not a final completeness score.
+This is an internal search-efficiency metric for comparing random, DFS/DPOR, greybox and Agent-guided exploration. It is neither a final completeness score nor external evidence that an Agent is effective.
 
 The scenario runner records a single-trace prefix curve:
 
@@ -28,7 +28,7 @@ The scenario runner records a single-trace prefix curve:
 
 Each state witness stores its canonical key, first trace step and canonical state. This makes every count auditable.
 
-`cmd/experiment` additionally aggregates the state-key union across independent runs from one verified measurement root. Its curve is indexed by charged scheduler decisions, not raw trace length, wall time or number of runs.
+`cmd/experiment` additionally aggregates the state-key union across independent runs from one verified measurement root. Historical curves are indexed by charged scheduler decisions. New benchmark comparisons must also index or cap them by Campaign v2 primary work so repeated setup is not free.
 
 ### Fair comparison protocol
 
@@ -40,7 +40,7 @@ A cross-method experiment must freeze:
 - Oracle set;
 - measurement window and budget definition.
 
-Use scheduler decisions as the primary budget. A run count or per-run limit is insufficient because quiescent paths have different lengths; the report must confirm that the same total decision budget was reached. Also report executed SUT inputs and wall-clock/CPU cost because Agent planning has a different cost profile from local search. Repeat stochastic methods with fixed, published seeds and report median plus dispersion.
+Use Campaign v2 `primary.work_units` as the primary common budget. It charges fresh-SUT attempts, repeated bootstrap/prepare work, Runtime events drained during setup, and measurement events. Scheduler decisions and run count remain separate explanatory axes; neither is sufficient because setup lengths and quiescent paths differ. Also report replay work, executed SUT inputs, wall-clock/CPU and model tokens. Repeat stochastic methods with fixed, published seeds and report median plus dispersion.
 
 Bootstrap and other fixed setup transitions must be excluded from the measured search window or shown as a separate shared prefix. Otherwise every method receives the same early discoveries and area-under-curve comparisons are biased.
 
@@ -82,14 +82,25 @@ The final bounded test metric uses the independently compiled 55-obligation
 Raft campaign Profile. This prevents a Driver capability catalog from being
 misreported as comprehensive protocol testing.
 
-Use PSD to compare search effectiveness. Use fixed Profile/SCS coverage to assess the resulting test suite against declared obligations. Always report Oracle results separately from both.
+Use PSD to explain state-discovery behavior. Use fixed Profile/SCS coverage to assess the resulting test suite against declared obligations. Evaluate method effectiveness primarily on hidden historical defects/semantic mutants and correct controls. Always report trusted Oracle results separately.
 
-## 4. Known limitations and safeguards
+## 4. External defect effectiveness
+
+The primary method-level result is evaluated by `internal/defectbench` under a private, versioned Manifest:
+
+- independent root-cause kill rate on hidden historical defects and semantic mutants;
+- primary work to first trusted kill and stable reproduction;
+- false-positive rate on correct controls;
+- invalid-trial and total primary/replay cost.
+
+The evaluator recomputes registered Oracle monitors from stored traces and requires identity, budget, replay and conformance evidence. Coverage score and PSS discoveries are copied only as explanatory covariates; they cannot create kill credit. Multiple variants representing one root cause count once in the primary percentage. See `docs/defect-benchmark.md`.
+
+## 5. Known limitations and safeguards
 
 - A state key can over-merge if the PSS omits a safety-relevant relation, or over-split if it retains an irrelevant one. Invariance and separation tests are therefore part of the Family Pack.
 - State coverage cannot distinguish two paths reaching the same state. Transition, ordering and causal-graph coverage remain necessary.
 - A growing discovery curve does not establish completeness in an open or unbounded state space.
-- The current harness aggregates multiple runs and verifies an explicit shared measurement root. It does not yet report wall-clock/CPU/Agent-token cost or repeated-seed confidence intervals.
+- Campaign v2 now records deterministic primary/replay work, but the harness does not yet report wall-clock/CPU/RSS cost or repeated-seed confidence intervals.
 - PSS changes require a new ID. Results from different PSS IDs must not be combined on the same curve.
 
 The current `self_normalized_area` uses each method's own final state count. It describes discovery timing only and must be shown beside final unique states and raw prefix area; it is not a shared completeness-normalized score.

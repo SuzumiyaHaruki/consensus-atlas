@@ -112,6 +112,26 @@ func TestV2RejectsLegacyAndStructuredDenominatorsTogether(t *testing.T) {
 	}
 }
 
+func TestRuntimeProfileIsValidatedAndPartOfFrozenIdentity(t *testing.T) {
+	profile := v2Profile(obligation("one", "seen", coverage.StatusSupported))
+	baseline, err := coverage.Digest(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.RuntimeProfile = "etcdraft-ready-must-sync-v1"
+	bound, err := coverage.Digest(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline == bound {
+		t.Fatal("runtime profile did not change Profile identity")
+	}
+	profile.RuntimeProfile = "not a stable identifier"
+	if err := profile.Validate(); err == nil {
+		t.Fatal("invalid runtime profile was accepted")
+	}
+}
+
 func TestCountAndCorrelatedOrderingEvidence(t *testing.T) {
 	vote := coverage.TracePredicate{
 		ObservationLabel: "vote", ObservationEvidence: map[string]string{"kind": "granted"},

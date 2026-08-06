@@ -1,5 +1,15 @@
 # ConsensusAtlas
 
+> **分支状态：控制层重构前检查点。** 本分支保存截至 M4.17 的 Runtime、etcd/raft 接入、
+> PSS/Coverage、Agent 与 benchmark 实验基础，但它**不是**面向任意共识实现的最终控制层。
+> 当前 Host/Driver 边界仍以 etcd/raft `RawNode` 的输出与 `Ready` 宿主操作模型为第一个实例，
+> PSS/Coverage 也主要绑定 Raft Family/Profile。下一主线是冻结协议无关的
+> `Universal Control Runtime + Control Adapter Contract + Adapter Conformance Suite`：统一接管
+> 消息、虚拟时间、生命周期、持久化完成、外部输入与宿主回调，再将 PSS、覆盖、Agent 搜索和
+> benchmark 作为其上的模块。故本分支的公开 pilot 只能证明当前链路可运行，不能证明跨协议
+> 普适性，也不能证明 Agent 方法优于基线。详见
+> [当前阶段](docs/CURRENT_STAGE.md) 与 [总体规划](docs/ConsensusAtlas-总体规划.md)。
+
 ConsensusAtlas 是一个面向 CFT/BFT 共识协议的确定性场景执行与语义覆盖研究框架。当前版本已经直接接入官方 `go.etcd.io/raft/v3 v3.6.0`，同时保持测试核心不依赖 Raft 类型。
 
 项目采用以下主路径：
@@ -56,8 +66,12 @@ Official Consensus Implementation
 - 多运行 Campaign 执行器，Random/DFS decision log 强制重放后自动累计 Ledger；
 - 私有增量 Campaign Session、hash-chained Blackboard 和确定性 Agent Coordinator；
 - DeepSeek Test Plan Planner、机械 finding 反馈、协议因果结构去重与总预算停止；
+- Campaign v2 完整执行成本，重复 setup/prepare 与 measurement、replay 分离计费；
+- 私有 Defect Benchmark Manifest、Agent-facing opaque trial、可信 Oracle 重算和 root-cause/false-positive 账本；
+- typed Candidate Catalog、六类可信 CapabilitySnapshot 与纯集合资格报告；
+- 官方模块只读临时替换构建、唯一文本转换、digest-bound SUT identity 和完整 build audit；
+- etcd/raft calibration 与首个公开历史 ReadIndex candidate/control 的端到端 pilot；
 - Profile-required Capability 支持率；
-- toy 协议用于验证核心没有退化为 Raft 专用实现。
 
 ## 快速运行
 
@@ -65,7 +79,6 @@ Official Consensus Implementation
 make test
 make auto-onboard-etcdraft
 make auto-onboard-etcdraft-llm
-make contract-only-etcdraft
 make coverage-compile-etcdraft
 make run-raft
 make run-raft-onboarding
@@ -81,17 +94,19 @@ make experiment-dfs
 
 `campaign-etcdraft` 使用受限、digest-bound 的专家 Test Plan Suite 调用 Random/DFS，并把每个严格重放的 run 自动加入同一个 Coverage Ledger。当前基线累计覆盖 39/55、得分 66.38，剩余 14 项可行动债务；33 个实际 run 和 1624 个调度决策均重放稳定且没有 Oracle 违规。计划命中失败只增加 attempted，不会直接获得覆盖分。
 
-`agent-campaign-etcdraft` 进行真实 DeepSeek API 调用。Planner 只能读取冻结 Profile、Coverage Debt、预算和历史机械 finding，并提交受限 Test Plan；私有 Ledger、Concretizer、Runtime、Replay、Oracle 和评分均在可信 Go 路径内。v0.1 最终实验在 128 个实际 decision 后覆盖 16/55、得分 31.00，随后因重复不可执行方案达到 no-progress 上限。它证明闭环和拒绝路径有效，但没有证明单 Planner 优于固定计划；详见 [v0.1 阶段总结](docs/stage-v0.1-single-planner.md)。
+`agent-campaign-etcdraft` 是 Blind Planner v1 的真实 DeepSeek API 入口。Planner 只接收 opaque trial ID、Profile identity/node 投影、Driver 声明的受限输入形状、supported capability 名称、opaque Coverage Debt ref、预算和机械 finding；Driver/SUT identity、真实 obligation、trace、Oracle 与 Ledger 保持在可信 Go 路径。默认 Make 目标仅是公开开发范围，不能用于方法效果结论；正式实验必须替换为预冻结的私有 scope。
 
-仓库包含 v0.1 Agent、Random、DFS 和专家报告的 gzip 快照，位于 `artifacts/agent-campaigns/` 与 `artifacts/campaigns/`。例如可执行 `gzip -dc artifacts/agent-campaigns/deepseek-etcdraft-v0.1.json.gz | jq '.campaign.final'`；无需 API key。
+新生成的 Campaign v2 报告还记录 primary/replay `execution_cost`。fresh SUT、每次重复 bootstrap/prepare、批量 drain 的 Runtime event 和 measurement event 都进入逻辑 work；失败 setup 也收费。Agent 是否有效不再由它正在优化的 Coverage/PSS 自证，而由私有 Defect Benchmark 在统一 primary work 下统计隐藏独立根因检出和正确 control 误报。
+
+M4.9 已为公开 `63903dd` ReadIndex 回归补齐 `ReadIndex` input、`read-state` observation 与独立 `linearizable-read` monitor，机械资格使四个官方候选中的 `63903dd` 成为唯一 `qualified` 样本。受控历史回归 pilot 中，未修改 v3.6.0 candidate 在 1 run/1 decision、218 primary/218 replay work 下被检出；只应用公开修复的 control 在同一冻结计划与相同 26/55（45.67）Coverage 下通过。可信 evaluator 重新验证 binary/audit、最小环境重跑并从 trace 重算 Oracle，得到 1/1 root cause killed、0 false positive、0 invalid。Coverage 相同而外部结果不同，正是它不能自证 Agent 的原因。该样本是回归复现，不是方法效果结论；见 [M4.9 阶段总结](docs/stage-m4.9-etcdraft-readindex.md)、[pilot 工件](benchmarks/pilots/etcdraft-readindex-v1/README.md) 和 [Defect Benchmark](docs/defect-benchmark.md)。
+
+M4.10 为未来确定性 Driver 加入可选虚拟 `TimerSource`：Engine 独占 timer queue，`advance` 只让到期项进入 enabled 集而不自动执行协议。etcd/raft v3.6 的随机自然选举 timeout 仍保持 Unsupported；冻结的 M4.9 candidate trace 三个 fingerprint 均保持不变。见 [M4.10 阶段总结](docs/stage-m4.10-virtual-time.md)。
+
+M4.11 围绕公开 `0675f3d` Ready.MustSync 历史语义完成第二条独立 monitor/evaluator 链。该样本不是完整历史 checkout 复现，而是在当前 v3.6 module 上进行一处精确反向转换的语义重构；opt-in Profile 绑定 `conditional-ready-sync` 与 `ready-must-sync-observation`，默认 Driver 路径不变。Evaluator 重跑得到 candidate killed、官方未修改 control pass、0 false positive、0 invalid；两侧 Coverage 均为 2/3（75.00），不参与 kill 判定。见 [M4.11 阶段总结](docs/stage-m4.11-etcdraft-ready-must-sync.md) 和 [pilot 工件](benchmarks/pilots/etcdraft-ready-must-sync-v1/README.md)。
 
 `auto-onboard-etcdraft-llm` 使用 `DEEPSEEK_KEY_FILE` 指定的文件调用 `deepseek-v4-flash`，默认是仓库根目录下被 git 忽略的 `key.txt`。密钥文件必须是普通文件且权限不能开放给 group/others，只会发送到官方 DeepSeek endpoint；密钥不会进入 prompt、子进程环境之外的日志或 artifacts。该目标会产生真实 API 费用，不由 `make test` 自动执行。当前 live smoke 在第 2 轮通过机械验证，生成 Profile 与静态基线一致。
 
-在新机器上运行模型实验前执行 `chmod 600 /path/to/key.txt`，再使用 `make agent-campaign-etcdraft DEEPSEEK_KEY_FILE=/path/to/key.txt`。只分析已提交结果不需要 API key。
-
-`contract-only-etcdraft` 是更严格的从零接入实验。模型只获得 Protocol Contract、Raft Family PSS、通用 Driver/Host/Scenario API 和官方 `go.etcd.io/raft/v3 v3.6.0` 源码摘录；现有 `drivers/etcdraft`、Binding、witness 和 Profile 不进入请求。模型生成的完整 `integration/*.go`、`scenarios/*.json` 与 Binding 在无网络 bubblewrap 中离线 tidy、readonly build，再经过 PSS、双重重放、Oracle 和 Contract 验证。每轮源码和报告保存在新的 `artifacts/contract-only/<experiment-id>/`，不会覆盖专家实现。
-
-当前代表性实验 `etcdraft-contract-only-v5` 尚未收敛：第 2 轮已编译并执行 bootstrap host operations，但 witness 在 leader 产生前 propose，得到 `raft proposal dropped`；后续五轮只改变 identity，没有修复 Driver/场景。该结果证明沙箱和拒绝路径有效，但不能宣称 Contract-only 自动接入已经成功。
+在新机器上运行模型实验前执行 `chmod 600 /path/to/key.txt`，再使用 `make agent-campaign-etcdraft DEEPSEEK_KEY_FILE=/path/to/key.txt`。正式范围还必须显式提供 `BLIND_BENCHMARK_ID`、`BLIND_BENCHMARK_DIGEST` 与 `BLIND_TRIAL_ID`；只分析已提交结果不需要 API key。
 
 - replay fingerprint 是否稳定；
 - canonical scenario key；
@@ -130,12 +145,6 @@ go run ./cmd/runner \
   -scenario scenarios/etcdraft-partition-heal.json
 ```
 
-原有 toy 示例仍可运行：
-
-```bash
-make run
-```
-
 ## 关键目录
 
 ```text
@@ -147,6 +156,7 @@ internal/explore/       等预算 Explorer、Random 和无状态克隆 DFS
 internal/testplan/      受限 Test Plan DSL、预算校验和确定性 concretizer
 internal/campaign/      多运行 replay/Oracle/Ledger 覆盖闭环
 internal/agentcampaign/ 私有 Agent Session、Blackboard、预算和反馈 Coordinator
+internal/defectbench/   隐藏缺陷盲测视图、预算验证和 root-cause kill 账本
 internal/scenario/      JSON 场景解释器
 internal/oracle/        确定性 Oracle
 internal/coverage/      Profile v2、Evidence Matcher、Coverage Ledger、债务和评分
@@ -160,6 +170,7 @@ contracts/              人工/Family Pack 提供的最小协议知识契约
 onboarding/             Agent 生成的实现绑定和可执行见证
 profiles/               固定覆盖分母和 Profile v2 schema
 plans/                  digest-bound Test Plan Suite 和 authoring schema
+benchmarks/             私有缺陷 Manifest 与盲测 submission schema
 scenarios/              声明式测试场景
 ```
 
@@ -177,10 +188,10 @@ scenarios/              声明式测试场景
 
 目前采用显式 `campaign`，并保守地要求当前 Ready sync 后再 release 消息。这是合法但较强的顺序，会漏掉部分合法并发，因此 Profile 保留相应 unsupported atom，结果不会被错误标为“高覆盖”。
 
-状态发现曲线用于比较搜索效率，没有固定分母；Profile 分数用于评价冻结测试义务的完成情况。两者都不代表协议正确概率或剩余缺陷概率。
+状态发现曲线用于解释搜索效率，没有固定分母；Profile 分数用于解释冻结测试义务的完成情况。两者都不代表协议正确概率或剩余缺陷概率，也不能单独证明 Agent 有效。正式方法效果由隐藏历史缺陷/语义 mutant 的独立根因检出率与正确 control 误报率评价。
 
 正常路径不要求人工逐条批准 Agent 提出的源码事实或测试。人工提供最小 Protocol Charter 或选择 Family Pack；Agent 可以生成协议差异、Binding、Driver、义务草案和测试计划，但只有 schema、digest、fixture、执行、Evidence Matcher、Replay、Conformance 与 Oracle 全部通过的产物才能进入 validated 状态。Agent 不能修改当次冻结分母、Oracle 或 replay/conformance 条件。
 
 旧 Integration Pack、Source Catalog、Scout benchmark 及其人工 Gate 代码已从主仓库删除，避免与自动接入主线并存。
 
-更详细的实现边界见 [总体规划](docs/ConsensusAtlas-总体规划.md)、[Coverage Kernel v2](docs/coverage-kernel.md)、[有界 Raft Campaign](docs/raft-campaign.md)、[Test Plan 与多运行 Campaign](docs/test-plan-campaign.md)、[协议契约与自动接入](docs/protocol-contracts.md)、[实验说明](docs/experiments.md)、[指标说明](docs/metrics.md)、[架构说明](docs/architecture.md) 和 [etcd/raft Driver 说明](docs/etcdraft.md)。
+更详细的实现边界见 [总体规划](docs/ConsensusAtlas-总体规划.md)、[Defect Benchmark](docs/defect-benchmark.md)、[Coverage Kernel v2](docs/coverage-kernel.md)、[有界 Raft Campaign](docs/raft-campaign.md)、[Test Plan 与多运行 Campaign](docs/test-plan-campaign.md)、[协议契约与自动接入](docs/protocol-contracts.md)、[实验说明](docs/experiments.md)、[指标说明](docs/metrics.md)、[架构说明](docs/architecture.md) 和 [etcd/raft Driver 说明](docs/etcdraft.md)。

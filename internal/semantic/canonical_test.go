@@ -48,3 +48,23 @@ func TestExecutionFingerprintIncludesSnapshots(t *testing.T) {
 		t.Fatal("execution fingerprints match despite different snapshots")
 	}
 }
+
+func TestStructuralFingerprintIncludesProtocolOperation(t *testing.T) {
+	left := []core.TraceRecord{{
+		Step: 1, Event: core.Event{ID: "e1", Kind: core.EventProtocolInput, Operation: "submit", Target: "n1"}, Outcome: "applied",
+	}}
+	right := []core.TraceRecord{{
+		Step: 1, Event: core.Event{ID: "e2", Kind: core.EventProtocolInput, Operation: "read", Target: "n1"}, Outcome: "applied",
+	}}
+	leftHash, err := semantic.CanonicalFingerprint(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightHash, err := semantic.CanonicalFingerprint(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leftHash == rightHash {
+		t.Fatal("distinct protocol operations collapsed into one structural fingerprint")
+	}
+}

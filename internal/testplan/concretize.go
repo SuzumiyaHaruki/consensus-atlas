@@ -42,7 +42,8 @@ func Concretize(profile coverage.Profile, plan Plan) (ConcretePlan, error) {
 	for _, input := range plan.Stimuli {
 		steps = append(steps, scenario.Step{
 			Op: OpInject, Kind: input.Kind, Target: input.Target,
-			Payload: append([]byte(nil), input.Payload...),
+			Operation: input.Operation,
+			Payload:   append([]byte(nil), input.Payload...),
 		})
 	}
 	return ConcretePlan{
@@ -56,10 +57,13 @@ func concretizeAction(action Action) (scenario.Step, error) {
 	step := scenario.Step{Op: action.Op}
 	switch action.Op {
 	case OpInject:
-		step.Kind, step.Target = action.Kind, action.Target
+		step.Kind, step.Operation, step.Target = action.Kind, action.Operation, action.Target
 		step.Payload = append([]byte(nil), action.Payload...)
 	case OpExecute:
 		step.Op = "execute_match"
+		step.Match = cloneSelector(action.Match)
+	case OpExecuteOptional:
+		step.Op = OpExecuteOptional
 		step.Match = cloneSelector(action.Match)
 	case OpDrop:
 		step.Op = "drop_match"
@@ -74,6 +78,10 @@ func concretizeAction(action Action) (scenario.Step, error) {
 		step.Op, step.Count = "run", action.Count
 	case OpAdvance:
 		step.Ticks = action.Ticks
+	case OpCaptureMessage:
+		step.Op, step.Ref, step.Match = OpCaptureMessage, action.Ref, cloneSelector(action.Match)
+	case OpExecuteRef:
+		step.Op, step.Ref = OpExecuteRef, action.Ref
 	default:
 		return scenario.Step{}, fmt.Errorf("unsupported concrete action %q", action.Op)
 	}

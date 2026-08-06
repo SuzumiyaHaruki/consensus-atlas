@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.1
-> 日期：2026-08-05
+> 状态：Draft v1.4
+> 日期：2026-08-06
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -53,6 +53,12 @@ ConsensusAtlas 的长期目标很容易在实现过程中退化成以下几类�
 
 > **最大化 Agent 的工作量，最小化 Agent 的判定权。**
 
+在搜索层吸收 Agentic Model Checking 的有限状态—动作方法：可信内核产生
+`EnabledActionSet`，Random/DFS/DPOR/Agent 只决定同一批合法 `ActionRef` 的搜索顺序。
+Agent 可以同时提供宏观 Test Plan 和微观动作排序，但不生成不存在的消息、
+不自行判定 enabled，也不决定状态等价。这一搜索增强不替代 Contract/PSS/Profile、
+强覆盖证据和隐藏缺陷外部评价。
+
 固定分母的义务覆盖率评价最终测试成果；无固定分母的 PSS 状态发现曲线评价搜索效率。PSS 是语义归一化和证据定位机制，不能单独成为最终完成百分比。
 
 ESOT/测试义务目录继续保留，但定位为高风险补充层，而不是唯一覆盖分母。
@@ -70,6 +76,23 @@ ESOT/测试义务目录继续保留，但定位为高风险补充层，而不是
 - 剩余缺陷概率；
 - 任意网络、任意规模或任意拜占庭行为下的全面性证明；
 - 有限测试对异步协议全局活性的证明。
+
+### 1.4 外部效果优先于内部指标
+
+Coverage Obligation 和 PSS 都是系统自己定义、并提供给 Agent 的内部反馈。如果
+系统让 Agent 优化这些指标，再用指标提高证明 Agent 有效，会形成循环论证。正式
+研究必须把评价分为三层：
+
+1. **主要外部结果**：在相同完整执行预算下，对 Agent 隐藏的历史真实缺陷和协议级
+   语义 mutant 的独立根因检出率、首次检出成本、复现率与正确版本误报率；
+2. **内部解释指标**：固定义务覆盖、PSS 状态/转换发现曲线、Oracle 激活和成本，
+   用于解释方法为什么有效或无效；
+3. **额外案例**：在官方当前版本发现并由上游确认的新缺陷，这是最强案例，但不是
+   项目成立的预设条件。
+
+义务/PSS 只有在未参与设计的 holdout 缺陷上能够预测或提高缺陷检出时，才能成为
+论文的主要解释变量。没有发现新漏洞不构成失败；在隐藏缺陷上也不优于简单基线时，
+不得通过增加指标或 Agent 数量维持原有主张。
 
 ---
 
@@ -166,6 +189,36 @@ Score + Evidence <- Oracle/Replay/Conformance <- Runtime Trace
 ```
 
 Planner Agent 只能从冻结分母选择目标；Scenario Agent 只能输出受限 Test Plan DSL；Search Agent 只能通过 Runtime 暴露的 enabled events 调用 Random/DFS/DPOR/约束搜索；Critic Agent 只能依据机械 finding 提交新计划。Agent 不能直接写入 Ledger，不能自报 observation 取得覆盖，也不能在当前 campaign 中增加、删除或降权义务。
+
+### 2.11 复杂度必须由外部收益支付
+
+项目设置显式“复杂度预算”：
+
+- 在隐藏缺陷 benchmark 建立前，不继续增加通用时序逻辑、复杂复合义务或更多 Agent；
+- 没有具体漏检根因时，不增加新的义务表达能力；
+- 现有 Matcher/DSL 能表达时，不新建抽象层；
+- 新义务、PSS 维度或 Agent 角色若不能改善 holdout 缺陷检出、降低成本或减少误报，
+  不进入正式路径；
+- 一个 Agent 能可靠完成的职责，不因架构对称性拆成多个 Agent；
+- 第二实现不能复用的机制，只能声明为 etcd/raft 实例经验。
+
+评价预算必须覆盖所有影响 SUT 的工作，不能只统计 Explorer measurement decision。
+每次重复 setup/prepare、drain 中执行的 Runtime event、故障动作、measurement event、
+run 数以及 replay 验证开销均须分别记录。正式方法比较至少固定 primary runtime
+work；模型 token、墙钟时间与 replay 开销独立报告。
+
+### 2.12 精确执行状态与语义新颖度必须分开
+
+系统同时维护四种不同的身份：
+
+1. `ExecutionFingerprint`：SUT/Driver/Runtime 精确执行与严格重放身份；
+2. `StateRef`：指向可从初始状态或可信 checkpoint 恢复的确定性前缀；
+3. `StructuralKey`：仅做节点/事件 ID 等已证安全的结构归一；
+4. `PSSSemanticKey`：用于状态发现和搜索新颖度的协议语义键。
+
+PSS 键相同只能影响搜索优先级和发现计数，不得直接用于 visited-state 剪枝。
+只有未来 enabled 集合、属性监控状态和后继观测在已证等价关系下保持一致时，
+才允许 DPOR/状态工作队列合并。
 
 ---
 
@@ -576,6 +629,17 @@ Runtime 必须允许 crash 插入以下通用边界：
 - GST；
 - post-GST delivery deadline。
 
+当前 Runtime 已提供一个可选的、协议无关的 `TimerSource` 边界：Driver 在给定逻辑时间
+声明**完整**的存活 timer 集合（稳定 ID、目标节点、绝对 deadline 和受限 payload），而
+Engine 独占 pending queue、取消、re-arm 与 timeout release。`advance` 只记录
+`clock-advance` trace boundary，并使 deadline 已到的 timeout 进入 enabled 集；它绝不自动
+调用协议。timeout 被真正执行后，Driver 必须移除或以更晚 deadline 重置同一 ID；不完整、重复、
+过去 deadline 或未知节点的声明会机械失败。该接口不允许 Driver 安排消息，也不把任意外部
+timeout 注入冒充为原生 timer。
+
+没有 `TimerSource` 的 Driver 仍可运行且不会生成计时器事件。这样新的时间模型不会改变历史
+trace；它只是为未来具有可重放原生 timer 接口的实现预留可信接入点。
+
 ### 7.2 随机超时
 
 如果原实现内部随机选择 timeout，正式确定性测试必须满足至少一种方式：
@@ -928,6 +992,30 @@ Agent 或 greybox fuzzer依据：
 
 最小化顺序建议为：删除无关动作、缩短时间、减少故障、删除消息副本、缩减节点/epoch/value，再做因果图级归约。
 
+### 12.5 Agentic Model Checking 搜索内核
+
+在现有 Test Plan/Campaign 之下增加一个可选的有限状态—动作工作队列：
+
+```text
+WorkItem = <StateRef, ActionRef, PathMetadata>
+EnabledActionSet = KernelEnumerate(ExactState)
+Next = SearchPolicy.Rank(WorkItems)
+```
+
+严格边界如下：
+
+- Runtime 产生稳定 `ActionRef`、验证 enabled 并执行；
+- replay/checkpoint 只能恢复 exact state，不能用 PSS 键构造实现状态；
+- Random、DFS、Bounded DPOR 和 Agent 共享同一个 WorkItem/ActionRef 边界；
+- Agent 只返回 ActionRef 排序和有界理由，不提交任意代码或原始消息；
+- 未能证明完整枚举受控边界内所有非确定动作、也未能证明剪枝保守时，
+  结果称为“Agent-guided implementation-level state-space exploration”，
+  不声称完整实现级 model checking。
+
+产品默认运行可以混合 baseline 与 Agent 配额以降低盲区；正式方法对比必须将
+Random/DFS/DPOR/宏观 Agent/微观 Agent/完整闭环分成独立等预算实验组，不用混合配额
+自证 Agent 优势。
+
 ---
 
 ## 13. Oracle 设计
@@ -1044,7 +1132,7 @@ SCS >= 85
 Capability 支持率 >= 90%
 ```
 
-SCS 的分母是冻结的结构化 Coverage Obligation，不是运行时发现的 PSS 状态数。义务内部默认等权，显式非零权重只能来自冻结 Profile；类别权重和阈值必须版本化。正式结果必须将 SCS 完整称为“指定有界 Profile 下的强义务覆盖率”。
+SCS 的分母是冻结的结构化 Coverage Obligation，不是运行时发现的 PSS 状态数。义务内部默认等权，显式非零权重只能来自冻结 Profile；类别权重和阈值必须版本化。正式结果必须将 SCS 完整称为“指定有界 Profile 下的强义务覆盖率”。SCS 是测试行为的内部解释指标，不是 Agent 有效性的最终外部判据。
 
 正式报告必须同时展示：
 
@@ -1079,7 +1167,7 @@ D_m(b) = |在预算 b 内由方法 m 发现的不同 PSS 状态键并集|
 
 它用于比较 Random、DPOR、greybox 和 Agent 方法在相同预算下发现根本不同协议状态的速度。该指标没有预先声称完整的状态分母，不得转换为“完成百分比”。
 
-公平评测必须固定 SUT/Driver/PSS/Profile/初始状态/工作负载，定义统一 measurement window，以 scheduler decision 为主预算，并同时报告时间/计算成本。所有方法共有的 bootstrap 前缀应排除或单独显示。PSS 必须消除节点名、绝对 term/index 和 value 等无关重命名，并避免在 persist/sync/emit/apply 等 host microstep 上重复采样。
+公平评测必须固定 SUT/Driver/PSS/Profile/初始状态/工作负载，定义统一 measurement window，并以包含重复 setup/prepare 的 primary Runtime work 为主预算。scheduler decision、setup work、run、replay、时间、模型 token 和计算成本分别报告。所有方法共有且只执行一次的 bootstrap 前缀可以排除；每个 run 重复执行的 bootstrap/setup 不能免费。PSS 必须消除节点名、绝对 term/index 和 value 等无关重命名，并避免在 persist/sync/emit/apply 等 host microstep 上重复采样。
 
 最终论文报告采用双轴：
 
@@ -1098,6 +1186,20 @@ Oracle failure 独立报告。状态发现数不能替代偏序路径、故障�
 - 训练/校准/隐藏数据隔离；
 - 与代码覆盖、随机调度数、状态数的相关性比较；
 - 分数与缺陷检出率的单调性和稳定性。
+
+### 14.7 隐藏缺陷外部评价
+
+正式 benchmark 同时使用：
+
+- 可复现的历史真实缺陷版本；
+- 修改 SUT 而不修改 Runtime/Driver/Oracle/Profile 的协议级语义 mutants；
+- 无缺陷 control 版本，用于计算误报率。
+
+具体缺陷位置、修复 patch、触发测试、root-cause identity 和 mutant 参数对 Agent
+隐藏。开发、校准和 holdout 缺陷严格分离；同一根因的多个表象按一个 root cause
+统计。主要结果至少报告 root-cause kill rate、time/work-to-first-kill、稳定复现率、
+false-positive rate 和总成本。Agent 发现的新官方缺陷只作为额外 case study，不能
+替代上述预先冻结的外部评价。
 
 ---
 
@@ -1129,7 +1231,7 @@ Executable witness scenarios -> contract obligation IDs
 build metadata and generated artifact digests
 ```
 
-Binding 中不允许 Agent 提供自定义 assertion、`confirmed` 状态或覆盖权重。预期 label、monitor、replay、conformance 和 Oracle 要求全部来自 Contract 与验证器。Binding-only 阶段只允许模型从受限的 Driver Manifest 和候选场景集合中生成 Binding/witness 引用；Contract-only 阶段的 Driver 源码只能进入独立 patch/build 沙箱，并先于 witness 生成通过单独的 API/PSS fixtures。
+Binding 中不允许 Agent 提供自定义 assertion、`confirmed` 状态或覆盖权重。预期 label、monitor、replay、conformance 和 Oracle 要求全部来自 Contract 与验证器。当前接入 Agent 只生成 Binding/witness 引用；Driver 源码生成在有第二实现需求和独立验收设计前不进入正式路径。
 
 ### 15.3 确定性 Coordinator 闭环
 
@@ -1157,6 +1259,16 @@ Generate proposal
 与 Random/DFS/DPOR 比较时固定 scheduler-decision 预算与 measurement window，同时报告模型调用、token、墙钟时间和费用。无固定分母的 PSS 状态发现曲线评价搜索效率，固定 Contract/Profile 分数评价最终测试债务；两者不混合。
 
 Strategy Agent 在实现上拆成 Planner、Scenario、Search 和 Critic 四个角色。Planner 读取风险优先 Coverage Debt；Scenario 只能生成 schema 约束的 Test Plan；Search 通过确定性 concretizer 调用现有搜索器；Critic 只依据 `PRECONDITION_UNREACHABLE`、`BUDGET_EXHAUSTED`、`ORACLE_NOT_ACTIVATED`、`REPLAY_MISMATCH` 等机械 finding 生成完整替代计划。任何 Agent 都不能直接执行 SUT API 或写 Coverage Ledger。
+
+Strategy 能力按两级独立准入：
+
+- **宏观计划**：选择覆盖债务、拓扑、工作负载、确定前缀、故障模型和搜索后端；
+- **微观排序**：对 Runtime 已枚举的 `EnabledActionSet` 排序，只能返回其中的
+  `ActionRef`。
+
+两级必须分别与 baseline 比较，并设置 Agent 超时、非法输出率、重复率和
+无增益回退到确定性搜索器的停止条件。在 StateRef/ActionRef 和独立等预算实验完成前，
+不以“在线 Agentic Model Checking”作为已实现能力。
 
 ### 15.5 Failure Analyst（可选）
 
@@ -1276,7 +1388,7 @@ Input
 
 - 通用 Runtime 不 import `go.etcd.io/raft/v3`；
 - Raft protobuf、Ready、HardState 等只出现在 etcd/raft Driver 和 Raft Family Pack；
-- toy Driver 与 etcd/raft Driver 使用相同 Runtime；
+- 第二个独立实现无需修改 Runtime；
 - 产生、释放、投递、丢弃是独立 trace 事件；
 - 至少覆盖一次 persist/sync/release/apply/ack crash cutpoint；
 - restart 不复制 volatile 内存状态；
@@ -1305,7 +1417,6 @@ internal/
   coverage/                  ledger、profile compiler、score
 
 drivers/
-  toy/
   etcdraft/                  唯一允许 import 官方 etcd/raft 的实现
   process/                   通用进程/代理接入基础设施
 
@@ -1345,7 +1456,6 @@ oracle/coverage -X-> Agent
 - 本总体规划；
 - Runtime/Driver/Batch/Message/Capability ADR；
 - trace 与 Decision Log schema；
-- toy conformance tests；
 - 代码依赖边界测试。
 
 退出条件：团队能明确回答“哪些逻辑属于 Runtime，哪些属于 Driver，哪些属于 PSS”。
@@ -1434,12 +1544,230 @@ oracle/coverage -X-> Agent
 
 当前进度：Coverage Kernel v2、55 项有界 Raft Campaign 分母、Test Plan DSL、
 确定性 concretizer、私有增量 Campaign Session、hash-chained Blackboard 和首个
-DeepSeek Planner Campaign 均已实现。v0.1 live run 在官方 etcd/raft 上取得
-16/55 强覆盖，随后对同一个 leader 前置条件错误连续生成等价计划；Coordinator
-正确去重并在 no-progress 上限停止。可信闭环已成立，但单 Planner 尚未证明能够
-自动修复失败计划，因此 M4.6 仍未退出。
+DeepSeek Planner Campaign 的 Blind 请求、拒绝、执行、反馈与重放闭环均已实现。可信闭环
+已成立，但尚未证明模型能够优于简单基线，因此 M4.6 仍未退出。
 
 退出条件：先使用可信专家 etcd/raft Driver，在无人修改 Ledger 的情况下，至少一个 Agent 能根据 Coverage Debt 生成计划、接收机械失败、修复计划并使固定覆盖率真实上升。
+
+### M4.7：外部缺陷 Benchmark 与完整成本
+
+交付：
+
+- 完整 primary execution cost：重复 setup/prepare、Runtime events、measurement
+  decisions 和 runs；replay/模型成本单列；
+- versioned Defect Benchmark Manifest、digest 和对 Agent 隐藏的 trial identity；
+- 历史缺陷、协议级语义 mutant 和正确 control 的统一结果账本；
+- 只接受 replay-stable、conformant、可信 Oracle failure 的 defect kill 证据；
+- 按独立 root cause 聚合 kill rate，并报告 false positive 与首次检出成本；
+- Random、DFS、专家、无反馈 Agent、单 Agent 的同预算 pilot。
+
+第一阶段只实现协议无关 schema/ledger、完整成本和隐藏 fixture mutant 正反例；真实
+etcd/raft 历史缺陷与 mutant 集随后独立冻结。此阶段完成前暂停扩展 Scenario/Critic
+和通用复合义务语言。
+
+当前进度（2026-08-06）：第一阶段已完成。Campaign report v2 对 fresh SUT、重复
+setup/prepare、setup Runtime event 和 measurement event 计入 primary work，并将 replay
+开销单列；私有 Defect Manifest、canonical digest、opaque blind trial、预算/身份检查、
+可信 Oracle 重算以及 root-cause/false-positive ledger 已落地。fixture control 与两个
+同根因 mutant 获得相同的 100 Coverage 分，evaluator 只 kill mutant 且按一个根因
+统计，证明内部覆盖分不会直接产生外部 kill credit。M4.9 已补入一个真实 etcd/raft
+历史回归 candidate/control；M4.11 又补入一个公开历史语义重构 candidate/control。M4.7
+的可信评测基础由此完成，但外部方法效果仍需多个对 Agent 隐藏的独立样本，不能由这些公开
+pilot 替代。
+
+退出条件：在 Agent 不接触 defect identity/patch/trigger 的情况下，可信 evaluator
+可以机械区分 killed、survived、false-positive 和 invalid trial，并证明内部
+Coverage/PSS 分数不会直接写入 defect kill 结论。
+
+### M4.8：候选资格、受控构建与公开校准
+
+交付：
+
+- Candidate 只声明六类 typed requirements；可信 CapabilitySnapshot 分开记录
+  controllable input、observable event、Driver capability、trusted monitor、execution
+  outcome 和 Profile bound；
+- QualificationReport 只通过集合包含关系机械产生 qualified/deferred 和稳定 reason code；
+- module path/version、source transformation/digest、command allowlist、binary/toolchain
+  identity 完整审计的只读依赖构建；
+- 同一 Profile、Driver、Runtime、Test Plan、Replay 和 Oracle 下的正确 control 与公开
+  calibration variant；
+- opaque trial、Campaign v2、可信 Oracle 重算和 root-cause/false-positive 账本的端到端报告。
+
+阶段关闭时（2026-08-06）：四个官方 etcd/raft 候选已进入公开 Catalog，均由当时的
+CapabilitySnapshot 机械判为 deferred；没有为增加样本数扩展 Driver。公开命令数据分歧
+calibration 使用相同 96-decision/200-primary-work 上限，correct control 与 calibration
+实际都执行 41 decisions、127 primary/127 replay work，并得到相同 21/55、38.67 Coverage。
+evaluator 从保存 trace 重算 Agreement 后得到 control-pass/killed，一个 calibration
+root cause、零 false positive。该结果只验证评测管线，不进入正式 holdout 结果。
+
+退出条件：构建与评测链能够在不改 module cache、Driver、Runtime、Profile、计划和
+Oracle 条件的前提下机械区分公开 calibration/control。后续能力扩展必须在新的阶段由
+Candidate requirement、CapabilitySnapshot 和独立 control 重新验收。
+
+### M4.8.1：证据链与资格判定加固
+
+状态：已完成。公开复现实验与负例见 `stage-m4.8.1-trust-chain-hardening.md` 和
+`benchmarks/pilots/etcdraft-calibration-v2/`。
+
+M4.8 的公开 calibration 证明功能路径连通，但不将“功能连通”等同于“正式评测
+证据链闭合”。在 ReadIndex 和首个官方历史候选之前增加这一强制阶段。
+
+交付：
+
+- canonical persisted trace 身份：Runtime、Campaign、Coverage Ledger 和 evaluator 对同一
+  setup + measurement trace 得到相同 digest；
+- evaluator 重建并校验 Ledger run witness，拒绝 trace/Ledger/replay/conformance/cost 内部不一致；
+- trial submission 绑定 BuildAudit、binary digest、source identity、Driver Manifest 和 Campaign Report，
+  Agent 不能用自报 SUT identity 取得正式结果；
+- Candidate Catalog 声明官方回归测试所需的完整前置条件，而不是只声明当前缺失项；
+- qualification 强制 protocol/family/profile 作用域、canonical set digest 和与编译 Profile
+  一致的有向 bound capacity；
+- 伪造 protocol/bounds、替换 binary/audit、修改 trace/Ledger/cost 和非目标源文件的
+  负例必须机械变为 deferred/invalid。
+
+退出条件：公开 control/calibration 保持 control-pass/killed；同一持久化轨迹只有一个
+canonical digest；工件替换负例全部 invalid；错误协议、Family 或伪造 bounds 不能使候选
+qualified。
+
+### M4.9：ReadIndex 历史回归复现
+
+状态：已完成。阶段记录见 `stage-m4.9-etcdraft-readindex.md`，最终工件见
+`benchmarks/pilots/etcdraft-readindex-v1/`。
+
+交付：
+
+- 受限 `ReadIndex` input、`Ready.ReadStates` typed observation 和独立
+  `linearizable-read` monitor；
+- Runtime-owned message `capture_message`/`execute_ref` 与只用于 host output 的
+  `execute_optional`，没有开放 event ID 或消息注入；
+- 未修改 official v3.6.0 candidate（module audit v4）和 `63903dd` 精确修复 control
+  （多文件 audit v3）的 source/binary/report identity binding；
+- private manifest、opaque trial、trusted rerun 和 root-cause ledger；
+- Coverage 浮点累加按 category 排序的确定性修复及回归测试。
+
+实际结果：`63903dd` 是四个公开候选中唯一机械 `qualified` 的样本。冻结计划下 candidate
+被 `linearizable-read` kill，control pass；每侧均为 1 run/1 decision、218 primary/218 replay
+work、26/55（45.67）Coverage，合计 1/1 root cause killed、0 false positive、0 invalid。
+可信 evaluator 首次重跑还捕获 Coverage 浮点最低位造成的 report digest 差异；修复、重建和
+再次重跑之后才冻结最终结果。
+
+该交付是公开历史回归复现，不能支持 Random/DFS/专家/Agent 的效果主张：触发计划由 curator
+冻结，样本数为一，且当前 RawNode Driver 尚无自然 timer queue。它只解除“尚无真实历史样本”的
+管线风险；后续方法比较必须使用多个彼此独立、对 Agent 隐藏的样本。
+
+退出条件：资格、构建、candidate/control、可信重跑与 root-cause 账本均可复现；M4.9 trace
+在后续 Runtime 时间模型变化后保持不变。
+
+### M4.10：可验证虚拟时间边界
+
+状态：已完成。阶段记录见 `stage-m4.10-virtual-time.md`。
+
+交付：
+
+- 可选、只声明的通用 `TimerSource`：Driver 声明 timer，Engine 管理 queue；
+- 带逻辑时间与 timer queue evidence 的 `clock-advance` trace record；deadline 到达只开放
+  scheduler choice，绝不强制执行；
+- stable timer ID 的取消、re-arm、重复/陈旧声明拒绝和完整单元测试；
+- etcd/raft Driver integration fixture，确认虚拟时钟不会制造未经认证的 native timeout；
+- M4.9 frozen candidate 计划的 setup、full execution、measurement fingerprint 回归比较。
+
+实际验证：通用 fixture 证明未到期 timer 不启用、到期后仍须由 scheduler 显式执行、执行后只能
+由 Driver remove/re-arm；malformed declaration 被拒绝。官方 etcd/raft v3.6 Driver 未实现
+`TimerSource`，`natural-election-timeout-replay` 仍为 Unsupported。用当前 Runtime 重跑 M4.9
+冻结计划，三个 fingerprint 分别仍为
+`4a70dcbe7b6728dbfa650963bfa797d396d2c217b813bc4a8f1eb6f405855237`、
+`59b74e04eec1af04b7d7d98cd0f41c4f958c3be0de82e12c9ec9563208fa71df`、
+`69e8ed5889f703974c3c0cb39e2030dae129a06476e4704337ddc35bbf766a2a`；Coverage、成本和
+monitor finding 也相同。
+
+该阶段没有实现 etcd 的 `RawNode.Tick`、随机选举 timeout 重放、GST、调度公平性或活性结论。
+后续 Driver 只有在原生随机性可注入、完整捕获重放或明确分离 instrumented variant 时，才能
+声明对应 timer capability。
+
+退出条件：有 timer 的通用接入与无 timer 的历史 Driver 都可重放；时间进展不能静默执行协议，
+也不能污染不使用虚拟时间的冻结 trace。
+
+### M4.11：Ready.MustSync 历史语义重构
+
+状态：已完成。阶段记录见 `stage-m4.11-etcdraft-ready-must-sync.md`，工件见
+`benchmarks/pilots/etcdraft-ready-must-sync-v1/`。
+
+交付：
+
+- Profile digest 绑定的 `runtime_profile=etcdraft-ready-must-sync-v1`，只在 opt-in 模式启用
+  `conditional-ready-sync` 和 `ready-must-sync-observation`；
+- 默认 etcd/raft Driver 保持保守 sync，不暴露 `ready-must-sync` campaign monitor；
+- `families/raft.ReadyMustSync` 独立 monitor，从 typed observation 检查
+  message-only Ready 且 empty HardState 时 `MustSync=true` 的语义差异；
+- 当前 v3.6 module 上一处精确反向源码转换的 digest-bound candidate，以及未修改官方 v3.6
+  control；
+- private manifest、blind submission、trusted rerun 和 root-cause ledger。
+
+实际结果：`etcdraft-0675f3d-ready-must-sync` 成为本 Profile 下唯一机械 `qualified` 候选。
+candidate 在 1 run/1 decision、105 primary/105 replay work 下被 `ready-must-sync` kill；
+control 在 100/100 work 下 pass。两侧 Coverage 都是 2/3（75.00），最终为 1/1 semantic root
+cause killed、0 false positive、0 invalid。
+
+M4.11.1 可信边界加固：Candidate requirements 不再把 `unchanged HardState` 这种必须由时序
+达到的语义前置状态伪装成 controllable input，而是只声明 `read-index` 这一真实输入；
+malformed typed monitor evidence 统一成为 invalid/conformance，不得产生 kill credit；
+`first_kill_primary_work` 通过 `detection_granularity=plan-end` 明确当前批量 Oracle 的检测边界；
+fresh-clone verifier 在固定 Go/toolchain 和 readonly module cache 下重建 binary 并逐字节比对
+qualification、Campaign 与 evaluator 工件。加固后 candidate/control 结果保持不变。
+
+边界：这是公开历史语义重构，不是完整历史 checkout 复现；它证明第二条 Ready/持久化策略
+评测链闭合，但不能支持 Agent、Coverage 或 PSS 的方法效果结论。M4.9 仍是当前唯一精确
+历史回归复现。
+
+退出条件：opt-in Ready monitor 不污染默认 Driver 路径；资格、构建、campaign 和 evaluator
+均可复现；静态 capability 不夸大动态可达性；malformed Driver observation 不能产生 SUT kill；
+文档明确区分 semantic reconstruction 与 historical reproduction。
+
+### M4.12：Blind Planner Agent v1
+
+状态：开发期闭环完成，阶段记录见 `stage-m4.12-blind-planner-v1.md`；尚未运行模型或形成
+方法效果结论。
+
+交付：Planner 只看到 opaque trial ID、Profile identity/node 投影、Driver 声明的受限输入形状、
+supported capability 名称、opaque Coverage Debt ref、受限
+DSL、预算与机械 finding；不看到 Driver/SUT/build identity、真实 obligation ID、描述、evidence、
+monitor、trace、Oracle 文本或 Ledger。可信 `CoordinateBlind` 在 Runtime 前才将 opaque ref 解析
+为真实目标，并将私有 Campaign Report 排除在可持久化 Planner transcript 之外。真实 ID/未知 ref
+在 Runtime 前拒绝，fixture 已验证拒绝后有效 ref 仍可取得 Ledger 强证据。
+
+边界：opaque ref 不能替代正式 holdout 的私有 manifest/identity 映射，也不能证明模型没有从
+公开协议知识或机械反馈中推断语义；M4.9/M4.11 仍仅可作闭环调试。下一步是冻结多条独立、对
+Planner 不公开 candidate identity/trigger 的 qualified trial/control，再在共同 decision/token/
+clock 预算下比较方法。
+
+### M4.13：Blind Benchmark 预检与 Exposure Audit
+
+状态：工具链完成，阶段记录见 `stage-m4.13-blind-benchmark-preflight.md`；尚未创建正式 private
+holdout 或运行模型比较。
+
+交付：private `Manifest` 现在拒绝将 private `variant.id` 复用为 opaque `trial_id`；
+`cmd/blind-audit` 重算 `Manifest.Blind()` 并审计 Blind Manifest、Planner request/transcript、
+submission 等 public JSON。它拒绝 private variant ID、root cause、category、source/SUT/build digest
+和 private kill monitor 的直接 JSON 字符串泄露；输出只保留公共工件 digest 和稳定 finding code，
+不回显 private 值。
+
+边界：该审计只检查已枚举 private Manifest 字符串的直接泄露，不能证明模型不能从公开协议知识、
+Profile/Capability 名称或交互结果推断语义，也不替代 runner 的进程/文件系统隔离。它是冻结样本
+之前的必要 preflight，不是正式方法效果证据。
+
+### M4.14：Blind Trial 的可信 Replay Bundle
+
+状态：运行/复验链接完成，阶段记录见 `stage-m4.14-blind-trial-replay.md`；没有正式 sample 或
+模型结果。
+
+交付：Blind Coordinator 在 opaque target ref 被可信解析和执行后，私有保存真实 Test Plan；
+public `BlindReport` 不含这些计划。`TrustedReplayBundle` 绑定 Config、scope、Profile/capability
+digest 与接受的计划；`cmd/blind-replay` 不调用模型，以相同 Coordinator identity 重建 Campaign，
+并适配 trusted evaluator 的统一 flags。正式 submission 的 `plans` 应指向 private bundle，
+`binary` 应为同一 candidate/control 构建的 blind-replay binary。
+
+边界：这只保证已产生 Plan 的可重放性，不解决 candidate/control 的选择、Planner feedback 的
+信息泄露或多样本方法效果。任何正式 trial 仍须通过 M4.13 exposure audit。
 
 ### M5：Onboarding Agent 与 Strategy Agent
 
@@ -1455,7 +1783,7 @@ DeepSeek Planner Campaign 均已实现。v0.1 live run 在官方 etcd/raft 上�
 
 Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置条件。
 
-当前进度：第一个 model-backed Generator 已完成 Binding-only 阶段，使用隔离子进程、私有 key 文件、固定 JSON schema、温度 0、关闭 thinking、完整反馈和逐轮 digest/token 审计。etcd/raft Contract-only 路径已经加入完整源码 Proposal、无网络 bubblewrap、受限 import、离线构建、Raft PSS 逐步检查与可信 evidence 重建。代表性 `v5` 实验第 2 轮完成编译和 bootstrap host operations，但因未选主即 propose 而失败，后续五轮没有产生实质源码修复；因此 Driver/witness 自动接入尚未成功，M5 不退出。
+当前进度：第一个 model-backed Generator 已完成 Binding-only 阶段，使用隔离子进程、私有 key 文件、固定 JSON schema、温度 0、关闭 thinking、完整反馈和逐轮 digest/token 审计。Driver/witness 自动接入尚未在第二实现上验证，因此 M5 不退出。
 
 ### M6：第二实现与迁移性
 
@@ -1485,15 +1813,16 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 ### 20.1 核心研究问题
 
-1. SCS 是否比代码覆盖、随机调度数、状态数更能预测缺陷检出能力？
-2. term 平移、节点/值重命名后，语义键是否保持不变？
-3. 保守偏序约简能节省多少执行，又是否遗漏已知/隐藏缺陷？
-4. Agent 是否提高覆盖增长速度和单位时间收益，而不改变最终判定？
-5. 语义/接入 Agent 是否在不降低 conformance 的前提下减少首次可控测试时间、人工 LOC 和审核成本？
-6. PSS 和 Family Pack 能否迁移到第二实现？
-7. 一个全新协议的接入时间、人工审核量和错误率是多少？
-8. 小版本升级后 Profile 分数和 canonical key 是否稳定？
-9. Capability 不足对最终分数和缺陷检出率有何影响？
+1. 在相同完整执行预算下，受限 Agent 是否比 Random、DFS 和专家固定计划发现更多隐藏独立缺陷根因？
+2. SCS 和 PSS state/transition discovery 是否能在 holdout 缺陷上预测缺陷检出，而不仅是被 Agent 优化？
+3. term 平移、节点/值重命名后，语义键是否保持不变？
+4. 保守偏序约简能节省多少执行，又是否遗漏已知/隐藏缺陷？
+5. Agent 是否提高覆盖增长速度和单位成本收益，而不改变最终判定？
+6. 语义/接入 Agent 是否在不降低 conformance 的前提下减少首次可控测试时间、人工 LOC 和审核成本？
+7. PSS 和 Family Pack 能否迁移到第二实现？
+8. 一个全新协议的接入时间、人工审核量和错误率是多少？
+9. 小版本升级后 Profile 分数和 canonical key 是否稳定？
+10. Capability 不足对最终分数和缺陷检出率有何影响？
 
 ### 20.2 基线
 
@@ -1534,6 +1863,9 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 | 只在一个 Raft 上有效         | 贡献退化为专用 Harness  | 以第二实现作为阶段性硬验收                |
 | 把活性当固定超时             | 大量误报                | GST、公平性、temperature/lasso 独立模块   |
 | Agent 误报被当成缺陷         | 结果不可信              | Oracle、重放、最小化、官方构建、人工确认  |
+| 自定义指标循环论证           | 系统复杂但缺少外部价值  | 隐藏历史缺陷/mutant 主评价，义务/PSS 只作解释 |
+| prepare/setup 被当作免费     | Agent 刷分且预算不公平  | 统计并限制完整 primary Runtime work       |
+| 为架构完整盲目增加 Agent/DSL | 工程复杂度掩盖负结果    | holdout 收益门槛和显式停止/删除条件       |
 
 ---
 
@@ -1555,8 +1887,11 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 - [ ] 覆盖原子是否在运行前冻结？
 - [ ] Unsupported 是否被诚实保留？
 - [ ] 新规范化规则是否可能合并不等价执行？
-- [ ] 是否有第二 Driver 或 toy Driver 测试证明通用性？
+- [ ] 是否有第二独立实现测试证明通用性？
 - [ ] 报告是否同时给出分数向量、能力和失败，而非单一数字？
+- [ ] 主要结论是否来自 Agent 看不到的外部缺陷，而不是它正在优化的 Coverage/PSS？
+- [ ] setup/prepare/drain 是否进入完整执行成本，而非被当作免费前缀？
+- [ ] 新增抽象或 Agent 角色是否有预先声明的 holdout 收益与删除条件？
 
 任一关键项不能回答时，功能不应直接进入正式评测路径。
 
@@ -1564,7 +1899,7 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 ## 23. 当前立即执行顺序
 
-截至 2026-08-05 的落地状态：
+截至 2026-08-06 的落地状态：
 
 1. [X] 定义 Protocol Knowledge Contract v1、严格 Go 模型、canonical digest 和 JSON schema。
 2. [X] 实现 Contract 到 Profile 的确定性编译；实现支持状态不影响 atom 分母。
@@ -1575,24 +1910,47 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 7. [X] 添加伪造 Contract digest、虚构 runtime capability 和缺失 witness 负例，证明 Agent 无法绕过机械验收。
 8. [X] 将 `make run-raft` 和 Explorer 的正常路径切换到自动验证产生的 Profile。
 9. [X] 实现第一个 model-backed `autoonboard.Generator`，先只生成 Binding/witness；DeepSeek V4 Flash 在真实 API smoke test 中经两轮机械反馈通过，产物与静态基线 Profile 一致。
-10. [X] Contract-only 原型已加入完整提案、路径/AST/import 限制、无网络构建沙箱、组件 digest、Raft PSS 逐步检查和可信 evidence 重建；代表性 v5 未收敛，证明单体 Driver+witness 任务需要拆分。
 11. [X] 实现 Coverage Kernel v2：结构化 Coverage Obligation、Profile/Manifest digest、Evidence Matcher、跨运行 Coverage Ledger、风险优先 Coverage Debt、私有可信状态和可下钻强证据；现有 etcd/raft 基线已迁移且仍为 10/12、85.42。
 12. [X] 由 Raft Family Pack + 有界 Campaign Spec 机械展开 55 项 etcd/raft 转换、顺序、故障切点、边界和属性激活分母；12 项 Profile 仅保留为接入质量指标。Family matcher 使用冻结角色/日志/分区证据，当前 53 项 Supported、2 项 Unsupported，单场景审计基线为 25/55、44.41。
 13. [X] 定义受限 Test Plan DSL、Profile digest/全局预算约束和确定性 concretizer；实现多运行 Campaign，使手写计划围绕 Coverage Debt 调用 Random/DFS，每条 decision log 强制重放后由 Oracle/Conformance/Evidence Matcher 自动更新 Ledger。etcd/raft 专家基线为 39/55、66.38，剩余 14 项可行动债务，33 runs/1624 decisions 全部重放稳定且无执行错误/Oracle 违规。
 14. [X] 实现私有增量 Campaign Session、hash-chained Agent Blackboard 与确定性 Coordinator，加入有界重试、run/decision/token/no-progress 预算、ID/协议因果结构重复检测和只追加审计；脚本化负例证明 Agent 不能直接写 Ledger 或绕过拒绝路径。
-15. [ ] 依次接入 DeepSeek Planner、Scenario 和 Critic Agent，先使用已验证的专家 etcd/raft Driver，证明 Agent 能自动修复失败计划并提高固定覆盖率。第一个单体 DeepSeek Planner 已接入并完成 live run：16/55、31.00、128 decisions、36534 tokens，因连续重复不可执行计划在第 4 轮机械停止；Scenario/Critic 拆分和自动修复目标仍未完成。
-16. [ ] 增加统一 Campaign CLI 和报告：主指标为固定义务覆盖率，PSD、Oracle failure、成本和方法对比独立展示。
-17. [ ] 将自动接入拆成 Driver-only fixtures 闭环和固定 Driver 后的 Binding/witness 闭环，加入隐藏专家 Driver 差分行为见证。
-18. [ ] 接入 Knowledge/Obligation Agent；同家族协议尽量自动冻结差异 Contract/Profile，新家族只保留一次核心语义确认。
-19. [ ] 在一个开发期未见的第二 Raft/Paxos 实现上验证 Family Pack 复用、自动接入和测试闭环成功率。
-20. [ ] 完成 DPOR/causal graph、多 seed、历史缺陷、隐藏语义突变体和 Agent 消融实验。
+15. [X] 实现 M4.7 外部缺陷评价基础：Campaign report v2 记录完整 setup/prepare Runtime 成本并分离 replay；Defect Benchmark 具备私有 Manifest/digest、opaque trial、预算与 SUT identity 检查、可信 Oracle 重算、root-cause/false-positive 账本。隐藏 fixture control/mutant 在相同 100 Coverage 下得到 control-pass/killed，两个同根因 mutant 只计一个 root cause。
+16. [X] 实现 M4.8 候选资格与公开 calibration pilot：Candidate 无人工状态，六类 CapabilitySnapshot 做纯集合判断；四个官方候选全部 deferred。离线只读构建与 digest-bound SUT identity 完成，正确 control/calibration 在相同 127 primary work、相同 38.67 Coverage 下得到 control-pass/killed，零 false positive；该结果不计正式 holdout。
+17. [X] 完成 M4.8.1：统一 persisted trace digest；evaluator 重建 Ledger witness 并亲自重跑 digest-bound binary；BuildAudit 绑定完整 module tree、binary/source/report；qualification 强制 protocol/family/Profile bounds；公开 v2 calibration 保持 control-pass/killed，工件与报告替换负例均被拒绝。
+18. [X] 按官方 `9b9d6ee + 63903dd` 回归场景补全 Candidate requirements，实现 ReadIndex input/read-state observation 和检查 stale-leader read-index 下界的独立 monitor；`63903dd` 已机械 qualified，digest-bound candidate/control 由 trusted evaluator 区分为 killed/control-pass。
+19. [X] 实现 M4.10 可验证虚拟时间/timer queue 边界：可选 TimerSource、Engine-owned queue、显式 `clock-advance` trace、到期仅 enable、不合法声明拒绝和无 timer 历史 trace 兼容。etcd/raft 仍未声明自然 timeout capability。
+20. [X] 按官方 `0675f3d` Ready.MustSync 语义构造 digest-bound semantic reconstruction candidate/control，实现 opt-in conditional-ready-sync、Ready.MustSync observation、独立 monitor 和 trusted evaluator 闭环；明确它不是完整历史 checkout 复现。
+21. [ ] private Manifest → Blind Manifest → exposure audit → trusted replay bundle 的预检/复验工具链已完成；下一步在仓库外冻结一批彼此独立、对 Agent 不暴露的 qualified etcd/raft 历史差异样本和正确 controls。当前公开 M4.9 回归与 M4.11 语义重构只作管线/评测链验证，不能进入方法比较；样本就绪并通过 audit 后运行 Random、DFS、专家与 Blind Planner，检查 Coverage/PSS 与缺陷检出的关系。
+22. [ ] 只有在正式 pilot 暴露具体漏检根因后，增加少量可由现有 Matcher 扩展支持的复合时序义务；暂不开放任意 LTL 或笛卡尔义务生成。
+23. [ ] 若单 Planner 在 holdout 缺陷上的主要失败来自角色混合，再依次接入 Scenario 和 Critic Agent；若失败来自完整计划频繁不可达，先增加 `StateRef/ActionRef/EnabledActionSet` 微观排序实验，并与宏观 Agent、无反馈 Agent 做独立消融。
+24. [ ] 增加统一 Campaign/Benchmark 报告：外部 root-cause kill 为主结果，义务覆盖、PSS、Oracle、完整成本和方法对比独立展示。
+25. [ ] 将自动接入拆成 Driver-only fixtures 闭环和固定 Driver 后的 Binding/witness 闭环，加入隐藏专家 Driver 差分行为见证。
+26. [ ] 接入 Knowledge/Obligation Agent；同家族协议尽量自动冻结差异 Contract/Profile，新家族只保留一次核心语义确认。
+27. [ ] 在一个开发期未见的第二 Raft/Paxos 实现上验证 Family Pack 复用、自动接入和测试闭环成功率。
+28. [ ] 完成 DPOR/causal graph、多 seed、holdout 缺陷和完整 Agent 消融实验。
 
-当前主线不再继续盲目增加 Contract-only 或单 Planner 模型重试。Coverage Kernel
-v2、有界 Raft Campaign 分母、Test Plan 闭环、Blackboard/Coordinator 和首个
-DeepSeek Planner 已完成阶段性冻结；结果证明权限边界可靠，但单体 Planner 的
-failure repair 不可靠。下一步继续第 15 项，将 Coverage Planner、Scenario 和
-Critic 拆成窄角色，并使用相同 DSL/可信内核做无反馈、单 Agent、多 Agent 消融。
-达到可重复修复后，再补齐第 16 项统一成本报告和第 17 项分阶段自动接入。
+当前主线不再继续盲目增加单 Planner 重试、复合义务或 Agent 角色。
+Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
+历史回归复现、M4.10 虚拟时间边界和经 M4.11.1 加固的 Ready.MustSync 语义重构均已冻结。
+`Blind Planner Agent v1` 的无模型受限闭环已冻结：Agent 只读取 opaque trial ID、冻结 Profile
+投影、CapabilitySnapshot、opaque Coverage Debt、受限 Test Plan schema 与机械 finding，不接触
+defect identity、patch、trigger、真实 obligation ID、Oracle 私有输出或 Ledger。M4.13 已加入
+private Manifest 到 public JSON 的直接泄露审计。M4.9/M4.11 只用于该闭环的开发调试；下一步是
+在仓库外冻结未泄露的独立历史样本/controls、通过 exposure audit，并在共同预算下进行首次盲化
+方法比较。多样本 holdout 出现前，不增加复合义务或额外 Agent 角色。发现官方新缺陷是额外案例，
+不是阶段退出条件。
+
+M4.15 已把协议输入收紧为 Driver Manifest 声明的 `protocol-input` 形状：通用层保存但不解释
+operation，具体 etcd/raft Driver 才映射到官方 API；早期 toy、Contract-only 与旧全信息 Planner
+路径已删除。该整理只降低接入耦合，不构成第二实现复用或 Agent 方法效果的证据。
+
+M4.16 将新的正式 benchmark Manifest 升级为 v2，并冻结 `pss_id`：trusted evaluator 从
+Manifest 而非独立 CLI 参数选择 Family monitor，Campaign report PSS identity 不一致即为
+invalid。公开 v1 pilot 仅保留显式 legacy 复验入口；该身份收紧不等于已经拥有正式 holdout 样本。
+
+M4.17 新增 private readiness gate：在 Blind view 生成前机械要求 Manifest v2、足够的 distinct
+root-cause label/control、historical provenance 和每个 trial 的 build artifact binding。报告只含
+计数与稳定代码；label 不等于因果独立，curator 的私有来源/时间切分审查仍不可省略。
 
 ---
 
@@ -1623,6 +1981,16 @@ Critic 拆成窄角色，并使用相同 DSL/可信内核做无反馈、单 Agen
 21. 最终主百分比来自冻结 Coverage Obligation 分母；PSS 状态发现只用于搜索效率比较。
 22. Agent 测试生成以 Coverage Debt 为目标，经 Test Plan DSL、确定性 concretizer、Runtime 和 Evidence Matcher 形成闭环。
 23. 自动接入与覆盖驱动测试先分开验证，再组成端到端系统。
+24. Agent 方法的主要效果由隐藏历史缺陷和语义 mutant 外部评价；Coverage/PSS 不能自证有效。
+25. 发现官方未知缺陷是 bonus，不是预设成功条件。
+26. 完整执行预算必须计入每个 run 重复的 setup/prepare；scheduler decision 不能代表全部成本。
+27. 新义务、PSS 维度和 Agent 角色必须通过 holdout 缺陷收益支付复杂度，否则删除或降级为实验路径。
+28. Candidate 不保存人工资格状态；只有 typed requirements 与可信 CapabilitySnapshot 的纯集合判断可以产生 QualificationReport。
+29. 公开 calibration 与正式 holdout 严格分离；calibration 只能验证构建和评测管线，不能支持方法效果主张。
+30. Agentic Model Checking 只作为搜索内核增强；Contract/PSS/Profile、Coverage Ledger 和隐藏缺陷外部评价仍是主线。
+31. `ExecutionFingerprint/StateRef/StructuralKey/PSSSemanticKey` 是不同身份；PSS 新颖度键不得未经证明地用于状态剪枝。
+32. 在线 Agent 只能排序可信 Runtime 已枚举的 `ActionRef`；enabled 判定、动作执行和 Frontier 身份属于确定性内核。
+33. 未控制模型边界内全部非确定性、未完整枚举 enabled actions 或未证明剪枝保守时，不宣称完整 implementation-level model checking。
 
 ---
 
@@ -1687,4 +2055,4 @@ Critic 拆成窄角色，并使用相同 DSL/可信内核做无反馈、单 Agen
 
 如果未来无法用下面这句话准确描述 ConsensusAtlas，项目就可能已经偏航：
 
-> ConsensusAtlas 以最小 Protocol Charter 和可复用 Family Pack 为信任根，让 Knowledge/Onboarding/Obligation Agent 自动完成语义、接入和固定覆盖义务，让 Planner/Scenario/Search/Critic Agent 围绕 Coverage Debt 持续生成并修复测试，最终只由确定性 Runtime、Evidence Matcher、Replay、Conformance、Oracle 和 Coverage Ledger 判定覆盖与结果。
+> ConsensusAtlas 以最小 Protocol Charter 和可复用 Family Pack 为信任根，让受限 Agent 自动完成语义、接入和测试生成，由确定性 Runtime、Replay、Conformance、Oracle 与 Ledger 判定内部覆盖，并最终用 Agent 看不到的历史缺陷/语义 mutant 根因检出和正确 control 误报评价方法效果。

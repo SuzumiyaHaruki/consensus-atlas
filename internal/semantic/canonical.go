@@ -11,6 +11,7 @@ import (
 type CanonicalEvent struct {
 	Index        int                   `json:"index"`
 	Kind         core.EventKind        `json:"kind"`
+	Operation    string                `json:"operation,omitempty"`
 	Source       string                `json:"source,omitempty"`
 	Target       string                `json:"target,omitempty"`
 	At           uint64                `json:"at"`
@@ -50,6 +51,7 @@ func StructuralCanonicalize(trace []core.TraceRecord) []CanonicalEvent {
 		canonical := CanonicalEvent{
 			Index:        index + 1,
 			Kind:         record.Event.Kind,
+			Operation:    record.Event.Operation,
 			Source:       alias(record.Event.Source),
 			Target:       alias(record.Event.Target),
 			At:           record.Event.At,

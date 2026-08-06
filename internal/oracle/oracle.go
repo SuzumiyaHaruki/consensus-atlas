@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
@@ -22,6 +23,34 @@ type Monitor interface {
 	Check([]core.TraceRecord) []Violation
 }
 
+// EvidenceValidator is implemented by monitors whose typed observations need
+// schema checks before semantic evaluation. Invalid Driver evidence is a
+// conformance failure, not a protocol-property violation, and therefore must
+// never create defect-kill credit.
+type EvidenceValidator interface {
+	ValidateEvidence([]core.TraceRecord) error
+}
+
+func ValidateEvidence(trace []core.TraceRecord, monitors ...Monitor) error {
+	for _, monitor := range monitors {
+		validator, ok := monitor.(EvidenceValidator)
+		if !ok {
+			continue
+		}
+		if err := validator.ValidateEvidence(trace); err != nil {
+			return fmt.Errorf("monitor %s evidence: %w", monitor.Name(), err)
+		}
+	}
+	return nil
+}
+
+func EvidenceError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 func Check(trace []core.TraceRecord, monitors ...Monitor) Result {
 	result := Result{}
 	for _, monitor := range monitors {
@@ -30,6 +59,8 @@ func Check(trace []core.TraceRecord, monitors ...Monitor) Result {
 	}
 	return result
 }
+
+var ErrMalformedEvidence = errors.New("malformed monitor evidence")
 
 type Agreement struct{}
 

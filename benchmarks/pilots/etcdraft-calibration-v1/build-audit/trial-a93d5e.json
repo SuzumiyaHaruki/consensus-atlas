@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "trial_id": "trial-a93d5e",
+  "build_spec_digest": "349e747f69a77f72b59fc484980f1da3629387de9adfebba22499237c8f9a0fa",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source_path": "raft.go",
+  "input_source_digest": "4283c10e12c6da14964c6d6784a69851af1312245aa83925ec0e9426a07ed7bb",
+  "output_source_digest": "0fa106fa2a574c1bf56c427d9f3c8cb1fbae48f77d8ed26be06032b5eecb382c",
+  "sut_build_identity": "sut-0cb5c0409ddd0bff",
+  "binary_path": "artifacts/pilots/etcdraft-calibration-v1/bin/sut-0cb5c0409ddd0bff",
+  "binary_digest": "6b6fd45cba318c09055be55ad218387138407fff31c8f36e21b7edc796213674",
+  "command_identity": "714b8756b75cfdf6ee21fe0bf820c9c9fc8328a761ea513067d4bd6283401349",
+  "commands": [
+    {
+      "identity": "go-list-module",
+      "digest": "31180163a6c1039d91283d0e6033726684c7630e6a022010380d5fe2c7b5bb5d",
+      "executable": "go",
+      "logical_args": [
+        "list",
+        "-mod=readonly",
+        "-m",
+        "-json",
+        "go.etcd.io/raft/v3"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    },
+    {
+      "identity": "go-build",
+      "digest": "b6b7dfff96c0c1a58a54e72e3ad5b21b39ceafbd5427579cb9136811bf67d7e0",
+      "executable": "go",
+      "logical_args": [
+        "build",
+        "-mod=readonly",
+        "-trimpath",
+        "-buildvcs=false",
+        "-modfile=\u003cgenerated\u003e",
+        "-ldflags=-buildid= -X=github.com/SuzumiyaHaruki/consensus-atlas/drivers/etcdraft.SUTBuildIdentity=sut-0cb5c0409ddd0bff",
+        "-o",
+        "artifacts/pilots/etcdraft-calibration-v1/bin/sut-0cb5c0409ddd0bff",
+        "./cmd/campaign"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    }
+  ],
+  "toolchain_identity": "go1.25.8/linux/amd64",
+  "module_cache_unmodified": true,
+  "offline_readonly_build": true,
+  "exact_match_count": 1
+}
