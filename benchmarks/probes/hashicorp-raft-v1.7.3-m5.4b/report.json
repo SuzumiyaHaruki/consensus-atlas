@@ -1,0 +1,61 @@
+{
+  "schema_version": "consensus-atlas/hashicorp-raft-runtime-slice/v1",
+  "experiment_id": "hashicorp-raft-v1.7.3-m5.4b",
+  "sut": {
+    "module": "github.com/hashicorp/raft",
+    "version": "v1.7.3",
+    "revision": "c0dc6a0b2c7e889f31e5ab2f7ed90ceb159acffe",
+    "go_module_sum": "h1:DxpEqZJysHN0wK+fviai5mFcSYsCkNpFUl1xpAW8Rbo="
+  },
+  "runtime_schema": "consensus-atlas/control/v2alpha1",
+  "configuration": {
+    "nodes": ["n1", "n2", "n3"],
+    "n1_heartbeat_timeout": "500ms",
+    "n1_election_timeout": "10s",
+    "n2_n3_timeout": "1h",
+    "virtual_clock": false,
+    "sut_entropy_control": false
+  },
+  "scenario": {
+    "initial_request_vote_messages": 2,
+    "initial_append_entries_messages": 2,
+    "selected_actions": [
+      "drop-request-vote",
+      "deliver-request-vote",
+      "drop-append-entries",
+      "deliver-append-entries",
+      "opaque-invoke",
+      "deliver-append-entries"
+    ],
+    "opaque_command_digest": "ba56355760d44c3dd792dfa51d888d526b2eac6c7da406bc4ebec73b5ddfa200",
+    "required_observation": "fsm-apply"
+  },
+  "trials": [
+    {"trial": 1, "decisions": 6, "fsm_apply": true, "trace_digest": "ec117996795195a4e4d831816c0f19d939614cc5a7117b38370287cc8edebd69"},
+    {"trial": 2, "decisions": 6, "fsm_apply": true, "trace_digest": "89fd52589a7c0f37125b1917172c9f7977a4e14483abf44d73a794a8768496d6"},
+    {"trial": 3, "decisions": 6, "fsm_apply": true, "trace_digest": "6b91e5c5f3c82574eab16b7547c16548de7ab03e8005c63bf58a4b1167f02cb5"},
+    {"trial": 4, "decisions": 6, "fsm_apply": true, "trace_digest": "204d4c910f19751851c581b01ac0360aba93505f0d3a8ab59088ed0381b85078"},
+    {"trial": 5, "decisions": 6, "fsm_apply": true, "trace_digest": "d9a85efd5bf77faae8b873a73f1fcc9adaf05c6ac87dc8cd147d08bde0555e7a"}
+  ],
+  "aggregate": {
+    "trials": 5,
+    "fsm_apply_successes": 5,
+    "decision_min": 6,
+    "decision_max": 6,
+    "unique_trace_digests": 5
+  },
+  "findings": [
+    {"capability": "runtime-owned-request-vote", "status": "observed"},
+    {"capability": "runtime-owned-append-entries", "status": "observed"},
+    {"capability": "deliver-to-official-node", "status": "observed"},
+    {"capability": "drop-releases-synchronous-transport-call", "status": "observed"},
+    {"capability": "opaque-invoke-to-fsm-apply", "status": "observed"},
+    {"capability": "virtual-clock", "status": "unsupported", "reason_code": "HASHICORP_RAFT_CLOCK_NOT_INJECTABLE_V1_7_3"},
+    {"capability": "sut-entropy-control", "status": "unsupported", "reason_code": "HASHICORP_RAFT_PACKAGE_RANDOM_NOT_INJECTABLE_V1_7_3"},
+    {"capability": "strict-replay", "status": "unsupported", "reason_code": "WALL_CLOCK_AND_OPERATIONAL_TIMESTAMP_NOT_NORMALIZED"}
+  ],
+  "qualified": false,
+  "strict_replay": false,
+  "digest_scope": "sha256 of sorted compact JSON excluding canonical_digest",
+  "canonical_digest": "23f2a0c1f5a979304cd9059d69fb789eb7576b0590d1c37f156c113e2656dba1"
+}

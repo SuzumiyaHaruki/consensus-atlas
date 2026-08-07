@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/adapter-qualification-profile-v1.json",
+  "title": "ConsensusAtlas Adapter Qualification Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "capabilities", "digest"],
+  "properties": {
+    "schema_version": {"const": "consensus-atlas/adapter-qualification-profile/v1"},
+    "id": {"type": "string", "minLength": 1},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/capability"}
+    }
+  },
+  "$defs": {
+    "stringSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "required", "manifest", "conformance_cases"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_nodes": {"type": "integer", "minimum": 0},
+            "actions": {"$ref": "#/$defs/stringSet"},
+            "items": {"$ref": "#/$defs/stringSet"},
+            "temporal_kinds": {"$ref": "#/$defs/stringSet"},
+            "any_temporal_kinds": {"$ref": "#/$defs/stringSet"},
+            "crash_modes": {"$ref": "#/$defs/stringSet"},
+            "strict_yield": {"type": "boolean"},
+            "strict_replay": {"type": "boolean"},
+            "entropy_strict_replay": {"type": "boolean"},
+            "durable_checkpoints": {"type": "boolean"},
+            "evidence_schema": {"type": "boolean"}
+          }
+        },
+        "conformance_cases": {"$ref": "#/$defs/stringSet"}
+      }
+    }
+  }
+}

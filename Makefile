@@ -3,14 +3,56 @@ BLIND_BENCHMARK_ID ?= public-development-v1
 BLIND_BENCHMARK_DIGEST ?= dd82d3a5e3b43b0a0035a3fa4044d04910c4fd840d49129a58d299b336c0df1c
 BLIND_TRIAL_ID ?= public-etcdraft-v1
 
-.PHONY: fmt test contract-compile-etcdraft auto-onboard-etcdraft auto-onboard-etcdraft-llm coverage-compile-etcdraft campaign-etcdraft campaign-baselines-etcdraft agent-campaign-etcdraft run-raft run-raft-onboarding run-raft-llm experiment-random experiment-dfs
+.PHONY: fmt test adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces audit-blackbox-target audit-blackbox-gateway audit-unified-partition audit-partition-binding audit-gateway-actuator v1v2-compare-etcdraft contract-compile-etcdraft auto-onboard-etcdraft auto-onboard-etcdraft-llm coverage-compile-etcdraft campaign-etcdraft campaign-baselines-etcdraft agent-campaign-etcdraft run-raft run-raft-onboarding run-raft-llm experiment-random experiment-dfs
 
 fmt:
-	gofmt -w $$(find bindings cmd drivers families internal -type f -name '*.go')
+	gofmt -w $$(find adapters bindings cmd drivers families internal migrations qualifications -type f -name '*.go')
 
 test:
 	go test ./...
 	python3 -m unittest discover -s agents -p 'test_*.py'
+
+adapter-qualify-etcdraftv2:
+	go run ./cmd/adapter-qualify-etcdraftv2 \
+		-out benchmarks/qualifications/etcdraft-v2-m5.3/report.json
+
+adapter-qualify-hashicorpraftv2:
+	go run ./cmd/adapter-qualify-hashicorpraftv2 \
+		-out benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json
+
+audit-hashicorp-determinism:
+	go test ./adapters/hashicorpraftv2 \
+		-run TestOfficialDeterminismBoundaryMatchesFrozenAudit -count=1
+
+audit-portable-cft-matrix:
+	go test ./adapters/hashicorpraftv2 \
+		-run TestOfficialDeterminismBoundaryMatchesFrozenAudit -count=1
+	go test ./qualifications/etcdraftv2 \
+		-run TestFrozenPortableCapabilityMatrixMatchesMechanicalQualification -count=1
+
+audit-control-surfaces:
+	go test ./qualifications/etcdraftv2 \
+		-run 'TestFrozenControlSurfaceComparisonMatchesFreshQualifications|TestSurfaceDeclarationCannotSelfAwardSchedulerControl' -count=1
+
+audit-blackbox-target:
+	go test ./internal/blackbox -count=5
+
+audit-blackbox-gateway:
+	go test ./internal/blackbox -run TestConnectionGatewayPartitionsTwoProcesses -count=20
+
+audit-unified-partition:
+	go test ./internal/blackbox -run TestSamePartitionActionsDriveEtcdMailboxAndBlackboxGateway -count=20
+
+audit-partition-binding:
+	go test ./internal/control -run TestPartitionParametersAreCanonicalAndSelfValidating -count=20
+	go test ./internal/blackbox -run 'TestGatewayBinding|TestSamePartitionActions' -count=20
+
+audit-gateway-actuator:
+	go test ./internal/blackbox -run 'TestGatewayActuator|TestGatewayEligibility|TestOverlappingPartitionActions' -count=20
+
+v1v2-compare-etcdraft:
+	go run ./cmd/v1v2-compare \
+		-out benchmarks/migrations/etcdraft-v1-v2-m5.2.5/report.json
 
 contract-compile-etcdraft:
 	go run ./cmd/contract-compile \

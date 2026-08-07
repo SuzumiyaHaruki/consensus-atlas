@@ -1,0 +1,142 @@
+{
+  "schema_version": "consensus-atlas/portable-cft-capability-matrix/v1",
+  "matrix_id": "portable-cft-control-v2-m5.4e",
+  "profile_id": "portable-cft-control-v2",
+  "profile_digest": "8ceb2e870d0b5bc67fbdf5019f93f103a358c4f850bd3f6cebb2af3aa2a5f3c8",
+  "implementations": [
+    {
+      "key": "etcd-raft",
+      "adapter_id": "official-etcdraft-v2alpha1",
+      "implementation_id": "go.etcd.io/raft/v3@v3.6.0",
+      "build_id": "go.etcd.io/raft/v3@v3.6.0",
+      "qualification_report_digest": "94630ed7766b0ffb13a448084ebf9aba0ba305d730ab403a132b29a55766a08f",
+      "qualified": true,
+      "summary": {
+        "total": 9,
+        "required": 8,
+        "validated": 8,
+        "unsupported": 1,
+        "undeclared": 0,
+        "unvalidated": 0,
+        "failed": 0
+      }
+    },
+    {
+      "key": "hashicorp-raft",
+      "adapter_id": "hashicorp-raft-v2",
+      "implementation_id": "github.com/hashicorp/raft@v1.7.3",
+      "build_id": "c0dc6a0b2c7e889f31e5ab2f7ed90ceb159acffe",
+      "qualification_report_digest": "a64f578c486d78dbe4202a8374f6a8afb58b4e8b6e17899afdcb8dd6ecde4e9a",
+      "qualified": false,
+      "summary": {
+        "total": 9,
+        "required": 8,
+        "validated": 3,
+        "unsupported": 6,
+        "undeclared": 0,
+        "unvalidated": 0,
+        "failed": 0
+      }
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "audited-entropy-replay",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "unsupported"}
+      ]
+    },
+    {
+      "id": "crash-restart-incarnation",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "validated"}
+      ]
+    },
+    {
+      "id": "formal-process-isolation",
+      "required": false,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "unsupported"},
+        {"implementation": "hashicorp-raft", "status": "unsupported"}
+      ]
+    },
+    {
+      "id": "natural-temporal-progress",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "unsupported"}
+      ]
+    },
+    {
+      "id": "opaque-invoke-boundary",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "validated"}
+      ]
+    },
+    {
+      "id": "pure-enabled-check",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "unsupported"}
+      ]
+    },
+    {
+      "id": "runtime-owned-message",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "validated"}
+      ]
+    },
+    {
+      "id": "strict-decision-replay",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "unsupported"}
+      ]
+    },
+    {
+      "id": "strict-yield-evidence",
+      "required": true,
+      "implementations": [
+        {"implementation": "etcd-raft", "status": "validated"},
+        {"implementation": "hashicorp-raft", "status": "unsupported"}
+      ]
+    }
+  ],
+  "shared_validated": [
+    "crash-restart-incarnation",
+    "opaque-invoke-boundary",
+    "runtime-owned-message"
+  ],
+  "evidence": [
+    {
+      "kind": "qualification-bundle",
+      "implementation": "hashicorp-raft",
+      "path": "benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json",
+      "digest": "cdcad3a20179b1ea8e6deaea3b9875626fe50de2d2d42557fea807bdde873555"
+    },
+    {
+      "kind": "determinism-source-audit",
+      "implementation": "hashicorp-raft",
+      "path": "benchmarks/probes/hashicorp-raft-v1.7.3-m5.4d/report.json",
+      "digest": "44eaacc59d995ec451ed8f5d6e18db39c645317cdcd1046ea261fede3d3f66aa"
+    }
+  ],
+  "policy": {
+    "eligible_status": "validated",
+    "per_implementation_rule": "use-only-capabilities-validated-for-selected-implementation",
+    "cross_implementation_rule": "intersection-of-validated-capabilities",
+    "coverage_credit_rule": "unsupported-or-unvalidated-capabilities-receive-no-credit"
+  },
+  "digest": "6329a13996993024172a48303fd672b8287273214799ef96a755c51c61b54813"
+}

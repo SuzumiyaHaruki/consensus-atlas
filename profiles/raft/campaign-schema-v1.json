@@ -10,6 +10,7 @@
     "log_relations", "partition_shapes", "evaluation"
   ],
   "properties": {
+    "$schema": {"const": "./campaign-schema-v1.json"},
     "version": {"const": 1},
     "id": {"type": "string", "minLength": 1},
     "family": {"const": "raft"},

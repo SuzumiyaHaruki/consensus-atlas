@@ -619,35 +619,53 @@ Runtime 必须允许 crash 插入以下通用边界：
 
 ### 7.1 逻辑时间
 
-可信执行路径不得依赖 wall-clock sleep。Runtime 维护逻辑时间，显式调度：
+可信执行路径不得依赖 wall-clock sleep。Runtime 维护单调全局逻辑时间，并接收 Adapter 在稳定
+yield 暴露的三类 `TemporalItem`：
 
-- node-local tick；
-- election/campaign timeout；
-- heartbeat timeout；
-- view/round timeout；
-- message delay boundary；
-- GST；
-- post-GST delivery deadline。
+- `OneShotTimer`：明确注册的一次性 timer；
+- `PeriodicPulse`：etcd/raft `Tick()` 等周期性宿主时钟脉冲；
+- `SleepWakeup`：sleep/wait 的确定性唤醒事件。
 
-当前 Runtime 已提供一个可选的、协议无关的 `TimerSource` 边界：Driver 在给定逻辑时间
-声明**完整**的存活 timer 集合（稳定 ID、目标节点、绝对 deadline 和受限 payload），而
-Engine 独占 pending queue、取消、re-arm 与 timeout release。`advance` 只记录
-`clock-advance` trace boundary，并使 deadline 已到的 timeout 进入 enabled 集；它绝不自动
-调用协议。timeout 被真正执行后，Driver 必须移除或以更晚 deadline 重置同一 ID；不完整、重复、
-过去 deadline 或未知节点的声明会机械失败。该接口不允许 Driver 安排消息，也不把任意外部
-timeout 注入冒充为原生 timer。
+令全部有效时间项的最早 deadline 为 `T`。Runtime 只把 `[T,T+E]` 内的时间项枚举为
+`FireTemporalEvent(TemporalID)`；第一版冻结 `E=0`，即只能选择最早时间，同 deadline 项可以分支。
+普通消息、effect、crash 等 action 仍与该集合竞争，表达消息先到或超时先到。Agent 不能提交任意
+`AdvanceTime(to)`、delta 或提前 timeout。
 
-没有 `TimerSource` 的 Driver 仍可运行且不会生成计时器事件。这样新的时间模型不会改变历史
-trace；它只是为未来具有可重放原生 timer 接口的实现预留可信接入点。
+`FireTemporalEvent` 内部原子执行：推进 `now` 到所选 deadline、记录
+`ClockAdvanced(from,to,reason,item)`、执行 callback/tick/wakeup、运行至下一 yield 并收集输出。
+sleep 快进不得越过更早时间项；没有其他分支且 wakeup 唯一最早时可以作为有记录、有成本的机械
+转换。对于 tick-based Raft，每节点每周期只调用一次 `Tick()`，由协议内部 elapsed counter 自然
+产生 election/heartbeat；未证明中间无输出、竞争动作和 timer reset 前禁止批量 Tick。
 
-### 7.2 随机超时
+没有可控 temporal 边界的 Adapter 仍可运行，但自然 timeout 和 strict virtual-time replay 必须
+标为 Unsupported。局部时钟漂移、租约误差、GST 和 `E>0` 由后续 Liveness Profile 显式冻结。
 
-如果原实现内部随机选择 timeout，正式确定性测试必须满足至少一种方式：
+### 7.2 受控随机性
 
-1. 原生 API 可注入 RNG/timeout；
-2. 所有随机选择被捕获进 Decision Log，并可强制重放；
-3. 使用官方支持的确定性配置；
-4. Profile 将自然 timeout 标为 Unsupported，改用显式 campaign/timeout 输入完成第一阶段测试。
+协议、workload、scheduler 和 Agent 不能共享一个受调用顺序影响的全局随机流。Campaign 主种子
+必须派生互相隔离的种子域；SUT 再按 `SUT identity + NodeID + Incarnation + DomainID` 派生稳定
+流。第一版冻结版本化生成算法，并为每次抽样记录：
+
+```text
+RandomDrawRecord
+  = DomainID + NodeID + Incarnation + Ordinal
+  + Operation + Arguments + Result
+```
+
+Fresh run 由分域 `EntropySource` 计算结果并写入 tape；strict replay 逐次验证请求身份、操作、参数和
+结果。只记录原生随机结果却不能在 replay 中重新提供，不足以声明严格重放。Adapter 的接入优先级
+是：原生 per-instance RNG 接口、隔离测试进程中的 entropy API 截获、最后诚实声明
+`strict_entropy_replay=false`；禁止通过未审计私有状态写入冒充 unmodified 接入。
+
+第一版 RandomDraw 不是在线 Action。Random、DFS、Agent 和专家计划必须使用相同的预冻结 SUT
+seed 集合；以后只允许 run 前的有界 `EntropyPlan` 或经 continuation 暴露的有限 ChoiceRequest，
+不能让 Agent 提供任意抽样值。
+
+官方 etcd/raft v3.6.0 没有 per-node `Config.Rand`，其随机 election timeout 使用进程级
+`crypto/rand.Reader`。保持官方模块不变的 Legacy Adapter 只有在隔离、串行测试边界中按
+node/incarnation/domain 分流该 Reader，并通过域外读取、并发读取和 replay conformance 后，才能
+声明自然选举严格重放。桌面 fork 的 deterministic hook 只能作为工程对照，不能表述为官方
+v3.6.0 原生能力。
 
 不能因为连续运行两次“碰巧相同”就声明自然 timeout 可确定重放。
 
@@ -1899,7 +1917,7 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 ## 23. 当前立即执行顺序
 
-截至 2026-08-06 的落地状态：
+截至 2026-08-07 的落地状态：
 
 1. [X] 定义 Protocol Knowledge Contract v1、严格 Go 模型、canonical digest 和 JSON schema。
 2. [X] 实现 Contract 到 Profile 的确定性编译；实现支持状态不影响 atom 分母。
@@ -1928,6 +1946,62 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 26. [ ] 接入 Knowledge/Obligation Agent；同家族协议尽量自动冻结差异 Contract/Profile，新家族只保留一次核心语义确认。
 27. [ ] 在一个开发期未见的第二 Raft/Paxos 实现上验证 Family Pack 复用、自动接入和测试闭环成功率。
 28. [ ] 完成 DPOR/causal graph、多 seed、holdout 缺陷和完整 Agent 消融实验。
+29. [X] 完成 Control Runtime v2 M5.1—M5.2.4：协议无关 Action/Item、自然时间、分域 entropy、
+    官方 etcd/raft N 节点消息、durable lifecycle、opaque proposal、application durable image、
+    committed/rejected client result、三个声明能力的外部 Conformance 和 strict replay；公共核心
+    不 import Raft 或 v1 Runtime。
+30. [X] M5.2.5 完成第一轮 v1/v2 冻结对照：正常提交、消息 drop/duplicate 后提交、committed
+    follower crash/restart 三项 passed、零 mismatch；自然换主因 v1 不支持自然 timeout replay
+    deferred，suite 为 `qualified=false`。`go list` 删除门确认 PSS/Coverage/Agent/benchmark 仍直接
+    消费 v1，因此本轮不删除 legacy control plane，并已冻结保留/迁移清单。
+31. [X] M5.3 提供 Adapter 模板、Manifest/Profile/Report schema、枚举 Unsupported 和机械
+    Qualification；etcd/raft v2 对公共 Profile 得到 8/8 required validated，optional process
+    isolation 保持 Unsupported，fresh bundle 可按 digest 复验。
+32. [X] M5.4 已完成 HashiCorp Raft 真实 RPC、deliver/drop、opaque invoke/FSM.Apply、store
+    保留、crash/restart、incarnation 和部分 Qualification；相同 released-message lifecycle intent
+    已在两个官方实现上通过。当前 HashiCorp 在 `portable-cft-control-v2` 下 3 项
+    validated、6 项 Unsupported，仍为 `qualified=false`。M5.4d 已用 module/source-bound 机械审计
+    冻结 clock、entropy 和 strict replay Unsupported；M5.4e 从两个 fresh QualificationReport 冻结
+    双实现能力矩阵，共同 validated 交集为 3 项，并将旧探针降为 test-only，生产 Go 净减
+    191 行。本项表示“第二实现实验已收口”，不表示原定完整 strict replay 退出条件已满足。
+33. [X] M5.5a 将通用场景表面与确定性测试保证拆开：external input、message、lifecycle、
+    temporal 和 durability 分别记录 presence、declared control 与 validated control；stable yield、
+    pure enabled、strict replay、audited entropy 和 process isolation 独立记录。presence 不产生
+    control credit，声明不能自行取得 scheduler-owned。机械报告显示两个 Raft 的 5/5 表面
+    都存在；HashiCorp 为 3/5 validated scheduler control 和 0/4 required deterministic guarantee。
+34. [X] M5.5b 实现最小 Level-1 黑盒 Target Envelope：独立进程、显式 readiness endpoint、
+    数据目录和 opaque 客户端调用。真实子进程已验证 freeze/deliver/drop、kill/restart、
+    incarnation、数据保留与 pending call 跨重启。该边界仅为 observable/interceptable，不宣称
+    peer message control 或 strict replay。
+35. [X] M5.5c 已用两个真实独立子进程验证 connection-level gateway：开放时 opaque byte forwarding、
+    partition 时拒绝新连接且接收端状态不变、heal 后恢复；冻结计数为 accepted=3、forwarded=2、
+    rejected=1，连续 20 次复验通过。该能力要求目标可配置 peer endpoint，只取得连接级控制，不识别
+    framing/message ID，也不提供 strict replay。通用黑盒网络机制在此停止扩张。
+36. [X] M5.6a 没有新增 backend selector，而是在唯一 `control.Adapter` 上加入 Runtime-owned Action
+    actuation 接缝。官方 etcd/raft mailbox 与 test-only Gateway wrapper 对 `Partition([n1],[n2])` 和
+    `Heal` 生成逐字段完全相同的 Action；Gateway 路径的一次选择同时更新 Runtime 与外部 gate，连续
+    20 次通过；失败负例不会提交 Runtime partition。生产 Go 净增 31 行，没有新增 Action/Profile/Schema；该结果只证明分发路径可行，
+    不构成生产黑盒接入或 scheduler-owned 资格。
+37. [X] M5.6b 已将 private partition JSON 提升为公共 typed parameters，并相对于显式 node/directed
+    link inventory 确定性解析 crossing gateways。三节点 cut、组内链路排除、左右对称、稳定 ID、伪造
+    参数、重复 ID/edge/gateway、未知节点和无 crossing link 负例均通过；删除重复 Runtime 逻辑后生产
+    Go 净增 145 行，没有新增 Action/Profile/Schema/backend。完整性只相对于输入 inventory，尚无原子
+    多 Gateway actuation、重叠 partition 引用计数或正式资格。
+38. [X] M5.6c 已增加 Runtime-owned Action 选择期 eligibility、重叠 partition 引用计数和
+    多 Gateway 失败回滚。可控负例分别验证 partition/heal 中途失败；三个独立子进程与两条
+    Unix Gateway 又验证实际流量、共享引用与最后恢复，阶段审计连续 20 次通过。生产 Go
+    净增 165 行，未新增 Action/Profile/Schema/CLI/backend selector。该回滚仅保证 controller gate
+    state；多 gate 依然顺序切换，不能恢复已关闭 connection，因此不提升 scheduler-owned message 资格。
+39. [ ] M5.6d 不继续增加通用黑盒网络代码。将能力机械拆为 Control Surface、Control Grade 和
+    Deterministic Guarantees；将 connection-level Gateway 记为
+    `message(connection)/scheduler-actuated`，且只有 `atomic-controller-state`，不因共用 Action
+    获得 stable message ID、atomic external effect 或 strict replay。当前 etcd/raft、HashiCorp Raft、Gateway
+    必须由 Manifest 与外部 witness 机械交叉生成报告；生产 Go 目标净增不超过 100 行。
+40. [ ] M5.7 只冻结薄 Adapter 内部的最小 MessagePort/TemporalPort 职责和 conformance fixture；
+    Control Port 不进入 Runtime 的第二套 backend，不一次性实现 Storage/Entropy/Evidence 端口。
+41. [ ] M5.8 选择一个具有可替换 Transport、可定位 timer、三节点进程部署和可观察提交结果的
+    真实共识。第一纵向切片只验证真实 peer item 冻结/投递/丢弃、最早 timer 自然触发与同 Action
+    trace 重放；若必须修改 Runtime 或新增协议专用 Action，则停止并重审抽象。
 
 当前主线不再继续盲目增加单 Planner 重试、复合义务或 Agent 角色。
 Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
@@ -1951,6 +2025,35 @@ invalid。公开 v1 pilot 仅保留显式 legacy 复验入口；该身份收紧�
 M4.17 新增 private readiness gate：在 Blind view 生成前机械要求 Manifest v2、足够的 distinct
 root-cause label/control、historical provenance 和每个 trial 的 build artifact binding。报告只含
 计数与稳定代码；label 不等于因果独立，curator 的私有来源/时间切分审查仍不可省略。
+
+当前已暂停直接执行上述 holdout/多 Agent 待办，先完成 Control Runtime v2 与接入普适性校正。
+M5.1 已实现协议无关 Action/ProducedItem Runtime、最早 temporal event、periodic pulse、分域
+EntropySource、稳定 yield、严格 replay、fixture 和外部 Conformance Suite；v1 可信执行和实验工件
+继续冻结。M5.2.5 已用独立 migration model 对 v1/v2 的三个外部子集绑定固定 command/
+applied-node/safety/replay/witness expectation，结果全部 passed；自然换主 capability gap 明确
+deferred，没有用显式 Campaign 改写输入语义。报告保留 v1 fresh fingerprint 与 v2 strict decision
+replay 的强度差异，suite 为 `qualified=false`。M5.3 又将 Manifest、外部 case 和 Unsupported
+机械合并为资格报告；etcd/raft v2 已通过 8 项 required 公共控制能力，process isolation 仍明确
+Unsupported。依赖审计确认 PSS/Coverage/Agent/benchmark 仍消费 v1，本轮没有删除 legacy path。
+M5.4c 已使用同一公共 Runtime 在 HashiCorp Raft 上完成消息、应用和生命周期闭环，
+并用同一协议无关 Conformance intent 复验两个官方实现。这支持“控制语义可复用”，
+但 HashiCorp 的自然墙钟、包级随机和操作性时间戳仍不可严格重放，所以尚不宣称
+通用控制层具备完整 strict replay 能力。M5.4d 已确认薄 Adapter 无法接管官方库内部 `time.After/time.Now`
+和进程级全局随机调用顺序，因此机械冻结对应 Unsupported。M5.4e 已机械冻结双实现
+capability matrix 与 validated-only 消费规则，并删除被正式 Adapter/Qualification 取代的生产探针。
+M5.5a 又将“语义存在”、“控制等级”和“确定性保证”拆分，防止把 Qualification 比例误当为
+协议功能或覆盖率。M5.5b 已以真实独立进程验证最小黑盒 Target Envelope，并保留 wall-clock、
+单 connection、直接子进程边界。M5.5c 进一步验证 connection-level gateway，但冻结了可配置 peer
+endpoint、无 framing 和无 strict replay 的能力上限。因此不再扩张通用黑盒网络功能。M5.6a 已证明
+现有 Adapter 可以直接承担 Runtime-owned Action 的外部 actuation，不需要另建 backend selector；
+M5.6b 又补齐公共 typed partition 参数和显式拓扑 binding。M5.6c 已在 200 行停止线内补齐
+选择期 eligibility、重叠引用和 controller gate 失败回滚，并用三进程双 Gateway 真实流量
+验证。但多 gate 顺序切换仍会暴露瞬时 partial cut，回滚也无法恢复旧 connection；因此
+黑盒路径保持 connection-level scheduler-actuated/interceptable，不宣称 scheduler-owned message
+或 strict replay。通用黑盒网络代码在此再次停止扩张。后续默认路径冻结为“统一 Action +
+分级能力 + 最小非侵入式灰盒”：优先使用官方 step/transport/clock/storage 接口，其次替换外围
+依赖，协议核心修改是最后手段。Control Port 只能作为目标薄 Adapter 内部构件，不得演化为第二套
+Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续冻结。
 
 ---
 
@@ -1991,6 +2094,22 @@ root-cause label/control、historical provenance 和每个 trial 的 build artif
 31. `ExecutionFingerprint/StateRef/StructuralKey/PSSSemanticKey` 是不同身份；PSS 新颖度键不得未经证明地用于状态剪枝。
 32. 在线 Agent 只能排序可信 Runtime 已枚举的 `ActionRef`；enabled 判定、动作执行和 Frontier 身份属于确定性内核。
 33. 未控制模型边界内全部非确定性、未完整枚举 enabled actions 或未证明剪枝保守时，不宣称完整 implementation-level model checking。
+34. 在线控制面不提供任意 `AdvanceTime(to)`；搜索器只能选择最早窗口内的 `TemporalID`，时钟推进是 `FireTemporalEvent` 的受审计子步骤。
+35. tick-based 协议把每次宿主 Tick 映射为一个 `PeriodicPulse`，未证明中间步骤不可观察前不批量快进。
+36. SUT、workload、scheduler 和 Agent 使用隔离随机域；SUT 按 node/incarnation/domain 派生并记录 RandomDraw tape，第一版随机结果不是在线 Action。
+37. enabled 只表示当前控制状态下机械可执行，不预测 leader/term/view 等协议语义或动作成功。
+38. 外部 Invoke 不在 trace 外排队；当前不合格的 offer 不改变状态，Agent 必须在后续 frontier 重新
+    提交。协议自身的接受、拒绝或忽略必须形成 Result/Observation，不能伪装成 Runtime 故障。
+39. M5.4 起实行代码增长门：第二实现产生真实消息证据前，通用 Runtime/Conformance 目标净增为
+    零；HashiCorp 探针超过 350 行仍无真实消息即停止，不能用新增基础设施替代功能进展。
+40. 基础控制 witness 与 strict replay witness 分开计证；前者不因墙钟不可重放而被抹去，
+    也不能替代后者获得完整 Qualification。
+41. 统一 Action 只统一上层行为语义，不承诺不同目标获得同一控制强度。
+42. 能力必须拆成 Control Surface、Control Grade 和 Deterministic Guarantees，不得压缩为单一分数。
+43. 默认接入路径为最小、非侵入式灰盒：官方 API 优先，外围依赖注入次之，协议核心修改最后。
+44. Control Port 是目标薄 Adapter 的内部构件，Runtime 仍只依赖唯一 `control.Adapter`。
+45. candidate 和 control 必须使用相同的灰盒接入层；接入差异、工具链和二进制纳入 digest identity。
+46. 跨实现同时报告共同 validated 能力结果和各自最大 validated 能力结果，Unsupported 不得隐藏。
 
 ---
 

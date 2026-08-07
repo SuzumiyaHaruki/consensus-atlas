@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/adapter-qualification-report-v1.json",
+  "title": "ConsensusAtlas Adapter Qualification Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "profile_id", "profile_digest", "adapter_id", "implementation_id",
+    "build_id", "configuration_digest", "manifest_digest", "conformance_report_digests",
+    "capabilities", "summary", "qualified", "digest"
+  ],
+  "properties": {
+    "schema_version": {"const": "consensus-atlas/adapter-qualification-report/v1"},
+    "profile_id": {"type": "string", "minLength": 1},
+    "profile_digest": {"$ref": "#/$defs/digest"},
+    "adapter_id": {"type": "string", "minLength": 1},
+    "implementation_id": {"type": "string", "minLength": 1},
+    "build_id": {"type": "string", "minLength": 1},
+    "configuration_digest": {"type": "string", "minLength": 1},
+    "manifest_digest": {"$ref": "#/$defs/digest"},
+    "conformance_report_digests": {
+      "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}
+    },
+    "unsupported": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability_id", "reason_code"],
+        "properties": {
+          "capability_id": {"type": "string", "minLength": 1},
+          "reason_code": {
+            "enum": [
+              "ADAPTER_CONTROL_SURFACE_UNAVAILABLE", "ADAPTER_CLOCK_CONTROL_UNAVAILABLE",
+              "ADAPTER_ENTROPY_CONTROL_UNAVAILABLE", "ADAPTER_PROCESS_ISOLATION_REQUIRED",
+              "ADAPTER_DURABILITY_BOUNDARY_UNAVAILABLE", "ADAPTER_OBSERVATION_BOUNDARY_UNAVAILABLE",
+              "ADAPTER_OPERATION_UNAVAILABLE", "ADAPTER_CONFORMANCE_WITNESS_UNAVAILABLE"
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/capability"}
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "required", "validated", "unsupported", "undeclared", "unvalidated", "failed"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "required": {"type": "integer", "minimum": 0},
+        "validated": {"type": "integer", "minimum": 0},
+        "unsupported": {"type": "integer", "minimum": 0},
+        "undeclared": {"type": "integer", "minimum": 0},
+        "unvalidated": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "qualified": {"type": "boolean"},
+    "digest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "required", "declared", "status", "conformance_cases"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "declared": {"type": "boolean"},
+        "status": {"enum": ["validated", "unsupported", "undeclared", "unvalidated", "failed"]},
+        "conformance_cases": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "unsupported_reason_code": {"type": "string", "minLength": 1},
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": {
+              "code": {"type": "string", "minLength": 1},
+              "kind": {"type": "string"},
+              "subject": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

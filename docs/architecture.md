@@ -60,17 +60,114 @@ shared setup -> measurement root -> Explorer decisions -> measured traces
 
 Go 核心在不启动 Python Agent 的情况下独立运行。Agent 不参与契约编译、事件执行、等价判断、Oracle、验证结论或计分。
 
+## v1 与 Control Runtime v2 的共存边界
+
+上图描述的是仍在运行现有实验的 v1 路径。M5.1 新增了一条独立 v2alpha1 路径：
+
+```text
+opaque input / selected ActionID
+              |
+              v
+internal/controlruntime ---- owns ----> message / temporal / effect lifecycle
+              |                              |
+              | AdapterCommand               +--> exact state + v2 trace
+              v
+       Control Adapter
+              |
+              +--> stable Yield + frozen ProducedItem + Evidence + Entropy tape
+```
+
+v2 不复用 v1 的 `Engine/Event/OutputBatch/HostOperation` 抽象。公共契约在 `internal/control`，执行在
+`internal/controlruntime`，确定性随机在 `internal/controlentropy`，外部准入在
+`internal/conformance`。`adapters/fixture` 用于证明公共状态机；`adapters/etcdraftv2` 已接入官方
+v3.6.0 的配置驱动静态 N 节点 Ready/effect/Tick/message/Step 切片。三节点真实选举已经验证
+Runtime-owned message 的保留、复制、分区、恢复、投递、丢弃与严格重放。M5.2.3 又将 Ready
+拆为 persist 与 application/Advance effect，并加入版本化 durable image、power-loss、fresh
+Storage/RawNode restart、incarnation 和协议无关生命周期 Conformance。
+
+M5.2.4 在相同边界上增加 opaque external input：Runtime 只冻结 `PayloadEnvelope`，具体 Adapter
+映射到官方 `RawNode.Propose`；committed entry 才进入版本化 application durable image，并产生
+client result。`OfferInvoke` 采用即时资格语义，不在 trace 外排队当前 ineligible 输入；协议拒绝
+则作为结果进入轨迹。新增的 opaque-invoke Conformance 不解析 Raft evidence。
+
+M5.2.5 新增独立 `internal/migration` 外部结果模型，并把同时依赖 v1/v2 的代码限制在临时
+`migrations/etcdraftv1v2` composition root。三个冻结子集通过 command/applied-node/safety/replay/
+witness expectation，对自然换主则因 v1 capability 缺失机械 deferred。比较结果是
+`qualified=false`，不授权删除 legacy execution。
+
+M5.3 已将 Manifest typed requirement、外部 Conformance case 和枚举 Unsupported 合并为版本化
+Qualification Report。M5.4 又在 HashiCorp Raft 的 goroutine/同步 `Transport` 控制表面复用了同一
+Runtime：消息由 Runtime 持有，`DropMessage` 先完成 Adapter acknowledgement，再记录终态；节点
+restart 保留官方 store 并进入新 incarnation。异步消息实现可将 acknowledgement 实现为 no-op。
+
+M5.4e 对 `portable-cft-control-v2` 冻结双实现能力矩阵：etcd/raft 的 8 项 required capability 全部
+validated，HashiCorp 为 3 validated、6 Unsupported。共同 validated 交集只有 runtime-owned
+message、crash/restart incarnation 和 opaque invoke。自然时间、SUT entropy 和 strict replay 没有
+因第二实现缺少注入边界而改写公共语义，也没有被人工标为通过。当前迁移策略仍是并行替换：v1
+继续保留 PSS/Coverage/Agent/benchmark 和历史工件；v2 消费者必须按实现读取 validated gate，直接
+消费者归零前不删除 v1。
+
+M5.5a 不修改上述资格模型，而是在其上派生 `ControlSurfaceReport`：external input、message、
+lifecycle、temporal 和 durability 表示目标系统存在的通用场景表面；stable yield、pure enabled、
+strict replay、audited entropy 和 process isolation 表示测试框架保证。presence 声明不能产生
+validated control；scheduler-owned 由 Manifest 的 Action/Item 组合推导，最终 credit 还须对应
+Qualification capability validated。该分层允许未来黑盒 Target 以 opaque/observable/interceptable
+接入，而不假装获得 step-driven Adapter 的确定性能力。
+
+M5.5b 新增与协议无关的 `internal/blackbox`。它使用 shell-free argv 启动独立进程，只连接显式
+readiness endpoint，把客户端调用冻结为 opaque bytes，并提供 deliver/drop、直接进程 kill/restart
+和数据目录复用。pending call 由 Envelope 而非目标进程持有，所以可跨 incarnation。该层依赖
+wall-clock readiness，只控制单次客户端 connection，尚无 peer gateway；因此能力只记为
+observable/interceptable，不接入 strict Control Runtime replay。
+
+M5.5c 在同一包中增加不解析 payload 的 connection gateway。目标把可配置 peer endpoint 指向
+gateway，gateway 只执行 accept、双向 byte copy、partition/heal 和计数。两个真实子进程验证了开放、
+隔离和恢复，但该 backend 没有 framing、stable message ID 或确定性 I/O 顺序。partition/heal 尚未
+注册为 Runtime Action 或通过 Qualification，所以只记为 interceptable，不能据此给 message control
+或 strict replay 记分。通用黑盒网络机制在此冻结；更强控制继续由薄 Adapter 提供。
+
+M5.6a 将 Runtime-owned Action 的外部映射收回唯一 Adapter 契约：`ApplyRuntimeAction` 允许薄 Adapter
+执行 Gateway partition 等外部副作用，Runtime 仍独占 mailbox 与 partition 状态。官方 etcd/raft 的
+内存网络只需 no-op actuation；test-only Gateway wrapper 对完全相同的 Partition/Heal Action 调用外部
+gate。该接缝取代了另建 backend selector 的计划，但尚未解决任意拓扑 typed binding 或规范化外部证据。
+
+M5.6b 把 partition 的 `id/left/right` 提升为公共 typed parameters，并新增显式 Gateway topology binding。
+binding 只按登记的 directed links 计算跨组集合，拒绝重复 ID/edge/gateway、未知节点和空 cut；它不猜测
+目标真实拓扑。多 Gateway 的原子 apply、重叠 partition 状态和外部 evidence 仍留在未来薄 Adapter，
+不能由 binding 解析结果自行取得控制资格。
+
+M5.6c 在 Adapter 契约上增加 `CheckRuntimeAction`，使 Runtime-owned Action 在进入 enabled 集合前也经过
+目标执行边界资格检查。`GatewayActuator` 串行解析 crossing links，以 partition ID 管理 active 集合并以
+Gateway identity 管理引用计数；中途失败时逆序恢复已改变的 gate。该事务只覆盖 controller state：真实
+socket 切换仍可被外部进程部分观察，已关闭 connection 不可恢复。因此 Gateway 保持
+connection-level scheduler-actuated/interceptable，不能等同于 Runtime mailbox 的 scheduler-owned
+message 或 strict replay。
+
+M5.6c 后冻结新的接入决策：统一 Action 只统一上层语义，不承诺所有实现取得同一控制强度。能力由
+Control Surface、Control Grade 和 Deterministic Guarantees 三个正交维度表达。默认接入目标是最小、
+非侵入式灰盒：官方 step/transport/clock/storage API 优先，其次替换外围依赖，协议核心修改最后考虑。
+MessagePort/TemporalPort 等 Control Port 只作为目标薄 Adapter 的内部构件，不能形成 Runtime 的第二套
+backend 或 type switch。详细规则见 `docs/graybox-control-ports.md`。
+
 ## 依赖方向
 
-`internal/engine`、`internal/host`、`internal/core` 和 `internal/driver` 不得 import 任意具体共识包。etcd/raft 类型只允许出现在：
+`internal/engine`、`internal/host`、`internal/core` 和 `internal/driver` 不得 import 任意具体共识包。
+具体共识类型只允许出现在对应接入边界：
 
 ```text
 drivers/etcdraft
+adapters/etcdraftv2
+adapters/hashicorpraftv2
 ```
 
 CLI 可以注册具体 Driver，但协议注册不能把其类型传播到 Runtime。
 
-## Driver 与 Host Runtime
+v2 另有机械依赖门：`internal/control*`、`internal/conformance` 和协议无关 fixture 禁止 import v1
+`core/driver/host/engine`、`families/*` 或任何具体共识。具体 Adapter 可以依赖官方实现和 v2
+公共契约，但不得把协议类型反向传播进 Runtime。etcd/raft v2 的节点数和原生 ID 映射只存在于
+Adapter `Config`，其规范化 digest 进入 Manifest；Runtime 不按一节点或三节点分支。
+
+## Driver 与 Host Runtime（v1）
 
 `ProtocolDriver` 是一个薄原生边界：
 
@@ -96,7 +193,7 @@ batch token
 
 通用 Host Runtime 验证 operation token、依赖 DAG、唯一 acknowledge，以及 acknowledge 是否传递依赖全部 operation。之后它将 operation 转换为普通可调度事件。
 
-## 消息所有权
+## 消息所有权（v1）
 
 ```text
 SUT produced
@@ -136,7 +233,7 @@ Runtime mailbox
 
 Payload 被写入 JSON trace 的 base64 字段，不依赖进程内消息表。
 
-## 存储状态
+## 存储状态（v1）
 
 ```text
 RawNode volatile state
@@ -160,7 +257,7 @@ power-loss crash 丢弃 RawNode、visible storage 和 outstanding Ready。restar
 
 官方 `RawNode.Bootstrap` 会产生初始 Ready。场景使用显式 `start` 事件让 Runtime 收集并处理该输出，之后才执行 campaign。这避免把隐藏的初始化 I/O 排除在 trace 外。
 
-## Enabled 与 pending
+## Enabled 与 pending（v1）
 
 适配器的 read-only `Enabled(event)` 用于表达临时前置条件：
 
@@ -172,7 +269,7 @@ power-loss crash 丢弃 RawNode、visible storage 和 outstanding Ready。restar
 
 暂时不可用的事件保留在 pending 队列，不会被消费为 ignored。
 
-## 虚拟时间与 timer queue
+## 虚拟时间与 timer queue（v1）
 
 `Engine.Advance` 只推进 logical clock 并记录 `clock-advance` control record。可选的
 `TimerSource` 以完整声明的方式把 native timer（稳定 ID、目标、绝对 deadline、payload）交给

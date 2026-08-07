@@ -1,13 +1,40 @@
 # ConsensusAtlas
 
-> **分支状态：控制层重构前检查点。** 本分支保存截至 M4.17 的 Runtime、etcd/raft 接入、
+> **分支状态：Control Runtime v2 已完成 M5.6c Gateway Actuator 重叠与失败边界。** 本分支以 M4.17 检查点为基线，已完成
+> 协议无关 Action/ProducedItem Runtime、最早 temporal event、分域 entropy tape、fixture、严格
+> replay 和外部 conformance，并新增官方 etcd/raft v3.6.0 配置驱动的 N 节点
+> Ready/effect/message/Tick/Step/crash/restart/opaque proposal 纵向切片与版本化 application durable
+> state。检查点保存的 v1 Runtime、完整 etcd/raft 接入、
 > PSS/Coverage、Agent 与 benchmark 实验基础，但它**不是**面向任意共识实现的最终控制层。
-> 当前 Host/Driver 边界仍以 etcd/raft `RawNode` 的输出与 `Ready` 宿主操作模型为第一个实例，
-> PSS/Coverage 也主要绑定 Raft Family/Profile。下一主线是冻结协议无关的
-> `Universal Control Runtime + Control Adapter Contract + Adapter Conformance Suite`：统一接管
-> 消息、虚拟时间、生命周期、持久化完成、外部输入与宿主回调，再将 PSS、覆盖、Agent 搜索和
-> benchmark 作为其上的模块。故本分支的公开 pilot 只能证明当前链路可运行，不能证明跨协议
-> 普适性，也不能证明 Agent 方法优于基线。详见
+> v2 已冻结协议无关的 `Control Runtime + Adapter Contract + Conformance Suite`，并以 etcd/raft
+> `RawNode/Ready` 和 HashiCorp Raft goroutine/Transport 两种控制表面做了验证；但 PSS/Coverage
+> 仍主要绑定 v1 Raft Family/Profile，尚未迁移为 v2 消费者。当前 etcd/raft 已对公共 Profile
+> 得到 8/8 required validated；
+> 旧资格中 HashiCorp Raft 为 3 validated、6 Unsupported；M5.5a 已将其拆为“5/5 通用场景表面
+> 存在、3/5 取得 validated scheduler control、0/4 required deterministic guarantee”。这仍不能
+> 证明完整 strict replay 或跨协议普适性，也不能证明 Agent 方法优于基线。M5.5b 已用独立进程
+> fixture 验证 opaque 客户端调用、kill/restart、数据目录保留和跨 incarnation pending call；M5.5c
+> 又以两个独立进程验证 connection-level partition/heal 和 opaque byte forwarding。M5.6a 进一步
+> 证明完全相同的 Partition/Heal Action 可通过现有 Adapter 同时驱动 Runtime mailbox 与 Gateway，
+> 不需要第二套 backend selector；M5.6b 又加入公共 typed partition 参数与显式拓扑 binding。M5.6c
+> 增加选择期资格、重叠引用计数和多 Gateway 失败回滚，并以三进程双 Gateway 流量复验。该回滚只保证
+> controller gate state，不保证网络原子切换或恢复旧连接，因此仍不能提高黑盒资格等级。
+> 后续接入已冻结为“统一 Action + 分级能力 + 最小灰盒”：能力分别记录 surface、control grade 与
+> deterministic guarantees；Control Port 只能存在于薄 Adapter 内部，不能演化成第二套 Runtime。
+> 当前结果与未证明事项见
+> [能力分级与灰盒 Control Port 设计](docs/graybox-control-ports.md)、
+> [M5.6c 阶段总结](docs/stage-m5.6c-gateway-actuator.md)、
+> [M5.6b 阶段总结](docs/stage-m5.6b-typed-partition-binding.md)、
+> [M5.6a 阶段总结](docs/stage-m5.6a-unified-partition-action.md)、
+> [M5.5c 阶段总结](docs/stage-m5.5c-blackbox-connection-gateway.md)、
+> [M5.5b 阶段总结](docs/stage-m5.5b-blackbox-target-envelope.md)、
+> [M5.5a 阶段总结](docs/stage-m5.5a-control-surface-grading.md)、
+> [M5.4e 阶段总结](docs/stage-m5.4e-second-adapter-closure.md)、
+> [M5.4d 阶段总结](docs/stage-m5.4d-hashicorp-determinism-boundary.md)、
+> [M5.4c 阶段总结](docs/stage-m5.4c-hashicorp-lifecycle-qualification.md)、
+> [M5.4b.1 减负总结](docs/stage-m5.4b.1-code-reduction.md)与
+> [M5.4b 阶段总结](docs/stage-m5.4b-hashicorp-runtime-apply.md)，接口见
+> [Control Runtime v2 设计](docs/control-runtime-v2.md)，项目边界见
 > [当前阶段](docs/CURRENT_STAGE.md) 与 [总体规划](docs/ConsensusAtlas-总体规划.md)。
 
 ConsensusAtlas 是一个面向 CFT/BFT 共识协议的确定性场景执行与语义覆盖研究框架。当前版本已经直接接入官方 `go.etcd.io/raft/v3 v3.6.0`，同时保持测试核心不依赖 Raft 类型。
@@ -36,6 +63,32 @@ Official Consensus Implementation
 
 ## 当前实现
 
+- Control Runtime v2alpha1 的协议无关 Action/ProducedItem/Adapter 契约；
+- Runtime-owned message、最早 temporal event、incarnation、effect/callback 和严格 v2 replay；
+- node/incarnation/domain 分域的确定性 entropy 与只追加 RandomDraw tape；
+- 不含协议类型的 fixture Adapter 和 13 项外部 conformance suite；
+- 版本化 Adapter Qualification Profile、typed Manifest requirement、枚举 Unsupported、五态
+  capability 结果、JSON schema 和接入模板；
+- etcd/raft v2 fresh 资格工件：8/8 required validated、1 optional unsupported、qualified=true；
+- HashiCorp Raft v1.7.3 消息、生命周期与 opaque invoke 的部分资格：3 validated、6 Unsupported；
+- digest-bound 双实现能力矩阵和 validated-only 消费规则；
+- 五个通用场景表面、五级控制强度与独立 deterministic guarantee 的机械分层报告；
+- 独立进程黑盒 Target Envelope：显式 opaque endpoint、客户端调用 freeze/deliver/drop、kill/restart；
+- 两独立进程 connection gateway：opaque byte forwarding、连接级 partition/heal 与计数证据；
+- Gateway typed topology binding、选择期资格、重叠 partition 引用与 controller gate 失败回滚；
+- 官方 etcd/raft v3.6.0 配置驱动静态 N 节点、bootstrap Ready、durable effect、自然 Tick 和
+  `Ready.Messages → Runtime mailbox → RawNode.Step` 切片；
+- 三节点真实选举流量的 retain、drop、duplicate、partition、heal、deliver 和 strict replay；
+- Ready persistence 与 application/Advance 两阶段 effect、版本化 durable image 和真实
+  power-loss crash/restart；
+- released message 跨 source/target restart 保留、旧 incarnation volatile item 取消和生命周期 replay；
+- 两项不解析 Raft 字段的自然流量生命周期 Conformance；
+- opaque `OfferInvoke` 到官方 `RawNode.Propose`、committed/rejected client result 与严格 replay；
+- 版本化 application durable image，以及单节点恢复和三节点换主/恢复后的应用摘要收敛；
+- 不解析协议 evidence 的 `opaque-invoke-boundary` Conformance；
+- digest-bound v1/v2 外部语义对照：3 passed、0 mismatch、1 natural-time capability gap；
+- v1 删除门依赖审计；M5.3 的控制面 `qualified=true` 不代表 v1 消费者已迁移，因此没有删除 legacy；
+- v2 与下列 v1 实验路径并行保留，PSS/Coverage/Agent/benchmark 尚未迁移到 v2；
 - 确定性事件队列和严格依赖；
 - 消息完整信封、payload digest、因果 ID、clone lineage 和 per-link sequence；
 - 消息 `Produced → Released → Delivered/Dropped` 分离；
@@ -77,6 +130,14 @@ Official Consensus Implementation
 
 ```bash
 make test
+make adapter-qualify-etcdraftv2
+make audit-portable-cft-matrix
+make audit-control-surfaces
+make audit-blackbox-target
+make audit-blackbox-gateway
+make audit-unified-partition
+make audit-partition-binding
+make audit-gateway-actuator
 make auto-onboard-etcdraft
 make auto-onboard-etcdraft-llm
 make coverage-compile-etcdraft

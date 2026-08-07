@@ -1,41 +1,63 @@
 # 当前阶段
 
-日期：2026-08-06
-阶段：M4.17 正式 benchmark 机械准入（等待私有真实样本）
+日期：2026-08-07
 
-## 当前可确认的结果
+阶段：M5.6c Gateway Actuator 重叠与失败边界已完成
 
-- Runtime、Replay、Oracle、Coverage Ledger、PSS 和 Defect Benchmark 的可信路径已存在；
-- 公开 M4.9 ReadIndex 与 M4.11 Ready.MustSync pilot 已验证两条不同的 evaluator 链，不能作为
-  Agent 方法效果样本；
-- Blind Planner v1 已将 LLM 输入缩减为 opaque trial、Profile/Capability 投影、opaque debt、
-  受限 DSL、预算和机械 finding；真实目标、SUT/Driver identity、trace、Oracle 与 Ledger 留在
-  可信路径；
-- Blind v1 仅通过无模型 fixture 验证，尚未产生新的模型实验结果。
-- private Manifest 到 Blind Manifest 的 exposure audit 已完成：它会拒绝 private variant identity、
-  root cause、build/source identity 或 private monitor 在公开 JSON 中的直接泄露。
-- Agent 已接受的真实 Test Plan 现在只进入 private replay bundle；无模型 `blind-replay` 能以相同
-  Coordinator identity 重放它，供 evaluator 比较 Campaign report digest。
-- 通用执行/规划层只接收 Driver Manifest 声明的 `protocol-input` 词汇，不解释 Raft 操作名；
-  etcd/raft API 映射停留在具体 Driver。早期 toy、Contract-only 与旧全信息 Planner 路径已删除。
-- 新的 private benchmark Manifest v2 把 `pss_id` 冻结为身份的一部分；evaluator 从 Manifest
-  选择 trusted monitor，并拒绝 Campaign report 的 PSS identity 不匹配。
-- private Manifest v2 在生成 Blind view 前还须通过 readiness gate：版本、来源、artifact binding、
-  control 数与 distinct root-cause label 数均由确定代码检查；它不替代 curator 对真正独立性的审查。
+## 当前输入、处理与输出
 
-## 下一项决策性工作
+```text
+typed Partition/Heal Action
+          |
+          v
+selection-time Adapter eligibility
+          |
+          v
+Gateway binding + overlap refcount
+          |
+          v
+all-or-rollback controller gate state
+```
 
-冻结多个相互独立、不会向 Planner 暴露 candidate identity/trigger 的 qualified trial 与正确
-control；对每个 scope 完成 exposure audit，并在私有 workspace 演练 agent/replay/evaluator 构建链。
-随后在相同 primary-work、decision、token 与 wall-clock
-预算下比较 Random、DFS、专家、无反馈 Planner 与 Blind Planner。
+M5.6c 在 M5.6b typed binding 上增加选择期资格、重叠 partition 引用计数与多 Gateway 失败回滚。
+三个独立子进程和两条 Unix Gateway 已验证同一 Runtime Action 对真实连接流量的隔离与恢复。
 
-在此之前，不应增加 Scenario/Critic Agent、复合 obligation 或宣传任何 Agent 优势。
+## 本阶段结果
+
+- 外部 gate 状态漂移会在 Action 选择前被过滤；
+- 两个重叠 partition 共享同一 Gateway，不会重复关闭或过早恢复；
+- partition/heal 中途失败都会逆序回滚已改变的 controller gate state；
+- 三进程双 Gateway 流量测试连续 20 次通过；
+- 生产 Go 净增 165 行，没有新增 Action、Profile、Schema、CLI 或 backend selector。
+
+详细结果见 [M5.6c 阶段总结](stage-m5.6c-gateway-actuator.md)。
+
+## 当前没有完成
+
+- 多 Gateway 调用仍是顺序的，外部进程可能观察到瞬时 partial cut；
+- 回滚不能恢复已经关闭的旧 connection 或在途字节；
+- composition wrapper 仍是 test-only，尚无规范化 evidence 或 Qualification；
+- topology 完整性只相对于显式 inventory；
+- 黑盒路径仍不能 strict replay，也没有取得 scheduler-owned message qualification；
+- PSS、Coverage、Oracle、Agent、Campaign 和 benchmark 尚未迁移到 v2。
+
+## 下一步
+
+进入 M5.6d，但先做能力语义机械化，不扩张通用黑盒网络代码。能力必须拆成 Control Surface、
+Control Grade 与 Deterministic Guarantees；默认接入目标调整为“官方接口优先的最小灰盒”，纯黑盒
+保留为 Level 1，协议核心修改是最后手段。详细决策见
+[能力分级与灰盒 Control Port 设计](graybox-control-ports.md)。
+
+M5.6d 只允许把当前 etcd/raft、HashiCorp Raft、Gateway 投影为机械能力报告，并添加防止自授资格的
+负例；不新增 Action，生产 Go 目标净增不超过 100 行。随后 M5.7 再冻结 Adapter 内部最小
+MessagePort/TemporalPort，M5.8 才选择真实进程式共识做灰盒纵向切片。
 
 ## 阅读入口
 
-1. [总体规划](ConsensusAtlas-总体规划.md)：研究目标、可信边界、冻结决策与路线图。
-2. [M4.17 阶段总结](stage-m4.17-formal-benchmark-readiness.md)：私有正式样本的机械准入条件。
-3. [Defect Benchmark](defect-benchmark.md)：正式方法评价的独立分母与判定规则。
-4. [架构](architecture.md)：包依赖、Runtime 与 Agent 的分层。
-5. [文档导航](README.md)：按“理解/实现/实验”分类的完整阅读顺序。
+1. [能力分级与灰盒 Control Port 设计](graybox-control-ports.md)
+2. [M5.6c 阶段总结](stage-m5.6c-gateway-actuator.md)
+3. `internal/blackbox/actuator.go`
+4. `internal/blackbox/actuator_process_test.go`
+5. [M5.6b 阶段总结](stage-m5.6b-typed-partition-binding.md)
+6. [Control Runtime v2 设计](control-runtime-v2.md)
+7. [总体规划](ConsensusAtlas-总体规划.md)
