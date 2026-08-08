@@ -8,6 +8,7 @@ import (
 
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/families/raft"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
 )
 
 func TestDeclarativePSSMatchesExecutableProjector(t *testing.T) {
@@ -132,8 +133,26 @@ func TestDiscoverSamplesStableBoundariesOnly(t *testing.T) {
 	if summary.UniqueStates != 2 {
 		t.Fatalf("unique states = %d, want running and crashed", summary.UniqueStates)
 	}
-	if len(summary.Curve) != 3 || summary.Curve[1].NewState {
+	wantCurve := []protocolstate.DiscoveryPoint{
+		{Step: 1, Samples: 1, UniqueStates: 1, NewState: true},
+		{Step: 4, Samples: 2, UniqueStates: 1, NewState: false},
+		{Step: 5, Samples: 3, UniqueStates: 2, NewState: true},
+	}
+	if !reflect.DeepEqual(summary.Curve, wantCurve) {
 		t.Fatalf("unexpected discovery curve: %#v", summary.Curve)
+	}
+	_, runningKey, err := raftfamily.Project(running)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, crashedKey, err := raftfamily.Project(crashed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.States) != 2 || summary.States[0].Key != runningKey ||
+		summary.States[0].FirstStep != 1 || summary.States[1].Key != crashedKey ||
+		summary.States[1].FirstStep != 5 {
+		t.Fatalf("unexpected discovery witnesses: %#v", summary.States)
 	}
 }
 

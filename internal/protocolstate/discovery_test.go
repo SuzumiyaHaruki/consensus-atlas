@@ -1,37 +1,18 @@
 package protocolstate_test
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
 )
 
-type fixtureProjector struct{}
-
-func (fixtureProjector) ID() string { return "fixture-v1" }
-
-func (fixtureProjector) IsSample(record core.TraceRecord) bool {
-	return record.Event.Kind == core.EventAcknowledge
-}
-
-func (fixtureProjector) Project(snapshot any) (any, string, error) {
-	key, ok := snapshot.(string)
-	if !ok {
-		return nil, "", errors.New("snapshot is not a string")
-	}
-	return map[string]string{"key": key}, key, nil
-}
-
 func TestDiscoverCountsUniqueKeysAndRetainsFirstWitness(t *testing.T) {
-	trace := []core.TraceRecord{
-		{Step: 1, Event: core.Event{Kind: core.EventPersist}, After: "ignored"},
-		{Step: 2, Event: core.Event{Kind: core.EventAcknowledge}, After: "a"},
-		{Step: 3, Event: core.Event{Kind: core.EventAcknowledge}, After: "a"},
-		{Step: 4, Event: core.Event{Kind: core.EventAcknowledge}, After: "b"},
+	samples := []protocolstate.Sample{
+		{Step: 2, Key: "a", State: map[string]string{"key": "a"}},
+		{Step: 3, Key: "a", State: map[string]string{"key": "a"}},
+		{Step: 4, Key: "b", State: map[string]string{"key": "b"}},
 	}
-	summary, err := protocolstate.Discover(trace, fixtureProjector{})
+	summary, err := protocolstate.Discover("fixture-v1", samples)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,10 +28,23 @@ func TestDiscoverCountsUniqueKeysAndRetainsFirstWitness(t *testing.T) {
 }
 
 func TestDiscoverRejectsEmptyKeys(t *testing.T) {
-	_, err := protocolstate.Discover([]core.TraceRecord{{
-		Step: 1, Event: core.Event{Kind: core.EventAcknowledge}, After: "",
-	}}, fixtureProjector{})
+	_, err := protocolstate.Discover("fixture-v1", []protocolstate.Sample{{Step: 1}})
 	if err == nil {
-		t.Fatal("empty projected key was accepted")
+		t.Fatal("empty sample key was accepted")
+	}
+}
+
+func TestDiscoverRejectsEmptyPSSID(t *testing.T) {
+	if _, err := protocolstate.Discover("", nil); err == nil {
+		t.Fatal("empty PSS ID was accepted")
+	}
+}
+
+func TestDiscoverRejectsNonIncreasingSteps(t *testing.T) {
+	_, err := protocolstate.Discover("fixture-v1", []protocolstate.Sample{
+		{Step: 2, Key: "a"}, {Step: 2, Key: "b"},
+	})
+	if err == nil {
+		t.Fatal("duplicate sample step was accepted")
 	}
 }

@@ -60,6 +60,8 @@ Duplication requires `max_duplicates_per_run > 0`. This prevents an unbounded ac
 ```bash
 make experiment-random
 make experiment-dfs
+make experiment-etcdraft-v2
+make experiment-etcdraft-v2-random
 ```
 
 Equivalent direct invocation:
@@ -80,6 +82,23 @@ go run ./cmd/experiment \
 
 `-verify-replay=true` is the default. It creates a fresh setup root and forces each recorded action/event ID without asking Random or DFS to choose again; candidate count, choice position, duplicate ID, termination, conformance and strict fingerprints must match. The report contains setup evidence, every decision, per-run trace, Oracle result, pending events, the cross-run PSS state union and first-discovery witnesses.
 
+`make experiment-etcdraft-v2` uses the new Control Runtime path and writes the M5.10 public development
+report. It currently runs only the transparent progress/lifecycle policies; it does not reuse the legacy Random/DFS
+implementation or its Oracle/Coverage claims.
+
+`make experiment-etcdraft-v2-random` reuses that exact executor with the public base policy seed `1`.
+Policy entropy is derived independently per run and never replaces the Runtime seed. The fixed and Random reports
+have equal primary/replay logical budgets; a single-seed state-count difference is not a method-level conclusion.
+
+`make experiment-etcdraft-v2-stub-planner` first compiles a restricted proposal under a trusted Scope and then
+reuses the same executor. The public stub makes zero model calls and intentionally reproduces M5.10's fixed behavior;
+its value is the scope/compiler/failure-accounting boundary, not a strategy improvement. Rejected proposals and
+runtime-unreachable rules are explicit attempt outcomes and cannot disappear from the proposal-attempt budget.
+
+`make experiment-etcdraft-v2-deepseek-planner` is an explicitly opt-in, one-call model smoke. Its M5.13 public
+result compiled successfully but stopped at an unreachable exact message rule after 34 primary and 32 replay
+decisions. It therefore has no complete PSS summary and is not comparable to the complete fixed/random reports.
+
 ## Area metrics
 
 `prefix_area` is the discrete sum:
@@ -91,6 +110,15 @@ sum from b=1 to B of D(b)
 `self_normalized_area = prefix_area / (B * D(B))` describes how early a method found its own final set. It must not be used alone to compare absolute discovery strength: a method that quickly finds five states can have a higher self-normalized area than one that gradually finds thirteen. Always report final unique states and raw prefix area at the same budget.
 
 A future comparison tool may normalize against the union of all evaluated methods, but that post-hoc reference set is still not a completeness denominator.
+
+M5.9d 已将这一聚合算法改为协议无关的 measured decision/optional sample 输入。legacy
+Random/DFS 继续由 compatibility adapter 产生相同 JSON；etcd/raft v2 已有两个各 32 decisions 的
+集成见证。M5.10 又增加 `cmd/control-experiment`，把相同固定策略见证保存为 digest-bound v2
+`measurement-complete` 报告，明确记录 primary/replay setup、decisions、work units 和未采集的资源
+成本。M5.11 又在相同执行路径和预算上增加独立 policy seed 的确定性 Random 报告。M5.12 在该路径前
+加入受限 Proposal 的机械编译和失败计费，并以 0-call deterministic stub 保存首个 PlannerAttempt。
+M5.13 又保存第一次真实单调用 PlannerAttempt，但它以 `execution-failed` 结束。单个公开 seed 或单次
+Agent 失败都不构成 Random/DFS/Agent 方法优越性结论。
 
 ## Current limitations
 

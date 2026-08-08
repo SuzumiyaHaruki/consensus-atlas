@@ -121,7 +121,7 @@ def parse_completion(response: dict[str, Any]) -> tuple[dict[str, Any], dict[str
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not content.strip():
         raise ValueError("DeepSeek returned empty JSON content")
-    binding = json.loads(content)
+    binding = json.loads(content, object_pairs_hook=_unique_object)
     if not isinstance(binding, dict):
         raise ValueError("DeepSeek JSON content is not an object")
     usage = response.get("usage") or {}
@@ -140,6 +140,15 @@ def parse_completion(response: dict[str, Any]) -> tuple[dict[str, Any], dict[str
         "total_tokens": int(usage.get("total_tokens") or 0),
     }
     return binding, audit
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
 def validate_endpoint(endpoint: str) -> None:

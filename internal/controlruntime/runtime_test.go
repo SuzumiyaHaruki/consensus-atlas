@@ -350,6 +350,32 @@ func TestReleasedMessageSurvivesSourceAndTargetCrash(t *testing.T) {
 	}
 }
 
+func TestReplayWithProgressChargesCompletedDecisionBeforeDivergence(t *testing.T) {
+	ctx := context.Background()
+	runtime := newRuntime(t)
+	action := mustEnabled(t, ctx, runtime)[0]
+	if _, err := runtime.Select(ctx, action.ID); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace.Records[0].Outcome = "tampered-expected-outcome"
+	trace, err = trace.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, progress, err := controlruntime.ReplayWithProgress(ctx, fixture.New(), runtimeConfig(), trace)
+	var divergence *controlruntime.ReplayDivergenceError
+	if !errors.As(err, &divergence) {
+		t.Fatalf("ReplayWithProgress() error = %v, want divergence", err)
+	}
+	if !progress.RuntimeInitialized || progress.Decisions != 1 {
+		t.Fatalf("ReplayWithProgress() progress = %#v, want initialized + one decision", progress)
+	}
+}
+
 func TestRestartKeepsOldTemporalItemsCanceled(t *testing.T) {
 	ctx := context.Background()
 	runtime := newRuntime(t)

@@ -9,10 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"strings"
 	"sync"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/modelcommand"
 )
 
 const commandProtocolVersion = 1
@@ -50,32 +49,15 @@ func (g *CommandGenerator) Generate(ctx context.Context, request GenerationReque
 	}
 	encoded = append(encoded, '\n')
 
-	command := exec.CommandContext(ctx, g.Path, g.Args...)
-	command.Dir = g.Dir
-	command.Env = append([]string{
-		"PATH=" + os.Getenv("PATH"),
-		"LANG=C.UTF-8",
-		"LC_ALL=C.UTF-8",
-	}, g.Env...)
-	command.Stdin = bytes.NewReader(encoded)
-	stdout := &limitedBuffer{limit: 8 << 20}
-	stderr := &limitedBuffer{limit: 64 << 10}
-	command.Stdout, command.Stderr = stdout, stderr
-	if err := command.Run(); err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = err.Error()
-		}
-		return nil, fmt.Errorf("model generator failed: %s", message)
-	}
-	if stdout.exceeded {
-		return nil, errors.New("model generator output exceeded 8 MiB")
-	}
-	if stderr.exceeded {
-		return nil, errors.New("model generator stderr exceeded 64 KiB")
+	stdout, err := modelcommand.Run(ctx, modelcommand.Config{
+		Path: g.Path, Args: g.Args, Dir: g.Dir, Env: g.Env,
+		StdoutLimit: 8 << 20, StderrLimit: 64 << 10,
+	}, encoded)
+	if err != nil {
+		return nil, fmt.Errorf("model generator failed: %w", err)
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	decoder := json.NewDecoder(bytes.NewReader(stdout))
 	decoder.DisallowUnknownFields()
 	var response commandResponse
 	if err := decoder.Decode(&response); err != nil {
@@ -92,7 +74,7 @@ func (g *CommandGenerator) Generate(ctx context.Context, request GenerationReque
 		return nil, errors.New("model generator returned an invalid protocol version or empty binding")
 	}
 	response.Audit.RequestDigest = digestBytes(encoded)
-	response.Audit.ResponseDigest = digestBytes(stdout.Bytes())
+	response.Audit.ResponseDigest = digestBytes(stdout)
 	g.mu.Lock()
 	g.audit = response.Audit
 	g.mu.Unlock()
@@ -106,27 +88,6 @@ func (g *CommandGenerator) LastGenerationAudit() GenerationAudit {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.audit
-}
-
-type limitedBuffer struct {
-	bytes.Buffer
-	limit    int
-	exceeded bool
-}
-
-func (b *limitedBuffer) Write(data []byte) (int, error) {
-	original := len(data)
-	remaining := b.limit - b.Len()
-	if remaining <= 0 {
-		b.exceeded = true
-		return original, nil
-	}
-	if len(data) > remaining {
-		data = data[:remaining]
-		b.exceeded = true
-	}
-	_, _ = b.Buffer.Write(data)
-	return original, nil
 }
 
 func digestBytes(data []byte) string {

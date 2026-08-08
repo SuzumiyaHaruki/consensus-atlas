@@ -2,23 +2,31 @@ DEEPSEEK_KEY_FILE ?= key.txt
 BLIND_BENCHMARK_ID ?= public-development-v1
 BLIND_BENCHMARK_DIGEST ?= dd82d3a5e3b43b0a0035a3fa4044d04910c4fd840d49129a58d299b336c0df1c
 BLIND_TRIAL_ID ?= public-etcdraft-v1
+EPAXOS_GOPATH ?=
 
-.PHONY: fmt test adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces audit-blackbox-target audit-blackbox-gateway audit-unified-partition audit-partition-binding audit-gateway-actuator v1v2-compare-etcdraft contract-compile-etcdraft auto-onboard-etcdraft auto-onboard-etcdraft-llm coverage-compile-etcdraft campaign-etcdraft campaign-baselines-etcdraft agent-campaign-etcdraft run-raft run-raft-onboarding run-raft-llm experiment-random experiment-dfs
+.PHONY: fmt test adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-legacy-consumers audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces audit-blackbox-target audit-blackbox-gateway audit-unified-partition audit-partition-binding audit-gateway-actuator audit-control-paths audit-efficient-epaxos-feasibility probe-efficient-epaxos-message-port v1v2-compare-etcdraft contract-compile-etcdraft auto-onboard-etcdraft auto-onboard-etcdraft-llm coverage-compile-etcdraft campaign-etcdraft campaign-baselines-etcdraft agent-campaign-etcdraft run-raft run-raft-onboarding run-raft-llm experiment-random experiment-dfs experiment-etcdraft-v2 experiment-etcdraft-v2-random experiment-etcdraft-v2-stub-planner experiment-etcdraft-v2-deepseek-planner
 
 fmt:
 	gofmt -w $$(find adapters bindings cmd drivers families internal migrations qualifications -type f -name '*.go')
 
-test:
+test: audit-legacy-consumers
 	go test ./...
 	python3 -m unittest discover -s agents -p 'test_*.py'
 
 adapter-qualify-etcdraftv2:
-	go run ./cmd/adapter-qualify-etcdraftv2 \
+	go run ./cmd/adapter-qualify -target etcdraftv2 \
 		-out benchmarks/qualifications/etcdraft-v2-m5.3/report.json
 
 adapter-qualify-hashicorpraftv2:
-	go run ./cmd/adapter-qualify-hashicorpraftv2 \
+	go run ./cmd/adapter-qualify -target hashicorpraftv2 \
 		-out benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json
+
+audit-legacy-consumers:
+	@go list -f '{{range .Imports}}{{$$.ImportPath}}|{{.}}{{"\n"}}{{end}}' ./... \
+		| rg '\|github.com/SuzumiyaHaruki/consensus-atlas/(internal/(adapter|host|engine|explore|scenario)|drivers/etcdraft)$$' \
+		| sed 's#github.com/SuzumiyaHaruki/consensus-atlas/##g' \
+		| LC_ALL=C sort \
+		| diff -u benchmarks/migrations/v1-consumers-m5.9a/production-edges.txt -
 
 audit-hashicorp-determinism:
 	go test ./adapters/hashicorpraftv2 \
@@ -49,6 +57,25 @@ audit-partition-binding:
 
 audit-gateway-actuator:
 	go test ./internal/blackbox -run 'TestGatewayActuator|TestGatewayEligibility|TestOverlappingPartitionActions' -count=20
+
+audit-control-paths:
+	go test ./internal/conformance -run TestControlPath -count=20
+	go test ./internal/blackbox -run TestFrozenControlPathMatrix -count=20
+
+audit-efficient-epaxos-feasibility:
+	go test ./internal/architecture \
+		-run TestFrozenEfficientEPaxosFeasibilityMatchesDerivedDecision -count=1
+
+probe-efficient-epaxos-message-port:
+	@test -n "$(EPAXOS_GOPATH)" || { echo "EPAXOS_GOPATH is required" >&2; exit 2; }
+	@test -d "$(EPAXOS_GOPATH)/src/epaxos" || { echo "EPAXOS_GOPATH is not an efficient/epaxos GOPATH" >&2; exit 2; }
+	@test "$$(git -C "$(EPAXOS_GOPATH)" rev-parse HEAD)" = "791b115669fca472d3136f6a2eda46c00b3f8251"
+	@test "$$(git -C "$(EPAXOS_GOPATH)" rev-parse 'HEAD^{tree}')" = "708b8e37f6b50a4e6b6fcbb95045dc53ad7d6344"
+	@test -z "$$(git -C "$(EPAXOS_GOPATH)" status --porcelain --untracked-files=no)"
+	@test -z "$$(git -C "$(EPAXOS_GOPATH)" ls-files --others --exclude-standard -- 'src/**/*.go')"
+	@env GOPATH="$(EPAXOS_GOPATH)" GO111MODULE=off go run -race \
+		benchmarks/feasibility/efficient-epaxos-m5.8b/testdata/messageport/main.go \
+		benchmarks/feasibility/efficient-epaxos-m5.8b/result.json
 
 v1v2-compare-etcdraft:
 	go run ./cmd/v1v2-compare \
@@ -148,3 +175,32 @@ experiment-dfs: auto-onboard-etcdraft
 		-setup scenarios/etcdraft-explore-setup.json \
 		-strategy dfs -runs 64 -budget 64 -decision-budget 128 \
 		-out artifacts/etcdraft-dfs-experiment.json
+
+experiment-etcdraft-v2:
+	go run ./cmd/control-experiment \
+		-strategy fixed \
+		-decisions 32 \
+		-out benchmarks/experiments/etcdraft-v2-fixed-baselines-m5.10/report.json
+
+experiment-etcdraft-v2-random:
+	go run ./cmd/control-experiment \
+		-strategy random \
+		-policy-seed 1 \
+		-decisions 32 \
+		-out benchmarks/experiments/etcdraft-v2-random-m5.11/report.json
+
+experiment-etcdraft-v2-stub-planner:
+	go run ./cmd/control-experiment \
+		-strategy stub-planner \
+		-decisions 32 \
+		-out benchmarks/experiments/etcdraft-v2-stub-planner-m5.12/attempt.json
+
+# This target performs exactly one real model call and is intentionally excluded from test.
+experiment-etcdraft-v2-deepseek-planner:
+	go run ./cmd/control-experiment \
+		-strategy deepseek-planner \
+		-key-file ../key.txt \
+		-model deepseek-v4-flash \
+		-model-timeout 5m \
+		-decisions 32 \
+		-out benchmarks/experiments/etcdraft-v2-deepseek-planner-m5.13/attempt.json

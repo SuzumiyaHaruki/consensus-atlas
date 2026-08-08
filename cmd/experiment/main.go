@@ -19,7 +19,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/engine"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/explore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
+	legacyexperiment "github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate/legacyexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/scenario"
 )
 
@@ -39,23 +39,23 @@ type reportedRun struct {
 }
 
 type report struct {
-	Version           int                             `json:"version"`
-	ProfileID         string                          `json:"profile_id"`
-	PSSID             string                          `json:"pss_id"`
-	Protocol          string                          `json:"protocol"`
-	Strategy          explore.Strategy                `json:"strategy"`
-	Config            explore.Config                  `json:"config"`
-	MeasurementWindow measurementWindow               `json:"measurement_window"`
-	ReplayStable      bool                            `json:"replay_stable"`
-	ReplayErrors      []string                        `json:"replay_errors,omitempty"`
-	TargetDecisions   int                             `json:"target_decisions"`
-	ChargedDecisions  int                             `json:"charged_decisions"`
-	BudgetReached     bool                            `json:"budget_reached"`
-	StopReason        string                          `json:"stop_reason"`
-	Capabilities      driver.Manifest                 `json:"capabilities"`
-	SetupTrace        []core.TraceRecord              `json:"setup_trace"`
-	Discovery         protocolstate.ExperimentSummary `json:"protocol_state_discovery"`
-	Runs              []reportedRun                   `json:"runs"`
+	Version           int                                `json:"version"`
+	ProfileID         string                             `json:"profile_id"`
+	PSSID             string                             `json:"pss_id"`
+	Protocol          string                             `json:"protocol"`
+	Strategy          explore.Strategy                   `json:"strategy"`
+	Config            explore.Config                     `json:"config"`
+	MeasurementWindow measurementWindow                  `json:"measurement_window"`
+	ReplayStable      bool                               `json:"replay_stable"`
+	ReplayErrors      []string                           `json:"replay_errors,omitempty"`
+	TargetDecisions   int                                `json:"target_decisions"`
+	ChargedDecisions  int                                `json:"charged_decisions"`
+	BudgetReached     bool                               `json:"budget_reached"`
+	StopReason        string                             `json:"stop_reason"`
+	Capabilities      driver.Manifest                    `json:"capabilities"`
+	SetupTrace        []core.TraceRecord                 `json:"setup_trace"`
+	Discovery         legacyexperiment.ExperimentSummary `json:"protocol_state_discovery"`
+	Runs              []reportedRun                      `json:"runs"`
 }
 
 func main() {
@@ -168,10 +168,10 @@ func run(
 			return fmt.Errorf("run %d has a different setup fingerprint", current.Run)
 		}
 	}
-	measured := make([]protocolstate.MeasuredRun, 0, len(first.Runs))
+	measured := make([]legacyexperiment.MeasuredRun, 0, len(first.Runs))
 	reported := make([]reportedRun, 0, len(first.Runs))
 	for _, current := range first.Runs {
-		measured = append(measured, protocolstate.MeasuredRun{
+		measured = append(measured, legacyexperiment.MeasuredRun{
 			Run: current.Run, DecisionCount: len(current.Decisions),
 			InitialSnapshot: current.InitialSnapshot, Trace: current.Trace,
 		})
@@ -180,7 +180,7 @@ func run(
 			Oracle:    oracle.Check(current.FullTrace, oracle.TraceIntegrity{}, oracle.Agreement{}),
 		})
 	}
-	discovery, err := protocolstate.Aggregate(measured, projector)
+	discovery, err := legacyexperiment.Aggregate(measured, projector)
 	if err != nil {
 		return err
 	}

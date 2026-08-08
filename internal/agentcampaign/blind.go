@@ -302,7 +302,6 @@ func CoordinateBlind(
 		if report.TotalTokens > config.MaxTotalTokens {
 			round.Finding = BlindFinding{Code: FindingBudgetRejected, Attempt: attempt, ProposalID: proposal.ID, PlanID: proposal.Plan.ID, Targeted: append([]string(nil), proposal.Plan.Targets...)}
 			report.ConsecutiveNoProgress++
-			findings = append(findings, round.Finding)
 			_ = board.append(RecordFinding, attempt, round.Finding)
 			report.Rounds = append(report.Rounds, round)
 			report.Status, report.StopReason = StatusTokenBudget, "generation token budget exhausted"

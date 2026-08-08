@@ -33,11 +33,12 @@ const (
 type ControlGrade string
 
 const (
-	ControlUnavailable    ControlGrade = "unavailable"
-	ControlOpaque         ControlGrade = "opaque"
-	ControlObservable     ControlGrade = "observable"
-	ControlInterceptable  ControlGrade = "interceptable"
-	ControlSchedulerOwned ControlGrade = "scheduler-owned"
+	ControlUnavailable       ControlGrade = "unavailable"
+	ControlOpaque            ControlGrade = "opaque"
+	ControlObservable        ControlGrade = "observable"
+	ControlInterceptable     ControlGrade = "interceptable"
+	ControlSchedulerActuated ControlGrade = "scheduler-actuated"
+	ControlSchedulerOwned    ControlGrade = "scheduler-owned"
 )
 
 type SurfaceDeclaration struct {
@@ -368,8 +369,10 @@ func gradeRank(grade ControlGrade) int {
 		return 2
 	case ControlInterceptable:
 		return 3
-	case ControlSchedulerOwned:
+	case ControlSchedulerActuated:
 		return 4
+	case ControlSchedulerOwned:
+		return 5
 	default:
 		return -1
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/agentcampaign"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/campaign"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/coverage"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/modelcommand"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 )
 
@@ -173,17 +174,7 @@ func run(ctx context.Context, cfg config) error {
 }
 
 func validateSecretFile(path string) error {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return errors.New("DeepSeek key path must be a regular file, not a symlink")
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return errors.New("DeepSeek key file permissions must not grant group or other access")
-	}
-	return nil
+	return modelcommand.ValidateSecretFile(path)
 }
 
 func resolve(root, path string) string {

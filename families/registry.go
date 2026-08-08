@@ -9,18 +9,33 @@ import (
 	"io"
 
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/families/raft"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/coverage"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/driver"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
+	legacyexperiment "github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate/legacyexperiment"
 )
 
-func Projector(pssID string) (protocolstate.Projector, error) {
+func Projector(pssID string) (legacyexperiment.Projector, error) {
 	switch pssID {
 	case raftfamily.PSSID:
 		return raftfamily.Projector{}, nil
 	default:
 		return nil, fmt.Errorf("no protocol state projector registered for PSS %q", pssID)
+	}
+}
+
+// Discover adapts a legacy v1 trace at the protocol-family boundary before it
+// reaches the protocol-neutral discovery ledger.
+func Discover(pssID string, trace []core.TraceRecord) (protocolstate.DiscoverySummary, error) {
+	switch pssID {
+	case raftfamily.PSSID:
+		return raftfamily.Discover(trace)
+	default:
+		return protocolstate.DiscoverySummary{}, fmt.Errorf(
+			"no protocol state discovery adapter registered for PSS %q", pssID,
+		)
 	}
 }
 

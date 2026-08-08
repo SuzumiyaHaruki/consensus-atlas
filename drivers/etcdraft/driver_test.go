@@ -13,7 +13,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/explore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/host"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
+	legacyexperiment "github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate/legacyexperiment"
 )
 
 func TestExplicitElectionAndProposal(t *testing.T) {
@@ -405,18 +405,18 @@ func TestRandomExplorerUsesRaftPSSFromSharedMeasurementRoot(t *testing.T) {
 	if !first.BudgetReached || first.ChargedDecisions != 32 || len(first.Runs) != len(second.Runs) {
 		t.Fatalf("unexpected exploration result: %#v", first)
 	}
-	measured := make([]protocolstate.MeasuredRun, 0, len(first.Runs))
+	measured := make([]legacyexperiment.MeasuredRun, 0, len(first.Runs))
 	for index, run := range first.Runs {
 		if run.ExecutionError != "" || !run.Conform ||
 			run.ExecutionFingerprint != second.Runs[index].ExecutionFingerprint {
 			t.Fatalf("invalid or unstable run %d: %#v", index+1, run)
 		}
-		measured = append(measured, protocolstate.MeasuredRun{
+		measured = append(measured, legacyexperiment.MeasuredRun{
 			Run: run.Run, DecisionCount: len(run.Decisions),
 			InitialSnapshot: run.InitialSnapshot, Trace: run.Trace,
 		})
 	}
-	discovery, err := protocolstate.Aggregate(measured, raftfamily.Projector{})
+	discovery, err := legacyexperiment.Aggregate(measured, raftfamily.Projector{})
 	if err != nil {
 		t.Fatal(err)
 	}

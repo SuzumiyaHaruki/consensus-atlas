@@ -3,13 +3,13 @@
 ## 信任边界
 
 ```text
-Human/Family Pack
+Human/Minimal Protocol Knowledge
        |
        v
 Protocol Knowledge Contract --digest--> fixed semantic denominator
        |                                      |
        |                                      v
-       +--> Onboarding Agent --> Binding + Driver + witnesses
+       +--> Onboarding Agent --> Execution Binding + Semantic Mapping + witnesses
                                       |
                                       v
                     deterministic onboarding validator
@@ -27,12 +27,12 @@ Scenario Interpreter --> Deterministic Engine
                        Generic Host Runtime
                                 |
                                 v
-                        Thin Protocol Driver
+                 Shared Adapter Kit + Thin Execution Binding
                                 |
                                 v
                          Official SUT APIs
 
-raw trace --> Replay --> PSS Projector --> State Discovery Ledger
+raw trace --> Replay --> Semantic Mapping --> Core PSS IR --> State Discovery Ledger
      |                         |
      +--> Canonicalizer --> Oracle --> Fixed Profile Ledger
 
@@ -43,11 +43,22 @@ private defect manifest --> opaque trials --> Campaign v2 --> trusted Oracle rec
           +---------------- root-cause/false-positive ledger <-+
 ```
 
-当前 model-backed 阶段只生成 Binding 和已有 witness 的引用，不生成 Driver 源码。DeepSeek 客户端运行在不继承父环境的 JSON 子进程边界中，只接收 Contract、Driver Manifest、候选场景和上一轮完整机械报告。key 由客户端在运行时从权限受限文件读取；最终 Profile 仍只由 Go 验证器产生。
+当前 model-backed 阶段仍只生成旧 Binding 和已有 witness 的引用，不生成 Driver 源码，也尚未生成
+M5.7a 已手工校准的 Semantic Mapping。DeepSeek 客户端运行在不继承父环境的 JSON 子进程边界中，只接收 Contract、
+Driver Manifest、候选场景和上一轮完整机械报告。key 由客户端在运行时从权限受限文件读取；最终
+Profile 仍只由 Go 验证器产生。
 
-接入 Agent 位于测试执行之前。它可以发现 API、生成实现绑定、薄 Driver 和可执行见证，但不能提出或改写当次协议语义、覆盖分母和验收条件。人工输入边界是版本化 Protocol Knowledge Contract；其后由代码验证，无逐事实人工批准步骤。缺少可验证见证是 actionable failure；目标实现确实不具备的能力是 `Unsupported`，对应义务仍在分母中。
+接入 Agent 位于测试执行之前。它可以发现 API、生成 Execution Binding、Semantic Mapping 和可执行
+见证，但不能提出或改写 Core PSS schema、当次覆盖分母和验收条件。人工输入边界是版本化 Protocol
+Knowledge Contract；其后由代码验证，无逐事实人工批准步骤。缺少可验证见证是 actionable failure；
+目标实现确实不具备的能力是 `Unsupported`，对应义务仍在分母中。
 
 旧 Source Catalog、Integration Pack、Scout benchmark 和人工 Gate 已从主仓库删除。
+
+M5.7a 已实现 `internal/psscore` 与首个 etcd/raft Mapping。可信 Runtime 直接产生 lifecycle、partition、
+pending item 和 earliest-temporal Control Context；Mapping 只从公开 Evidence 产生相对 epoch、decision
+和 participant mode。聚合 application digest 不被伪装为单项 Value。该路径尚未进入 v2 trace discovery ledger，也不参与 Coverage、Oracle 或
+Agent 输入。两个现有 Adapter 的生命周期差异未支持安全抽取共享 kit，因此图中的 kit 仍是规划边界。
 
 The experiment path adds a protocol-neutral layer above Engine:
 
@@ -149,6 +160,28 @@ Control Surface、Control Grade 和 Deterministic Guarantees 三个正交维度�
 MessagePort/TemporalPort 等 Control Port 只作为目标薄 Adapter 的内部构件，不能形成 Runtime 的第二套
 backend 或 type switch。详细规则见 `docs/graybox-control-ports.md`。
 
+M5.6d 已把 `scheduler-actuated` 插入既有 ControlGrade，并新增从 witness facts 推导、不可直接填写 grade
+的 `ControlPathAssessment`。冻结矩阵显示 etcd/raft 和 HashiCorp 均 scheduler-own message，但 strict
+replay 分别为 true/false；Gateway 只 scheduler-actuate connection，controller state 可回滚但 external
+effect 不原子。Gateway 结果是 path witness，不冒充完整 Adapter Qualification。
+
+M5.7 冻结了新的边际接入目标：完整 `control.Adapter` 仍是唯一 Runtime 契约，但目标专用代码只提供
+Execution Binding 和 Semantic Mapping。规划中的共享 Adapter kit 承担 Manifest/Check/Yield/Collect/
+identity/digest 等样板，不拥有调度或判定；实现证据统一映射到固定 Core PSS IR，Family/协议细节作为
+可选 Extended PSS。该设计尚未实现，当前两个 Adapter 和 v1 Raft PSS 仍保持原状。
+
+M5.7a 已实现固定 Core PSS IR 与 etcd/raft Mapping。M5.8a 随后对固定 commit 的
+`efficient/epaxos` 做接入前检查：生产构建和三节点单命令 smoke 成功，外部输入、peer TCP 写入及
+语义字段存在；但没有 stable message freeze、yield、可注入时钟、恢复路径或 strict replay witness。
+因此第三目标当前仅为 `proceed-limited`，没有进入生产依赖图或 Adapter Qualification。下一步只允许
+test-only message-port worker 实验；失败即记录 Unsupported，不修改 Runtime/Action/Core PSS。
+
+M5.8b 的 test-only worker 进一步否证 `byte Write == message`：官方 5,139 字节 `Commit` 帧经过默认
+`bufio.Writer` 被拆成两次写入。目标专用 codec-aware assembler 能恢复完整原始帧、生成
+route/sequence/content-bound stable ID，并在 release/drop 决策前阻止 `SendMsg` 返回。该 framing
+属于 Execution Binding，不进入 Runtime。probe 未运行完整节点构造或 Control Runtime，故只授权后续
+最小 Binding 工作，不授予 `runtime-owned-message` 或 strict replay；当前先转入 M5.9 legacy 清理门。
+
 ## 依赖方向
 
 `internal/engine`、`internal/host`、`internal/core` 和 `internal/driver` 不得 import 任意具体共识包。
@@ -158,6 +191,7 @@ backend 或 type switch。详细规则见 `docs/graybox-control-ports.md`。
 drivers/etcdraft
 adapters/etcdraftv2
 adapters/hashicorpraftv2
+adapters/<future-target>  # only Binding/Mapping after M5.7a
 ```
 
 CLI 可以注册具体 Driver，但协议注册不能把其类型传播到 Runtime。
@@ -297,14 +331,43 @@ Raft Family Pack 另外提供 `raft-family-pss-v1` 状态 projector。它对节�
 
 ## Protocol-state discovery
 
-`internal/protocolstate` 只定义通用 `Projector` 接口和 discovery ledger：
+单轨迹 discovery ledger 只接受通用 sample：
 
 ```text
-Family Projector: snapshot -> canonical state + key
-Generic Ledger:   trace + projector -> prefix curve + first witnesses
+Family Projector / Core Mapping: evidence -> step + canonical key + state
+Generic Ledger:                    samples -> prefix curve + first witnesses
 ```
 
-具体协议字段只存在于 Family Pack。CLI composition root 根据 Profile 的 `pss_id` 注册 projector；Runtime、Driver 契约和 ledger 都不依赖 Raft。
+具体协议字段只存在于 Family Pack 或薄 Semantic Mapping。Raft v1 trace 在 Family composition 层转换为
+sample；Core PSS 可以直接提交 mapping digest 和 state。Runtime、Driver 契约和 ledger 都不依赖 Raft。
+M5.9c 的 `OnlineSampler` 在初始化 step 0 和每个已应用公共 v2 Action 后配对 Runtime Snapshot 与最新
+Evidence；它校验连续 step、record/snapshot、Evidence digest 和 logical time，但没有调度权限。
+M5.9d 的根 `Aggregate` 只读取 shared initial sample 和按计费顺序排列的 measured decisions；
+optional sample 不影响 decision 计费。`legacyexperiment` 只保留 v1 trace/Projector 到该输入的
+compatibility 投影，不再拥有第二份聚合算法。
+
+M5.10 在其上增加唯一的 v2 `internal/controlexperiment` 执行路径。它只依赖公共 Adapter、Runtime、
+OnlineSampler 和 Aggregate，接收声明式 Action priority/rule，不导入任何共识实现。目标专用构造、
+节点选择和策略实例只存在于 `cmd/control-experiment` composition root。每条 primary/replay 都从
+全新 Adapter/Runtime 开始；报告保存 trace/sample identity 与 state first-witness，不复制完整 trace
+和全部 sample body。`measurement-complete` 不能被提升为 Oracle 或 Coverage 结论。
+
+M5.11 的 `uniform-random-policy/v1` 仍在同一 Policy/Execute 边界内。policy seed、decision number 和
+canonical enabled-set digest 只决定选择索引；拒绝采样消除取模偏差。policy seed 不进入 Runtime
+config、Adapter Reset 或 native entropy。固定与 Random 报告使用相同 Runtime seed、setup/replay
+计费和 Aggregate；策略不能通过选择逻辑修改测量器。
+
+M5.12 在该执行器前增加单向编译边界。可信 `PlannerScope` 拥有 PSS/Runtime/run/budget/replay，
+不可信 `PlannerProposal` 只能声明公共 Action priority、exact rule 或 public policy seed。strict
+decoder 和编译器拒绝额外字段、run-set 差异和非法 Policy；编译成功后仍只调用原 `Execute`。
+`PlannerAttempt` 把编译拒绝与运行期不可达区分开，并保存 proposal attempt 和失败前实际 work，
+但不允许 Agent 修改 sampler、Aggregate、Replay、Oracle 或 Coverage。
+
+M5.13 的模型 transport 位于 `cmd/control-experiment` composition root 和独立 Python client，不进入
+Runtime/PSS 依赖方向。模型只读取 Scope 的无 seed/identity 投影、公共 Action/node 表面和 Proposal
+schema。通用 `internal/modelcommand` 只提供子进程 environment isolation 与字节上限，被三个模型
+客户端共同使用，不解释模型响应。真实 proposal 仍经 M5.12 编译器；模型调用成功而 rule 运行期
+不可达时只生成带 provider-reported usage 和 partial work 的 `execution-failed`。
 
 Raft v1 只在 Ready acknowledge 和 crash/restart 后采样，避免 persist/sync/emit/apply 数量虚增协议状态。普通 scenario runner 仍展示包含 bootstrap 的完整单轨迹账本；跨搜索器实验通过显式 measurement window 排除 setup，并把共享根状态记在预算 0。
 

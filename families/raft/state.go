@@ -112,7 +112,21 @@ func (Projector) Project(snapshot any) (any, string, error) {
 }
 
 func Discover(trace []core.TraceRecord) (protocolstate.DiscoverySummary, error) {
-	return protocolstate.Discover(trace, Projector{})
+	projector := Projector{}
+	samples := make([]protocolstate.Sample, 0, len(trace))
+	for _, record := range trace {
+		if !projector.IsSample(record) {
+			continue
+		}
+		state, key, err := projector.Project(record.After)
+		if err != nil {
+			return protocolstate.DiscoverySummary{}, fmt.Errorf(
+				"project protocol state at step %d: %w", record.Step, err,
+			)
+		}
+		samples = append(samples, protocolstate.Sample{Step: record.Step, Key: key, State: state})
+	}
+	return protocolstate.Discover(PSSID, samples)
 }
 
 func Project(snapshot any) (CanonicalState, string, error) {

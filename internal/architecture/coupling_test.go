@@ -38,7 +38,9 @@ func TestControlV2PackagesDoNotImportLegacyRuntimeOrProtocol(t *testing.T) {
 		"internal/control",
 		"internal/controlentropy",
 		"internal/controlruntime",
+		"internal/controlexperiment",
 		"internal/conformance",
+		"internal/psscore",
 		"adapters/fixture",
 	}
 	forbiddenPrefixes := []string{

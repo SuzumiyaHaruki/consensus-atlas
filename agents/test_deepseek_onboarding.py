@@ -45,6 +45,19 @@ class DeepSeekOnboardingTest(unittest.TestCase):
         self.assertEqual(audit["total_tokens"], 14)
         self.assertEqual(audit["prompt_cache_hit_tokens"], 6)
 
+    def test_parse_completion_rejects_duplicate_json_keys(self):
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            MODULE.parse_completion(
+                {
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {"content": '{"version":1,"version":2}'},
+                        }
+                    ]
+                }
+            )
+
     def test_key_file_must_be_private(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "key.txt"

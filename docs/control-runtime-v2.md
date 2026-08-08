@@ -77,14 +77,14 @@ trace；需要保持的是可解释的研究结论、工件来源和严格重放
 ## 4. 总体结构
 
 ```text
-Protocol/Family Knowledge                 Candidate implementation
+Minimal Protocol Knowledge                Candidate implementation
          │                                           │
          v                                           v
-Family Evidence Schema <--- Evidence Mapper     Control Adapter
-         │                                           │
-         │                                  canonical commands/items
-         │                                           │
-         └──────────────> Control Runtime v2 <───────┘
+  Core PSS IR <--- Semantic Mapping      Execution Binding
+         │                                      │
+         │                             shared Adapter kit
+         │                                      │
+         └──────────────> Control Runtime v2 <──┘
                               │
                   enabled actions + trace + evidence
                               │
@@ -102,7 +102,7 @@ Family Evidence Schema <--- Evidence Mapper     Control Adapter
 
 ## 5. 职责边界
 
-| 领域 | Runtime | Adapter | Family/Evidence | Agent/Search |
+| 领域 | Runtime | Adapter/Binding | Semantic Mapping | Agent/Search |
 |---|---|---|---|---|
 | enabled 判定 | 最终决定 | 报告本地前置条件 | 不参与 | 只能选择 enabled ID |
 | 消息存储与网络关系 | 负责 | 截获和解码边界 | 可解释协议字段 | 选择投递/丢弃等动作 |
@@ -110,7 +110,7 @@ Family Evidence Schema <--- Evidence Mapper     Control Adapter
 | 随机性 | 派生分域种子并审计 | 映射原生随机源 | 可解释随机用途 | 第一版不能选择随机结果 |
 | crash/restart 抽象语义 | 负责 | 实现原生停止/恢复 | 可观察协议恢复结果 | 选择时机 |
 | 持久化完成顺序 | 负责 | 暴露 effect 并接受结果 | 可解释持久化证据 | 选择完成/失败动作 |
-| 协议状态 | 不解释 | 导出实现证据 | 映射到 Family schema | 只读有限投影 |
+| 协议状态 | 不解释 | 导出实现证据 | 映射到 Core/Extended PSS | 只读有限投影 |
 | 覆盖和正确性 | 不自报 | 不自报 | Matcher/Oracle 机械判定 | 不能写 Ledger |
 
 任何具体接入都可以在 Adapter 内部拆成网络代理、虚拟时钟、进程监督器和实现绑定，但 Runtime
@@ -539,19 +539,31 @@ Profile requirements
 
 ## 16. Evidence、PSS 与 Coverage 边界
 
-控制层只生成协议无关的 Control Record 和实现证据 envelope。跨实现比较需要显式的两段映射：
+控制层只生成协议无关的 Control Record 和实现证据 envelope。M5.7 起，所有实现先映射到一个固定的
+Core PSS IR，而不是让每个 Family 自由决定整个状态形状：
 
 ```text
 ImplementationEvidenceVn
-  -> FamilyEvidenceVn
-  -> PSS / Obligation Evidence / Oracle Input
+  -> Semantic Mapping
+  -> Core PSS IR Vn
+       +-> generic canonical key / discovery ledger
+       +-> optional Extended PSS / family Oracle input
 ```
 
-以 Raft 为例，可以定义 `RaftEvidenceV1`，包含经过版本化约束的 role、相对 term/index、日志形状、
-commit/applied 关系等；这些字段不能进入 Runtime core。HotStuff 或 Tendermint 使用各自的 Family
-Evidence，而消息、timer、crash 和 effect 仍共用同一个 Runtime。
+Core PSS State 由 Runtime 直接提供的 Control Context 与 Mapping 提供的 Semantic Graph 组合。
+Control Context 包含 participant lifecycle/incarnation、link connectivity、pending item 的种类/路由/
+保守因果形状和最近 temporal frontier；它排除随机 ID、绝对时间、opaque payload 与 host microstep。
+Semantic Graph 使用封闭实体 `Participant/Epoch/DecisionUnit/Value/Evidence`、封闭关系
+`belongs-to/proposes/supports/depends-on/conflicts-with/precedes/decides/persists/applies` 和通用阶段
+`unknown/proposed/supported/accepted/decided/applied`。Participant 另有封闭执行 mode
+`inactive/passive/contending/coordinating`，避免把 Raft role 写进 Core。Raft entry、EPaxos instance 和 HotStuff block
+都映射成 DecisionUnit；协议特有的 log conflict、fast/slow path 或 lock/QC shape 进入版本化 Extended
+PSS，不能反向扩展 Runtime 或让通用 ledger 按协议分支。
 
-v1 中直接假定 snapshot JSON 存在 `driver.nodes` 的 matcher 必须在迁移时改为消费 Family Evidence，
+Family Evidence 可以继续作为实现证据到 Core IR 之间的可选复用层，但不再是每个新协议的必需新状态
+模型。具体字段不能进入 Runtime core，Core 与 Extended 指标必须分别报告。
+
+v1 中直接假定 snapshot JSON 存在 `driver.nodes` 的 matcher 必须在迁移时改为消费 Core/Extended PSS，
 不能把某个 Driver 的 snapshot 布局当成通用接口。
 
 PSS 状态发现数和 Coverage obligation 仍承担不同职责：
@@ -636,7 +648,7 @@ Agent 输出分两层：
 对时间，Agent 只能选择 Runtime 提供的 `FireTemporalEvent(TemporalID)`，不能提交 deadline 或 delta；
 对随机性，第一版只能选择预冻结 SUT seed 的 run，不能指定一次 RandomDraw 的返回值。
 
-近失配反馈必须从冻结的 Family Pack/Profile 机械产生，不能泄露 candidate identity、root cause、
+近失配反馈必须从冻结的 Core/Extended PSS Mapping 与 Profile 机械产生，不能泄露 candidate identity、root cause、
 隐藏 monitor 或真实触发条件。Agent 不能新增 Action kind、绕过 capability、修改当前 Profile 分母，
 也不能声明 `covered=true`。
 
@@ -709,7 +721,7 @@ entropy 和 strict replay 因官方 v1.7.3 无注入边界而稳定 Unsupported�
 
 ### M5.5 以后
 
-依次迁移 Family Evidence/PSS、Coverage Matcher、搜索基线、Agent Planner 和 benchmark。控制层稳定
+依次迁移 Core/Extended PSS、Coverage Matcher、搜索基线、Agent Planner 和 benchmark。控制层稳定
 之前不扩大 Agent 数量，也不以 v1 的 Raft 特有状态继续堆叠义务。
 
 M5.5a 已先完成场景表面/控制等级/确定性保证分层。M5.5b 已实现独立进程、显式 readiness endpoint、
@@ -732,6 +744,35 @@ M5.6c 为 Runtime-owned Action 补充 `Adapter.CheckRuntimeAction`，选择时�
 调用中途失败时逆序回滚 controller gate state；三个独立子进程和两条 Unix Gateway 已验证实际阻断、
 共享引用与最终恢复。该顺序调用不构成网络原子 cut，rollback 不能恢复旧连接或在途字节，故不改变
 connection backend 的 interceptable、非 strict-replay 边界。
+
+M5.6d 没有改变 Runtime 行为，而是在既有 ControlGrade 中加入 `scheduler-actuated`，并用
+`ControlPathAssessment` 从 witness facts 机械推导等级。冻结矩阵把两个 message/scheduler-owned 路径的
+strict replay 差异，与 Gateway connection/scheduler-actuated、controller-only atomicity 放在同一视图；
+grade 与 guarantee 不再互相暗含。Gateway 仍只有 path witness，不是生产 Adapter Qualification。
+
+M5.7 先收紧新目标的边际接入面，不立即实现第三个 Adapter：具体目标只提供 Execution Binding 和
+Semantic Mapping；规划中的共享 Adapter kit 复用 Manifest、Check、Yield、Collect、identity、digest、
+finding 和 conformance 组装。kit 只能存在于具体 Adapter 内部，Runtime 仍只依赖唯一
+`control.Adapter`。基础接入优先 Submit、lifecycle、message、partition、最早 temporal item 和只读
+observation；effect/callback/storage/entropy 按实际能力加入，不再作为首版模板清单。
+
+M5.7a 已实现 `internal/psscore` 和 etcd/raft 公开 Evidence Mapping，并用真实三节点自然选主验证
+行为变化与重复投影稳定性；Runtime/Action/Adapter schema 均未修改。两个现有 Adapter 的只读审计只
+发现少量防御性样板，Check、yield、Evidence 与 entropy 语义并不相同，因此没有创建共享 kit。之后
+M5.8 才对 `efficient/epaxos` 做 feasibility spike。EPaxos 只能新增 Binding、Mapping、fixture 和
+composition；缺少持久恢复、clock 或 stable yield 时保持 Unsupported。
+
+M5.8a 已完成固定版本的第一轮检查：生产构建与三节点单命令 smoke 成功，输入、peer TCP 和语义字段
+表面存在；stable message item、yield、可注入 clock、恢复路径和 strict replay 尚不存在或未证明。
+冻结报告的结论是 `proceed-limited`，只允许 test-only message-port worker spike，不授权完整 Adapter、
+Qualification 或共享 kit。M5.8b 若不能在零 Action/Runtime/Core PSS 修改下冻结并 release/drop 一个
+真实 frame，则记录 Unsupported 并转入 v1 消费者迁移/删除门。
+
+M5.8b 已在 212 行 test-only Go、零生产 Go 下得到 worker witness：官方 5,139 字节 `Commit` 帧跨两次
+底层 Write，证明 chunk 不是消息；EPaxos codec-aware assembler 能恢复完整 bytes、生成稳定 ID，并
+release 5,139/drop 0 字节。framing 因而明确属于目标 Binding，Runtime 不增加协议 codec。probe 未覆盖
+自动构造器安装、三节点闭环或 Runtime integration，故资格保持未授予。当前按停止线进入 M5.9 v1
+消费者迁移/删除门，EPaxos 最小 Binding 在减负后恢复。
 
 ## 21. 第一实现阶段验收标准
 
@@ -762,9 +803,11 @@ internal/control/          v2 公共数据模型、ID、Manifest、Action、Item
 internal/controlruntime/   v2 确定性状态机、enabled、trace、replay
 internal/controlentropy/   分域 deterministic entropy 与 RandomDraw tape
 internal/conformance/      与具体 Adapter 分离的准入套件
+internal/adapterkit/       两个真实目标消费后才提升的生命周期样板（不预建，非 Runtime backend）
+internal/psscore/          固定 Core PSS IR、Runtime Control Context、规范化与 digest
 adapters/fixture/          无协议 fixture Adapter
 adapters/etcdraft/         后续 Legacy Ready Bridge
-evidence/raft/             RaftEvidenceV1 与 Family Mapper
+evidence/raft/             RaftEvidenceV1 与 Core/Extended Mapper
 schemas/control/v2/        Manifest、trace、emission 等 JSON Schema
 ```
 
@@ -784,6 +827,8 @@ v1 的 `internal/engine`、`internal/host`、`internal/driver` 和 `drivers/etcd
 - 不同节点是否共享一个受调用顺序影响的随机流？如果是，搜索方法比较会被混淆；
 - Agent 是否能提交 enabled 集以外的动作或自由 payload？如果能，边界失效；
 - Coverage/PSS 是否直接读取实现私有 snapshot 布局？如果是，Evidence 层缺失；
+- 新协议是否要求重新定义 PSS state 结构而不是只写 Core IR mapping？如果是，Core PSS 边界失效；
+- 新 Adapter 是否重复实现 identity/yield/collect/digest 样板？如果是，应先抽取被两个目标消费的 kit；
 - 新能力是否只有 Manifest 声明而没有外部 conformance 证据？如果是，不能 qualified；
 - 是否为了一个候选提交反向定制控制能力？如果是，benchmark 与接入方向倒置；
 - 第二实现是否要求修改 Runtime？如果是，必须重新审查公共语义而不是添加协议特例。
@@ -806,12 +851,14 @@ v1 的 `internal/engine`、`internal/host`、`internal/driver` 和 `drivers/etcd
 | crash v1 | 稳定边界的 power loss | 语义清楚且可由库/进程 Adapter 实现 |
 | 让步机制 | 确定性 barrier，禁止 wall-clock drain | strict replay 的必要条件 |
 | Adapter 形态 | 每系统一个薄映射，Runtime 只见统一契约 | 原生 API 不可能完全一致 |
+| 新目标边际产物 | Execution Binding + Semantic Mapping | 把控制接入与协议理解分开 |
+| Adapter 公共样板 | 具体 Adapter 内部共享 kit，现有契约不变 | 避免每个目标重写可信生命周期 |
 | 默认接入等级 | 最小、非侵入式灰盒；官方接口优先 | 纯黑盒不能可靠提供单消息、自然时间和持久化切点 |
 | 能力表达 | Surface + Grade + Deterministic Guarantees | 同一 Action 不等于同一证据强度 |
 | Control Port | 仅为薄 Adapter 内部可选构件 | 防止形成第二套 Runtime backend 或巨大公共接口 |
 | 可选能力 | 统一 Manifest/命令模型，不在 Runtime type assert | 防止实现类型渗入内核 |
-| Evidence | implementation -> family 两段版本化映射 | 避免 PSS 读取私有 snapshot |
+| Evidence/PSS | implementation -> fixed Core IR；Family/Extended 可选 | 换协议只增加映射，不重写通用 PSS |
 | Agent 动作 | 只能引用冻结 ID/当前 enabled ID | 利用语义能力，同时限制越权和刷分 |
-| 通用性门槛 | 至少两个控制表面不同的真实 CFT Adapter | 防止只对 etcd/raft 自洽 |
+| 通用性门槛 | 非 Raft 目标不修改 Runtime/Action/Core PSS schema | 直接检验协议与实现两类耦合 |
 
-本文通过审查并把上述决策冻结后，才进入 M5.1 实现。
+上述初始决策已经用于 M5.1—M5.6d；M5.7 只收紧 Adapter 复用与 PSS 中间表示，不回写历史阶段结论。

@@ -44,3 +44,18 @@ evidence/Oracle 或输出分数。无效 proposal 已消耗的模型 token 仍�
 v1 的无模型 fixture 已证明请求、拒绝、执行、反馈和 transcript 边界；尚未证明模型效果。
 公开开发 scope 不等于 holdout。Scenario/Critic 仍应等待独立 holdout 显示角色混合的明确
 失败类型。完整结果见 `docs/stage-m4.12-blind-planner-v1.md`。
+
+## Control Runtime v2 Policy Planner
+
+`deepseek_control_planner.py` 是 M5.12 `PlannerProposal` 编译边界的真实模型客户端。它只读取
+Scope digest/run/budget/replay、公共 nodes/Action kinds、目标描述和 Proposal schema，单次返回每 run
+的 priority/rules 或 public random seed。Runtime seed、PSS identity、enabled set、trace、Coverage 和
+Oracle 不进入请求。
+
+```bash
+make experiment-etcdraft-v2-deepseek-planner
+```
+
+该入口每次只调用一次官方 DeepSeek API，不自动 retry；模型输出仍由 Go strict decode、机械编译、
+唯一 Execute/Replay 和 partial-work ledger 约束。M5.13 首次公开 smoke 以运行期 rule 不可达结束，
+因此只证明 transport/审计/失败计费连通，不证明 Agent 策略有效。

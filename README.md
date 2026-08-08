@@ -1,14 +1,14 @@
 # ConsensusAtlas
 
-> **分支状态：Control Runtime v2 已完成 M5.6c Gateway Actuator 重叠与失败边界。** 本分支以 M4.17 检查点为基线，已完成
+> **分支状态：M5.13 已完成第一次真实单调用 DeepSeek Planner smoke。** 本分支以 M4.17 检查点为基线，已完成
 > 协议无关 Action/ProducedItem Runtime、最早 temporal event、分域 entropy tape、fixture、严格
 > replay 和外部 conformance，并新增官方 etcd/raft v3.6.0 配置驱动的 N 节点
 > Ready/effect/message/Tick/Step/crash/restart/opaque proposal 纵向切片与版本化 application durable
 > state。检查点保存的 v1 Runtime、完整 etcd/raft 接入、
 > PSS/Coverage、Agent 与 benchmark 实验基础，但它**不是**面向任意共识实现的最终控制层。
 > v2 已冻结协议无关的 `Control Runtime + Adapter Contract + Conformance Suite`，并以 etcd/raft
-> `RawNode/Ready` 和 HashiCorp Raft goroutine/Transport 两种控制表面做了验证；但 PSS/Coverage
-> 仍主要绑定 v1 Raft Family/Profile，尚未迁移为 v2 消费者。当前 etcd/raft 已对公共 Profile
+> `RawNode/Ready` 和 HashiCorp Raft goroutine/Transport 两种控制表面做了验证；Core PSS 已接入 v2
+> 在线采样和实验报告，但 Coverage/Profile 仍主要绑定 v1 Raft Family。当前 etcd/raft 已对公共 Profile
 > 得到 8/8 required validated；
 > 旧资格中 HashiCorp Raft 为 3 validated、6 Unsupported；M5.5a 已将其拆为“5/5 通用场景表面
 > 存在、3/5 取得 validated scheduler control、0/4 required deterministic guarantee”。这仍不能
@@ -21,7 +21,44 @@
 > controller gate state，不保证网络原子切换或恢复旧连接，因此仍不能提高黑盒资格等级。
 > 后续接入已冻结为“统一 Action + 分级能力 + 最小灰盒”：能力分别记录 surface、control grade 与
 > deterministic guarantees；Control Port 只能存在于薄 Adapter 内部，不能演化成第二套 Runtime。
+> M5.6d 的三路径矩阵已机械区分 etcd/raft message ownership + strict replay、HashiCorp message
+> ownership + non-strict replay，以及 Gateway connection actuation + controller-only rollback。
+> 新目标现在只允许增加 Execution Binding 与 Semantic Mapping；PSS 先映射到固定 Core IR，再选择性
+> 增加协议扩展。现有 Adapter 审计没有找到足以安全提取的公共生命周期状态机，因此共享 kit 仍未
+> 创建。EPaxos 的固定版本已通过生产构建和三节点 smoke；test-only worker 又证明 codec-aware
+> framing 能把跨两个底层 Write 的 5,139 字节真实 `Commit` 帧冻结为稳定 item，并精确 release/drop。
+> 这说明目标薄 Binding 可承担 framing，但尚未接入 Runtime、完整构造器或 Qualification；yield、
+> clock、恢复路径和 strict replay 仍未证明。当前已转入 M5.9 v1 消费者迁移/删除门。
+> 当前 `go list` 冻结 28 条 legacy execution 生产边；第一批合并重复 qualification CLI 并删除死赋值，
+> 生产 Go 净减 33 行，既有 Make 入口与报告字节保持不变。单轨迹 discovery ledger 现只接受
+> `step/key/state` sample；Raft v1 保持旧曲线，etcd/raft v2 Core PSS 已复用同一账本。当前 v2 已在每个
+> 已应用 Action 后可信配对 Snapshot/Evidence：三节点自然选举与 crash/restart 得到 29 decisions、
+> 30 samples、20 unique states，严格 Runtime replay 和 sample replay 均通过。跨运行 Aggregate 现只读取
+> measured decision/optional sample。M5.10 的协议无关执行器现在用全新 Adapter/Runtime 执行并严格
+> replay 两个 32-decision run，生成 45-state union、primary/replay 各 66 work units 和 digest-bound
+> `measurement-complete` 报告。M5.11 又用独立 public policy seed 在同一执行器和预算下生成严格可重放
+> Random 基线：29/26 states、union 53、prefix area 1843，且没有改变 Runtime seed 或 M5.10 工件身份。
+> 53 对 45 只是单个公开 seed 的 PSS 行为，不是覆盖率、Oracle pass 或方法优势。M5.12 现将可信
+> PSS/Runtime/run/budget/replay scope 与不可信 priority/rules/public-seed proposal 结构性分离，并用
+> 无模型 stub 贯通机械编译、唯一 Execute、严格 Replay 和显式失败计费。M5.13 又完成一次真实
+> `deepseek-v4-flash` 调用：proposal 编译成功，run 1 完整执行/replay，run 2 decision 3 的 exact
+> message rule 不可达，最终诚实保存 `execution-failed`、1 call/744 tokens 和部分执行账本。它证明
+> transport 连通，不证明 Agent 策略有效。下一步先冻结 transport-attempt ledger 和一次最小机械
+> repair 输入。
 > 当前结果与未证明事项见
+> [M5.13 阶段总结](docs/stage-m5.13-one-call-deepseek-planner.md)、
+> [M5.12 阶段总结](docs/stage-m5.12-restricted-planner-boundary.md)、
+> [M5.11 阶段总结](docs/stage-m5.11-deterministic-random-baseline.md)、
+> [M5.10 阶段总结](docs/stage-m5.10-v2-experiment-executor.md)、
+> [M5.9d 阶段总结](docs/stage-m5.9d-generic-cross-run-aggregate.md)、
+> [M5.9c 阶段总结](docs/stage-m5.9c-online-core-pss-sampling.md)、
+> [M5.9b 阶段总结](docs/stage-m5.9b-generic-discovery-ledger.md)、
+> [M5.9a 阶段总结](docs/stage-m5.9a-v1-consumer-freeze.md)、
+> [M5.8b 阶段总结](docs/stage-m5.8b-efficient-epaxos-message-port.md)、
+> [M5.8a 阶段总结](docs/stage-m5.8a-efficient-epaxos-feasibility.md)、
+> [M5.7a 阶段总结](docs/stage-m5.7a-core-pss-etcdraft.md)、
+> [M5.7 目标收敛](docs/stage-m5.7-onboarding-scope-convergence.md)、
+> [M5.6d 阶段总结](docs/stage-m5.6d-control-path-capabilities.md)、
 > [能力分级与灰盒 Control Port 设计](docs/graybox-control-ports.md)、
 > [M5.6c 阶段总结](docs/stage-m5.6c-gateway-actuator.md)、
 > [M5.6b 阶段总结](docs/stage-m5.6b-typed-partition-binding.md)、
@@ -42,10 +79,10 @@ ConsensusAtlas 是一个面向 CFT/BFT 共识协议的确定性场景执行与�
 项目采用以下主路径：
 
 ```text
-Human/Family Protocol Knowledge Contract
+Human/Minimal Protocol Knowledge Contract
         │ deterministic compile (fixed denominator)
         v
-Onboarding Agent -> Binding + executable witnesses
+Onboarding Agent -> Execution Binding + Semantic Mapping + witnesses
         │ compile + conformance + replay + Oracle validation
         v
 Validated Profile + Scenario
@@ -54,7 +91,7 @@ Deterministic Engine
         │
 Generic Host Runtime
         │
-Thin Protocol Driver
+Shared Adapter Kit + Thin Target Binding
         │
 Official Consensus Implementation
 ```
@@ -76,6 +113,19 @@ Official Consensus Implementation
 - 独立进程黑盒 Target Envelope：显式 opaque endpoint、客户端调用 freeze/deliver/drop、kill/restart；
 - 两独立进程 connection gateway：opaque byte forwarding、连接级 partition/heal 与计数证据；
 - Gateway typed topology binding、选择期资格、重叠 partition 引用与 controller gate 失败回滚；
+- witness-derived Control Path grade 与三路径确定性保证矩阵；
+- 固定 Core PSS IR v1：可信 Runtime Control Context、封闭 Semantic Graph、participant/value
+  canonicalization 与版本化 digest；
+- 协议无关 v2 实验执行器：声明式 Action policy、等长 decision budget、fresh primary/replay、
+  digest-bound trace/sample identity、跨运行 Core PSS Aggregate 与分 phase work ledger；
+- 独立 policy seed 的确定性 Random baseline：canonical enabled-set hash、拒绝采样、Runtime entropy
+  隔离和相同逻辑预算报告；
+- 受限 Planner Proposal 编译器：可信 scope 隔离、strict JSON decode、run-set/policy 机械拒绝、
+  运行期失败 partial-work 账本和无模型 stub 工件；
+- 单调用 DeepSeek Planner transport：只读 Scope 投影、environment/output/time endpoint 限制、
+  prompt/request/response/usage audit，以及真实不可达 proposal 的计费失败工件；
+- etcd/raft 公开 Evidence 到相对 epoch/decision 的 Semantic Mapping，以及三节点自然选主
+  行为保持测试；
 - 官方 etcd/raft v3.6.0 配置驱动静态 N 节点、bootstrap Ready、durable effect、自然 Tick 和
   `Ready.Messages → Runtime mailbox → RawNode.Step` 切片；
 - 三节点真实选举流量的 retain、drop、duplicate、partition、heal、deliver 和 strict replay；
@@ -138,6 +188,7 @@ make audit-blackbox-gateway
 make audit-unified-partition
 make audit-partition-binding
 make audit-gateway-actuator
+make audit-control-paths
 make auto-onboard-etcdraft
 make auto-onboard-etcdraft-llm
 make coverage-compile-etcdraft
@@ -225,9 +276,9 @@ internal/protocolcontract/ 确定性协议知识与固定分母编译器
 internal/autoonboard/   Binding、见证验证和自动反馈 Coordinator
 internal/protocolstate/ 跨协议状态发现账本
 internal/semantic/      执行与结构规范化指纹
-families/raft/          Raft PSS、状态投影和规范化
+families/raft/          当前 v1 Raft Extended PSS、状态投影和规范化
 bindings/               具体系统的 CLI composition root
-contracts/              人工/Family Pack 提供的最小协议知识契约
+contracts/              最小协议知识契约与可选 Family 扩展
 onboarding/             Agent 生成的实现绑定和可执行见证
 profiles/               固定覆盖分母和 Profile v2 schema
 plans/                  digest-bound Test Plan Suite 和 authoring schema
@@ -251,7 +302,11 @@ scenarios/              声明式测试场景
 
 状态发现曲线用于解释搜索效率，没有固定分母；Profile 分数用于解释冻结测试义务的完成情况。两者都不代表协议正确概率或剩余缺陷概率，也不能单独证明 Agent 有效。正式方法效果由隐藏历史缺陷/语义 mutant 的独立根因检出率与正确 control 误报率评价。
 
-正常路径不要求人工逐条批准 Agent 提出的源码事实或测试。人工提供最小 Protocol Charter 或选择 Family Pack；Agent 可以生成协议差异、Binding、Driver、义务草案和测试计划，但只有 schema、digest、fixture、执行、Evidence Matcher、Replay、Conformance 与 Oracle 全部通过的产物才能进入 validated 状态。Agent 不能修改当次冻结分母、Oracle 或 replay/conformance 条件。
+正常路径不要求人工逐条批准 Agent 提出的源码事实或测试。人工提供最小 Protocol Charter 或选择可选
+Family 扩展；Agent 可以生成 Execution Binding、Semantic Mapping、义务草案和测试计划，但只有
+schema、digest、fixture、执行、Evidence Matcher、Replay、Conformance 与 Oracle 全部通过的产物
+才能进入 validated 状态。Agent 不能修改当次冻结分母、Core PSS schema、Oracle 或
+replay/conformance 条件。
 
 旧 Integration Pack、Source Catalog、Scout benchmark 及其人工 Gate 代码已从主仓库删除，避免与自动接入主线并存。
 

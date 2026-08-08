@@ -166,11 +166,7 @@ func discoverProtocolStates(profile coverage.Profile, trace []core.TraceRecord) 
 	if profile.PSSID == "" {
 		return nil, nil
 	}
-	projector, err := families.Projector(profile.PSSID)
-	if err != nil {
-		return nil, err
-	}
-	summary, err := protocolstate.Discover(trace, projector)
+	summary, err := families.Discover(profile.PSSID, trace)
 	if err != nil {
 		return nil, err
 	}

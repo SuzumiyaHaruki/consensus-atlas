@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.4
-> 日期：2026-08-06
+> 状态：Draft v1.5
+> 日期：2026-08-07
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -39,15 +39,15 @@ ConsensusAtlas 的长期目标很容易在实现过程中退化成以下几类�
 3. 如何机械地产生一个有限、版本化、可审查的覆盖分母？
 4. 如何用确定性 Oracle 检查安全性，并在明确的部分同步与公平性假设下寻找活性反例？
 5. 如何给出可重复的量化分数，同时避免把该分数错误解释成“协议正确概率”？
-6. 如何让人工只提供一次最小 Protocol Charter 或选择已有 Family Pack，之后由 Agent 自动完成语义提取、代码接入、覆盖规划、测试生成、失败修复和反例归纳，同时不让 Agent 进入可信执行、判定和计分路径？
+6. 如何让人工只提供一次最小 Protocol Charter 或选择可选 Family 扩展，之后由 Agent 自动完成 Core PSS Mapping、代码接入、覆盖规划、测试生成、失败修复和反例归纳，同时不让 Agent 进入可信执行、判定和计分路径？
 
 ### 1.2 研究主线
 
 项目固定采用以下主线：
 
-> **最小协议知识 + Agent 自动接入 + 固定语义覆盖义务 + 覆盖债务驱动的多 Agent 测试闭环 + 确定性执行与 Oracle**
+> **最小协议知识 + 薄 Execution Binding + 固定 Core PSS IR + 覆盖债务驱动的受限 Agent 测试闭环 + 确定性执行与 Oracle**
 
-人工只提供协议实现、协议文档/形式化模型、核心安全与活性目标、故障模型和有界测试范围，或者直接选择已有 Family Pack。Knowledge/Obligation Agent 负责生成协议差异和结构化覆盖义务；Onboarding Agent 负责生成薄 Driver、Binding 和基础见证；Planner/Scenario/Search/Critic Agent 围绕 Coverage Ledger 中的未覆盖债务持续产生和修复测试。所有 Agent 产物只能由确定性 Coordinator、Runtime、Evidence Matcher、Replay、Conformance 和 Oracle 接受。
+人工只提供协议实现、协议文档/形式化模型、核心安全与活性目标、故障模型和有界测试范围，或者选择已有的可选 Family 扩展。Knowledge/Obligation Agent 负责生成协议差异、Core PSS 映射和结构化覆盖义务；Onboarding Agent 负责生成薄 Execution Binding、Semantic Mapping 和基础见证；Planner/Scenario/Search/Critic Agent 围绕 Coverage Ledger 中的未覆盖债务持续产生和修复测试。所有 Agent 产物只能由确定性 Coordinator、Runtime、Evidence Matcher、Replay、Conformance 和 Oracle 接受。
 
 系统的总原则是：
 
@@ -130,17 +130,28 @@ Agent 在运行中发现的新风险只能进入下一版候选目录，不能�
 
 每个系统都不可避免地需要少量接入信息，因为创建节点、传递消息、读取输出、恢复存储和观察提交的 API 不同。但不应要求每个系统重写调度器、网络、存储故障、轨迹或覆盖逻辑。
 
-长期目标是：
+长期目标是让每个新系统只增加边际接入产物：
 
 ```text
-通用 Runtime + 薄 Protocol Driver + 可复用 Family Pack/PSS
+通用 Runtime + 共享 Adapter kit
+              + 薄 Execution Binding
+              + 固定 Core PSS IR + Semantic Mapping
 ```
 
 而不是：
 
 ```text
-每个协议一个包含全部逻辑的厚重 Adapter
+每个协议一个包含完整生命周期、调度、语义和评分的厚重 Adapter
 ```
+
+`control.Adapter` 可以继续作为 Runtime 的严格完整契约，但 Manifest、Check、Yield、Collect、
+identity、digest、finding 和 conformance 组装不应由每个目标重复手写。共享 Adapter kit 只能是具体
+Adapter 内部的复用库，不是第二套 Runtime backend。目标专用 Binding 只调用官方 lifecycle、input、
+transport、clock 和 observation 接口；协议理解只存在于独立 Semantic Mapping。
+
+PSS 也不能以“接口返回 `state any`”代替真正复用。所有协议先映射到固定 Core PSS IR；Family/协议
+特有细节只能作为可选 Extended PSS。换协议允许增加映射规则，不允许修改通用 ledger、canonicalizer
+或把 term/ballot/QC 字段加入 Runtime。
 
 ### 2.6 消息是异步一等对象
 
@@ -227,14 +238,14 @@ PSS 键相同只能影响搜索优先级和发现计数，不得直接用于 vis
 正式执行之前先建立确定性知识、自动接入和冻结覆盖分母：
 
 ```text
-Minimal Protocol Charter + Family Pack
+Minimal Protocol Charter + optional Family extension
                |
                v
- Knowledge/Obligation Agent proposals
+ Knowledge/Obligation Agent mapping proposals
                |
  schema/source/fixture/differential validation
                v
-  Frozen Contract/PSS/Profile obligations
+  Frozen Contract/Core PSS Mapping/Profile obligations
                |
 代码 + Contract + 上轮 findings
                |
@@ -252,7 +263,7 @@ Minimal Protocol Charter + Family Pack
 ```text
                  ┌──────────────────────────────────────┐
                  │ 冻结输入                              │
-                 │ PSS + Profile + System Binding       │
+                 │ Core/Extended PSS + Profile + Binding│
                  │ Oracle Set + Version Manifest        │
                  └──────────────────┬───────────────────┘
                                     │
@@ -274,8 +285,8 @@ Minimal Protocol Charter + Family Pack
                  └──────────────────┬───────────────────┘
                                     │ 标准动作/输出批次
                  ┌──────────────────v───────────────────┐
-                 │ Thin Protocol Driver                 │
-                 │ 原生 API 调用、编码转换、状态观察    │
+                 │ Shared Adapter Kit + Execution Binding│
+                 │ 公共生命周期 + 原生 API/编码转换     │
                  └──────────────────┬───────────────────┘
                                     │
                           Official SUT / Process
@@ -285,7 +296,7 @@ Minimal Protocol Charter + Family Pack
                                     │
               ┌─────────────────────┼──────────────────────┐
               v                     v                      v
-       Semantic Abstraction    Deterministic Oracle   Replay Verifier
+       Mapping to Core PSS IR  Deterministic Oracle   Replay Verifier
               │                     │                      │
               └─────────────────────┼──────────────────────┘
                                     v
@@ -340,8 +351,8 @@ Minimal Protocol Charter + Family Pack
 Agent 平面按产物和权限拆分，而不是用一个模型同时生成、执行和批准自己的结果：
 
 1. `Knowledge Agent`：从论文、文档、代码和形式化模型提取带来源的协议事实与差异草案；
-2. `Onboarding Agent`：生成薄 Driver、Binding、状态映射和基础见证；
-3. `Obligation Agent`：基于 Family Pack、协议差异和有界 Profile 生成结构化覆盖义务草案；
+2. `Onboarding Agent`：生成薄 Execution Binding、Semantic Mapping 和基础见证；
+3. `Obligation Agent`：基于 Core/Extended PSS、协议差异和有界 Profile 生成结构化覆盖义务草案；
 4. `Coverage Planner Agent`：读取 Coverage Debt，选择下一批高价值目标；
 5. `Scenario Agent`：将目标细化为受限 Test Plan DSL；
 6. `Search Agent`：调用确定性 concretizer 及 Random/DFS/DPOR 等后端实现计划；
@@ -386,7 +397,12 @@ Agora 式“直接调用原系统 API”仍然会生成目标仓库专用的测�
 - capability；
 - event identity、causation 和 replay decision。
 
-### 4.3 Driver 的最小职责
+### 4.3 Runtime 契约与目标 Binding 的职责
+
+下面的完整接口描述 Runtime 与 Adapter/Driver 的可信边界，不代表每个目标都应逐方法手写。M5.7 起，
+共享 Adapter kit 负责与协议无关的生命周期、identity、digest 和冻结输出；目标专用 Execution Binding
+只提供 Boot/Stop/Invoke、transport/clock 接缝和稳定 observation。不能形成可靠边界的能力直接标记
+`Unsupported`。
 
 建议的概念接口如下，具体 Go API 可在实现时细化：
 
@@ -417,6 +433,11 @@ type ProtocolDriver interface {
 - 同一节点不能无约束地存在多个相互覆盖的 outstanding batch；
 - Driver 不读取墙上时间，不自行 sleep，不使用未记录的随机选择；
 - `Inspect` 只提供观察，不能改变目标状态。
+
+目标 Binding 不包含 scheduler、Replay、Oracle、PSS ledger、Coverage Matcher 或协议算法。共享代码
+只有在至少两个真实目标消费时才进入 Adapter kit；否则留在目标目录或删除。接入成本按目标专用人工
+LOC、配置/映射条目、首次可执行时间、conformance 修复轮数和映射错误数报告，不能只用最终 capability
+通过率表示。
 
 ### 4.4 OutputBatch
 
@@ -692,66 +713,80 @@ v3.6.0 原生能力。
 
 ### 8.1 定位
 
-PSS 是轻量、可版本化的协议语义层。它不是完整可执行规范，也不能替代 TLA+/Ivy 模型；其目标是提供覆盖分母、抽象、规范化和 Oracle 所需的最低语义。正常流程中它由人工选择的 Family Pack 与最小差异知识组成 Protocol Knowledge Contract，而不是由 Agent 自由提出后再逐项审批。
+PSS 是轻量、可版本化的协议语义层。它不是完整可执行规范，也不能替代 TLA+/Ivy 模型。M5.7 起，
+PSS 分成固定 Core IR 与可选 Extended PSS：Core 提供跨协议状态发现、规范化和基础义务所需的最小
+共同结构；Extended 只增加某家族的测试深度。Agent 可以提出映射草案，但正式运行只接受经过 schema、
+fixture、差分/突变校准和 digest 冻结的映射。
 
-### 8.2 必需内容
+### 8.2 Core PSS IR
 
-```text
-identity:
-  nodes, clients, configurations, faulty identities
-
-relative_time:
-  epoch/view/term, phase/round, timeout classes, GST relation
-
-semantic_state:
-  role, leader relation, proposal/log relation,
-  accepted/voted/locked relation, certificate/quorum,
-  commit/finalize frontier, durable frontier, applied frontier
-
-semantic_events:
-  propose, vote, certificate, receive, release, deliver,
-  timeout, view-change, persist, sync, crash, restart,
-  commit, apply, membership change
-
-properties:
-  agreement, prefix/finality, vote/lock invariants,
-  durability, apply-after-commit, progress conditions
-
-equivalence:
-  node permutation, epoch translation, value renaming,
-  log/QC shape, conservative independence
-```
-
-### 8.3 Family Pack
-
-PSS 应支持家族继承：
-
-- `raft-family`；
-- `paxos-family`；
-- `hotstuff-family`；
-- `tendermint-family`。
-
-Family Pack 提供确定的字段、关系、常见 Oracle、切点和历史风险模式；具体协议 Contract 只覆盖家族差异。Contract 一旦进入正式运行就只有版本身份，没有逐映射 `candidate`。实现可观察性与支持状态由自动接入验证器生成，不回写 Contract。
-
-### 8.4 Raft 抽象示例
-
-原始 term 数值应抽象为相对关系：
+Core 状态固定组合两部分：
 
 ```text
-stale / current / future
+Core PSS State = Runtime Control Context + Consensus Semantic Graph
 ```
 
-日志应抽象为形状：
+Runtime Control Context 由可信执行层直接投影，不经过目标 Mapping：
 
 ```text
-same
-prefix
-extension
-conflict-before-commit
-conflict-after-commit
+participant lifecycle + relative incarnation
+link connectivity / partition relation
+pending message/temporal/effect kind + route + conservative causal shape
+relative earliest temporal frontier
 ```
 
-节点 ID、提案值、term 绝对数值改变，但上述关系和因果图不变时，应获得相同语义场景键。
+它排除随机 Action/Item ID、绝对时间、opaque payload 和 persist/sync/emit/apply 等 host microstep，避免
+实现细节虚增状态，同时保留 Crash、Partition、pending message 和 timeout 竞争这些根本场景。
+
+Consensus Semantic Graph 使用封闭词汇：
+
+```text
+entities:
+  Participant, Epoch, DecisionUnit, Value, Evidence
+
+relations:
+  belongs-to, proposes, supports,
+  depends-on, conflicts-with, precedes,
+  decides, persists, applies
+
+stages:
+  unknown, proposed, supported, accepted, decided, applied
+
+participant modes:
+  inactive, passive, contending, coordinating
+```
+
+Participant mode 只表达协议无关的执行姿态，不能把 `leader/follower/candidate` 等目标枚举写进 Core；
+无 leader 协议可以保持 passive，并用 `proposes/supports` 等关系描述具体 decision unit 的协调事实。
+
+Core canonicalization 组合 Control Context 与 Semantic Graph，并只执行版本化、保守的
+participant/epoch/value/decision-unit 重命名和图关系规范化。
+绝对 term、ballot、view、index 或节点名称本身不构成新状态。Core PSS 发现曲线没有完备分母，不得
+解释为协议测试百分比。
+
+### 8.3 Semantic Mapping 与 Extended PSS
+
+每个协议只增加 `ImplementationEvidence -> Core PSS IR` 映射。例如：
+
+| Core 概念 | Raft | EPaxos | HotStuff |
+|---|---|---|---|
+| DecisionUnit | log entry | `(replica, instance)` | block |
+| Epoch | term | ballot | view |
+| supports | vote/replication evidence | PreAccept/Accept reply | vote/QC evidence |
+| depends-on/precedes | log prefix/order | dependency set/sequence | parent relation |
+| decides | committed entry | committed instance | committed block |
+| applies | state-machine apply | command execution | block execution |
+
+Raft log conflict、EPaxos fast/slow path、HotStuff lock/QC shape 等进入可选 Extended PSS。Family Pack
+可以复用这些扩展映射、Oracle 和历史风险模式，但不能替代 Core IR，也不能让通用统计器按 family
+分支。Core/Extended 状态发现和覆盖结果分别报告；某协议不存在的扩展不能算作未覆盖。
+
+### 8.4 映射可信边界
+
+Mapping 可以读取协议字段，但不能自行宣布等价、覆盖或缺陷。可信验证至少包含：正常路径 fixture、
+ID/epoch/value 重命名 metamorphic test、边界状态差分、已知语义 mutant 和重放稳定性。不能稳定观察
+的实体/关系不进入 Core key，并在 capability 中显式降级。已有形式化模型可生成额外校准见证，但
+不是所有新系统的强制输入。
 
 ---
 
@@ -1063,7 +1098,7 @@ Random/DFS/DPOR/宏观 Agent/微观 Agent/完整闭环分成独立等预算实�
 - Tendermint prevote/precommit/lock/validValue；
 - 成员变更期间 quorum 解释。
 
-这些 Oracle 由 Family Pack 提供骨架，由具体 PSS 冻结证据映射。
+这些 Oracle 由可选 Extended PSS/Family Pack 提供骨架，并从同一冻结 Core/Extended Mapping 读取证据。
 
 ### 13.3 安全性
 
@@ -1300,7 +1335,10 @@ Repo/API Scout、Source Catalog、required/acceptable/additional 标签、旧 In
 
 长期记忆只存储经验证的 Contract/Binding/Driver identity、Coverage Ledger、机械 finding、稳定反例和版本变更。未通过验证的 Agent 解释不得成为下轮事实。
 
-Onboarding Agent 的主要指标是：从 Contract 到首个 validated Profile 的时间、自动重试次数、人工修改 LOC/人工决策数、见证通过率、错误 Binding 拦截率、Family Pack 复用比例，以及与专家实现的差分运行结果。正式模型实验必须固定 Contract/prompt/tool-policy digest，记录模型版本、采样参数、token、工具调用、墙钟时间、失败/重试和费用。holdout 实现是跨实现泛化的必要证据。
+Onboarding Agent 的主要指标是：从 Contract 到首个 validated Profile 的时间、自动重试次数、目标专用
+人工 LOC/人工决策数、见证通过率、错误 Binding/Mapping 拦截率、共享 kit/Core Mapping 复用比例，以及
+与专家实现的差分运行结果。正式模型实验必须固定 Contract/prompt/tool-policy digest，记录模型版本、
+采样参数、token、工具调用、墙钟时间、失败/重试和费用。holdout 实现是跨实现泛化的必要证据。
 
 ---
 
@@ -1803,15 +1841,16 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 当前进度：第一个 model-backed Generator 已完成 Binding-only 阶段，使用隔离子进程、私有 key 文件、固定 JSON schema、温度 0、关闭 thinking、完整反馈和逐轮 digest/token 审计。Driver/witness 自动接入尚未在第二实现上验证，因此 M5 不退出。
 
-### M6：第二实现与迁移性
+### M6：非 Raft 实现与边际接入验证
 
-接入另一个 Raft/Paxos 实现，验证：
+优先以 EPaxos 作为第三目标，验证：
 
-- Runtime 零协议修改；
-- Family PSS 可复用比例；
-- Driver 人工工作量；
-- 分数跨实现可比性；
-- PSS 映射错误率。
+- Runtime、Action 和 Core PSS schema 零协议修改；
+- 只新增 Execution Binding、Semantic Mapping、fixture 和 composition；
+- 共享 Adapter kit 的真实复用比例；
+- 目标专用人工 LOC、首次可执行时间和修复轮数；
+- Core/Extended PSS 映射错误率及基础指标可比性；
+- 缺失持久恢复、clock 或 yield 时能否诚实保持 Unsupported。
 
 ### M7：HotStuff/Tendermint、有限 BFT 与活性
 
@@ -1837,8 +1876,8 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 4. 保守偏序约简能节省多少执行，又是否遗漏已知/隐藏缺陷？
 5. Agent 是否提高覆盖增长速度和单位成本收益，而不改变最终判定？
 6. 语义/接入 Agent 是否在不降低 conformance 的前提下减少首次可控测试时间、人工 LOC 和审核成本？
-7. PSS 和 Family Pack 能否迁移到第二实现？
-8. 一个全新协议的接入时间、人工审核量和错误率是多少？
+7. 固定 Core PSS IR 是否能在不改 schema/ledger 的情况下同时容纳 Raft 与非 Raft？
+8. 新协议只增加 Binding/Mapping 时的接入时间、目标专用 LOC、人工审核量和错误率是多少？
 9. 小版本升级后 Profile 分数和 canonical key 是否稳定？
 10. Capability 不足对最终分数和缺陷检出率有何影响？
 
@@ -1867,8 +1906,8 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 | 风险                         | 后果                    | 应对                                      |
 | ---------------------------- | ----------------------- | ----------------------------------------- |
-| Contract/PSS 本身错误        | 错误规范化或错误 Oracle | Family Pack 复用、版本审查、差分/突变校准 |
-| Driver 过厚                  | 跨协议复用失败          | Runtime/Driver 依赖测试和代码审查清单     |
+| Contract/PSS Mapping 错误    | 错误规范化或错误 Oracle | Core IR、版本审查、差分/突变校准          |
+| Binding/Adapter 过厚         | 跨协议复用失败          | 共享 kit、依赖门和边际接入账本            |
 | Runtime 硬编码 Raft          | 第二实现无法接入        | M6 前持续进行协议 import audit            |
 | 消息立即投递                 | 丢失大量调度和故障场景  | 强制 produced/released/delivered 状态机   |
 | MemoryStorage 被当作 durable | crash/restart 结果失真  | visible/durable image 分层                |
@@ -1878,7 +1917,7 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 | Agent 动态改分母             | 分数不可比较            | Contract digest 与确定性 Profile 编译     |
 | Oracle 未被真正激活          | 空洞高覆盖              | Property activation atoms                 |
 | 权重主观                     | 分数缺少科学依据        | 隐藏突变体和历史缺陷校准                  |
-| 只在一个 Raft 上有效         | 贡献退化为专用 Harness  | 以第二实现作为阶段性硬验收                |
+| 只在 Raft 家族上有效         | 贡献退化为专用 Harness  | 以 EPaxos 非 Raft Mapping 作为硬验收      |
 | 把活性当固定超时             | 大量误报                | GST、公平性、temperature/lasso 独立模块   |
 | Agent 误报被当成缺陷         | 结果不可信              | Oracle、重放、最小化、官方构建、人工确认  |
 | 自定义指标循环论证           | 系统复杂但缺少外部价值  | 隐藏历史缺陷/mutant 主评价，义务/PSS 只作解释 |
@@ -1944,7 +1983,7 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 24. [ ] 增加统一 Campaign/Benchmark 报告：外部 root-cause kill 为主结果，义务覆盖、PSS、Oracle、完整成本和方法对比独立展示。
 25. [ ] 将自动接入拆成 Driver-only fixtures 闭环和固定 Driver 后的 Binding/witness 闭环，加入隐藏专家 Driver 差分行为见证。
 26. [ ] 接入 Knowledge/Obligation Agent；同家族协议尽量自动冻结差异 Contract/Profile，新家族只保留一次核心语义确认。
-27. [ ] 在一个开发期未见的第二 Raft/Paxos 实现上验证 Family Pack 复用、自动接入和测试闭环成功率。
+27. [ ] 在一个开发期未见的非 Raft 实现上验证 Core PSS IR、薄 Binding/Mapping、自动接入和测试闭环成功率。
 28. [ ] 完成 DPOR/causal graph、多 seed、holdout 缺陷和完整 Agent 消融实验。
 29. [X] 完成 Control Runtime v2 M5.1—M5.2.4：协议无关 Action/Item、自然时间、分域 entropy、
     官方 etcd/raft N 节点消息、durable lifecycle、opaque proposal、application durable image、
@@ -1992,16 +2031,72 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     Unix Gateway 又验证实际流量、共享引用与最后恢复，阶段审计连续 20 次通过。生产 Go
     净增 165 行，未新增 Action/Profile/Schema/CLI/backend selector。该回滚仅保证 controller gate
     state；多 gate 依然顺序切换，不能恢复已关闭 connection，因此不提升 scheduler-owned message 资格。
-39. [ ] M5.6d 不继续增加通用黑盒网络代码。将能力机械拆为 Control Surface、Control Grade 和
-    Deterministic Guarantees；将 connection-level Gateway 记为
-    `message(connection)/scheduler-actuated`，且只有 `atomic-controller-state`，不因共用 Action
-    获得 stable message ID、atomic external effect 或 strict replay。当前 etcd/raft、HashiCorp Raft、Gateway
-    必须由 Manifest 与外部 witness 机械交叉生成报告；生产 Go 目标净增不超过 100 行。
-40. [ ] M5.7 只冻结薄 Adapter 内部的最小 MessagePort/TemporalPort 职责和 conformance fixture；
-    Control Port 不进入 Runtime 的第二套 backend，不一次性实现 Storage/Entropy/Evidence 端口。
-41. [ ] M5.8 选择一个具有可替换 Transport、可定位 timer、三节点进程部署和可观察提交结果的
-    真实共识。第一纵向切片只验证真实 peer item 冻结/投递/丢弃、最早 timer 自然触发与同 Action
-    trace 重放；若必须修改 Runtime 或新增协议专用 Action，则停止并重审抽象。
+39. [X] M5.6d 已保留五个既有 surface，在 ControlGrade 中插入 `scheduler-actuated`，并让
+    grade 只由 witness facts 推导。三路径冻结矩阵机械记录：etcd/raft 为 message/scheduler-owned/
+    stable-item/strict-replay；HashiCorp Raft 为 message/scheduler-owned/stable-item/non-strict-replay；
+    Gateway 为 connection/scheduler-actuated/controller-atomic/non-external-atomic/non-strict-replay。连续
+    20 次复验稳定，生产 Go 净增恰好 100 行；Runtime、Adapter、Action、Profile、Gateway 功能零变化。
+    Gateway 仍只是 path witness，未获得完整 Adapter Qualification。
+40. [X] M5.7 已冻结接入与 PSS 收敛目标：新系统只增加 Execution Binding 与 Semantic Mapping；
+    完整 Adapter 生命周期由共享 kit 复用；PSS 统一映射到固定 Core IR，Family/协议细节退到可选
+    Extended PSS。本项只有文档决策，没有实现、迁移或新 capability 结果。
+41. [X] M5.7a 已实现 Core PSS IR + etcd/raft Mapping，并盘点两个现有 Adapter 的重复职责。可信
+    Runtime 直接投影 lifecycle、partition、pending item 与最早 temporal frontier；公开 Evidence
+    只映射相对 epoch/decision 和封闭 participant mode，聚合 ApplicationDigest 不冒充单项 Value。真实三节点自然选主、重复投影与 native
+    identity/absolute time/payload 变形测试通过，Runtime/Action/Adapter schema 零修改。两个 Adapter
+    的 Check、yield、Evidence 与 entropy 语义差异明显，故没有创建共享 kit；旧 PSS 与 Core 指标分版。
+42. [X] M5.8a 已对固定 commit 的 `efficient/epaxos` 完成接入前 feasibility。生产包构建和三节点
+    单命令 smoke 成功，外部输入、peer TCP 与语义字段表面存在；stable message item/yield 缺失，
+    clock、持久恢复和 strict replay 保持 Unsupported。冻结报告只机械推导 blocker/下一步，不把
+    人工源码审阅伪装为 Qualification；Action、Runtime、Core PSS 与生产依赖零修改。
+43. [X] M5.8b 已用官方 `SendMsg` 与 `epaxosproto.Commit` 完成 test-only message-port worker witness。
+    55 字节帧为一次底层 Write，5,139 字节帧为两次，机械否证 chunk-as-message；codec-aware assembler
+    恢复完整原始 bytes 和稳定 ID，release 5,139/drop 0 字节，race 与冻结结果复验通过。新增生产 Go
+    为 0、test-only Go 212 行。该结果只授权减负后的最小 Binding，Runtime integration、完整 Adapter、
+    Qualification、yield、clock、restart 与 strict replay 均未获得。
+44. [X] M5.9a 已重算并冻结 28 条 legacy execution 生产 import 边，默认 `make test` 禁止 consumer
+    集合回流。两个实现专用 qualification CLI 从 92 行合并为 60 行统一入口，并删除一条死赋值，
+    生产 Go 净减 33 行；两个原 Make target 和资格工件字节保持。当前没有整包达到删除资格。
+45. [X] M5.9b 已将单轨迹 `protocolstate.Discover` 改为通用 `step/key/state` sample。Raft v1 在
+    Family 层保持 step 1/4/5 的精确曲线；真实三节点 etcd/raft v2 Core PSS 直接复用账本，得到
+    3 samples/2 states。`internal/protocolstate` 生产代码仍为 201 行，Action/Runtime/Agent/Coverage/
+    schema 零修改，28 条 legacy execution 边不变。
+46. [X] M5.9c 已实现 100 行协议无关 `OnlineSampler`，在初始 step 0 和每个已应用
+    v2 Action 后机械校验并配对 Snapshot/Evidence。真实三节点 etcd/raft 自然选举与
+    follower crash/restart 得到 29 decisions/30 samples/20 states；严格 Runtime replay 和全新
+    Runtime sample replay 逐值一致。legacy experiment 原样隔离，Runtime/Action/Agent/Coverage 零修改。
+47. [X] M5.9d 已将跨运行 Aggregate 泛化为 shared initial sample + measured decision/optional
+    sample；未采样 decision 仍计费。v1 compatibility 保持旧 discovery 子树 SHA-256。两个
+    etcd/raft v2 run 各 32 decisions/23 states，union 45、prefix area 1454，两条 trace 严格 replay。
+    根 Aggregate 117 行 + compatibility 69 行，相比旧实现生产 Go 净增 45 行。
+48. [X] M5.10 已实现最小协议无关 v2 实验执行器和 etcd/raft composition command。两个固定策略
+    各执行 32 decisions，并分别以全新 Adapter/Runtime 严格 replay；结果为 23/23 states、union 45、
+    prefix area 1454，primary/replay 各 2 setup + 64 decisions = 66 work units。193,818 字节的公开
+    `measurement-complete` 报告保存 config/manifest/trace/sample/report identity 和 state witnesses，
+    不保存重复的完整 trace/sample body，不输出 Oracle/Coverage pass。通用层 516 行、composition
+    root 102 行，并已加入禁止具体协议/legacy import 的 architecture gate。
+49. [X] M5.11 已在现有执行器上增加 `uniform-random-policy/v1`：public policy seed、decision 与
+    canonical enabled-set digest 经拒绝采样选择 Action，不接触 Runtime entropy。相同 2×32 primary/
+    replay 预算下，公开 seed 1 得到 29/26 states、union 53、prefix area 1843，严格 replay 2/2；同
+    seed report/trace identity 一致，不同 seed report 不同，而 Runtime config/seed digest 不变。M5.10
+    fixed 工件 SHA-256 保持不变。本阶段生产 Go 净增 84 行，没有第二套执行路径或 schema。
+50. [X] M5.12 已冻结受限 Planner Proposal → Policy 的机械编译边界。可信 Scope 独占 PSS/Runtime/
+    run set/order/budget/replay，Proposal 结构只允许 priority/rules/public seed；strict decoder 拒绝
+    unknown/trailing JSON。非法 run set/policy 得到计费的 `proposal-rejected`，运行期不可达 rule 得到
+    带 partial work ledger 的 `execution-failed`。0-call deterministic stub 复用唯一 Execute/Replay，
+    以 2×32 decisions 得到 union 45、prefix area 1454；M5.10/M5.11 工件逐字节保持不变。本阶段没有
+    新建 package、Action、Adapter、执行/Replay 算法、PSS 或 Coverage 路径。
+51. [X] M5.13 已在 M5.12 边界上完成一次真实 `deepseek-v4-flash` Planner call。模型只收到 Scope
+    digest/run/budget/replay、公共 nodes/Action kinds、目标描述和 Proposal schema；调用为 temperature 0、
+    thinking disabled、1,800 max tokens、5 分钟 deadline、无 retry。工件记录 request/response/prompt
+    digest、模型/response identity、provider usage 和 duration。Proposal 编译 accepted；run 1 完成 32
+    primary + 32 replay，run 2 在 decision 3 的 exact `drop-message/node=n1` rule 不可达，得到计费的
+    `execution-failed`：1 call/744 tokens、34 primary decisions、32 replay decisions。没有 PSS summary、
+    Coverage/Oracle 输入、免费修复或方法优势结论。
+52. [ ] M5.14 先冻结 transport-attempt ledger，再定义只含 phase/reason/run/decision/proposed-rule 的
+    最小机械 repair 输入，不公开 enabled set、Action IDs、trace、PSS、Coverage 或 Oracle；随后允许
+    恰好一次 repair call，并累计两次 proposal/model cost。目标只验证机械 finding 能否形成可执行
+    计划，不进行方法比较。
 
 当前主线不再继续盲目增加单 Planner 重试、复合义务或 Agent 角色。
 Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
@@ -2052,8 +2147,24 @@ M5.6b 又补齐公共 typed partition 参数和显式拓扑 binding。M5.6c 已�
 黑盒路径保持 connection-level scheduler-actuated/interceptable，不宣称 scheduler-owned message
 或 strict replay。通用黑盒网络代码在此再次停止扩张。后续默认路径冻结为“统一 Action +
 分级能力 + 最小非侵入式灰盒”：优先使用官方 step/transport/clock/storage 接口，其次替换外围
-依赖，协议核心修改是最后手段。Control Port 只能作为目标薄 Adapter 内部构件，不得演化为第二套
-Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续冻结。
+依赖，协议核心修改是最后手段。M5.6d 已机械证明 grade 与 guarantee 可独立表达三条当前路径。
+Control Port 只能作为目标薄 Adapter 内部构件，不得演化为第二套 Runtime backend。M5.7 又将目标专用
+接入面收敛为 Execution Binding + Semantic Mapping，并冻结固定 Core PSS IR。共享 Adapter kit 只有被
+现有目标和第三目标共同消费时才能保留。M5.7a 现已完成首个 Core IR 与 etcd/raft 映射：它只产生状态发现 digest，不参与 Oracle、Coverage
+分母或搜索剪枝；M5.9c 后由可信在线 sampler 配对逐步 Runtime Snapshot/Evidence，M5.9d/M5.10 已接通
+跨 run ledger 和可保存报告，但 summary 不是完整 replay bundle。现有 Adapter
+审计没有支持提前抽取 kit。M5.8a 对固定 EPaxos 版本的生产构建、三节点 smoke 和接口表面检查已完成，
+M5.8b 又证明 codec-aware Binding 能在 test-only worker 中冻结跨多个 byte Write 的完整真实帧；
+opaque Gateway 不能自行提供消息边界。该结果仍没有取得 validated capability。当前进入 M5.9 v1
+消费者迁移/删除门。M5.9a 已冻结当前 28 条执行 import 边并完成首批净减 33 行；删除门会随迁移显式
+收缩，不能新增边。M5.9b 已去除单轨迹 discovery ledger 对 v1 Trace 的依赖，同时保持旧 Raft 曲线并
+加入 Core PSS 复用见证；M5.9c 又形成可信 v2 在线 sample 序列，并将 legacy experiment 隔离为
+明确子包。M5.9d 又完成通用跨运行 Aggregate 与等预算 v2 union 见证。M5.10 已形成可保存的
+v2 非 Agent `measurement-complete` 报告并冻结唯一执行路径。M5.11 已在其上加入独立策略 entropy
+的确定性 Random 基线。M5.12 又冻结受限 Planner Proposal 编译、strict decode、显式失败和部分工作
+计费，并用 0-call stub 贯通。M5.13 已完成第一次真实单调用 LLM transport，并诚实保存运行期不可达
+结果；M5.14 才加入一次最小机械 repair。Oracle、Coverage、Campaign、benchmark composition 和
+EPaxos 最小 Binding 随后按删除门推进。
 
 ---
 
@@ -2065,18 +2176,18 @@ Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续�
 2. 核心 Runtime 和可信执行链使用 Go。
 3. Python 主要用于 Agent/实验编排，不进入执行、Oracle 和评分可信路径。
 4. 覆盖率相对于版本化有限 Profile，不宣称绝对全面性。
-5. PSS 是默认语义输入；已有形式化模型作为增强插件，不是强制前提。
+5. 固定 Core PSS IR 是默认语义中间表示；已有形式化模型和 Family/Extended PSS 是增强插件，不是强制前提。
 6. ESOT 是高风险补充层，不是唯一覆盖分母。
 7. 场景等价基于保守规范化偏序因果图。
 8. Agent 不能修改当次分母、Oracle 或等价关系。
-9. 接入采用通用 Runtime + Thin Driver，避免厚重的协议专用 Adapter。
+9. 接入采用通用 Runtime + 共享 Adapter kit + Thin Execution Binding/Semantic Mapping，避免厚重的协议专用 Adapter。
 10. 目标系统默认使用官方未修改实现。
 11. 消息必须区分 Produced、Released 和 Delivered/Dropped。
 12. visible、durable、applied 和 network mailbox 状态不得混淆。
 13. 安全覆盖与活性覆盖分别定义和报告。
 14. etcd/raft 是第一实现，但第二实现是通用性主张的必要验收。
 15. 覆盖 FAIL 场景仍算覆盖，覆盖和正确性分别报告。
-16. Minimal Protocol Charter、Family Pack 和新家族核心不变式构成最小人工信任根；Agent 可以生成 Contract/PSS/Profile/Driver/测试草案，冻结后只有 digest 标识的 validated 产物能成为当次语义真值。
+16. Minimal Protocol Charter、Core PSS schema 和核心不变式构成最小人工信任根；Family/Extended PSS 可选。Agent 可以生成 Contract/Mapping/Profile/Binding/测试草案，冻结后只有 digest 标识的 validated 产物能成为当次语义真值。
 17. 正常接入不设置逐事实人工 Gate；是否通过只由 digest、编译、conformance、重放、Oracle 和 Contract 见证机械决定。
 18. Unsupported 不会从 Contract/Profile 分母中删除。
 19. Coordinator 是确定性程序，不是有权修改结论的 Agent。
@@ -2110,6 +2221,17 @@ Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续�
 44. Control Port 是目标薄 Adapter 的内部构件，Runtime 仍只依赖唯一 `control.Adapter`。
 45. candidate 和 control 必须使用相同的灰盒接入层；接入差异、工具链和二进制纳入 digest identity。
 46. 跨实现同时报告共同 validated 能力结果和各自最大 validated 能力结果，Unsupported 不得隐藏。
+47. 新目标的边际产物固定为 Execution Binding、Semantic Mapping、fixture 和 composition；不得复制调度、重放、PSS ledger 或评分。
+48. 完整 `control.Adapter` 契约由共享 kit 复用；kit 不是 Runtime backend，且只有两个真实消费者共同需要时才进入共享包。
+49. 所有协议先映射到固定 Core PSS IR；Family/协议特有字段只能进入分开报告的 Extended PSS。
+50. 非 Raft 目标若要求修改 Runtime、Action 或 Core PSS schema，视为抽象失败并停止，而不是增加特例。
+51. 第三目标优先使用 EPaxos 验证无稳定 leader 和 dependency graph；Agora 使用过它不构成降低 conformance 的理由。
+52. feasibility 的人工源码事实、机械决策和外部 Qualification 必须分层报告；build/smoke 成功不等于
+    stable item、strict replay、完整 Adapter 或目标正确性。
+53. connection byte chunk 不能当作 Message Item；无原生 message API 的目标必须在薄 Binding 中提供
+    source-bound codec/framing，Runtime 只接收完整 opaque bytes 和稳定身份，不导入协议 decoder。
+54. legacy execution 的生产 consumer 集合必须由 `go list` 冻结并只允许显式收缩；没有归零的包不能
+    为追求删除数字强行移除，重复 composition root 和确定死代码可以先删且必须保持工件身份。
 
 ---
 
@@ -2122,12 +2244,13 @@ Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续�
 - Ready 生命周期的显式 host operation；
 - crash/restart durable model；
 - 原始轨迹和严格重放；
-- 有限 Raft PSS 和安全 Oracle；
+- 固定 Core PSS IR、有限 Raft Mapping 和安全 Oracle；
 - Profile 相对覆盖分数。
 
 ### 中等可行
 
-- Raft Family Pack 跨实现复用；
+- Core PSS IR 跨 CFT 实现复用；
+- 共享 Adapter kit 降低第三目标边际接入成本；
 - 保守 DPOR/SAMC 语义约简；
 - Process/Proxy Driver；
 - Agent 基于固定 Contract 自动生成高质量 Binding/Driver/见证；
@@ -2144,9 +2267,11 @@ Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续�
 - 让 Agent 自动确认真实协议 bug；
 - 在没有控制随机性、网络和存储边界时仍声称严格确定性。
 
-总体判断：该路线在一个 Raft 实现上高度可落地，跨同一家族具有合理复用前景，跨 CFT/BFT 家族需要 Family Pack 和协议 Oracle。真正的论文创新应集中在：
+总体判断：确定性控制在两个 Raft 实现上已经部分成立；下一风险是 Core PSS IR 和边际接入面能否在
+EPaxos 上保持不变。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 和协议 Oracle，但不应重写控制层或
+Core ledger。真正的论文创新应集中在：
 
-1. PSS 如何以较低成本提供足够可靠的语义；
+1. 固定 Core PSS IR + 薄 Mapping 如何以较低成本提供足够可靠的语义；
 2. 执行如何归约为保守、稳定、有意义的偏序场景；
 3. SCS 是否经过隐藏缺陷/突变体实验验证，能够预测测试能力；
 4. Onboarding Agent 是否能从固定 Contract 自动产生 validated Profile，降低陌生系统接入成本且保持与专家实现相当的差分行为；
@@ -2174,4 +2299,7 @@ Runtime backend。M5.6d—M5.8 完成前，PSS/Coverage/Agent/benchmark 继续�
 
 如果未来无法用下面这句话准确描述 ConsensusAtlas，项目就可能已经偏航：
 
-> ConsensusAtlas 以最小 Protocol Charter 和可复用 Family Pack 为信任根，让受限 Agent 自动完成语义、接入和测试生成，由确定性 Runtime、Replay、Conformance、Oracle 与 Ledger 判定内部覆盖，并最终用 Agent 看不到的历史缺陷/语义 mutant 根因检出和正确 control 误报评价方法效果。
+> ConsensusAtlas 以最小 Protocol Charter、固定 Core PSS IR 和可选协议扩展为信任根，让受限 Agent
+> 只生成薄 Execution Binding、Semantic Mapping 和测试计划，由确定性 Runtime、Replay、Conformance、
+> Oracle 与 Ledger 判定内部覆盖，并最终用 Agent 看不到的历史缺陷/语义 mutant 根因检出和正确
+> control 误报评价方法效果。

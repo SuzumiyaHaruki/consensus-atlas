@@ -55,7 +55,7 @@ witness 时保持 `unsupported` 或较低等级。
 
 - 现有保证：`pure-enabled-set`、`audited-entropy`、`stable-yield-evidence`、
   `strict-decision-replay`、`process-isolation`；
-- M5.6d 待机械化的控制细节：`stable-item-id`、`atomic-controller-state`、
+- M5.6d 已机械化的控制细节：`stable-item-id`、`atomic-controller-state`、
   `atomic-external-effect`。
 
 例如 Gateway 可以在 `message` surface 上以 connection 粒度取得 `scheduler-actuated` 和
@@ -120,6 +120,24 @@ thin target Adapter
 在第二个真实目标证明需要之前，这些名称只冻结职责，不进入通用 Runtime 接口。目标 Adapter 可以先只
 实现 MessagePort 和 TemporalPort；缺失端口必须显式 Unsupported。
 
+### 4.1 边际接入面
+
+M5.7 进一步收紧“薄 Adapter”的含义。`control.Adapter` 是 Runtime 的完整可信契约，但新目标不应重复
+手写其中与协议无关的 Manifest、Check、Yield、Collect、identity、digest 和审计状态机。规划中的共享
+Adapter kit 在具体 Adapter 内部实现这些样板；目标专用代码只提供两类产物：
+
+```text
+Execution Binding: native lifecycle/input/transport/clock/observation -> control types
+Semantic Mapping:  implementation evidence -> fixed Core PSS IR
+```
+
+Adapter kit 不是新的接口层级或 backend selector。它只能组合现有 `control.Adapter`，不能修改 enabled、
+消息所有权、时间推进、replay 或资格结论。一个帮助函数或端口只有在至少两个真实目标消费时才进入共享
+包；否则留在目标目录或删除。
+
+基础接入优先支持 Submit、Crash/Restart、Message、Partition/Heal、最早 temporal item 和 observation。
+Storage/Entropy/Effect/Callback 是按能力加入的深层表面，不再作为每个新目标首版的强制实现清单。
+
 ## 5. 注入优先级与可信约束
 
 接入按以下顺序选择最小权限方案：
@@ -165,37 +183,42 @@ Coverage Debt。它可以建议使用哪个 Action、生成 Adapter/Control Port
 
 ### M5.6d：能力语义机械化
 
-- 保留五个既有 surface，在既有 grade 序列中加入 `scheduler-actuated`，并冻结必要 guarantee；
-- 将当前 etcd/raft、HashiCorp Raft、Gateway 投影为机械报告；
-- 添加“Manifest 不能自授资格”和“低等级不能暗含 strict replay”负例；
-- 不增加新 Action，不扩张 Gateway，生产 Go 目标净增不超过 100 行。
+已完成：保留五个既有 surface，在既有 grade 序列中加入 `scheduler-actuated`；grade 由 witness facts
+推导，确定性保证独立。etcd/raft、HashiCorp Raft、Gateway 三路径矩阵连续 20 次稳定，生产 Go 净增
+恰好 100 行；没有增加 Action、Gateway 功能或 Runtime backend。Gateway 仍只有 path witness，不是完整
+Adapter Qualification。
 
-### M5.7：最小灰盒端口模板
+### M5.7：接入与 PSS 目标收敛
 
-- 只冻结 MessagePort/TemporalPort 的最小职责和 conformance fixture；
-- 保持唯一 `control.Adapter`；
-- 第二真实目标证明需要前，不加入 Storage/Entropy/Evidence 通用接口。
+- 已冻结新目标只增加 Execution Binding 与 Semantic Mapping；
+- 完整 Adapter 生命周期由共享 kit 复用，保持唯一 `control.Adapter`；
+- PSS 使用固定 Core IR，Family/协议细节只能进入可选 Extended PSS；
+- 先迁移一个现有 Adapter/PSS 证明行为保持，再接第三目标；
+- 不加入新的 Action、Runtime 分支或一次性 Storage/Entropy/Effect 端口。
 
-### M5.8：真实进程式共识纵向切片
+### M5.8：EPaxos 可行性与纵向切片
 
-选择具有可替换 Transport、可定位 timer、三节点进程部署和可观察提交结果的真实实现。第一轮仅验证：
+M5.8a 已固定 `efficient/epaxos` commit 并完成接入前检查。生产构建、三节点单命令 smoke、外部输入、
+peer TCP 消息表面和只读语义字段存在，但尚无 stable message freeze/yield，wall-clock sleep 不可注入，
+持久恢复与 strict replay 未证明。因此没有创建完整 Adapter 或授予 capability。
+
+M5.8b 已在 test-only worker 中验证目标暴露的最小写出闭环：
 
 ```text
-start three nodes
--> natural leader election
--> freeze one real peer item
--> allow another item
--> fire only the earliest timer
--> deliver/drop frozen item
--> observe commit result
--> replay the same Action trace
+official SendMsg + epaxosproto.Commit
+-> assemble one complete frame across byte chunks
+-> freeze with route/sequence/content-bound ID
+-> release exact bytes or drop zero bytes
 ```
 
-若必须修改 Runtime 或新增协议专用 Action 才能完成，停止并重新审查抽象，而不是继续增加适配代码。
+55 字节小帧触发一次底层 Write，5,139 字节大帧触发两次；因此 opaque Gateway 不能把 chunk 当消息。
+codec-aware framing 属于目标 Binding，完整 Message Item 才进入 Runtime。该 probe 没有完成三节点
+安装或 Runtime integration，所以不授予 capability。Core PSS Mapping 与严格 replay 留待 M5.9 清理后
+的最小 Binding；EPaxos 缺少的持久重启、时钟或 yield 保持 Unsupported。
 
 ## 9. 停止条件
 
 - M5.6d 不能机械区分 Gateway 与 mailbox 的控制强度时，停止新系统接入；
-- M5.7 为端口模板增加超过实际目标所需的接口时，删除未被消费的抽象；
-- M5.8 在预设代码预算内无法产生真实 peer item 与自然 timer witness 时，记录 Unsupported 并更换目标；
+- M5.7 的共享 kit/IR 不能被现有目标和第三目标共同消费时，撤回抽象；
+- M5.8 无法产生真实 peer item 或稳定 Core PSS observation 时，记录 Unsupported，不扩展 Runtime 凑通过；
 - 控制层稳定前，PSS/Coverage/Agent/benchmark 的 v2 迁移继续冻结。

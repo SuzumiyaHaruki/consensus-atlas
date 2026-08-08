@@ -1,18 +1,13 @@
 package protocolstate
 
-import (
-	"fmt"
+import "fmt"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
-)
-
-// Projector is the protocol-family boundary for state-discovery metrics. The
-// ledger owns sampling and witness accounting; a Family Pack owns the semantic
-// projection and decides which implementation boundaries are meaningful.
-type Projector interface {
-	ID() string
-	IsSample(core.TraceRecord) bool
-	Project(snapshot any) (state any, key string, err error)
+// Sample is a protocol-neutral ledger input. Semantic mappings own boundary
+// selection and projection; the ledger owns stable keys and first witnesses.
+type Sample struct {
+	Step  int    `json:"step"`
+	Key   string `json:"key"`
+	State any    `json:"state"`
 }
 
 type StateWitness struct {
@@ -36,31 +31,29 @@ type DiscoverySummary struct {
 	States       []StateWitness   `json:"states"`
 }
 
-func Discover(trace []core.TraceRecord, projector Projector) (DiscoverySummary, error) {
-	if projector == nil {
-		return DiscoverySummary{}, fmt.Errorf("protocol state projector is nil")
+func Discover(pssID string, samples []Sample) (DiscoverySummary, error) {
+	if pssID == "" {
+		return DiscoverySummary{}, fmt.Errorf("protocol state PSS ID is empty")
 	}
-	summary := DiscoverySummary{PSSID: projector.ID()}
+	summary := DiscoverySummary{PSSID: pssID}
 	seen := make(map[string]bool)
-	for _, record := range trace {
-		if !projector.IsSample(record) {
-			continue
+	lastStep := 0
+	for index, sample := range samples {
+		if sample.Step < 0 || index > 0 && sample.Step <= lastStep {
+			return DiscoverySummary{}, fmt.Errorf("protocol state step %d is not strictly increasing", sample.Step)
 		}
-		state, key, err := projector.Project(record.After)
-		if err != nil {
-			return DiscoverySummary{}, fmt.Errorf("project protocol state at step %d: %w", record.Step, err)
-		}
-		if key == "" {
-			return DiscoverySummary{}, fmt.Errorf("project protocol state at step %d: empty key", record.Step)
+		lastStep = sample.Step
+		if sample.Key == "" {
+			return DiscoverySummary{}, fmt.Errorf("record protocol state at step %d: empty key", sample.Step)
 		}
 		summary.Samples++
-		isNew := !seen[key]
+		isNew := !seen[sample.Key]
 		if isNew {
-			seen[key] = true
-			summary.States = append(summary.States, StateWitness{Key: key, FirstStep: record.Step, State: state})
+			seen[sample.Key] = true
+			summary.States = append(summary.States, StateWitness{Key: sample.Key, FirstStep: sample.Step, State: sample.State})
 		}
 		summary.Curve = append(summary.Curve, DiscoveryPoint{
-			Step: record.Step, Samples: summary.Samples, UniqueStates: len(seen), NewState: isNew,
+			Step: sample.Step, Samples: summary.Samples, UniqueStates: len(seen), NewState: isNew,
 		})
 	}
 	summary.UniqueStates = len(seen)

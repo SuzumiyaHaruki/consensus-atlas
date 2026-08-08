@@ -1,15 +1,32 @@
-package protocolstate_test
+package legacyexperiment_test
 
 import (
+	"errors"
 	"math"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/core"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
+	legacyexperiment "github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate/legacyexperiment"
 )
 
+type fixtureProjector struct{}
+
+func (fixtureProjector) ID() string { return "fixture-v1" }
+
+func (fixtureProjector) IsSample(record core.TraceRecord) bool {
+	return record.Event.Kind == core.EventAcknowledge
+}
+
+func (fixtureProjector) Project(snapshot any) (any, string, error) {
+	key, ok := snapshot.(string)
+	if !ok {
+		return nil, "", errors.New("snapshot is not a string")
+	}
+	return map[string]string{"key": key}, key, nil
+}
+
 func TestAggregateUsesSharedRootAndDecisionBudget(t *testing.T) {
-	runs := []protocolstate.MeasuredRun{
+	runs := []legacyexperiment.MeasuredRun{
 		{Run: 1, DecisionCount: 2, InitialSnapshot: "a", Trace: []core.TraceRecord{
 			{Step: 11, Event: core.Event{Kind: core.EventAcknowledge}, After: "b"},
 			{Step: 12, Event: core.Event{Kind: core.EventPersist}, After: "ignored"},
@@ -18,7 +35,7 @@ func TestAggregateUsesSharedRootAndDecisionBudget(t *testing.T) {
 			{Step: 11, Event: core.Event{Kind: core.EventAcknowledge}, After: "c"},
 		}},
 	}
-	summary, err := protocolstate.Aggregate(runs, fixtureProjector{})
+	summary, err := legacyexperiment.Aggregate(runs, fixtureProjector{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +60,7 @@ func TestAggregateUsesSharedRootAndDecisionBudget(t *testing.T) {
 }
 
 func TestAggregateRejectsDifferentMeasurementRoots(t *testing.T) {
-	_, err := protocolstate.Aggregate([]protocolstate.MeasuredRun{
+	_, err := legacyexperiment.Aggregate([]legacyexperiment.MeasuredRun{
 		{Run: 1, InitialSnapshot: "a"},
 		{Run: 2, InitialSnapshot: "b"},
 	}, fixtureProjector{})
@@ -53,7 +70,7 @@ func TestAggregateRejectsDifferentMeasurementRoots(t *testing.T) {
 }
 
 func TestAggregateRejectsUnchargedTraceRecords(t *testing.T) {
-	_, err := protocolstate.Aggregate([]protocolstate.MeasuredRun{{
+	_, err := legacyexperiment.Aggregate([]legacyexperiment.MeasuredRun{{
 		Run: 1, DecisionCount: 0, InitialSnapshot: "a",
 		Trace: []core.TraceRecord{{Step: 1, Event: core.Event{Kind: core.EventPersist}}},
 	}}, fixtureProjector{})

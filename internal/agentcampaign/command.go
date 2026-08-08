@@ -7,10 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"strings"
 	"sync"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/modelcommand"
 )
 
 const commandProtocolVersion = 1
@@ -47,23 +46,14 @@ func (planner *BlindCommandPlanner) GenerateBlind(ctx context.Context, request B
 		return nil, err
 	}
 	encoded = append(encoded, '\n')
-	command := exec.CommandContext(ctx, planner.Path, planner.Args...)
-	command.Dir = planner.Dir
-	command.Env = append([]string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "LC_ALL=C.UTF-8"}, planner.Env...)
-	command.Stdin = bytes.NewReader(encoded)
-	stdout, stderr := &limitedBuffer{limit: 8 << 20}, &limitedBuffer{limit: 64 << 10}
-	command.Stdout, command.Stderr = stdout, stderr
-	if err := command.Run(); err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = err.Error()
-		}
-		return nil, fmt.Errorf("blind model planner failed: %s", message)
+	stdout, err := modelcommand.Run(ctx, modelcommand.Config{
+		Path: planner.Path, Args: planner.Args, Dir: planner.Dir, Env: planner.Env,
+		StdoutLimit: 8 << 20, StderrLimit: 64 << 10,
+	}, encoded)
+	if err != nil {
+		return nil, fmt.Errorf("blind model planner failed: %w", err)
 	}
-	if stdout.exceeded || stderr.exceeded {
-		return nil, errors.New("blind model planner exceeded its output boundary")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	decoder := json.NewDecoder(bytes.NewReader(stdout))
 	decoder.DisallowUnknownFields()
 	var response blindCommandResponse
 	if err := decoder.Decode(&response); err != nil {
@@ -79,7 +69,7 @@ func (planner *BlindCommandPlanner) GenerateBlind(ctx context.Context, request B
 	if response.Version != commandProtocolVersion || len(response.Proposal) == 0 || string(response.Proposal) == "null" {
 		return nil, errors.New("blind model planner returned an invalid version or empty proposal")
 	}
-	response.Audit.RequestDigest, response.Audit.ResponseDigest = sha256Hex(encoded), sha256Hex(stdout.Bytes())
+	response.Audit.RequestDigest, response.Audit.ResponseDigest = sha256Hex(encoded), sha256Hex(stdout)
 	planner.mu.Lock()
 	planner.audit = response.Audit
 	planner.mu.Unlock()
@@ -105,25 +95,6 @@ func (planner *BlindCommandPlanner) LastBlindGenerationAudit() GenerationAudit {
 	planner.mu.Lock()
 	defer planner.mu.Unlock()
 	return planner.audit
-}
-
-type limitedBuffer struct {
-	bytes.Buffer
-	limit    int
-	exceeded bool
-}
-
-func (buffer *limitedBuffer) Write(data []byte) (int, error) {
-	original, remaining := len(data), buffer.limit-buffer.Len()
-	if remaining <= 0 {
-		buffer.exceeded = true
-		return original, nil
-	}
-	if len(data) > remaining {
-		data, buffer.exceeded = data[:remaining], true
-	}
-	_, _ = buffer.Buffer.Write(data)
-	return original, nil
 }
 
 type ScriptedBlindPlanner struct {
