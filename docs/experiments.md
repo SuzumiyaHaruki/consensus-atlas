@@ -1,4 +1,57 @@
-# Equal-budget exploration experiments
+# Equal-budget exploration experiments（历史设计记录）
+
+M5.17bR2 已删除 M5.10–M5.13 的 pre-admission fixed/random/Planner 在线入口。本文前半部分记录早期
+实验模型与当时命令，不是当前分支的可运行接口；当前 qualified workload、ExecutionBundle 和强基线见
+`CURRENT_STAGE.md`。未来 uniform random 会在共同 admissible frontier 上重新进入，Agent 则使用新的
+Guarded TestIntent，而不是恢复旧 Planner Proposal。
+
+M5.17c0 的当前语义与下文历史“必须填满预算”口径不同：decision budget 是上限，
+合法运行显式区分 `budget-exhausted`、`quiescent` 和 `configured-stop`；所有 Policy 共享
+同一 admissible frontier，pending workload 保留在可重放报告。当前规范见
+`stage-m5.17c0-experiment-semantics.md`。
+
+M5.17c1 又补齐了当前方法实验的账本前提：source corpus 顺序参与 identity，重复 ActionID 使用
+occurrence 引用，PSS feedback 必须由 bundle 重新投影，MethodLedger 完整计入 source、proposal、失败和
+execution。当前规范见 `stage-m5.17c1-corpus-trust-prerequisites.md`。下文旧 measurement model 不应覆盖
+这些新约束。
+
+M5.17c2 实现了 qualified admissible-uniform 和第一个 batch PSS-guided consumer。两者共享
+3 attempts/294 primary/294 replay ceiling，但 guided proposal 在 decision 66 不可执行，实际只消耗
+263/196。因此其 157 states 不能与 uniform 的 238 当作等成本效果排名。当前规范见
+`stage-m5.17c2-batch-pss-guidance.md`。
+
+M5.18a 冻结第一个单执行 `MethodSpec`、ExecutionBundle v3 OperationHistory 和 evaluator-owned fresh
+execution。公开命令为：
+
+```bash
+make build-etcdraft-v2-method-evaluation
+make evaluate-etcdraft-v2-method-evaluation
+```
+
+评价器不读取 submitted bundle；它校验 audit/binary 后亲自运行 control/candidate。两边 MethodConfig
+projection、operation history 和 98/98 work 相同，公开 candidate 在 applied-prefix step 55 被 Agreement
+检出。该结果只校准可信链，不是搜索方法比较或 private holdout。完整规范见
+`stage-m5.18a-method-evaluation-prerequisites.md`。
+
+M5.18b0 已实现不调用模型的 `ProtocolKnowledgePack -> AgentSemanticView -> GuardedTestIntent
+-> CompiledIntentPlan` 宏观边界。compiler 只从真实 Qualification 准入的 backend 中选择，
+执行时仍进入本文的唯一 qualified executor。完整规范见
+`stage-m5.18b0-guarded-intent-compiler.md`。
+
+M5.18b1 增加一个显式 opt-in、无重试的 `deepseek-v4-flash` JSON transport 和渐进式调用审计。
+唯一真实 response 通过 compiler/executor/replay，但精确复制了 prompt 中的具体有效示例，因此只是
+transport calibration，不参与方法效果排名。完整规范见 `stage-m5.18b1-one-shot-agent-transport.md`。
+
+M5.18b2 从完整 bundle 和绑定 Mapper 重算 action-class/uniform 两个 seeds 1/2/3 batch，
+生成只含 common ceiling、完成度、成本和 coarse PSS discovery 的 defect-blind feedback。
+action-class 的第三次执行失败保留成本且不用替换 seed。feedback 只能改变 intent preference，
+不能改 hard constraints 或预算。完整规范见 `stage-m5.18b2-defect-blind-batch-feedback.md`。
+
+M5.18b3 发现上述 v1 对比混用了严格 workload failure 与 Experiment v2 pending 语义，因此保留旧
+identity 但禁止用它排名。修正后的 feedback v2 让两种方法都以 Experiment v2 执行，并冻结
+`source seeds 1/2/3 -> unseen seed 4`、source/per-arm 成本和无替换失败规则。deterministic seed-4
+follow-up 通过 replay，但 workload pending 且 hard ActionKind 不完整，原样记为计费失败。完整规范见
+`stage-m5.18b3-unseen-follow-up.md`。
 
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
@@ -55,7 +108,7 @@ Execution of enabled events is always available. Optional message actions are:
 
 Duplication requires `max_duplicates_per_run > 0`. This prevents an unbounded action from silently creating an infinite branching factor. Crash/restart actions are injected declaratively by the setup scenario and then become enabled according to Runtime state.
 
-## Running
+## Historical running interface（已删除）
 
 ```bash
 make experiment-random
@@ -82,20 +135,20 @@ go run ./cmd/experiment \
 
 `-verify-replay=true` is the default. It creates a fresh setup root and forces each recorded action/event ID without asking Random or DFS to choose again; candidate count, choice position, duplicate ID, termination, conformance and strict fingerprints must match. The report contains setup evidence, every decision, per-run trace, Oracle result, pending events, the cross-run PSS state union and first-discovery witnesses.
 
-`make experiment-etcdraft-v2` uses the new Control Runtime path and writes the M5.10 public development
+M5.10 的 `make experiment-etcdraft-v2` 曾使用新 Control Runtime path 并写入 public development
 report. It currently runs only the transparent progress/lifecycle policies; it does not reuse the legacy Random/DFS
 implementation or its Oracle/Coverage claims.
 
-`make experiment-etcdraft-v2-random` reuses that exact executor with the public base policy seed `1`.
+M5.11 的 `make experiment-etcdraft-v2-random` 曾复用该 executor 和 public base policy seed `1`。
 Policy entropy is derived independently per run and never replaces the Runtime seed. The fixed and Random reports
 have equal primary/replay logical budgets; a single-seed state-count difference is not a method-level conclusion.
 
-`make experiment-etcdraft-v2-stub-planner` first compiles a restricted proposal under a trusted Scope and then
+M5.12 的 `make experiment-etcdraft-v2-stub-planner` 曾在 trusted Scope 下编译 restricted proposal，再
 reuses the same executor. The public stub makes zero model calls and intentionally reproduces M5.10's fixed behavior;
 its value is the scope/compiler/failure-accounting boundary, not a strategy improvement. Rejected proposals and
 runtime-unreachable rules are explicit attempt outcomes and cannot disappear from the proposal-attempt budget.
 
-`make experiment-etcdraft-v2-deepseek-planner` is an explicitly opt-in, one-call model smoke. Its M5.13 public
+M5.13 的 `make experiment-etcdraft-v2-deepseek-planner` 是一次已冻结的 one-call model smoke。其 public
 result compiled successfully but stopped at an unreachable exact message rule after 34 primary and 32 replay
 decisions. It therefore has no complete PSS summary and is not comparable to the complete fixed/random reports.
 

@@ -48,6 +48,90 @@ func TestWorkloadPlanAndFaultEnvelopeAreBounded(t *testing.T) {
 	}
 }
 
+type fixedWorkloadRouter struct {
+	candidates []control.NodeID
+}
+
+func (fixedWorkloadRouter) ID() string { return "test/workload-router/v1" }
+
+func (router fixedWorkloadRouter) Route(
+	_ string,
+	_ control.EvidenceEnvelope,
+) (WorkloadRoute, error) {
+	return WorkloadRoute{LogicalTime: 7, Candidates: router.candidates}, nil
+}
+
+func TestAmbiguousWorkloadRouteIsObservationNotFrameworkFailure(t *testing.T) {
+	snapshot := controlruntime.Snapshot{LogicalTime: 7, Nodes: []controlruntime.NodeSnapshot{
+		{Ref: control.NodeRef{Node: "n1", Incarnation: 1}, Lifecycle: control.NodeRunning},
+		{Ref: control.NodeRef{Node: "n2", Incarnation: 1}, Lifecycle: control.NodeRunning},
+	}}
+	target, report, ready, err := resolveWorkloadTarget(
+		fixedWorkloadRouter{candidates: []control.NodeID{"n2", "n1"}},
+		TargetSingleCoordinatingMember, control.EvidenceEnvelope{}, snapshot,
+	)
+	if err != nil || ready || target != "" || report.Status != WorkloadRouteAmbiguous ||
+		len(report.Candidates) != 2 || report.Candidates[0] != "n1" || report.Candidates[1] != "n2" {
+		t.Fatalf("ambiguous route = %q/%#v/%t/%v", target, report, ready, err)
+	}
+}
+
+func TestReplayRejectsWorkloadTargetNotReproducedByRouter(t *testing.T) {
+	plan := WorkloadPlan{
+		Invocations:    []WorkloadInvocation{{ID: "r1"}},
+		TargetSelector: TargetSingleCoordinatingMember,
+	}
+	trace := controlruntime.Trace{
+		Records: []controlruntime.ActionRecord{{
+			Step: 1, LogicalTime: 7,
+			Action: control.Action{
+				ID: "invoke", Kind: control.ActionInvoke,
+				Node: control.NodeRef{Node: "n1", Incarnation: 1},
+			},
+		}},
+	}
+	err := validateReplayedWorkloadRoutes(
+		&plan, 1, fixedWorkloadRouter{candidates: []control.NodeID{"n2"}}, trace,
+	)
+	if err == nil || !strings.Contains(err.Error(), "ROUTE_MISMATCH") {
+		t.Fatalf("route mismatch error = %v", err)
+	}
+}
+
+func TestV2WorkloadReportRecordsActualStatusWithoutJudgingIt(t *testing.T) {
+	payload, err := control.NewJSONPayload("test/input/v1", map[string]string{"request": "r1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := WorkloadPlan{
+		SchemaVersion: WorkloadPlanVersion, ID: "writes",
+		TargetSelector: TargetSingleCoordinatingMember,
+		Invocations:    []WorkloadInvocation{{ID: "r1", Input: payload, ExpectedStatus: "committed"}},
+	}
+	report := WorkloadRunReport{
+		PlanID: plan.ID, Planned: 1, Offered: 1, Completed: 1,
+		Results: []WorkloadResult{{
+			InvocationID: "r1", Owner: "n1", Status: "rejected",
+			PayloadDigest: strings.Repeat("a", 64),
+		}},
+	}
+	report.PlanDigest, err = plan.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	report.ResultsDigest, err = control.CanonicalDigest(report.Results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := report.validate(plan, false, "test/workload-router/v1"); err != nil {
+		t.Fatalf("v2 actual status became a verdict: %v", err)
+	}
+	if err := report.validate(plan, true, ""); err == nil ||
+		!strings.Contains(err.Error(), "RESULT_INVALID") {
+		t.Fatalf("v1 strict compatibility did not reject mismatch: %v", err)
+	}
+}
+
 func TestFaultEnvelopeChecksSelectedActionsWithoutChangingEnabledSet(t *testing.T) {
 	envelope := FaultEnvelope{
 		MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 1,
@@ -72,7 +156,7 @@ func TestFaultEnvelopeChecksSelectedActionsWithoutChangingEnabledSet(t *testing.
 	}
 }
 
-func TestFaultEnvelopeConstrainsLocalBaselineWithoutEditingRuntimeFrontier(t *testing.T) {
+func TestFaultEnvelopeCreatesOneAdmissibleFrontierWithoutEditingRuntimeFrontier(t *testing.T) {
 	envelope := FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1}
 	usage := FaultUsage{Crashes: 1}
 	snapshot := controlruntime.Snapshot{Nodes: []controlruntime.NodeSnapshot{{
@@ -82,7 +166,7 @@ func TestFaultEnvelopeConstrainsLocalBaselineWithoutEditingRuntimeFrontier(t *te
 		{ID: "crash", Kind: control.ActionCrash},
 		{ID: "deliver", Kind: control.ActionDeliverMessage},
 	}
-	selectable := usage.constrain(envelope, enabled, snapshot)
+	selectable := admissibleActions(&envelope, usage, enabled, snapshot)
 	if len(selectable) != 1 || selectable[0].ID != "deliver" {
 		t.Fatalf("selectable = %#v", selectable)
 	}

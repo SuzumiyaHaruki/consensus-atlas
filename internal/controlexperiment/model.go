@@ -17,13 +17,19 @@ import (
 )
 
 const (
-	SchemaVersion              = "consensus-atlas/control-experiment/v1"
-	PolicyVersion              = "consensus-atlas/action-priority-policy/v1"
-	RandomPolicyVersion        = "consensus-atlas/uniform-random-policy/v1"
-	ActionClassPolicyVersion   = "consensus-atlas/action-class-random-policy/v1"
-	TraceMutationPolicyVersion = "consensus-atlas/adjacent-trace-mutation-policy/v1"
-	StatusMeasurementComplete  = "measurement-complete"
-	ResourceNotCollected       = "not-collected"
+	SchemaVersion                  = "consensus-atlas/control-experiment/v1"
+	SchemaVersionV2                = "consensus-atlas/control-experiment/v2"
+	PolicyVersion                  = "consensus-atlas/action-priority-policy/v1"
+	RandomPolicyVersion            = "consensus-atlas/uniform-random-policy/v1"
+	AdmissibleUniformPolicyVersion = "consensus-atlas/admissible-uniform-random-policy/v1"
+	ActionClassPolicyVersion       = "consensus-atlas/action-class-random-policy/v1"
+	TraceMutationPolicyVersion     = "consensus-atlas/adjacent-trace-mutation-policy/v1"
+	TraceMutationPolicyVersionV2   = "consensus-atlas/adjacent-trace-mutation-policy/v2"
+	StatusMeasurementComplete      = "measurement-complete"
+	ResourceNotCollected           = "not-collected"
+	RunTerminationBudget           = "budget-exhausted"
+	RunTerminationQuiescent        = "quiescent"
+	RunTerminationConfigured       = "configured-stop"
 )
 
 func validSHA256(value string) bool {
@@ -90,6 +96,13 @@ func (policy Policy) Validate(decisionBudget int) error {
 		}
 		return nil
 	}
+	if policy.Version == AdmissibleUniformPolicyVersion {
+		seed, err := hex.DecodeString(policy.SeedHex)
+		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || policy.TraceMutation != nil {
+			return errors.New("EXPERIMENT_ADMISSIBLE_UNIFORM_POLICY_INVALID")
+		}
+		return validatePriority(policy.Priority)
+	}
 	if policy.Version == ActionClassPolicyVersion {
 		seed, err := hex.DecodeString(policy.SeedHex)
 		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || policy.TraceMutation != nil {
@@ -97,10 +110,16 @@ func (policy Policy) Validate(decisionBudget int) error {
 		}
 		return validatePriority(policy.Priority)
 	}
-	if policy.Version == TraceMutationPolicyVersion {
+	if policy.Version == TraceMutationPolicyVersion || policy.Version == TraceMutationPolicyVersionV2 {
 		if policy.SeedHex != "" || len(policy.Rules) != 0 || len(policy.Priority) != 0 ||
 			policy.TraceMutation == nil {
 			return errors.New("EXPERIMENT_TRACE_MUTATION_POLICY_INVALID")
+		}
+		if (policy.Version == TraceMutationPolicyVersion &&
+			policy.TraceMutation.SchemaVersion != TraceMutationPlanVersion) ||
+			(policy.Version == TraceMutationPolicyVersionV2 &&
+				policy.TraceMutation.SchemaVersion != TraceMutationPlanVersionV2) {
+			return errors.New("EXPERIMENT_TRACE_MUTATION_POLICY_PLAN_VERSION_MISMATCH")
 		}
 		return policy.TraceMutation.Validate(decisionBudget)
 	}
@@ -157,6 +176,16 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 		}
 		return enabled[index], nil
 	}
+	if policy.Version == AdmissibleUniformPolicyVersion {
+		for _, kind := range policy.Priority {
+			for _, action := range enabled {
+				if action.Kind == kind {
+					return action, nil
+				}
+			}
+		}
+		return policy.admissibleUniform(decision, enabled)
+	}
 	if policy.Version == ActionClassPolicyVersion {
 		for _, kind := range policy.Priority {
 			for _, action := range enabled {
@@ -167,7 +196,7 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 		}
 		return policy.actionClassRandom(decision, enabled)
 	}
-	if policy.Version == TraceMutationPolicyVersion {
+	if policy.Version == TraceMutationPolicyVersion || policy.Version == TraceMutationPolicyVersionV2 {
 		return policy.TraceMutation.selectAction(decision, enabled)
 	}
 	for _, rule := range policy.Rules {
@@ -193,6 +222,46 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 	}
 	return control.Action{}, &policySelectionError{
 		code: "EXPERIMENT_POLICY_NO_ACTION", detail: fmt.Sprintf("decision=%d", decision),
+	}
+}
+
+// admissibleUniform samples each Action in the common admissible frontier
+// with equal probability. Canonical ActionID order makes the result independent
+// of Adapter/Runtime slice order; Priority is reserved for frozen preparation
+// actions such as Invoke and is applied before random search.
+func (policy Policy) admissibleUniform(decision int, enabled []control.Action) (control.Action, error) {
+	seed, err := hex.DecodeString(policy.SeedHex)
+	if err != nil || len(seed) == 0 {
+		return control.Action{}, errors.New("EXPERIMENT_ADMISSIBLE_UNIFORM_POLICY_SEED_INVALID")
+	}
+	canonical := append([]control.Action(nil), enabled...)
+	sort.Slice(canonical, func(i, j int) bool { return canonical[i].ID < canonical[j].ID })
+	digest, err := control.CanonicalDigest(canonical)
+	if err != nil {
+		return control.Action{}, err
+	}
+	index := domainSeparatedRandomIndex(
+		seed, decision, "consensus-atlas/admissible-uniform-random/v1\x00", digest, len(canonical),
+	)
+	return canonical[index], nil
+}
+
+func domainSeparatedRandomIndex(seed []byte, decision int, domain string, context string, size int) int {
+	count := uint64(size)
+	threshold := -count % count
+	for counter := uint64(0); ; counter++ {
+		var integers [16]byte
+		binary.BigEndian.PutUint64(integers[:8], uint64(decision))
+		binary.BigEndian.PutUint64(integers[8:], counter)
+		hash := sha256.New()
+		_, _ = hash.Write(seed)
+		_, _ = hash.Write([]byte(domain))
+		_, _ = hash.Write(integers[:])
+		_, _ = hash.Write([]byte(context))
+		value := binary.BigEndian.Uint64(hash.Sum(nil)[:8])
+		if value >= threshold {
+			return int(value % count)
+		}
 	}
 }
 
@@ -280,25 +349,28 @@ func (policy Policy) randomIndex(decision int, enabled []control.Action) (int, e
 }
 
 type RunPlan struct {
-	Run      int           `json:"run"`
-	Policy   Policy        `json:"policy"`
-	Workload *WorkloadPlan `json:"workload,omitempty"`
+	Run               int           `json:"run"`
+	Policy            Policy        `json:"policy"`
+	Workload          *WorkloadPlan `json:"workload,omitempty"`
+	StopAfterWorkload bool          `json:"stop_after_workload,omitempty"`
 }
 
 type Config struct {
-	SchemaVersion   string              `json:"schema_version"`
-	ID              string              `json:"id"`
-	PSSID           string              `json:"pss_id"`
-	Runtime         RuntimeConfig       `json:"runtime"`
-	Admission       *ExecutionAdmission `json:"admission,omitempty"`
-	FaultEnvelope   *FaultEnvelope      `json:"fault_envelope,omitempty"`
-	DecisionsPerRun int                 `json:"decisions_per_run"`
-	RequireReplay   bool                `json:"require_replay"`
-	Runs            []RunPlan           `json:"runs"`
+	SchemaVersion    string              `json:"schema_version"`
+	ID               string              `json:"id"`
+	PSSID            string              `json:"pss_id"`
+	Runtime          RuntimeConfig       `json:"runtime"`
+	Admission        *ExecutionAdmission `json:"admission,omitempty"`
+	FaultEnvelope    *FaultEnvelope      `json:"fault_envelope,omitempty"`
+	WorkloadRouterID string              `json:"workload_router_id,omitempty"`
+	DecisionsPerRun  int                 `json:"decisions_per_run"`
+	RequireReplay    bool                `json:"require_replay"`
+	Runs             []RunPlan           `json:"runs"`
 }
 
 func (config Config) Validate() error {
-	if config.SchemaVersion != SchemaVersion || config.ID == "" || config.PSSID == "" {
+	if (config.SchemaVersion != SchemaVersion && config.SchemaVersion != SchemaVersionV2) ||
+		config.ID == "" || config.PSSID == "" {
 		return errors.New("EXPERIMENT_CONFIG_IDENTITY_INVALID")
 	}
 	if config.DecisionsPerRun <= 0 || len(config.Runs) == 0 {
@@ -324,6 +396,7 @@ func (config Config) Validate() error {
 		}
 	}
 	seenRuns := make(map[int]bool, len(config.Runs))
+	hasWorkload := false
 	for _, run := range config.Runs {
 		if run.Run <= 0 || seenRuns[run.Run] {
 			return fmt.Errorf("EXPERIMENT_RUN_INVALID: %d", run.Run)
@@ -333,10 +406,21 @@ func (config Config) Validate() error {
 			return fmt.Errorf("run %d: %w", run.Run, err)
 		}
 		if run.Workload != nil {
+			hasWorkload = true
 			if err := run.Workload.Validate(); err != nil {
 				return fmt.Errorf("run %d: %w", run.Run, err)
 			}
 		}
+		if run.StopAfterWorkload && (config.SchemaVersion != SchemaVersionV2 || run.Workload == nil) {
+			return fmt.Errorf("EXPERIMENT_RUN_STOP_INVALID: %d", run.Run)
+		}
+	}
+	if config.SchemaVersion == SchemaVersion {
+		if config.WorkloadRouterID != "" {
+			return errors.New("EXPERIMENT_WORKLOAD_ROUTER_UNEXPECTED")
+		}
+	} else if hasWorkload && config.WorkloadRouterID == "" {
+		return errors.New("EXPERIMENT_WORKLOAD_ROUTER_REQUIRED")
 	}
 	return nil
 }
@@ -345,6 +429,15 @@ func (config Config) requiresQualification() bool {
 	if config.FaultEnvelope != nil {
 		return true
 	}
+	for _, run := range config.Runs {
+		if run.Workload != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (config Config) requiresWorkloadRouter() bool {
 	for _, run := range config.Runs {
 		if run.Workload != nil {
 			return true
@@ -406,6 +499,24 @@ type ReplayResult struct {
 	TraceDigest string `json:"trace_digest"`
 }
 
+// SelectionAudit binds the Runtime-enabled frontier to the common admissible
+// frontier actually shown to the policy. It is an Experiment record and does
+// not alter Runtime Trace identity.
+type SelectionAudit struct {
+	Decision             int              `json:"decision"`
+	RuntimeEnabledDigest string           `json:"runtime_enabled_digest"`
+	AdmissibleDigest     string           `json:"admissible_digest"`
+	SelectedAction       control.ActionID `json:"selected_action"`
+}
+
+func (audit SelectionAudit) validate(decision int) error {
+	if audit.Decision != decision || !validSHA256(audit.RuntimeEnabledDigest) ||
+		!validSHA256(audit.AdmissibleDigest) || audit.SelectedAction == "" {
+		return fmt.Errorf("EXPERIMENT_SELECTION_AUDIT_INVALID: %d", decision)
+	}
+	return nil
+}
+
 type RunReport struct {
 	Run                  int                `json:"run"`
 	PolicyID             string             `json:"policy_id"`
@@ -413,6 +524,8 @@ type RunReport struct {
 	TargetDecisions      int                `json:"target_decisions"`
 	ChargedDecisions     int                `json:"charged_decisions"`
 	BudgetReached        bool               `json:"budget_reached"`
+	Termination          string             `json:"termination,omitempty"`
+	Selections           []SelectionAudit   `json:"selections,omitempty"`
 	ManifestDigest       string             `json:"manifest_digest"`
 	TraceSchemaVersion   string             `json:"trace_schema_version"`
 	TraceDigest          string             `json:"trace_digest"`
@@ -467,6 +580,23 @@ func expectedWork(config Config) WorkLedger {
 			WallTime: ResourceNotCollected, CPUTime: ResourceNotCollected, PeakRSS: ResourceNotCollected,
 		},
 	}
+}
+
+func measuredWork(report Report) WorkLedger {
+	work := emptyWork()
+	for _, run := range report.Runs {
+		chargeSetup(&work.Primary)
+		chargeRuntimeInitialization(&work.Primary)
+		chargeSetup(&work.Replay)
+		chargeRuntimeInitialization(&work.Replay)
+		chargeDecisions(&work.Primary, run.ChargedDecisions)
+		chargeDecisions(&work.Replay, run.Replay.Decisions)
+		if run.Workload != nil {
+			chargePrepareActions(&work.Primary, run.Workload.Offered)
+			chargePrepareActions(&work.Replay, run.Workload.Offered)
+		}
+	}
+	return work
 }
 
 func expectedPrepareActions(config Config) int {

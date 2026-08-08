@@ -4,16 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/psscore"
 )
 
 const (
 	WorkloadPlanVersion            = "consensus-atlas/semantic-invoke-workload/v1"
 	TargetSingleCoordinatingMember = "single-coordinating-participant"
 	MaxWorkloadInvocations         = 8
+	WorkloadRouteReady             = "ready"
+	WorkloadRouteNoCandidate       = "no-candidate"
+	WorkloadRouteAmbiguous         = "ambiguous"
+	WorkloadRouteTargetNotRunning  = "target-not-running"
 )
 
 // WorkloadInvocation keeps the target-specific command opaque. ID is the
@@ -61,8 +65,8 @@ func (plan WorkloadPlan) Digest() (string, error) {
 }
 
 // FaultEnvelope is a per-run upper bound. It never creates actions or edits
-// Runtime's enabled set. Deterministic policies reject a selected action that
-// exceeds it; local stochastic baselines may filter their selectable view.
+// Runtime's enabled set. Every policy receives the same admissible view after
+// this envelope has been applied.
 type FaultEnvelope struct {
 	MaxCrashes           int `json:"max_crashes"`
 	MaxConcurrentCrashes int `json:"max_concurrent_crashes"`
@@ -132,10 +136,9 @@ func (usage FaultUsage) check(
 	return nil
 }
 
-// constrain returns the Runtime-enabled Actions that remain selectable under
-// the frozen envelope. It does not change Runtime state or its enabled set.
-// Local stochastic baselines use this view so a hard budget is not converted
-// into a seed-dependent execution failure after the budget has been consumed.
+// constrain returns the Runtime-enabled Actions that remain admissible under
+// the frozen envelope. It preserves Runtime order and does not change Runtime
+// state, Action identity, or the Runtime-enabled frontier.
 func (usage FaultUsage) constrain(
 	envelope FaultEnvelope,
 	enabled []control.Action,
@@ -148,6 +151,18 @@ func (usage FaultUsage) constrain(
 		}
 	}
 	return result
+}
+
+func admissibleActions(
+	envelope *FaultEnvelope,
+	usage FaultUsage,
+	enabled []control.Action,
+	snapshot controlruntime.Snapshot,
+) []control.Action {
+	if envelope == nil {
+		return append([]control.Action(nil), enabled...)
+	}
+	return usage.constrain(*envelope, enabled, snapshot)
 }
 
 func (usage *FaultUsage) record(action control.Action) {
@@ -163,6 +178,14 @@ func (usage *FaultUsage) record(action control.Action) {
 	}
 }
 
+func faultUsageFromRecords(records []controlruntime.ActionRecord) FaultUsage {
+	usage := FaultUsage{}
+	for _, record := range records {
+		usage.record(record.Action)
+	}
+	return usage
+}
+
 type WorkloadResult struct {
 	InvocationID  string         `json:"invocation_id"`
 	Owner         control.NodeID `json:"owner"`
@@ -170,32 +193,102 @@ type WorkloadResult struct {
 	PayloadDigest string         `json:"payload_digest"`
 }
 
-type WorkloadRunReport struct {
-	PlanID        string           `json:"plan_id"`
-	PlanDigest    string           `json:"plan_digest"`
-	Planned       int              `json:"planned"`
-	Offered       int              `json:"offered"`
-	Completed     int              `json:"completed"`
-	Results       []WorkloadResult `json:"results"`
-	ResultsDigest string           `json:"results_digest"`
+// WorkloadRoute is target-owned protocol knowledge. The Experiment validates
+// canonical candidates and lifecycle state but never interprets leader, term,
+// view, quorum, or another protocol role.
+type WorkloadRoute struct {
+	LogicalTime uint64           `json:"logical_time"`
+	Candidates  []control.NodeID `json:"candidates"`
 }
 
-func (report WorkloadRunReport) validate(plan WorkloadPlan) error {
+type WorkloadRouter interface {
+	ID() string
+	Route(selector string, evidence control.EvidenceEnvelope) (WorkloadRoute, error)
+}
+
+type WorkloadRouteReport struct {
+	RouterID   string           `json:"router_id"`
+	Selector   string           `json:"selector"`
+	Candidates []control.NodeID `json:"candidates"`
+	Status     string           `json:"status"`
+}
+
+func (report WorkloadRouteReport) validate(routerID string, selector string) error {
+	if report.RouterID == "" || report.RouterID != routerID || report.Selector != selector {
+		return errors.New("EXPERIMENT_WORKLOAD_ROUTE_IDENTITY_INVALID")
+	}
+	switch report.Status {
+	case WorkloadRouteReady, WorkloadRouteNoCandidate, WorkloadRouteAmbiguous,
+		WorkloadRouteTargetNotRunning:
+	default:
+		return errors.New("EXPERIMENT_WORKLOAD_ROUTE_STATUS_INVALID")
+	}
+	for index, candidate := range report.Candidates {
+		if candidate == "" || (index > 0 && report.Candidates[index-1] >= candidate) {
+			return errors.New("EXPERIMENT_WORKLOAD_ROUTE_CANDIDATES_INVALID")
+		}
+	}
+	if (report.Status == WorkloadRouteNoCandidate && len(report.Candidates) != 0) ||
+		(report.Status == WorkloadRouteAmbiguous && len(report.Candidates) < 2) ||
+		((report.Status == WorkloadRouteReady || report.Status == WorkloadRouteTargetNotRunning) &&
+			len(report.Candidates) != 1) {
+		return errors.New("EXPERIMENT_WORKLOAD_ROUTE_CARDINALITY_INVALID")
+	}
+	return nil
+}
+
+type WorkloadRunReport struct {
+	PlanID        string               `json:"plan_id"`
+	PlanDigest    string               `json:"plan_digest"`
+	Planned       int                  `json:"planned"`
+	Offered       int                  `json:"offered"`
+	Completed     int                  `json:"completed"`
+	Pending       int                  `json:"pending,omitempty"`
+	Results       []WorkloadResult     `json:"results"`
+	ResultsDigest string               `json:"results_digest"`
+	FinalRoute    *WorkloadRouteReport `json:"final_route,omitempty"`
+}
+
+func (report WorkloadRunReport) validate(plan WorkloadPlan, strict bool, routerID string) error {
 	planDigest, err := plan.Digest()
 	if err != nil {
 		return err
 	}
 	if report.PlanID != plan.ID || report.PlanDigest != planDigest ||
-		report.Planned != len(plan.Invocations) || report.Offered != report.Planned ||
-		report.Completed != report.Planned || len(report.Results) != report.Planned {
+		report.Planned != len(plan.Invocations) || report.Offered < 0 ||
+		report.Offered > report.Planned || report.Completed < 0 ||
+		report.Completed > report.Offered || len(report.Results) != report.Completed {
 		return errors.New("EXPERIMENT_WORKLOAD_REPORT_MISMATCH")
 	}
-	for index, result := range report.Results {
-		invocation := plan.Invocations[index]
-		if result.InvocationID != invocation.ID || result.Owner == "" ||
-			result.Status != invocation.ExpectedStatus || !validSHA256(result.PayloadDigest) {
+	if strict {
+		if report.Offered != report.Planned || report.Completed != report.Planned ||
+			report.Pending != 0 || report.FinalRoute != nil {
+			return errors.New("EXPERIMENT_WORKLOAD_REPORT_MISMATCH")
+		}
+	} else {
+		if report.Pending != report.Planned-report.Completed {
+			return errors.New("EXPERIMENT_WORKLOAD_PENDING_MISMATCH")
+		}
+		if report.Offered < report.Planned {
+			if report.FinalRoute == nil || report.FinalRoute.validate(routerID, plan.TargetSelector) != nil {
+				return errors.New("EXPERIMENT_WORKLOAD_FINAL_ROUTE_REQUIRED")
+			}
+		} else if report.FinalRoute != nil {
+			return errors.New("EXPERIMENT_WORKLOAD_FINAL_ROUTE_UNEXPECTED")
+		}
+	}
+	invocations := make(map[string]WorkloadInvocation, len(plan.Invocations))
+	for _, invocation := range plan.Invocations {
+		invocations[invocation.ID] = invocation
+	}
+	seen := make(map[string]bool, len(report.Results))
+	for _, result := range report.Results {
+		invocation, exists := invocations[result.InvocationID]
+		if !exists || seen[result.InvocationID] || result.Owner == "" || result.Status == "" ||
+			!validSHA256(result.PayloadDigest) || (strict && result.Status != invocation.ExpectedStatus) {
 			return fmt.Errorf("EXPERIMENT_WORKLOAD_RESULT_INVALID: %s", result.InvocationID)
 		}
+		seen[result.InvocationID] = true
 	}
 	digest, err := control.CanonicalDigest(report.Results)
 	if err != nil {
@@ -212,8 +305,9 @@ func offerNextWorkloadInvocation(
 	plan *WorkloadPlan,
 	offered int,
 	runtime *controlruntime.Runtime,
-	mapper psscore.SemanticMapper,
+	router WorkloadRouter,
 	evidence control.EvidenceEnvelope,
+	strict bool,
 ) (control.ActionID, bool, error) {
 	if plan == nil || offered >= len(plan.Invocations) {
 		return "", false, nil
@@ -228,13 +322,13 @@ func offerNextWorkloadInvocation(
 		if !completed {
 			return "", false, nil
 		}
-		if result.Status != previous.ExpectedStatus {
+		if strict && result.Status != previous.ExpectedStatus {
 			return "", false, fmt.Errorf(
 				"EXPERIMENT_WORKLOAD_STATUS_MISMATCH: %s/%s", previous.ID, result.Status,
 			)
 		}
 	}
-	target, ready, err := coordinatingTarget(mapper, evidence, snapshot)
+	target, _, ready, err := resolveWorkloadTarget(router, plan.TargetSelector, evidence, snapshot)
 	if err != nil || !ready {
 		return "", false, err
 	}
@@ -248,51 +342,70 @@ func offerNextWorkloadInvocation(
 	return actionID, true, nil
 }
 
-func coordinatingTarget(
-	mapper psscore.SemanticMapper,
+func resolveWorkloadTarget(
+	router WorkloadRouter,
+	selector string,
 	evidence control.EvidenceEnvelope,
 	snapshot controlruntime.Snapshot,
-) (control.NodeID, bool, error) {
-	observation, err := mapper.Map(evidence)
+) (control.NodeID, WorkloadRouteReport, bool, error) {
+	if router == nil || router.ID() == "" {
+		return "", WorkloadRouteReport{}, false, errors.New("EXPERIMENT_WORKLOAD_ROUTER_REQUIRED")
+	}
+	route, err := router.Route(selector, evidence)
 	if err != nil {
-		return "", false, err
+		return "", WorkloadRouteReport{}, false, err
 	}
-	if observation.LogicalTime != snapshot.LogicalTime {
-		return "", false, errors.New("EXPERIMENT_WORKLOAD_EVIDENCE_STALE")
+	if route.LogicalTime != snapshot.LogicalTime {
+		return "", WorkloadRouteReport{}, false, errors.New("EXPERIMENT_WORKLOAD_EVIDENCE_STALE")
 	}
-	var candidate control.NodeID
-	for _, entity := range observation.Graph.Entities {
-		if entity.Kind != psscore.EntityParticipant || entity.Mode != psscore.ModeCoordinating {
-			continue
+	candidates := make([]control.NodeID, len(route.Candidates))
+	copy(candidates, route.Candidates)
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
+	for index, candidate := range candidates {
+		if candidate == "" || (index > 0 && candidates[index-1] == candidate) {
+			return "", WorkloadRouteReport{}, false, errors.New("EXPERIMENT_WORKLOAD_ROUTE_INVALID")
 		}
-		if candidate != "" {
-			return "", false, errors.New("EXPERIMENT_WORKLOAD_TARGET_AMBIGUOUS")
-		}
-		candidate = control.NodeID(entity.ID)
 	}
-	if candidate == "" {
-		return "", false, nil
+	report := WorkloadRouteReport{
+		RouterID: router.ID(), Selector: selector, Candidates: candidates,
 	}
+	if len(candidates) == 0 {
+		report.Status = WorkloadRouteNoCandidate
+		return "", report, false, nil
+	}
+	if len(candidates) > 1 {
+		report.Status = WorkloadRouteAmbiguous
+		return "", report, false, nil
+	}
+	candidate := candidates[0]
 	for _, node := range snapshot.Nodes {
 		if node.Ref.Node == candidate && node.Lifecycle == control.NodeRunning {
-			return candidate, true, nil
+			report.Status = WorkloadRouteReady
+			return candidate, report, true, nil
 		}
 	}
-	return "", false, fmt.Errorf("EXPERIMENT_WORKLOAD_TARGET_INVALID: %s", candidate)
+	report.Status = WorkloadRouteTargetNotRunning
+	return "", report, false, nil
 }
 
 func finishWorkload(
 	plan *WorkloadPlan,
 	offered int,
 	snapshot controlruntime.Snapshot,
+	router WorkloadRouter,
+	evidence control.EvidenceEnvelope,
+	strict bool,
 ) (*WorkloadRunReport, error) {
 	if plan == nil {
 		return nil, nil
 	}
-	if offered != len(plan.Invocations) {
+	if strict && offered != len(plan.Invocations) {
 		return nil, fmt.Errorf("EXPERIMENT_WORKLOAD_NOT_OFFERED: %d/%d", offered, len(plan.Invocations))
 	}
-	report := WorkloadRunReport{PlanID: plan.ID, Planned: len(plan.Invocations), Offered: offered}
+	report := WorkloadRunReport{
+		PlanID: plan.ID, Planned: len(plan.Invocations), Offered: offered,
+		Results: []WorkloadResult{},
+	}
 	var err error
 	report.PlanDigest, err = plan.Digest()
 	if err != nil {
@@ -304,9 +417,12 @@ func finishWorkload(
 			return nil, err
 		}
 		if !completed {
-			return nil, fmt.Errorf("EXPERIMENT_WORKLOAD_INCOMPLETE: %s", invocation.ID)
+			if strict {
+				return nil, fmt.Errorf("EXPERIMENT_WORKLOAD_INCOMPLETE: %s", invocation.ID)
+			}
+			continue
 		}
-		if result.Status != invocation.ExpectedStatus {
+		if strict && result.Status != invocation.ExpectedStatus {
 			return nil, fmt.Errorf(
 				"EXPERIMENT_WORKLOAD_STATUS_MISMATCH: %s/%s", invocation.ID, result.Status,
 			)
@@ -314,11 +430,88 @@ func finishWorkload(
 		report.Results = append(report.Results, result)
 	}
 	report.Completed = len(report.Results)
+	if !strict {
+		report.Pending = report.Planned - report.Completed
+		if offered < len(plan.Invocations) {
+			_, route, _, err := resolveWorkloadTarget(router, plan.TargetSelector, evidence, snapshot)
+			if err != nil {
+				return nil, err
+			}
+			report.FinalRoute = &route
+		}
+	}
 	report.ResultsDigest, err = control.CanonicalDigest(report.Results)
 	if err != nil {
 		return nil, err
 	}
 	return &report, nil
+}
+
+// validateReplayedWorkloadRoutes independently re-evaluates every recorded
+// workload target from the Evidence that preceded its Invoke. Runtime replay
+// proves the frozen Action executable; this check additionally proves that the
+// target-owned Router still selects that exact sole participant.
+func validateReplayedWorkloadRoutes(
+	plan *WorkloadPlan,
+	offered int,
+	router WorkloadRouter,
+	trace controlruntime.Trace,
+) error {
+	if plan == nil {
+		if offered != 0 {
+			return errors.New("EXPERIMENT_REPLAY_WORKLOAD_OFFER_UNEXPECTED")
+		}
+		return nil
+	}
+	evidence := trace.InitialEvidence
+	validated := 0
+	for _, record := range trace.Records {
+		if record.Action.Kind == control.ActionInvoke {
+			if validated >= len(plan.Invocations) {
+				return errors.New("EXPERIMENT_REPLAY_WORKLOAD_OFFER_OVERFLOW")
+			}
+			route, err := router.Route(plan.TargetSelector, evidence)
+			if err != nil {
+				return err
+			}
+			candidates := make([]control.NodeID, len(route.Candidates))
+			copy(candidates, route.Candidates)
+			sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
+			for index, candidate := range candidates {
+				if candidate == "" || (index > 0 && candidates[index-1] == candidate) {
+					return errors.New("EXPERIMENT_REPLAY_WORKLOAD_ROUTE_INVALID")
+				}
+			}
+			if route.LogicalTime != record.LogicalTime || len(candidates) != 1 ||
+				candidates[0] != record.Action.Node.Node {
+				return fmt.Errorf(
+					"EXPERIMENT_REPLAY_WORKLOAD_ROUTE_MISMATCH: decision=%d", record.Step,
+				)
+			}
+			validated++
+		}
+		if record.Evidence != nil {
+			evidence = *record.Evidence
+			evidence.Payload.Bytes = append([]byte(nil), record.Evidence.Payload.Bytes...)
+		}
+	}
+	if validated != offered {
+		return fmt.Errorf("EXPERIMENT_REPLAY_WORKLOAD_OFFER_MISMATCH: %d/%d", validated, offered)
+	}
+	return nil
+}
+
+func workloadCompleted(plan *WorkloadPlan, snapshot controlruntime.Snapshot) (bool, error) {
+	if plan == nil {
+		return false, nil
+	}
+	for _, invocation := range plan.Invocations {
+		_, completed, err := completedInvocation(snapshot, invocation.ID)
+		if err != nil || !completed {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func completedInvocation(

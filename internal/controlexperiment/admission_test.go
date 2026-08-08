@@ -52,8 +52,11 @@ func TestAdmissionCannotBeBypassedOrRebound(t *testing.T) {
 			Version: PolicyVersion, ID: "progress", Priority: []control.ActionKind{control.ActionCrash},
 		}}},
 	}
-	if _, err := ExecuteLegacy(t.Context(), config, nil, nil); err == nil || err.Error() != "EXPERIMENT_QUALIFICATION_REPORT_REQUIRED" {
-		t.Fatalf("unqualified ExecuteLegacy() error = %v", err)
+	unbound := config
+	unbound.Admission = nil
+	if _, err := ExecuteQualified(t.Context(), unbound, report, nil, nil, nil); err == nil ||
+		err.Error() != "EXPERIMENT_ADMISSION_REQUIRED" {
+		t.Fatalf("unbound ExecuteQualified() error = %v", err)
 	}
 
 	rebound := report

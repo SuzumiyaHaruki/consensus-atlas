@@ -1,6 +1,6 @@
 # ConsensusAtlas Control Runtime v2 设计与实现基线
 
-状态：`v2alpha1 / M5.2.5 compared`；三个冻结外部子集通过，完整替换资格尚未成立
+状态：`v2alpha1 / M5.18b3 complete`；控制内核冻结，可比较 feedback 与 unseen follow-up 已接入 Agent 边界
 
 分支：`feature/control-runtime-v2`
 
@@ -195,7 +195,18 @@ enabled 判定至少检查：
 - 消息是否已释放、目标是否运行、链路是否连通；
 - temporal item 是否未取消、incarnation 有效，并处于最早允许时间窗口；
 - effect 的依赖是否全部满足；
-- action 是否在 Manifest、Profile 和 trial fault model 中被允许。
+- action 是否能由 Manifest 声明的公共命令表达，且 Adapter 当前 `Check` 为 eligible。
+
+这里的“检查”分成两个不可混淆的层次。`controlruntime.EnabledActions` 只根据 Runtime 拥有的结构状态、
+Adapter 当前资格和 Action 生命周期枚举 **runtime-enabled frontier**；Experiment 再使用已绑定的
+Qualification/Profile、FaultEnvelope 和剩余预算产生 **admissible frontier**。两层都使用 Runtime
+已经冻结的 Action/ActionID，不在外部重新制造动作。
+
+被比较的 fixed、random、mutation、corpus 和未来 Agent 策略只能收到同一份 canonical admissible
+frontier。不得让某种策略先选择 runtime-enabled 动作再被 envelope 拒绝，而另一种策略预先过滤；这种
+差异会把资格失败率、有效预算和状态发现混入搜索方法效果。Experiment 选择记录必须分别绑定
+runtime-enabled digest、admissible digest、policy identity 和 selected ActionID；这些记录属于
+Experiment/MethodLedger，不要求修改 Runtime Trace schema。
 
 Runtime 不检查 leader、term、view、QC 或消息是否过期。例如向 follower 提交 proposal、投递旧
 term 消息或重复请求，只要环境层面可执行就可以 enabled；协议的拒绝、忽略或错误必须进入
@@ -815,7 +826,37 @@ PSS 状态的 action-class seed 1 下 survived，证明 coarse discovery 不能�
 M5.17b 随后完成 trace mutation：按 source 顺序选择第一对相邻 message deliveries，执行 exact prefix、
 adjacent swap 和 digest-bound priority suffix；引用 ID 不 enabled 时产生稳定、计费的失败，不静默
 fallback。source 与 mutation 的完整方法成本为 196 primary / 196 replay，而不是只报告 mutation 自身
-的 98/98。下一步是 PSS-guided corpus，再实现 Guarded TestIntent。
+的 98/98。
+
+最新审计后增加三个前置阶段，不直接进入 PSS-guided corpus：
+
+1. **M5.17bR2 executable-path pruning（已完成）**：删除 pre-admission 的 fixed/random/Planner/DeepSeek/
+   `ExecuteLegacy` 在线路径和无消费者 transport；保留历史 Markdown/JSON，冻结 M5.15–M5.17b 身份。
+2. **M5.17c0 experiment semantics（已完成）**：所有策略共享 admissible frontier；
+   WorkloadRouter 从 PSS Mapper 拆出；`budget-exhausted/quiescent/configured-stop` 成为可重放
+   目标终止；pending workload 被记录而非在 Oracle 前拒绝。v2 记录 runtime/admissible
+   digest 与选中 ActionID，fresh replay 重算终止、fault usage 和 Invoke 路由。框架、trace、
+   资格和投影错误仍是 invalid。
+3. **M5.17c1 corpus trust prerequisites（已完成）**：有序 MutationSourceCorpus 不绑定单一 source
+   policy；重复 ActionID 由 occurrence 消歧；PSS feedback 从 bundle/Trace/Evidence 重新投影；
+   MethodLedger 强制记录 source/proposal/execution/失败和完整方法成本。
+
+M5.17c2 随后已实现 batch PSS-guided corpus 和 qualified uniform random；首个 guided proposal 因精确
+ActionID 不再 enabled 而失败，未临时加 structural fallback。其他 fault/structural/near-miss 指标仍独立报告，
+不预先混合。M5.18a 已在 Experiment/evaluator 层增加显式 ExecutionBundle v3、OperationHistory、
+MethodSpecDigest 与 evaluator-owned fresh execution。v3 从既有 Trace/Workload/ClientHistory 重建
+invoke/return，不增加 Runtime Action、Item、消息状态或调度分支；默认 v1/v2 identity 保持冻结。
+M5.18b0 又在 Experiment 之上接入不调用模型的 Guarded TestIntent 宏观 compiler：它只选择
+冻结 qualified backend，不读取或修改 Runtime enabled/ActionID；执行后从真实 Trace 验证 hard
+ActionKind。M5.18b1 已接入单次受限 transport；M5.18b2 已从完整 bundle/Mapper 重算 defect-blind
+batch feedback，且冻结反馈只能改变 intent preference。两个阶段都没有修改 Runtime 或在线调度权限。
+M5.18b3 又将 execution 与 workload completion 分离，冻结 source/follow-up seed 和完整计费，并通过
+现有 executor 保存 seed-4 hard-action miss；它同样没有修改 Runtime 或给 Agent 增加在线权限。
+
+Workload 只负责声明外部输入和测试意图，不拥有正确性。`ExpectedStatus` 不能决定一条运行是否有效；
+planned/offered/completed/pending/actual response 都必须进入证据。目标选择由 target-owned、确定性的
+WorkloadRouter 完成，PSS Mapper 只投影状态。零个或多个 routing candidate 是可观察 guard/result，
+不能自动变成框架错误，否则可能隐藏无主、多协调者或停滞现象。
 
 ControlSurfaceReport 与 ControlPathAssessment 停止扩展并只作为既有 portability 研究工件复验；生产
 准入只消费 Manifest、外部 Conformance 和 QualificationReport。Core PSS 继续只用于 coarse feedback

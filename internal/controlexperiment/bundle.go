@@ -14,16 +14,19 @@ import (
 )
 
 const (
-	ExecutionBundleSchemaVersion = "consensus-atlas/execution-bundle/v1"
-	DecisionHistorySchemaVersion = "consensus-atlas/decision-history/v1"
+	ExecutionBundleSchemaVersion   = "consensus-atlas/execution-bundle/v1"
+	ExecutionBundleSchemaVersionV2 = "consensus-atlas/execution-bundle/v2"
+	ExecutionBundleSchemaVersionV3 = "consensus-atlas/execution-bundle/v3"
+	DecisionHistorySchemaVersion   = "consensus-atlas/decision-history/v1"
 )
 
 type BundleIdentity struct {
-	ExperimentID   string `json:"experiment_id"`
-	PSSID          string `json:"pss_id"`
-	ConfigDigest   string `json:"config_digest"`
-	ReportDigest   string `json:"report_digest"`
-	ManifestDigest string `json:"manifest_digest"`
+	ExperimentID     string `json:"experiment_id"`
+	PSSID            string `json:"pss_id"`
+	ConfigDigest     string `json:"config_digest"`
+	ReportDigest     string `json:"report_digest"`
+	ManifestDigest   string `json:"manifest_digest"`
+	MethodSpecDigest string `json:"method_spec_digest,omitempty"`
 }
 
 type CorePSSSample struct {
@@ -56,18 +59,19 @@ type PreparationRecord struct {
 }
 
 type ExecutionBundle struct {
-	SchemaVersion string                          `json:"schema_version"`
-	Identity      BundleIdentity                  `json:"identity"`
-	Run           RunReport                       `json:"run"`
-	Preparations  []PreparationRecord             `json:"preparations,omitempty"`
-	Trace         controlruntime.Trace            `json:"trace"`
-	FinalSnapshot controlruntime.Snapshot         `json:"final_snapshot"`
-	CorePSS       []CorePSSSample                 `json:"core_pss"`
-	ClientHistory []ClientHistoryEntry            `json:"client_history"`
-	Decisions     DecisionHistory                 `json:"decisions"`
-	Qualification conformance.QualificationBundle `json:"qualification"`
-	Work          WorkLedger                      `json:"work"`
-	Digest        string                          `json:"digest"`
+	SchemaVersion    string                          `json:"schema_version"`
+	Identity         BundleIdentity                  `json:"identity"`
+	Run              RunReport                       `json:"run"`
+	Preparations     []PreparationRecord             `json:"preparations,omitempty"`
+	Trace            controlruntime.Trace            `json:"trace"`
+	FinalSnapshot    controlruntime.Snapshot         `json:"final_snapshot"`
+	CorePSS          []CorePSSSample                 `json:"core_pss"`
+	ClientHistory    []ClientHistoryEntry            `json:"client_history"`
+	OperationHistory *OperationHistory               `json:"operation_history,omitempty"`
+	Decisions        DecisionHistory                 `json:"decisions"`
+	Qualification    conformance.QualificationBundle `json:"qualification"`
+	Work             WorkLedger                      `json:"work"`
+	Digest           string                          `json:"digest"`
 }
 
 // ExecuteQualifiedBundle is the sole bundle-producing path. It reuses the
@@ -81,6 +85,43 @@ func ExecuteQualifiedBundle(
 	newAdapter AdapterFactory,
 	mapper psscore.SemanticMapper,
 	projector semantic.DecisionProjector,
+	router WorkloadRouter,
+) (Report, ExecutionBundle, error) {
+	return executeQualifiedBundle(
+		ctx, config, qualification, newAdapter, mapper, projector, router, "",
+	)
+}
+
+// ExecuteQualifiedBundleV3 reuses the sole qualified executor but requests
+// the additive v3 evidence envelope. Earlier entry points retain their frozen
+// v1/v2 identities and never infer a method identity after execution.
+func ExecuteQualifiedBundleV3(
+	ctx context.Context,
+	config Config,
+	qualification conformance.QualificationBundle,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	projector semantic.DecisionProjector,
+	router WorkloadRouter,
+	methodSpecDigest string,
+) (Report, ExecutionBundle, error) {
+	if !validSHA256(methodSpecDigest) {
+		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_METHOD_SPEC_INVALID")
+	}
+	return executeQualifiedBundle(
+		ctx, config, qualification, newAdapter, mapper, projector, router, methodSpecDigest,
+	)
+}
+
+func executeQualifiedBundle(
+	ctx context.Context,
+	config Config,
+	qualification conformance.QualificationBundle,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	projector semantic.DecisionProjector,
+	router WorkloadRouter,
+	methodSpecDigest string,
 ) (Report, ExecutionBundle, error) {
 	if len(config.Runs) != 1 {
 		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_SINGLE_RUN_REQUIRED")
@@ -98,14 +139,16 @@ func ExecuteQualifiedBundle(
 		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_DECISION_PROJECTOR_REQUIRED")
 	}
 	var captures []runCapture
-	report, err := execute(ctx, config, newAdapter, mapper, &captures)
+	report, err := execute(ctx, config, newAdapter, mapper, router, &captures)
 	if err != nil {
 		return Report{}, ExecutionBundle{}, err
 	}
 	if len(captures) != 1 || len(report.Runs) != 1 {
 		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_CAPTURE_COUNT_MISMATCH")
 	}
-	bundle, err := buildExecutionBundle(report, report.Runs[0], captures[0], qualification, projector)
+	bundle, err := buildExecutionBundle(
+		report, report.Runs[0], captures[0], qualification, projector, methodSpecDigest,
+	)
 	if err != nil {
 		return Report{}, ExecutionBundle{}, err
 	}
@@ -118,6 +161,7 @@ func buildExecutionBundle(
 	capture runCapture,
 	qualification conformance.QualificationBundle,
 	projector semantic.DecisionProjector,
+	methodSpecDigest string,
 ) (ExecutionBundle, error) {
 	coreSamples := make([]CorePSSSample, 0, len(capture.samples))
 	for _, sample := range capture.samples {
@@ -135,17 +179,39 @@ func buildExecutionBundle(
 	if err != nil {
 		return ExecutionBundle{}, err
 	}
+	bundleVersion := ExecutionBundleSchemaVersion
+	if report.SchemaVersion == SchemaVersionV2 {
+		bundleVersion = ExecutionBundleSchemaVersionV2
+	}
+	if methodSpecDigest != "" {
+		if report.SchemaVersion != SchemaVersionV2 {
+			return ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_V3_EXPERIMENT_V2_REQUIRED")
+		}
+		bundleVersion = ExecutionBundleSchemaVersionV3
+	}
 	bundle := ExecutionBundle{
-		SchemaVersion: ExecutionBundleSchemaVersion,
+		SchemaVersion: bundleVersion,
 		Identity: BundleIdentity{
 			ExperimentID: report.ExperimentID, PSSID: report.PSSID,
 			ConfigDigest: report.ConfigDigest, ReportDigest: report.Digest,
-			ManifestDigest: report.ManifestDigest,
+			ManifestDigest: report.ManifestDigest, MethodSpecDigest: methodSpecDigest,
 		},
 		Run: run, Preparations: append([]PreparationRecord(nil), capture.prepares...),
 		Trace: capture.trace, FinalSnapshot: capture.snapshot,
 		CorePSS: coreSamples, ClientHistory: clients, Decisions: decisions,
 		Qualification: qualification, Work: report.Work,
+	}
+	if bundleVersion == ExecutionBundleSchemaVersionV3 {
+		if report.Config.Runs[0].Workload == nil {
+			return ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_V3_WORKLOAD_REQUIRED")
+		}
+		operations, err := newOperationHistory(
+			report.Config.Runs[0].Workload, run.Workload, capture.trace, clients,
+		)
+		if err != nil {
+			return ExecutionBundle{}, err
+		}
+		bundle.OperationHistory = &operations
 	}
 	bundle, err = bundle.seal()
 	if err != nil {
@@ -171,10 +237,19 @@ func (bundle ExecutionBundle) seal() (ExecutionBundle, error) {
 }
 
 func (bundle ExecutionBundle) Validate() error {
-	if bundle.SchemaVersion != ExecutionBundleSchemaVersion || bundle.Identity.ExperimentID == "" ||
+	if (bundle.SchemaVersion != ExecutionBundleSchemaVersion &&
+		bundle.SchemaVersion != ExecutionBundleSchemaVersionV2 &&
+		bundle.SchemaVersion != ExecutionBundleSchemaVersionV3) || bundle.Identity.ExperimentID == "" ||
 		bundle.Identity.PSSID == "" || !validSHA256(bundle.Identity.ConfigDigest) ||
 		!validSHA256(bundle.Identity.ReportDigest) || !validSHA256(bundle.Identity.ManifestDigest) {
 		return errors.New("EXECUTION_BUNDLE_IDENTITY_INVALID")
+	}
+	if bundle.SchemaVersion == ExecutionBundleSchemaVersionV3 {
+		if !validSHA256(bundle.Identity.MethodSpecDigest) || bundle.OperationHistory == nil {
+			return errors.New("EXECUTION_BUNDLE_V3_IDENTITY_INVALID")
+		}
+	} else if bundle.Identity.MethodSpecDigest != "" || bundle.OperationHistory != nil {
+		return errors.New("EXECUTION_BUNDLE_LEGACY_V3_EVIDENCE_FORBIDDEN")
 	}
 	if err := bundle.Qualification.Validate(); err != nil {
 		return err
@@ -240,6 +315,13 @@ func (bundle ExecutionBundle) Validate() error {
 	if err := bundle.Decisions.Validate(); err != nil {
 		return err
 	}
+	if bundle.OperationHistory != nil {
+		if err := bundle.OperationHistory.Validate(
+			bundle.Run.Workload, bundle.Trace, bundle.ClientHistory,
+		); err != nil {
+			return err
+		}
+	}
 	sealed, err := bundle.seal()
 	if err != nil {
 		return err
@@ -252,11 +334,45 @@ func (bundle ExecutionBundle) Validate() error {
 
 func (bundle ExecutionBundle) validateRunAndWork() error {
 	decisions := len(bundle.Trace.Records)
-	if bundle.Run.TargetDecisions != decisions || !bundle.Run.BudgetReached ||
+	if bundle.Run.TargetDecisions < decisions ||
 		bundle.Run.SeedDigest != bundle.Trace.SeedDigest ||
 		bundle.Run.InitialStateDigest != bundle.Trace.InitialStateDigest ||
 		bundle.Run.FinalStateDigest != bundle.Trace.FinalStateDigest {
 		return errors.New("EXECUTION_BUNDLE_RUN_TRACE_MISMATCH")
+	}
+	if bundle.SchemaVersion == ExecutionBundleSchemaVersion {
+		if bundle.Run.TargetDecisions != decisions || !bundle.Run.BudgetReached ||
+			bundle.Run.Termination != "" || len(bundle.Run.Selections) != 0 {
+			return errors.New("EXECUTION_BUNDLE_RUN_TRACE_MISMATCH")
+		}
+	} else {
+		if bundle.Run.BudgetReached != (bundle.Run.TargetDecisions == decisions) ||
+			len(bundle.Run.Selections) != decisions {
+			return errors.New("EXECUTION_BUNDLE_RUN_TERMINATION_MISMATCH")
+		}
+		switch bundle.Run.Termination {
+		case RunTerminationBudget:
+			if !bundle.Run.BudgetReached {
+				return errors.New("EXECUTION_BUNDLE_RUN_TERMINATION_MISMATCH")
+			}
+		case RunTerminationQuiescent, RunTerminationConfigured:
+			if bundle.Run.BudgetReached {
+				return errors.New("EXECUTION_BUNDLE_RUN_TERMINATION_MISMATCH")
+			}
+		default:
+			return errors.New("EXECUTION_BUNDLE_RUN_TERMINATION_MISMATCH")
+		}
+		for index, audit := range bundle.Run.Selections {
+			record := bundle.Trace.Records[index]
+			if err := audit.validate(index + 1); err != nil ||
+				audit.RuntimeEnabledDigest != record.EnabledSetDigest ||
+				audit.SelectedAction != record.Action.ID {
+				return errors.New("EXECUTION_BUNDLE_SELECTION_AUDIT_MISMATCH")
+			}
+		}
+	}
+	if bundle.Run.Faults != nil && *bundle.Run.Faults != faultUsageFromRecords(bundle.Trace.Records) {
+		return errors.New("EXECUTION_BUNDLE_FAULT_USAGE_MISMATCH")
 	}
 	sampleDigest, err := portableJSONDigest(bundle.CorePSS)
 	if err != nil || sampleDigest != bundle.Run.CorePSSSamplesDigest {
@@ -282,10 +398,13 @@ func (bundle ExecutionBundle) validateRunAndWork() error {
 		return errors.New("EXECUTION_BUNDLE_WORK_MISMATCH")
 	}
 	if bundle.Run.Workload != nil {
-		if bundle.Run.Workload.Planned != len(bundle.ClientHistory) ||
-			bundle.Run.Workload.Offered != bundle.Run.Workload.Planned ||
-			bundle.Run.Workload.Completed != bundle.Run.Workload.Planned ||
-			len(bundle.Run.Workload.Results) != bundle.Run.Workload.Planned {
+		if bundle.Run.Workload.Completed != len(bundle.Run.Workload.Results) {
+			return errors.New("EXECUTION_BUNDLE_WORKLOAD_MISMATCH")
+		}
+		if bundle.SchemaVersion == ExecutionBundleSchemaVersion &&
+			(bundle.Run.Workload.Planned != len(bundle.ClientHistory) ||
+				bundle.Run.Workload.Offered != bundle.Run.Workload.Planned ||
+				bundle.Run.Workload.Completed != bundle.Run.Workload.Planned) {
 			return errors.New("EXECUTION_BUNDLE_WORKLOAD_MISMATCH")
 		}
 		responses := make(map[string]control.ClientResponse, len(bundle.ClientHistory))

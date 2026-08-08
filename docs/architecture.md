@@ -5,12 +5,16 @@
 ```text
 untrusted / bounded                         trusted Go core
 
-Strategy proposal -----------------------> policy compiler
-                                                |
-Protocol docs ----> target Binding ------------+----> Qualification
-                     + Semantic Mapping         |          |
-                     + DecisionProjector        |          v
-                                                +----> Experiment admission
+single model call -> strict Guarded TestIntent -> deterministic macro compiler
+                                                        |
+                                                        v
+                                             qualified policy invocation
+
+Protocol docs ----> target Binding -----------------> Qualification
+                     + Semantic Mapping                       |
+                     + WorkloadRouter                         |
+                     + DecisionProjector                      v
+qualified policy + opaque workload ---------------> Experiment admission
                                                            |
 opaque workload ------------------------------------------>|
                                                            v
@@ -32,7 +36,7 @@ opaque workload ------------------------------------------>|
                                                evaluation ledger
 ```
 
-Agent/模型可以产生受 schema 约束的策略 proposal，但不能：
+未来 Agent/模型只能产生受 schema 约束的 Guarded TestIntent，且不能：
 
 - 构造 enabled set 或任意 ActionID；
 - 直接调用 Adapter/SUT；
@@ -42,11 +46,39 @@ Agent/模型可以产生受 schema 约束的策略 proposal，但不能：
 目标专用信任根由薄 Adapter、Semantic Mapping 和 DecisionProjector 构成。它们可以理解协议 Evidence，
 但通用 Runtime、Experiment、Core PSS ledger、Oracle 和 evaluator 不导入协议类型。
 
+M5.18b0 实现宏观 compiler，不是在线 Action 排序器。`ProtocolKnowledgePack` 与 backend catalog
+是 target-owned 冻结输入；`AgentSemanticView` 从它们和真实 Manifest/Qualification 重算，不包含
+BuildID、candidate/control、root cause 或 Oracle identity。Agent proposal 只能表达 risk ID、hard
+capability/ActionKind/fault/budget 和 backend/ActionKind preference。
+
+compiler 不接收 ActionID：先机械过滤 hard constraints，再用冻结 rank 处理 preference miss。
+执行前消费者从原始可信输入重新编译 plan，执行后再要求每个 hard ActionKind 实际出现在
+Trace。etcd/raft composition 只将选中的 strategy/seed 传入既有 `etcdraftExecution`，没有新 Runtime
+或 scheduler。
+
+M5.18b1 在这一入口上增加单次 DeepSeek JSON transport 和 `AgentInvocationAudit`。provider 只能看到
+AgentSemanticView，调用账本只保存精确 prompt/request/response digest、非秘密 metadata、token 和
+后续可验证工件 identity。Agent view 现在还显式公开 backend `max_fault_envelope`，避免要求模型
+猜测它必须填写的边界。transport/response/intent/compile/execution 失败分类记录，不会自动
+fallback 到人工计划。
+
+M5.18b2 增加 `AgentBatchFeedbackView/v1`。它不信任单独的 MethodObservation JSON，而是要求
+每个 backend 同时提供完整 bundles 和绑定 PSS Mapper，重新验证后只投影共同预算、完成度、
+成本和 coarse discovery。任何 bundle/trace/build/candidate/root-cause/Oracle/state-key 身份都不进入
+Agent 视图。有/无 feedback 消融必须保持所有 hard intent 和预算不变，反馈只能改变 preference。
+
+M5.18b3 增加可比较的 `AgentBatchFeedbackView/v2` 和 `AgentFollowUpSpec/v1`。v2 把框架 execution
+状态与 workload completed/pending 分开，禁止用不同终止语义的方法输入驱动选择。follow-up spec
+冻结 source seeds、未见 seed、source 实际成本、per-arm ceiling 和 deterministic baseline rule；
+source 可以物理复用，但每个 arm 仍承担全部逻辑成本。实际 follow-up seed 由该 spec 与 report seed
+共同验证，Agent 仍不能控制它。
+
 ## 唯一执行路径
 
-`internal/controlexperiment` 的所有 fixed/random/workload/Planner 执行最终进入同一个 `execute` 和
-`executeRun`，每次 primary 后使用 fresh Adapter/Runtime 做严格 replay。`ExecuteQualifiedBundle` 不是
-第二套执行器，只打开 capture，把同一次执行已经产生的数据组织成 bundle。
+`internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，
+它们最终进入同一个 `execute` 和 `executeRun`，每次 primary 后使用 fresh Adapter/Runtime 做严格
+replay。`ExecuteQualifiedBundle` 不是第二套执行器，只打开 capture，把同一次执行已经产生的数据组织成
+bundle。M5.10–M5.13 的 pre-admission fixed/random/Planner 在线入口已在 M5.17bR2 删除；历史工件保留。
 
 ```text
 Config + ExecutionAdmission + Qualification
@@ -58,7 +90,7 @@ Config + ExecutionAdmission + Qualification
        prepare workload through Runtime Offer
                  |
                  v
-    Runtime.EnabledActions -> policy -> Select
+ Runtime.EnabledActions -> admissible -> policy -> Select
                  |
                  +--> Online Core PSS sample
                  +--> full trace/evidence
@@ -68,9 +100,15 @@ Config + ExecutionAdmission + Qualification
            fresh strict replay
 ```
 
-Workload Provider 只读取 Semantic Mapping 的 coarse participant mode，并调用 Runtime 的公开 Offer；
-实际 Action 始终由 Runtime 冻结并出现在唯一 enabled set 中。`PreparationRecord` 绑定 Offer 前后状态，
-避免把 scheduler 之外的状态改变遗漏在证据链外。
+当前 Workload Provider 通过 target-owned `WorkloadRouter` 解析输入目标，PSS Mapper 只负责
+状态投影。Router 只返回 logical time 和候选节点；通用层不理解 leader/term/view。已进入
+Trace 的每个 Invoke 都在 fresh replay 中用当时 Evidence 重算，必须再次得到与冻结 Action
+相同的唯一目标。`PreparationRecord` 继续绑定 Offer 前后状态，避免把 scheduler 之外的
+状态改变遗漏在证据链外。
+
+图中的 admissible 层已在 M5.17c0 实装：Runtime enabled 只描述机械可执行，Experiment 再统一
+施加 FaultEnvelope 等冻结限制。所有策略面对同一 canonical admissible frontier，v2 报告
+分别保留 Runtime-enabled digest、admissible digest 和 selected ActionID。
 
 ## 协议无关公共层
 
@@ -88,14 +126,15 @@ Workload Provider 只读取 Semantic Mapping 的 coarse participant mode，并�
 ## 目标专用层
 
 `adapters/etcdraftv2` 调用官方 `go.etcd.io/raft/v3` 的 RawNode API，处理 Ready、durable/apply effect、
-Tick、Step、crash/restart 和 Evidence。它同时提供 Core PSS Mapper 与 DecisionProjector；协议类型不会
+Tick、Step、crash/restart 和 Evidence。它同时提供 Core PSS Mapper、WorkloadRouter 与
+DecisionProjector；协议类型不会
 越过 Adapter 包。
 
 `adapters/hashicorpraftv2` 使用相同公共 Action/Runtime，已验证消息、生命周期和 opaque invoke，但因
 官方实现内部墙钟、包级随机和 goroutine 调度未受框架完整控制，只获得部分 Qualification。统一 Action
 表示上层语义统一，不表示两个实现拥有相同的控制强度或 strict benchmark 资格。
 
-新目标的边际产物仍限制为：Execution Binding、Semantic Mapping、DecisionProjector、fixture 与
+新目标的边际产物仍限制为：Execution Binding、Semantic Mapping、WorkloadRouter、DecisionProjector、fixture 与
 qualification composition。若接入非 Raft 协议必须修改 Runtime/Action/Core PSS schema，应先视为抽象
 失败，而不是增加协议 type switch。
 
@@ -107,6 +146,19 @@ bundle 默认写入 ignored `artifacts/`，checked-in evaluator report 只引用
 TraceIntegrity 检查证据链是否可信。失败的 trial 是 `invalid`，不能记为 candidate kill 或 control
 false positive。Agreement 接收 target projector 输出的 exact position/value digest；PSS/Coverage 不
 参与 verdict。
+
+M5.18a 的 v3 bundle 是显式 opt-in evidence envelope；默认入口仍产生冻结 v1/v2。v3 额外绑定
+MethodSpec digest 和 OperationHistory。OperationHistory 内含完整 WorkloadPlan，并从 Trace Invoke、
+opaque Action input、ClientHistory 与 WorkloadRunReport 重建 invoke/return interval；它不是由 Agent 或
+Adapter 自报的 operation 列表。
+
+正式 evaluator v2 不接受预制 bundle 作为 kill authority。composition root 校验精确 build-audit 文件和
+binary digest，从已验证 bytes 创建隔离可执行副本，再用 MethodSpec 参数 fresh execution。通用
+`internal/defectbench` 只验证 MethodSpec/Config projection/build evidence/bundle/预算并运行 monitor；
+etcd/raft projector 仍只在 CLI composition root 注入。
+
+本轮 applied-prefix calibration 的两侧 OperationHistory 相同，差异仍由 target-owned applied-prefix
+projection 加 generic Agreement 检出。因此没有添加无实际证据缺口的通用 durability monitor。
 
 ## 强基线选择边界
 
@@ -128,6 +180,24 @@ mutation report 的 work 只覆盖 mutation execution。方法级比较必须另
 setup 和 replay；M5.17b 当前实测口径为 source 98/98 + mutation 98/98 = 196/196。公开失败校准的
 35 primary work 独立记录，不混入方法 trial。
 
+M5.17c1 将这个口径变成机器可校验的数据结构。`MutationSourceCorpus` 是有序、digest-bound 的已验证
+bundle identity 集，不要求 source 必须来自某一种固定策略；operator 的 suffix 单独声明。mutation v2
+使用 `(ActionID, occurrence)` 引用源 Trace，解决同一动作在状态循环中重复出现的歧义，同时不改写 v1
+冻结身份。
+
+`PSSFeedback` 不能由搜索器提交 state key。可信构造器从 bundle 的最终 Snapshot、Trace transition 和
+Evidence 重构每个采样点，重新调用 target-owned Mapper 和 Core PSS projector，并要求逐样本等于 bundle。
+它仍然只是 coarse feedback，不是状态等价证明。`MethodLedger` 内嵌小型 corpus/feedback identity，要求
+source 记录与 corpus 顺序一致、proposal 引用 source、execution 引用 completed proposal、feedback 引用
+completed execution；失败尝试和 source/replay 成本不能被省略。
+
+M5.17c2 的 admissible-uniform 先规范化 ActionID，再在共同 admissible frontier 上均匀采样；
+只有刚准备的 Invoke 是 hard priority。`PSSGuidedMutationChoice` 是 batch 边界：它从 completed
+source bundles 重投影 feedback，根据 source-exclusive states 和 global visits 冻结一个
+occurrence-aware proposal，不在线改变 scheduler。`MethodObservation` 绑定 method ceiling、ledger、
+PSS measurement 和可选 guidance，但它不是 evaluator verdict。首个 PSS-guided proposal 不可执行的
+结果被保留，说明 PSS 稀有度不包含 Action 因果/可交换性。
+
 ## M5.16R 之后的依赖规则
 
 旧 v1 Engine/Host/Driver、Raft Family、Coverage/Campaign、onboarding、旧 Agent 和 migration 源码已
@@ -146,8 +216,9 @@ internal/control*  -X-> adapters or consensus packages
 ## 当前未完成
 
 - 非公开 holdout 与正式方法比较；
-- PSS-guided corpus 强基线；
-- Guarded TestIntent Agent；
+- PSS-guided 的可执行性结构约束（只在评测缺口证明必要时增加）；
+- Guarded TestIntent batch feedback 与 one-shot/feedback/确定性 baseline 消融；
+- 修正后的非锚定 prompt 真实调用；
 - 第二个 strict deterministic target；
 - Coverage v2 的真实新消费者；
 - BFT 的有限 Byzantine action 与对应 target projector/Oracle。

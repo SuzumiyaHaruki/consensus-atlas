@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -31,63 +30,141 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("control-experiment", flag.ContinueOnError)
 	out := flags.String("out", "", "report output path")
 	bundleOut := flags.String("bundle-out", "", "optional execution bundle output path (qualified workload strategies only)")
-	strategy := flags.String("strategy", "fixed", "policy set: fixed, random, workload, workload-action-class-random, workload-trace-mutation, stub-planner, or deepseek-planner")
-	decisions := flags.Int("decisions", 32, "charged decisions per run")
+	sourceBundleOut := flags.String("source-bundle-out", "", "source bundle output path (corpus mutation only)")
+	methodOut := flags.String("method-out", "", "method ledger output path (corpus mutation only)")
+	methodArtifacts := flags.String("method-artifacts", "", "report/bundle directory (M5.17c2 method strategies only)")
+	bundleEvidenceVersion := flags.Int("bundle-evidence-version", 0, "optional trusted bundle evidence version (3 only)")
+	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
+	agentKeyFile := flags.String("agent-key-file", "", "key file for the opt-in one-shot Agent strategy")
+	agentArtifacts := flags.String("agent-artifacts", "", "new output directory for the opt-in one-shot Agent strategy")
+	strategy := flags.String("strategy", "workload", "qualified strategy, including opt-in workload-guarded-agent-one-shot")
+	decisions := flags.Int("decisions", 96, "charged decisions per run")
 	policySeed := flags.Uint64("policy-seed", 1, "public random-policy seed")
-	repoRoot := flags.String("repo", ".", "repository root for the model client")
-	keyFile := flags.String("key-file", "../key.txt", "permission-restricted DeepSeek API key file")
-	model := flags.String("model", "deepseek-v4-flash", "DeepSeek model ID")
-	endpoint := flags.String("endpoint", "https://api.deepseek.com/chat/completions", "official DeepSeek endpoint")
-	modelTimeout := flags.Duration("model-timeout", 5*time.Minute, "single model-call deadline")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *strategy == "workload-guarded-agent-one-shot" {
+		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
+			*sourceBundleOut != "" || *methodOut != "" || *methodArtifacts != "" ||
+			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("one-shot Agent strategy requires only -agent-key-file and -agent-artifacts")
+		}
+		if _, err := os.Stat(*agentArtifacts); err == nil || !os.IsNotExist(err) {
+			return errors.New("-agent-artifacts must name a new directory")
+		}
+		key, err := readAgentKey(*agentKeyFile)
+		if err != nil {
+			return err
+		}
+		result, stageErr := executeEtcdraftAgentOneShot(ctx, key, defaultDeepSeekIntentClient())
+		key = ""
+		if result.Audit.SchemaVersion == "" {
+			return stageErr
+		}
+		if err := persistEtcdraftAgentOneShot(*agentArtifacts, result); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "wrote %s\nstatus=%s model_calls=%d audit=%s\n",
+			*agentArtifacts, result.Audit.Status, result.Audit.Work.Model.Calls, result.Audit.Digest)
+		return stageErr
+	}
+	if *agentKeyFile != "" || *agentArtifacts != "" {
+		return errors.New("Agent flags require workload-guarded-agent-one-shot")
 	}
 	if *out == "" {
 		return errors.New("-out is required")
 	}
-	if *strategy == "stub-planner" || *strategy == "deepseek-planner" {
-		var attempt controlexperiment.PlannerAttempt
+	if *strategy == "workload-agent-feedback-batch" {
+		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
+			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("Agent feedback batch requires only -out and -method-artifacts")
+		}
+		batch, err := newEtcdraftAgentFeedbackBatch(ctx, *decisions, *policySeed)
+		if err != nil {
+			return err
+		}
+		return persistEtcdraftAgentFeedbackBatch(*out, *methodArtifacts, batch, stdout)
+	}
+	if *strategy == "workload-agent-follow-up-baseline" {
+		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
+			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("Agent follow-up baseline requires only -out and -method-artifacts")
+		}
+		result, err := newEtcdraftAgentFollowUpBaseline(ctx, *decisions, *policySeed)
+		if err != nil {
+			return err
+		}
+		return persistEtcdraftAgentFollowUpBaseline(*out, *methodArtifacts, result, stdout)
+	}
+	if *strategy == "workload-admissible-uniform-method" ||
+		*strategy == "workload-action-class-random-method" ||
+		*strategy == "workload-pss-guided-corpus" {
+		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" || *methodOut != "" ||
+			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("method strategy requires only -out and -method-artifacts")
+		}
+		var result etcdraftMethodExecution
 		var err error
-		if *strategy == "stub-planner" {
-			attempt, err = etcdraftPlannerAttempt(ctx, *decisions, stubPlannerProposal())
+		if *strategy == "workload-admissible-uniform-method" {
+			result, err = etcdraftAdmissibleUniformMethod(ctx, *decisions, *policySeed)
+		} else if *strategy == "workload-action-class-random-method" {
+			result, err = etcdraftActionClassMethod(ctx, *decisions, *policySeed)
 		} else {
-			if *modelTimeout <= 0 {
-				return errors.New("-model-timeout must be positive")
-			}
-			root, pathErr := filepath.Abs(*repoRoot)
-			if pathErr != nil {
-				return pathErr
-			}
-			keyPath := *keyFile
-			if !filepath.IsAbs(keyPath) {
-				keyPath = filepath.Join(root, keyPath)
-			}
-			scope := etcdraftPlannerScope("public-etcdraft-v2-deepseek-planner-m5.13", *decisions)
-			modelCtx, cancel := context.WithTimeout(ctx, *modelTimeout)
-			defer cancel()
-			proposal, audit, generationErr := generateDeepSeekPlannerProposal(modelCtx, deepSeekPlannerConfig{
-				RepoRoot: root, KeyPath: filepath.Clean(keyPath), Model: *model, Endpoint: *endpoint,
-			}, scope)
-			if generationErr != nil {
-				return generationErr
-			}
-			attempt, err = etcdraftAuditedPlannerAttempt(modelCtx, scope, proposal, audit)
+			result, err = etcdraftPSSGuidedCorpusMethod(ctx, *decisions, *policySeed)
 		}
 		if err != nil {
 			return err
 		}
-		return persistPlannerAttempt(*out, attempt, stdout)
+		return persistEtcdraftMethodExecution(*out, *methodArtifacts, result, stdout)
+	}
+	if *methodArtifacts != "" {
+		return errors.New("-method-artifacts requires an M5.17c2 method strategy")
+	}
+	if (*bundleEvidenceVersion != 0 || *methodSpecDigest != "") && *bundleOut == "" {
+		return errors.New("bundle evidence flags require -bundle-out")
 	}
 	var report controlexperiment.Report
 	var bundle *controlexperiment.ExecutionBundle
+	var sourceBundle *controlexperiment.ExecutionBundle
+	var method *controlexperiment.MethodLedger
 	var err error
-	if *bundleOut != "" {
-		if *strategy != "workload" && *strategy != "workload-action-class-random" &&
+	if *strategy == "workload-trace-mutation-corpus" {
+		if *bundleOut == "" || *sourceBundleOut == "" || *methodOut == "" {
+			return errors.New("corpus mutation requires -source-bundle-out, -bundle-out, and -method-out")
+		}
+		var captured controlexperiment.ExecutionBundle
+		var capturedSource controlexperiment.ExecutionBundle
+		var ledger controlexperiment.MethodLedger
+		report, captured, capturedSource, ledger, err = etcdraftCorpusMutationMethod(
+			ctx, *decisions, *policySeed,
+		)
+		bundle = &captured
+		sourceBundle = &capturedSource
+		method = &ledger
+	} else if *sourceBundleOut != "" || *methodOut != "" {
+		return errors.New("-source-bundle-out and -method-out require workload-trace-mutation-corpus")
+	} else if *bundleOut != "" {
+		if *strategy != "workload" && *strategy != "workload-semantics-v2" &&
+			*strategy != "workload-evaluation-v3" &&
+			*strategy != "workload-admissible-uniform" &&
+			*strategy != "workload-action-class-random" &&
 			*strategy != "workload-trace-mutation" {
 			return errors.New("-bundle-out requires a qualified workload strategy")
 		}
 		var captured controlexperiment.ExecutionBundle
-		report, captured, err = etcdraftBundle(ctx, *strategy, *decisions, *policySeed)
+		if *bundleEvidenceVersion == 3 {
+			if *methodSpecDigest == "" {
+				return errors.New("bundle evidence v3 requires -method-spec-digest")
+			}
+			report, captured, err = etcdraftBundleV3(
+				ctx, *strategy, *decisions, *policySeed, *methodSpecDigest,
+			)
+		} else {
+			if *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+				return errors.New("only -bundle-evidence-version 3 is supported")
+			}
+			report, captured, err = etcdraftBundle(ctx, *strategy, *decisions, *policySeed)
+		}
 		bundle = &captured
 	} else {
 		report, err = etcdraftReport(ctx, *strategy, *decisions, *policySeed)
@@ -128,6 +205,44 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			return err
 		}
 	}
+	if method != nil {
+		sourceBytes, err := json.MarshalIndent(sourceBundle, "", "  ")
+		if err != nil {
+			return err
+		}
+		var persistedSource controlexperiment.ExecutionBundle
+		if err := json.Unmarshal(sourceBytes, &persistedSource); err != nil {
+			return err
+		}
+		if err := persistedSource.Validate(); err != nil {
+			return fmt.Errorf("validate persisted source bundle: %w", err)
+		}
+		if err := method.SourceCorpus.Entries[0].ValidateBundle(persistedSource); err != nil {
+			return fmt.Errorf("validate persisted corpus source: %w", err)
+		}
+		if err := writeReport(*sourceBundleOut, sourceBytes); err != nil {
+			return err
+		}
+		methodBytes, err := json.MarshalIndent(method, "", "  ")
+		if err != nil {
+			return err
+		}
+		var persistedMethod controlexperiment.MethodLedger
+		if err := json.Unmarshal(methodBytes, &persistedMethod); err != nil {
+			return err
+		}
+		if err := persistedMethod.Validate(); err != nil {
+			return fmt.Errorf("validate persisted method ledger: %w", err)
+		}
+		if err := persistedMethod.Feedback.ValidateBundle(
+			*bundle, etcdraftv2.CorePSSMapper{},
+		); err != nil {
+			return fmt.Errorf("validate persisted method feedback: %w", err)
+		}
+		if err := writeReport(*methodOut, methodBytes); err != nil {
+			return err
+		}
+	}
 	fmt.Fprintf(stdout, "wrote %s\nruns=%d decisions=%d states=%d replay=%t digest=%s\n",
 		*out, len(report.Runs), report.StateDiscovery.TotalDecisions,
 		report.StateDiscovery.UniqueStates, allReplayStable(report), report.Digest)
@@ -143,35 +258,16 @@ func etcdraftBundle(
 	return etcdraftExecution(ctx, strategy, decisions, policySeed, true)
 }
 
-func persistPlannerAttempt(path string, attempt controlexperiment.PlannerAttempt, stdout io.Writer) error {
-	encoded, err := json.MarshalIndent(attempt, "", "  ")
-	if err != nil {
-		return err
-	}
-	var persisted controlexperiment.PlannerAttempt
-	if err := json.Unmarshal(encoded, &persisted); err != nil {
-		return err
-	}
-	if err := persisted.Validate(); err != nil {
-		return fmt.Errorf("validate persisted planner attempt: %w", err)
-	}
-	if err := writeReport(path, encoded); err != nil {
-		return err
-	}
-	if attempt.Experiment == nil {
-		reason := "none"
-		if attempt.Failure != nil {
-			reason = attempt.Failure.ReasonCode
-		}
-		fmt.Fprintf(stdout, "wrote %s\nstatus=%s proposals=%d reason=%s digest=%s\n",
-			path, attempt.Status, attempt.Work.ProposalAttempts, reason, attempt.Digest)
-		return nil
-	}
-	report := attempt.Experiment
-	fmt.Fprintf(stdout, "wrote %s\nstatus=%s proposals=%d runs=%d decisions=%d states=%d digest=%s\n",
-		path, attempt.Status, attempt.Work.ProposalAttempts, len(report.Runs),
-		report.StateDiscovery.TotalDecisions, report.StateDiscovery.UniqueStates, attempt.Digest)
-	return nil
+func etcdraftBundleV3(
+	ctx context.Context,
+	strategy string,
+	decisions int,
+	policySeed uint64,
+	methodSpecDigest string,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	return etcdraftExecutionWithMethodSpec(
+		ctx, strategy, decisions, policySeed, true, methodSpecDigest,
+	)
 }
 
 func writeReport(path string, encoded []byte) error {
@@ -179,6 +275,77 @@ func writeReport(path string, encoded []byte) error {
 		return err
 	}
 	return os.WriteFile(path, append(encoded, '\n'), 0o644)
+}
+
+func persistEtcdraftMethodExecution(
+	out string,
+	artifactDir string,
+	result etcdraftMethodExecution,
+	stdout io.Writer,
+) error {
+	if len(result.Reports) == 0 || len(result.Reports) != len(result.Bundles) {
+		return errors.New("method report/bundle count mismatch")
+	}
+	persistedBundles := make([]controlexperiment.ExecutionBundle, len(result.Bundles))
+	for index := range result.Reports {
+		reportBytes, err := json.MarshalIndent(result.Reports[index], "", "  ")
+		if err != nil {
+			return err
+		}
+		var report controlexperiment.Report
+		if err := json.Unmarshal(reportBytes, &report); err != nil {
+			return err
+		}
+		if err := report.Validate(); err != nil {
+			return fmt.Errorf("validate persisted method report %d: %w", index+1, err)
+		}
+		bundleBytes, err := json.MarshalIndent(result.Bundles[index], "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(bundleBytes, &persistedBundles[index]); err != nil {
+			return err
+		}
+		if err := persistedBundles[index].Validate(); err != nil {
+			return fmt.Errorf("validate persisted method bundle %d: %w", index+1, err)
+		}
+		if err := persistedBundles[index].ValidateProjection(etcdraftv2.DecisionProjector{}); err != nil {
+			return fmt.Errorf("validate persisted method projection %d: %w", index+1, err)
+		}
+		if err := writeReport(
+			filepath.Join(artifactDir, "reports", report.Digest+".json"), reportBytes,
+		); err != nil {
+			return err
+		}
+		if err := writeReport(
+			filepath.Join(artifactDir, "bundles", persistedBundles[index].Digest+".json"), bundleBytes,
+		); err != nil {
+			return err
+		}
+	}
+	observationBytes, err := json.MarshalIndent(result.Observation, "", "  ")
+	if err != nil {
+		return err
+	}
+	var observation controlexperiment.MethodObservation
+	if err := json.Unmarshal(observationBytes, &observation); err != nil {
+		return err
+	}
+	if err := observation.ValidateBundles(persistedBundles, etcdraftv2.CorePSSMapper{}); err != nil {
+		return fmt.Errorf("validate persisted method observation: %w", err)
+	}
+	if err := writeReport(out, observationBytes); err != nil {
+		return err
+	}
+	failure := "none"
+	if result.Failure != nil {
+		failure = result.Failure.Code
+	}
+	fmt.Fprintf(stdout, "wrote %s\nruns=%d states=%d primary=%d replay=%d failure=%s digest=%s\n",
+		out, len(result.Bundles), result.Observation.Measurement.UniqueStates,
+		result.Observation.Ledger.Totals.Primary.WorkUnits,
+		result.Observation.Ledger.Totals.Replay.WorkUnits, failure, result.Observation.Digest)
+	return nil
 }
 
 func etcdraftReport(
@@ -198,43 +365,40 @@ func etcdraftExecution(
 	policySeed uint64,
 	captureBundle bool,
 ) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	return etcdraftExecutionWithMethodSpec(ctx, strategy, decisions, policySeed, captureBundle, "")
+}
+
+func etcdraftExecutionWithMethodSpec(
+	ctx context.Context,
+	strategy string,
+	decisions int,
+	policySeed uint64,
+	captureBundle bool,
+	methodSpecDigest string,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	if methodSpecDigest != "" && !captureBundle {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			errors.New("method spec requires bundle capture")
+	}
 	if strategy == "workload-trace-mutation" {
 		return etcdraftTraceMutationExecution(ctx, decisions, policySeed, captureBundle)
 	}
-	progress := []control.ActionKind{
-		control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal,
+	if strategy == "workload-trace-mutation-corpus" {
+		report, bundle, _, _, err := etcdraftCorpusMutationMethod(ctx, decisions, policySeed)
+		if !captureBundle {
+			bundle = controlexperiment.ExecutionBundle{}
+		}
+		return report, bundle, err
 	}
 	var experimentID string
 	var runs []controlexperiment.RunPlan
 	var admission *controlexperiment.ExecutionAdmission
 	var qualificationReport *qualification.Bundle
 	var faultEnvelope *controlexperiment.FaultEnvelope
+	schemaVersion := controlexperiment.SchemaVersion
+	workloadRouterID := ""
 	switch strategy {
-	case "fixed":
-		experimentID = "public-etcdraft-v2-fixed-baselines-m5.10"
-		runs = []controlexperiment.RunPlan{
-			{Run: 1, Policy: controlexperiment.Policy{
-				Version: controlexperiment.PolicyVersion, ID: "progress-v1", Priority: progress,
-			}},
-			{Run: 2, Policy: controlexperiment.Policy{
-				Version: controlexperiment.PolicyVersion, ID: "lifecycle-v1",
-				Rules: []controlexperiment.DecisionRule{
-					{Decision: 1, Kind: control.ActionCrash, Node: "n3"},
-					{Decision: 2, Kind: control.ActionRestart, Node: "n3"},
-				},
-				Priority: progress,
-			}},
-		}
-	case "random":
-		experimentID = fmt.Sprintf("public-etcdraft-v2-random-baseline-m5.11-seed-%d", policySeed)
-		for run := 1; run <= 2; run++ {
-			runs = append(runs, controlexperiment.RunPlan{Run: run, Policy: controlexperiment.Policy{
-				Version: controlexperiment.RandomPolicyVersion,
-				ID:      fmt.Sprintf("uniform-random-v1/run-%d", run),
-				SeedHex: randomPolicySeed(policySeed, run),
-			}})
-		}
-	case "workload", "workload-action-class-random":
+	case "workload", "workload-semantics-v2", "workload-evaluation-v3", "workload-admissible-uniform", "workload-action-class-random", "workload-action-class-random-v2":
 		bundle, bound, workload, err := etcdraftQualifiedWorkload(ctx)
 		if err != nil {
 			return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
@@ -248,14 +412,30 @@ func etcdraftExecution(
 				control.ActionDeliverMessage, control.ActionFireTemporal,
 			},
 		}
-		if strategy == "workload" {
+		stopAfterWorkload := false
+		if strategy == "workload" || strategy == "workload-semantics-v2" || strategy == "workload-evaluation-v3" {
 			experimentID = "public-etcdraft-v2-semantic-workload-m5.15"
+			if strategy == "workload-semantics-v2" {
+				experimentID = "public-etcdraft-v2-experiment-semantics-m5.17c0"
+				schemaVersion = controlexperiment.SchemaVersionV2
+				workloadRouterID = etcdraftv2.WorkloadRouterID
+				stopAfterWorkload = true
+			} else if strategy == "workload-evaluation-v3" {
+				experimentID = "public-etcdraft-v2-method-evaluation-m5.18a"
+				schemaVersion = controlexperiment.SchemaVersionV2
+				workloadRouterID = etcdraftv2.WorkloadRouterID
+			}
 			faultEnvelope = &controlexperiment.FaultEnvelope{
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
 				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
 			}
-		} else {
+		} else if strategy == "workload-action-class-random" || strategy == "workload-action-class-random-v2" {
 			experimentID = fmt.Sprintf("public-etcdraft-v2-action-class-random-m5.17a-seed-%d", policySeed)
+			if strategy == "workload-action-class-random-v2" {
+				experimentID = fmt.Sprintf("public-etcdraft-v2-action-class-random-m5.18b3-seed-%d", policySeed)
+				schemaVersion = controlexperiment.SchemaVersionV2
+				workloadRouterID = etcdraftv2.WorkloadRouterID
+			}
 			policy = controlexperiment.Policy{
 				Version: controlexperiment.ActionClassPolicyVersion,
 				ID:      "action-class-random-v1/run-1", SeedHex: randomPolicySeed(policySeed, 1),
@@ -265,44 +445,150 @@ func etcdraftExecution(
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
 				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
 			}
+		} else {
+			experimentID = fmt.Sprintf("public-etcdraft-v2-admissible-uniform-m5.17c2-seed-%d", policySeed)
+			schemaVersion = controlexperiment.SchemaVersionV2
+			workloadRouterID = etcdraftv2.WorkloadRouterID
+			policy = controlexperiment.Policy{
+				Version: controlexperiment.AdmissibleUniformPolicyVersion,
+				ID:      "admissible-uniform-v1/run-1", SeedHex: randomPolicySeed(policySeed, 1),
+				Priority: []control.ActionKind{control.ActionInvoke},
+			}
+			faultEnvelope = &controlexperiment.FaultEnvelope{
+				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
+				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
+			}
 		}
 		runs = []controlexperiment.RunPlan{{
-			Run: 1, Policy: policy, Workload: &workload,
+			Run: 1, Policy: policy, Workload: &workload, StopAfterWorkload: stopAfterWorkload,
 		}}
 	default:
 		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, fmt.Errorf("unsupported -strategy %q", strategy)
 	}
 	config := controlexperiment.Config{
-		SchemaVersion: controlexperiment.SchemaVersion,
+		SchemaVersion: schemaVersion,
 		ID:            experimentID,
 		PSSID:         etcdraftv2.CorePSSMappingID,
 		Runtime: controlexperiment.RuntimeConfig{
 			SeedHex: hex.EncodeToString([]byte("official-etcdraft-v2-cluster-seed")), MaxClones: 1,
 		},
-		Admission: admission, FaultEnvelope: faultEnvelope,
+		Admission: admission, FaultEnvelope: faultEnvelope, WorkloadRouterID: workloadRouterID,
 		DecisionsPerRun: decisions, RequireReplay: true, Runs: runs,
 	}
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
 	}
-	if qualificationReport != nil {
-		if captureBundle {
-			return controlexperiment.ExecuteQualifiedBundle(
-				ctx, config, *qualificationReport, factory, etcdraftv2.CorePSSMapper{},
-				etcdraftv2.DecisionProjector{},
-			)
-		}
-		report, err := controlexperiment.ExecuteQualified(
-			ctx, config, qualificationReport.Qualification, factory, etcdraftv2.CorePSSMapper{},
-		)
-		return report, controlexperiment.ExecutionBundle{}, err
+	if qualificationReport == nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			errors.New("qualified workload strategy did not bind qualification")
 	}
 	if captureBundle {
-		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
-			errors.New("execution bundle requires qualified workload")
+		if methodSpecDigest != "" {
+			return controlexperiment.ExecuteQualifiedBundleV3(
+				ctx, config, *qualificationReport, factory, etcdraftv2.CorePSSMapper{},
+				etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, methodSpecDigest,
+			)
+		}
+		return controlexperiment.ExecuteQualifiedBundle(
+			ctx, config, *qualificationReport, factory, etcdraftv2.CorePSSMapper{},
+			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
+		)
 	}
-	report, err := controlexperiment.ExecuteLegacy(ctx, config, factory, etcdraftv2.CorePSSMapper{})
+	report, err := controlexperiment.ExecuteQualified(
+		ctx, config, qualificationReport.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		etcdraftv2.WorkloadRouter{},
+	)
 	return report, controlexperiment.ExecutionBundle{}, err
+}
+
+func etcdraftCorpusMutationMethod(
+	ctx context.Context,
+	decisions int,
+	policySeed uint64,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, controlexperiment.ExecutionBundle, controlexperiment.MethodLedger, error) {
+	seedReport, seedBundle, err := etcdraftExecution(ctx, "workload", decisions, policySeed, true)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	source, err := controlexperiment.NewMutationSourceEntry("etcdraft-workload-source-1", seedBundle)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	corpus, err := controlexperiment.NewMutationSourceCorpus(
+		"etcdraft-public-source-corpus-m5.17c1", []controlexperiment.MutationSourceEntry{source},
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	plan, err := controlexperiment.NewFirstAdjacentCorpusMutation(
+		"first-adjacent-message-deliveries-v2", seedBundle.Trace, source,
+		control.ActionDeliverMessage, seedReport.Config.Runs[0].Policy.Priority,
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	config := seedReport.Config
+	config.ID = "public-etcdraft-v2-corpus-mutation-m5.17c1"
+	config.Runs = append([]controlexperiment.RunPlan(nil), seedReport.Config.Runs...)
+	config.Runs[0].Policy = controlexperiment.Policy{
+		Version: controlexperiment.TraceMutationPolicyVersionV2,
+		ID:      "adjacent-message-swap-v2/run-1", TraceMutation: &plan,
+	}
+	factory := func() (control.Adapter, error) {
+		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+	}
+	report, bundle, err := controlexperiment.ExecuteQualifiedBundle(
+		ctx, config, seedBundle.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	feedback, err := controlexperiment.NewPSSFeedback(
+		"etcdraft-corpus-mutation-feedback-m5.17c1", bundle, etcdraftv2.CorePSSMapper{},
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	zeroWork := controlexperiment.WorkLedger{Resources: controlexperiment.ResourceAccounting{
+		WallTime: controlexperiment.ResourceNotCollected,
+		CPUTime:  controlexperiment.ResourceNotCollected,
+		PeakRSS:  controlexperiment.ResourceNotCollected,
+	}}
+	records := []controlexperiment.MethodRecord{
+		{
+			Ordinal: 1, Kind: controlexperiment.MethodRecordSource,
+			Outcome:     controlexperiment.MethodOutcomeCompleted,
+			InputDigest: source.ConfigDigest, OutputDigest: source.Digest,
+			ReportDigest: seedReport.Digest, BundleDigest: seedBundle.Digest, Work: seedReport.Work,
+		},
+		{
+			Ordinal: 2, Kind: controlexperiment.MethodRecordProposal,
+			Outcome:     controlexperiment.MethodOutcomeCompleted,
+			InputDigest: source.Digest, OutputDigest: plan.Digest, Work: zeroWork,
+		},
+		{
+			Ordinal: 3, Kind: controlexperiment.MethodRecordExecution,
+			Outcome:     controlexperiment.MethodOutcomeCompleted,
+			InputDigest: plan.Digest, OutputDigest: bundle.Digest,
+			ReportDigest: report.Digest, BundleDigest: bundle.Digest, Work: report.Work,
+		},
+	}
+	ledger, err := controlexperiment.NewMethodLedger(
+		"etcdraft-corpus-mutation-method-m5.17c1", "first-adjacent-corpus-mutation/v1",
+		corpus, &feedback, records,
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			controlexperiment.ExecutionBundle{}, controlexperiment.MethodLedger{}, err
+	}
+	return report, bundle, seedBundle, ledger, nil
 }
 
 func etcdraftTraceMutationExecution(
@@ -335,11 +621,12 @@ func etcdraftTraceMutationExecution(
 	if captureBundle {
 		return controlexperiment.ExecuteQualifiedBundle(
 			ctx, config, seedBundle.Qualification, factory, etcdraftv2.CorePSSMapper{},
-			etcdraftv2.DecisionProjector{},
+			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
 		)
 	}
 	report, err := controlexperiment.ExecuteQualified(
 		ctx, config, seedBundle.Qualification.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		etcdraftv2.WorkloadRouter{},
 	)
 	return report, controlexperiment.ExecutionBundle{}, err
 }
@@ -380,61 +667,6 @@ func randomPolicySeed(base uint64, run int) string {
 	binary.BigEndian.PutUint64(input[8:], uint64(run))
 	sum := sha256.Sum256(append([]byte("consensus-atlas/policy-seed/v1\x00"), input[:]...))
 	return hex.EncodeToString(sum[:])
-}
-
-func stubPlannerProposal() controlexperiment.PlannerProposal {
-	progress := []control.ActionKind{
-		control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal,
-	}
-	return controlexperiment.PlannerProposal{
-		SchemaVersion: controlexperiment.PlannerProposalVersion,
-		Policies: []controlexperiment.ProposedPolicy{
-			{Run: 1, Priority: progress},
-			{Run: 2, Rules: []controlexperiment.DecisionRule{
-				{Decision: 1, Kind: control.ActionCrash, Node: "n3"},
-				{Decision: 2, Kind: control.ActionRestart, Node: "n3"},
-			}, Priority: progress},
-		},
-	}
-}
-
-func etcdraftPlannerAttempt(
-	ctx context.Context,
-	decisions int,
-	proposal controlexperiment.PlannerProposal,
-) (controlexperiment.PlannerAttempt, error) {
-	scope := etcdraftPlannerScope("public-etcdraft-v2-stub-planner-m5.12", decisions)
-	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
-	}
-	return controlexperiment.RunPlannerAttempt(
-		ctx, "deterministic-stub-planner/v1", scope, proposal, factory, etcdraftv2.CorePSSMapper{},
-	)
-}
-
-func etcdraftPlannerScope(experimentID string, decisions int) controlexperiment.PlannerScope {
-	return controlexperiment.PlannerScope{
-		ExperimentID: experimentID,
-		PSSID:        etcdraftv2.CorePSSMappingID,
-		Runtime: controlexperiment.RuntimeConfig{
-			SeedHex: hex.EncodeToString([]byte("official-etcdraft-v2-cluster-seed")), MaxClones: 1,
-		},
-		DecisionsPerRun: decisions, RequireReplay: true, Runs: []int{1, 2},
-	}
-}
-
-func etcdraftAuditedPlannerAttempt(
-	ctx context.Context,
-	scope controlexperiment.PlannerScope,
-	proposal controlexperiment.PlannerProposal,
-	audit controlexperiment.PlannerModelAudit,
-) (controlexperiment.PlannerAttempt, error) {
-	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
-	}
-	return controlexperiment.RunAuditedPlannerAttempt(
-		ctx, "deepseek-restricted-planner/v1", scope, proposal, audit, factory, etcdraftv2.CorePSSMapper{},
-	)
 }
 
 func allReplayStable(report controlexperiment.Report) bool {

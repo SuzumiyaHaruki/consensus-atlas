@@ -1,0 +1,73 @@
+{
+  "schema_version": "consensus-atlas/agent-batch-feedback-view/v1",
+  "id": "etcdraft-agent-batch-feedback-m5-18b2",
+  "semantic_view_digest": "63ccd9fdaf71b6e64942e4611b4b5a49238f6a4eab9fed60982ef07ed8f8b28d",
+  "source_digest": "ceaa989bd1bc6390544bab6ace0525161bd0d0a885bff52d529a4fd98e706aab",
+  "pss_id": "official-etcdraft-v2/core-pss-v1",
+  "common_budget": {
+    "max_execution_attempts": 3,
+    "max_primary_work_units": 294,
+    "max_replay_work_units": 294
+  },
+  "interpretation": "coarse-discovery-without-completeness-denominator",
+  "backends": [
+    {
+      "backend_id": "action-class-random",
+      "status": "failed",
+      "execution_attempts": 3,
+      "completed_attempts": 2,
+      "failed_attempts": 1,
+      "rejected_proposals": 0,
+      "observed_runs": 2,
+      "pss_samples": 194,
+      "unique_pss_states": 165,
+      "new_states_by_run": [
+        83,
+        82
+      ],
+      "failures": [
+        {
+          "class": "execution-failed",
+          "count": 1
+        }
+      ],
+      "work": {
+        "primary_work_units": 294,
+        "replay_work_units": 196,
+        "model": {
+          "calls": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "backend_id": "admissible-uniform",
+      "status": "complete",
+      "execution_attempts": 3,
+      "completed_attempts": 3,
+      "failed_attempts": 0,
+      "rejected_proposals": 0,
+      "observed_runs": 3,
+      "pss_samples": 291,
+      "unique_pss_states": 238,
+      "new_states_by_run": [
+        82,
+        75,
+        81
+      ],
+      "work": {
+        "primary_work_units": 294,
+        "replay_work_units": 294,
+        "model": {
+          "calls": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    }
+  ],
+  "digest": "a7a6e7e95bcbe68fe97a099639724313afd22e4caeb410fc55e0eafe168ab7c2"
+}

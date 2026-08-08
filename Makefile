@@ -1,12 +1,21 @@
-DEEPSEEK_KEY_FILE ?= ../key.txt
-
-.PHONY: fmt test audit-no-v1 adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2 experiment-etcdraft-v2-random experiment-etcdraft-v2-workload experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-stub-planner experiment-etcdraft-v2-deepseek-planner
+.PHONY: fmt test test-fast test-race-full audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
 
-test: audit-no-v1
+test: audit-no-v1 audit-no-retired-experiment
 	go test ./...
+
+# Fast local feedback may skip explicitly marked high-cost real-method tests.
+# It is not a release substitute for `make test` and `make test-race-full`.
+test-fast: audit-no-v1 audit-no-retired-experiment
+	go test -short ./...
+
+test-race-full: audit-no-v1 audit-no-retired-experiment
+	# The real three-node method witnesses exceed Go's default 10-minute
+	# package timeout under race instrumentation. Keep the full witnesses and
+	# make the validation ceiling explicit instead of silently skipping them.
+	go test -race -timeout 20m ./...
 
 # M5.16R guard: archived documents and experiment artifacts may mention v1,
 # but no compiled source may import or recreate the deleted implementation cone.
@@ -15,6 +24,15 @@ audit-no-v1:
 		\( -name '*.go' -o -name '*.py' \) -print 2>/dev/null)"
 	@if rg -n 'github.com/SuzumiyaHaruki/consensus-atlas/(internal/(adapter|agentcampaign|autoonboard|blackbox|campaign|core|coverage|driver|engine|explore|host|migration|protocolcontract|scenario|testplan)|drivers/etcdraft|families/raft|migrations/etcdraftv1v2)' --glob '*.go' .; then \
 		echo 'M5.16R violation: compiled source references the deleted v1 cone' >&2; \
+		exit 1; \
+	fi
+
+# M5.17bR2 guard: historical artifacts may retain these identities, but the
+# pre-admission Planner and model transport must not return to compiled code.
+audit-no-retired-experiment:
+	@if rg -n 'ExecuteLegacy|PlannerProposalVersion|PlannerAttemptVersion|deepseek_control_planner|internal/modelcommand' \
+		--glob '*.go' .; then \
+		echo 'M5.17bR2 violation: compiled source references a retired experiment path' >&2; \
 		exit 1; \
 	fi
 
@@ -39,17 +57,14 @@ audit-control-surfaces:
 	go test ./qualifications/etcdraftv2 \
 		-run 'TestFrozenControlSurfaceComparisonMatchesFreshQualifications|TestSurfaceDeclarationCannotSelfAwardSchedulerControl' -count=1
 
-experiment-etcdraft-v2:
-	go run ./cmd/control-experiment -strategy fixed -decisions 32 \
-		-out benchmarks/experiments/etcdraft-v2-fixed-baselines-m5.10/report.json
-
-experiment-etcdraft-v2-random:
-	go run ./cmd/control-experiment -strategy random -policy-seed 1 -decisions 32 \
-		-out benchmarks/experiments/etcdraft-v2-random-m5.11/report.json
-
 experiment-etcdraft-v2-workload:
 	go run ./cmd/control-experiment -strategy workload -decisions 96 \
 		-out benchmarks/experiments/etcdraft-v2-workload-m5.15/report.json
+
+experiment-etcdraft-v2-semantics:
+	go run ./cmd/control-experiment -strategy workload-semantics-v2 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-semantics-m5.17c0/report.json \
+		-bundle-out artifacts/experiments/etcdraft-v2-semantics-m5.17c0/bundle.json
 
 experiment-etcdraft-v2-bundle:
 	go run ./cmd/control-experiment -strategy workload -decisions 96 \
@@ -67,6 +82,52 @@ experiment-etcdraft-v2-trace-mutation:
 		-policy-seed 1 -decisions 96 \
 		-out artifacts/experiments/etcdraft-v2-trace-mutation-m5.17b/report.json \
 		-bundle-out artifacts/experiments/etcdraft-v2-trace-mutation-m5.17b/bundle.json
+
+experiment-etcdraft-v2-corpus-mutation:
+	go run ./cmd/control-experiment -strategy workload-trace-mutation-corpus \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-corpus-mutation-m5.17c1/report.json \
+		-source-bundle-out artifacts/experiments/etcdraft-v2-corpus-mutation-m5.17c1/source-bundle.json \
+		-bundle-out artifacts/experiments/etcdraft-v2-corpus-mutation-m5.17c1/bundle.json \
+		-method-out artifacts/experiments/etcdraft-v2-corpus-mutation-m5.17c1/method.json
+
+experiment-etcdraft-v2-uniform-method:
+	go run ./cmd/control-experiment -strategy workload-admissible-uniform-method \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-methods-m5.17c2/uniform-method.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-methods-m5.17c2/evidence
+
+experiment-etcdraft-v2-action-class-method:
+	go run ./cmd/control-experiment -strategy workload-action-class-random-method \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-methods-m5.18b2/action-class-method.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-methods-m5.18b2/evidence
+
+experiment-etcdraft-v2-agent-feedback-batch:
+	go run ./cmd/control-experiment -strategy workload-agent-feedback-batch \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-agent-feedback-m5.18b2/feedback.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-agent-feedback-m5.18b2/methods
+
+experiment-etcdraft-v2-agent-follow-up-baseline:
+	go run ./cmd/control-experiment -strategy workload-agent-follow-up-baseline \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-agent-follow-up-m5.18b3/evidence
+
+experiment-etcdraft-v2-pss-guided-method:
+	go run ./cmd/control-experiment -strategy workload-pss-guided-corpus \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-methods-m5.17c2/pss-guided-method.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-methods-m5.17c2/evidence
+
+# Opt-in external call. Neither variable has a default, and this target is not
+# a dependency of any test or validation target.
+experiment-etcdraft-v2-agent-one-shot:
+	@test -n "$(AGENT_KEY_FILE)" || (echo 'AGENT_KEY_FILE is required' >&2; exit 1)
+	@test -n "$(AGENT_ARTIFACT_DIR)" || (echo 'AGENT_ARTIFACT_DIR is required' >&2; exit 1)
+	go run ./cmd/control-experiment -strategy workload-guarded-agent-one-shot \
+		-agent-key-file "$(AGENT_KEY_FILE)" -agent-artifacts "$(AGENT_ARTIFACT_DIR)"
 
 build-etcdraft-v2-calibration:
 	go run ./cmd/sut-build -repo . \
@@ -104,13 +165,21 @@ evaluate-etcdraft-v2-action-class-calibration:
 		-candidate-bundle artifacts/pilots/etcdraft-v2-action-class-random-m5.17a/candidate/bundle.json \
 		-out benchmarks/pilots/etcdraft-v2-action-class-random-m5.17a/evaluator/report.json
 
-experiment-etcdraft-v2-stub-planner:
-	go run ./cmd/control-experiment -strategy stub-planner -decisions 32 \
-		-out benchmarks/experiments/etcdraft-v2-stub-planner-m5.12/attempt.json
+build-etcdraft-v2-method-evaluation:
+	go run ./cmd/sut-build -repo . \
+		-spec benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-input/control.json \
+		-audit-out benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/control.json
+	go run ./cmd/sut-build -repo . \
+		-spec benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-input/candidate.json \
+		-audit-out benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/candidate.json
 
-# This target performs exactly one real model call and is excluded from test.
-experiment-etcdraft-v2-deepseek-planner:
-	go run ./cmd/control-experiment -strategy deepseek-planner \
-		-key-file $(DEEPSEEK_KEY_FILE) -model deepseek-v4-flash -model-timeout 5m \
-		-decisions 32 \
-		-out benchmarks/experiments/etcdraft-v2-deepseek-planner-m5.13/attempt.json
+evaluate-etcdraft-v2-method-evaluation:
+	go run ./cmd/defect-eval \
+		-manifest benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/evaluator/manifest.json \
+		-method-spec benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/method-spec.json \
+		-control-build-audit benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/control.json \
+		-control-binary artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-5826353327bce116-control-v2 \
+		-candidate-build-audit benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/candidate.json \
+		-candidate-binary artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-c9811ab0ed8e2f39-candidate-v2 \
+		-fresh-artifacts artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/fresh \
+		-out benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/evaluator/report.json

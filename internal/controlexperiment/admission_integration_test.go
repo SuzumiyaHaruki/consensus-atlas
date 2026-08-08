@@ -44,7 +44,7 @@ func TestCurrentEtcdQualificationAdmitsStrictExecution(t *testing.T) {
 		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
 	}
 	report, err := controlexperiment.ExecuteQualified(
-		ctx, config, bundle.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		ctx, config, bundle.Qualification, factory, etcdraftv2.CorePSSMapper{}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +115,7 @@ func TestQualifiedEtcdSemanticWorkloadCommitsAndReplays(t *testing.T) {
 	}
 	report, err := controlexperiment.ExecuteQualified(
 		ctx, config, bundle.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		etcdraftv2.WorkloadRouter{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -142,13 +143,13 @@ func TestQualifiedEtcdSemanticWorkloadCommitsAndReplays(t *testing.T) {
 	}}}
 	blocked.FaultEnvelope = &controlexperiment.FaultEnvelope{}
 	_, err = controlexperiment.ExecuteQualified(
-		ctx, blocked, bundle.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		ctx, blocked, bundle.Qualification, factory, etcdraftv2.CorePSSMapper{}, nil,
 	)
 	var failure *controlexperiment.ExecutionFailure
-	if !errors.As(err, &failure) || failure.Code != "EXPERIMENT_FAULT_ENVELOPE_EXCEEDED" ||
-		failure.Phase != "primary-envelope" || failure.Decision != 1 ||
+	if !errors.As(err, &failure) || failure.Code != "EXPERIMENT_POLICY_NO_ACTION" ||
+		failure.Phase != "primary-policy" || failure.Decision != 1 ||
 		failure.Work.Primary.SchedulerDecisions != 0 {
-		t.Fatalf("fault envelope rejection = %#v / %v", failure, err)
+		t.Fatalf("admissible-frontier rejection = %#v / %v", failure, err)
 	}
 }
 

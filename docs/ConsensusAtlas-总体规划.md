@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.8（M5.17b Trace Mutation 基线完成）
+> 状态：Draft v1.16（M5.18b3 unseen follow-up baseline 完成）
 > 日期：2026-08-08
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2139,17 +2139,84 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     和 partial work，不静默 fallback。source/mutation 各 98/98，方法完整成本为
     196 primary / 196 replay；失败校准的 35 primary 另计。本阶段只有正确
     control，没有 candidate verdict。
-58. [ ] M5.17c 实现最小 PSS-guided corpus。PSS 只作为 batch feedback，不用于未证明
-    保守的 visited-state pruning。PCT/POS、DPOR 只有在前述基线暴露具体搜索
-    缺口后才进入。
-59. [ ] M5.18 将 `LLM -> exact decision rule` 替换为 `LLM -> Guarded TestIntent -> deterministic
-    local search`。Agent 读取协议知识和批次级机械反馈，不读取隐藏缺陷身份；hard constraint 与
-    preference 分开，preference miss 计费后确定性 fallback。先做单 Agent、one-shot/feedback 消融，
-    不增加多 Agent。
+58. [X] M5.17bR2 已删除悬空的 M5.10–M5.13 在线兼容路径：旧 fixed/random CLI、Planner
+    Proposal/Attempt、DeepSeek transport、`ExecuteLegacy` 和无消费者的 model command runner。历史
+    Markdown/JSON 继续冻结，不为重放历史摘要保留失去准入边界的可执行代码；当前 qualified workload、
+    bundle、Oracle、evaluator 和两个强基线的身份保持不变。production/test 由 15,136/6,659 行降为
+    14,068/6,232 行；`audit-no-retired-experiment` 阻止旧符号回流。
+59. [X] M5.17c0 已加固 Experiment 语义。所有策略只面对同一份
+    `qualified Runtime enabled -> fault-filtered admissible` frontier；workload 路由从 PSS Mapper
+    拆到 target-owned `WorkloadRouter`；pending workload 和 target quiescence 能形成合法、严格可重放的
+    运行结果，ExpectedStatus 不再兼任 Oracle。框架错误、trace/qualification/projection 失败仍只能记为
+    invalid，不能包装成正常终止。v2 分开记录 runtime/admissible digest 与选中 ActionID，
+    fresh replay 重算终止、fault usage 和每次 Invoke 的 Router 唯一目标。etcd/raft 在 96 的上限下
+    于 42 decisions 完成并 configured-stop；1-decision 运行保留 1 个 pending/no-candidate。
+60. [X] M5.17c1 已完成 corpus 的可信前提。有序 `MutationSourceCorpus` 绑定任意
+    qualified source bundle 的 report/config/trace/manifest/PSS/policy/qualification 身份，而不再
+    假设 source 必须是单一固定策略；顺序参与 digest。mutation v2 以
+    `(ActionID, occurrence)` 消解状态循环中的重复 ID，v1 冻结身份不变。`PSSFeedback`
+    必须从 Trace/最终 Snapshot/Evidence 重构并重新调用绑定 Mapper，不接受外部 state key。
+    `MethodLedger` 强制 source/proposal/execution/失败的引用关系和完整成本。真实 etcd/raft
+    见证为 96 decisions、97 samples/56 states，source+execution 各 98/98，方法总成本
+    196 primary / 196 replay；本阶段无 candidate verdict。
+61. [X] M5.17c2 已实现最小 batch PSS-guided corpus 和通过相同
+    qualification/admissible frontier 的 uniform random。uniform 三个 seeds 在 294/294 ceiling 内完成
+    3 条 strict replay bundle，累计 291 samples/238 states。PSS-guided 从共同 seeds 1/2 的可信
+    feedback 中选中 source 2、decision 65 的稀有状态附近 mutation，但在 decision 66 因精确
+    ActionID 不再 enabled 而失败；方法完整记录 263 primary/196 replay、无 fallback。这一负结果
+    证明 PSS 稀有度不包含动作因果/可交换性，因此继续只作为 batch coarse feedback，不用于
+    visited-state pruning、Oracle 或综合总分。两方没有 candidate verdict，不做方法优劣结论。
+62. [X] M5.18a 已建立最小正式方法评价前提：ExecutionBundle v3 绑定完整
+    WorkloadPlan 和可从 Trace/ClientHistory 重建的 invoke/return OperationHistory；
+    `MethodSpec/v1` 绑定 strategy、seed、预算、PSS/projector、非 SUT Config projection 和
+    evidence schema；manifest 另行绑定 build-audit/binary digest。evaluator 从已验证 binary
+    bytes 创建隔离副本并亲自 fresh execution，不接受 submitted bundle 作为 kill authority。
+    公开 fixed calibration 在共同 96 decisions/98+98 work 下得到 control-pass/killed、0
+    false positive、0 invalid。两侧 OperationHistory 相同，差异由已有 applied-prefix projector +
+    Agreement 检出；未在没有实际缺口时增加 durability monitor。该轮仍是单 execution
+    公开 calibration，不是多 attempt 方法比较或 private holdout。
+63. [ ] M5.18b 实现 `ProtocolKnowledgePack -> AgentSemanticView -> Guarded TestIntent -> deterministic
+    compiler/local search`。Agent 读取协议知识和批次级机械反馈，不读取隐藏缺陷身份；hard constraint 与
+    preference 分开，preference miss 计费后确定性 fallback。先做单 Agent 和 one-shot/feedback 消融，
+    不增加多 Agent。M5.18b0 已完成不调用模型的宏观边界：人工冻结的
+    `ProtocolKnowledgePack` 和可信 backend catalog 经真实 Qualification 生成不含 build/candidate/
+    root-cause/Oracle 身份的 `AgentSemanticView`；严格 JSON proposal 不允许未知字段、尾随 JSON 或
+    提交者自算 digest。compiler 从已准入 backend 中机械选择，hard capability/action/fault/
+    budget 不满足直接拒绝，preference miss 记录 compiler work 并使用冻结 fallback。
+    etcd/raft 真实见证复用 M5.17a 的 action-class executor 并保持原 report/bundle identity。
+    M5.18b1 已增加单次 `deepseek-v4-flash` JSON transport、秘钥文件边界、渐进式
+    `AgentInvocationAudit` 和成功/失败离线见证；唯一真实调用进入现有 qualified executor，
+    并分开记录 1 call/1779 tokens、3 compiler work、98/98 primary/replay。调用前还修复
+    Agent view 缺少 backend `max_fault_envelope` 的可操作性问题。但模型回复精确复制了
+    prompt 中的具体有效示例，因此该结果只是 public transport calibration，不是 Agent
+    规划证据。活跃 prompt 已改为 fictional 纯结构示例，但本阶段没有第二次调用。
+    M5.18b2 已增加 `AgentBatchFeedbackView/v1`：每个 backend 的 MethodObservation 必须用完整
+    bundles 和绑定 Mapper 重算，Agent 只看到 common ceiling、完成度、成本和 coarse PSS
+    discovery，不看 bundle/trace/build/candidate/root-cause/Oracle/state key。action-class 和 uniform
+    使用预先固定的 seeds 1/2/3：前者 2 complete/1 failed、294/196 work、165 states，
+    后者 3 complete、294/294 work、238 states。失败 attempt 保留计费且不替换 seed；`238 > 165`
+    不是缺陷效果或覆盖完整度结论。后续 M5.18b3 复核发现，v1 中 action-class 使用
+    严格 workload failure 语义，uniform 使用 Experiment v2 pending 语义，所以 `2/1` 与
+    `3/0` 不可比。历史 identity 保留，但不再用于选择。M5.18b3 已增加
+    `AgentBatchFeedbackView/v2` 和 `AgentFollowUpSpec/v1`：两个 source 方法统一
+    Experiment v2，均为 3 execution complete、2/3 workload complete 和 294/294 work；分别
+    发现 241/238 states，不做效果排名。确定性规则冻结 source seeds 1/2/3 与
+    unseen seed 4，source 实际 588/588，per-arm ceiling 686/686。seed 4 通过 strict replay
+    但 workload pending 且 hard ActionKind 不完整，以计费的 `execution-failed` 保留，不替换
+    backend/seed；实际合计 685/685，0 model calls。尚缺冻结后的 no-feedback/
+    feedback 两次真实调用，因此本项保持未完成。
 
-当前主线已完成 v2 的第一个真实测试闭环、v1 删除、action-class random 和 trace
-mutation 两个强基线。接下来做最小 PSS-guided corpus，不恢复旧 Campaign/Coverage，也不盲目增加
-Planner 重试、复合义务或 Agent 角色。
+当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
+qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
+M5.17c2 保留了 PSS-guided proposal 不可执行的负结果，不为获得成功 trace 临时改启发式。
+下一阶段进入 M5.18b4：在任何调用前冻结 no-feedback/feedback 两份 prompt/request
+bytes、共同 seed 4 和完整 per-arm 账本。两边的 semantic view、risk、hard constraints 和预算
+相同，feedback 只能改 preference；M5.18b3 已知 deterministic outcome 不得进入模型视图。
+每个 arm 最多 1 call、无重试，任何 parse/compile/execution/hard-action 失败都原样计费。
+source fixture 复用已使 full race 恢复通过，`cmd/control-experiment` 在 race 下耗时
+983.930 秒，但距 20 分钟 ceiling 只余约 3 分 36 秒，后续不得无界增加真实轨迹测试。
+Agent 仍不读取 private variant、build transform、root cause 或 Oracle 私有结果。Control
+Runtime、统一 Action、消息所有权、自然时间和严格 replay 核心继续冻结。
 Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
 历史回归复现、M4.10 虚拟时间边界和经 M4.11.1 加固的 Ready.MustSync 语义重构均已冻结。
 `Blind Planner Agent v1` 的无模型受限闭环已冻结：Agent 只读取 opaque trial ID、冻结 Profile
@@ -2310,6 +2377,47 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
     workload、FaultEnvelope、admission 或 SUT identity 的 trial 只能记为 `invalid`。
 67. PSS state count/prefix area 是 coarse discovery 指标，不是最终测试质量分数；即使状态
     数增加，也必须分开报告 root-cause kill、correct-control false positive 和完整成本。
+68. Runtime enabled 与 Experiment admissible 必须分层：Qualification/Profile 先决定该运行能否准入；
+    Runtime enabled 只表达当前控制状态下机械可执行；FaultEnvelope 再得到每决策的
+    admissible frontier，预算只决定是否继续。所有被比较策略只能看到同一 canonical admissible
+    frontier；Runtime-enabled digest、admissible digest 和最终选择必须分别留痕。
+69. Workload 声明测试输入和期望观察，不决定协议正确性。`ExpectedStatus` 不得让 pending、拒绝或停滞
+    轨迹在 Oracle 之前消失；planned/offered/completed/pending/actual response 必须进入可重放产物。
+70. 合法终止至少区分 `budget-exhausted`、`quiescent` 和显式配置停止；框架执行错误、trace 损坏、资格
+    或投影失败不属于合法目标终止，只能进入无效实验/方法账本。
+71. PSS Mapper 只负责语义状态投影。外部输入目标由 target-owned、确定性的 WorkloadRouter 解析；零个或
+    多个候选目标是 guard/result observation，不得直接抹掉潜在的无主或多协调者现象。
+72. 已持久化的 PSS feedback 只有在可信内核能从绑定 Runtime/Evidence/Mapper 身份的 bundle 重算时才能
+    进入 corpus；Agent 或外部 JSON 自报的 state key 不具有搜索反馈资格。
+73. 第一版 PSS-guided corpus 保持单信号基线。其他 novelty/near-miss 维度独立报告，只有 private
+    holdout 消融证明具体遗漏后才能进入组合策略。
+74. 旧 Planner/DeepSeek transport 的历史结果只证明一次受限调用及其失败语义，不是 Guarded TestIntent
+    的可执行基础；失去当前 admission/workload/fault/bundle 边界的在线入口应删除，未来 Agent 按新接口
+    重新建立最小 transport。
+75. 方法定义必须以 digest-bound MethodSpec 冻结 strategy、seed、预算、超时、PSS/projector
+    和非 SUT Config projection；candidate/control 的 build/qualification identity 另行绑定，不得藏在方法配置差异中。
+76. 正式 evaluator 不信任 submitted bundle 的决定权。它必须验证 build audit 和 binary digest，
+    从已验证 bytes 亲自 fresh execution，再重算 bundle、operation history、projection、Oracle 和成本。
+77. OperationHistory 必须从冻结 WorkloadPlan、Trace Invoke 和 ClientHistory 重建，不得由 Agent/
+    Adapter 自报。client history 只是 Oracle 输入之一；它不能替代 applied-prefix、durability 或其他按实际缺口选择的 monitor。
+78. AgentSemanticView 必须从冻结 KnowledgePack/catalog 与真实 Manifest/Qualification 重算，
+    不含 build/candidate/root-cause/Oracle 身份。Guarded TestIntent 的 hard ActionKind 不仅要有已准入
+    selector，还必须在真实 Trace 中出现；未出现时整次 intent 失败，不得当作 preference miss 回退。
+79. Agent 被要求提交的每个有界字段，必须在语义视图中有机械可验证的上限或候选值；
+    不得让模型猜测 decision range、fault envelope 或 backend capability，再用 compiler 大量拒绝补救。
+80. 每次外部模型调用必须单独记录 request/response digest、provider metadata、token、时长和
+    progressive failure status，不保存秘钥。模型复制 prompt 具体示例的 trial 只能归类 transport
+    calibration，不得通过重试或人工 fallback 改写为 Agent 规划成功。
+81. Agent batch feedback 必须从完整 ExecutionBundle 和绑定 PSS Mapper 重算方法观测；
+    只能暴露共同预算、完成度、成本、粗粒度失败类和 discovery curve，不得暴露
+    bundle/trace/build/candidate/root-cause/Oracle/state identity。
+82. feedback ablation 不得改变 semantic view、risk、decision budget、hard capability/action 或
+    FaultEnvelope，只能改变 preference。source batch 与 unseen follow-up 必须使用预先冻结的不重叠
+    seed/身份，source construction 成本同样纳入各消融臂的总成本。
+83. 框架 execution complete 与 workload completed/pending 必须分开记录；只有终止语义、
+    attempt 定义和成本投影相同的方法反馈才能直接比较，历史不可比 identity 不回写。
+84. unseen follow-up 的 source seeds、follow-up seed、选择规则和每个 arm 总成本必须在
+    结果前冻结。失败 arm 保留并计费，不替换 backend/seed，已知 deterministic outcome 不得泄露给后续 Agent。
 
 ---
 

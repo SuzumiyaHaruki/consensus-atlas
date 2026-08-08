@@ -5,15 +5,24 @@
 
 ## 当前主线阅读顺序
 
-1. [当前阶段：M5.17b](CURRENT_STAGE.md)
-2. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
-3. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
-4. [M5.16 ExecutionBundle 与可信评测](stage-m5.16-execution-bundle.md)
-5. [M5.16R v1 实现锥体删除](stage-m5.16r-legacy-removal.md)
-6. [架构](architecture.md)
-7. [Control Runtime v2](control-runtime-v2.md)
-8. [总体规划](ConsensusAtlas-总体规划.md)
-9. [M5.15 Semantic Workload](stage-m5.15-semantic-workload.md)
+1. [当前阶段：M5.18b3](CURRENT_STAGE.md)
+2. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
+3. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
+4. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
+5. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
+6. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
+7. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
+8. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
+9. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
+10. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
+11. [架构](architecture.md)
+12. [Control Runtime v2](control-runtime-v2.md)
+13. [总体规划](ConsensusAtlas-总体规划.md)
+14. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
+15. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
+16. [M5.16 ExecutionBundle 与可信评测](stage-m5.16-execution-bundle.md)
+17. [M5.16R v1 实现锥体删除](stage-m5.16r-legacy-removal.md)
+18. [M5.15 Semantic Workload](stage-m5.15-semantic-workload.md)
 
 公开 calibration 工件见
 [etcd/raft v2 M5.16](../benchmarks/pilots/etcdraft-v2-calibration-m5.16/README.md)。它只验证链路，不是
@@ -22,6 +31,14 @@
 进一步保存了“PSS 状态更多但公开 candidate 未被检出”的负结果。
 [M5.17b trace mutation](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
 保存成功/不可执行变体和 source construction 在内的完整成本账本。
+[M5.18a evaluator-owned calibration](../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/README.md)
+冻结 MethodSpec、OperationHistory、build identity 与 fresh execution 评价链。
+[M5.18b1 one-shot summary](../benchmarks/experiments/etcdraft-v2-agent-one-shot-m5.18b1/summary.json)
+保存真实模型调用、编译与执行成本，以及 prompt 示例锚定的负面观察；它不是 Agent 效果证据。
+[M5.18b2 feedback view](../benchmarks/experiments/etcdraft-v2-agent-feedback-m5.18b2/feedback.json)
+保存从完整 bundle 重算的共同预算、完成度、成本和粗粒度 PSS 证据；它不包含缺陷或 Oracle 身份。
+[M5.18b3 follow-up summary](../benchmarks/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json)
+保存纠正终止语义后的 source 账本、未见 seed 4 的确定性负结果和完整计费边界；它没有调用模型。
 
 ## 当前实现主题
 
@@ -33,16 +50,24 @@
 - [M5.10 v2 Experiment](stage-m5.10-v2-experiment-executor.md)；
 - [M5.11 Random baseline](stage-m5.11-deterministic-random-baseline.md)；
 - [M5.12 restricted Planner](stage-m5.12-restricted-planner-boundary.md) 与
-  [M5.13 one-call LLM smoke](stage-m5.13-one-call-deepseek-planner.md)；
+  [M5.13 one-call LLM smoke](stage-m5.13-one-call-deepseek-planner.md)，二者在线实现已由 M5.17bR2 删除；
 - [M5.14 admission](stage-m5.14-admission-and-pruning.md)；
 - [M5.15 workload](stage-m5.15-semantic-workload.md)；
 - [M5.16 bundle/evaluator](stage-m5.16-execution-bundle.md)；
 - [M5.17a action-class random](stage-m5.17a-action-class-random.md)；
 - [M5.17b trace mutation](stage-m5.17b-trace-mutation.md)。
+- [M5.17c0 Experiment 语义](stage-m5.17c0-experiment-semantics.md)。
+- [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)。
+- [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)。
+- [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)。
+- [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)。
+- [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)。
+- [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)。
+- [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)。
 
 ## 历史研究记录
 
-M4 与 M5.1–M5.9 的文档保留了旧 Contract/Coverage/Campaign/Blind Planner、v1/v2 migration、黑盒
+M4、M5.1–M5.13 的文档保留了旧 Contract/Coverage/Campaign/Planner、v1/v2 migration、黑盒
 gateway、第二实现和 EPaxos feasibility 的实验过程。M5.16R 已删除其中不再服务当前路径的可编译
 实现；阅读这些文档时以当时阶段为准，不要按其中命令操作当前主分支。
 

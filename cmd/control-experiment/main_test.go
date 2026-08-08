@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -186,7 +184,7 @@ func TestEtcdraftAdjacentTraceMutationCompletesOrFailsExplicitly(t *testing.T) {
 		}
 		report, bundle, err := controlexperiment.ExecuteQualifiedBundle(
 			context.Background(), config, seedBundle.Qualification, factory,
-			etcdraftv2.CorePSSMapper{}, etcdraftv2.DecisionProjector{},
+			etcdraftv2.CorePSSMapper{}, etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
 		)
 		return report, bundle, plan, err
 	}
@@ -258,36 +256,6 @@ func TestEtcdraftAdjacentTraceMutationCompletesOrFailsExplicitly(t *testing.T) {
 	}
 }
 
-func TestEtcdraftReportIsEqualBudgetReplayStableAndSelfValidating(t *testing.T) {
-	report, err := etcdraftReport(context.Background(), "fixed", 32, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(report.Runs) != 2 || report.StateDiscovery.TotalDecisions != 64 ||
-		report.StateDiscovery.ProtocolSamples != 64 {
-		t.Fatalf("unexpected budget: %#v", report.Budget)
-	}
-	if report.Runs[0].UniqueCoreStates != 23 || report.Runs[1].UniqueCoreStates != 23 ||
-		report.StateDiscovery.UniqueStates != 45 || report.StateDiscovery.PrefixArea != 1454 {
-		t.Fatalf("unexpected discovery: %#v", report.StateDiscovery)
-	}
-	if !allReplayStable(report) || report.Work.Primary.WorkUnits != 66 || report.Work.Replay.WorkUnits != 66 {
-		t.Fatalf("unexpected replay/work: %#v", report.Work)
-	}
-	encoded, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var persisted controlexperiment.Report
-	if err := json.Unmarshal(encoded, &persisted); err != nil {
-		t.Fatal(err)
-	}
-	if err := persisted.Validate(); err != nil {
-		t.Fatalf("persisted Validate() error = %v", err)
-	}
-	t.Logf("runs=2 decisions=64 states=23/23 union=45 prefix_area=1454 digest=%s", report.Digest)
-}
-
 func TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable(t *testing.T) {
 	report, err := etcdraftReport(context.Background(), "workload", 96, 1)
 	if err != nil {
@@ -329,149 +297,300 @@ func TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable(t *testing.
 	}
 }
 
-func TestEtcdraftRandomReportIsDeterministicAndDoesNotReseedRuntime(t *testing.T) {
-	ctx := context.Background()
-	first, err := etcdraftReport(ctx, "random", 32, 1)
+func TestEtcdraftExperimentSemanticsV2PreservesTerminalAndPendingRuns(t *testing.T) {
+	completedReport, completedBundle, err := etcdraftBundle(
+		context.Background(), "workload-semantics-v2", 96, 1,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := etcdraftReport(ctx, "random", 32, 1)
+	completed := completedReport.Runs[0]
+	if completedReport.SchemaVersion != controlexperiment.SchemaVersionV2 ||
+		completedReport.Config.WorkloadRouterID != etcdraftv2.WorkloadRouterID ||
+		completed.Termination != controlexperiment.RunTerminationConfigured ||
+		completed.BudgetReached || completed.ChargedDecisions != 42 ||
+		len(completed.Selections) != completed.ChargedDecisions ||
+		completed.Workload == nil || completed.Workload.Completed != 1 ||
+		completed.Workload.Results[0].Status != "committed" ||
+		completedReport.Digest != "9411bb311c00bf03e03194e8f91e7a4f796414b044fae2bfa6a3d35f51245b0d" ||
+		completedBundle.Digest != "ed44b5be66483be61d15692d1630d91c70c0e485378d9f0849f2753b4155bf69" {
+		t.Fatalf("unexpected configured-stop run: %#v report=%s bundle=%s",
+			completed, completedReport.Digest, completedBundle.Digest)
+	}
+	if err := completedBundle.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	completedFeedback, err := controlexperiment.NewPSSFeedback(
+		"etcdraft-v2-completed-feedback", completedBundle, etcdraftv2.CorePSSMapper{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := etcdraftReport(ctx, "random", 32, 2)
+	if completedFeedback.Samples != 43 || len(completedFeedback.States) != 31 {
+		t.Fatalf("unexpected completed feedback: %#v", completedFeedback)
+	}
+	if err := completedFeedback.ValidateBundle(completedBundle, etcdraftv2.CorePSSMapper{}); err != nil {
+		t.Fatal(err)
+	}
+
+	pendingReport, pendingBundle, err := etcdraftBundle(
+		context.Background(), "workload-semantics-v2", 1, 1,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Digest != repeated.Digest {
-		t.Fatalf("same policy seed changed report digest: %s != %s", first.Digest, repeated.Digest)
+	pending := pendingReport.Runs[0]
+	if pending.Termination != controlexperiment.RunTerminationBudget || !pending.BudgetReached ||
+		pending.ChargedDecisions != 1 || pending.Workload == nil || pending.Workload.Offered != 0 ||
+		pending.Workload.Completed != 0 || pending.Workload.Pending != 1 ||
+		pending.Workload.FinalRoute == nil ||
+		pending.Workload.FinalRoute.Status != controlexperiment.WorkloadRouteNoCandidate ||
+		pendingReport.Digest != "1570598d392367de14327cd81f08928a87ea491b9da8b215409e65e322e0bff6" ||
+		pendingBundle.Digest != "28d271c1e1dcd8358da607dc2bee4f6545ca7ccbca17fedbb42faa65e30fc071" {
+		t.Fatalf("unexpected pending run: %#v report=%s bundle=%s",
+			pending, pendingReport.Digest, pendingBundle.Digest)
 	}
-	if first.Digest == other.Digest {
-		t.Fatal("different policy seeds produced the same report digest")
+	if err := pendingBundle.Validate(); err != nil {
+		t.Fatal(err)
 	}
-	if first.Config.Runtime != other.Config.Runtime {
-		t.Fatal("policy seed changed Runtime configuration")
+	pendingFeedback, err := controlexperiment.NewPSSFeedback(
+		"etcdraft-v2-pending-feedback", pendingBundle, etcdraftv2.CorePSSMapper{},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for index := range first.Runs {
-		if first.Runs[index].TraceDigest != repeated.Runs[index].TraceDigest {
-			t.Fatalf("run %d trace changed under repeated policy seed", index+1)
+	if pendingFeedback.Samples != 2 || len(pendingFeedback.States) != 2 {
+		t.Fatalf("unexpected pending feedback: %#v", pendingFeedback)
+	}
+}
+
+func TestEtcdraftCorpusMutationProducesReprojectedFeedbackAndCompleteMethodCost(t *testing.T) {
+	report, bundle, sourceBundle, ledger, err := etcdraftCorpusMutationMethod(context.Background(), 96, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.SourceCorpus.Entries[0].ValidateBundle(sourceBundle); err != nil {
+		t.Fatal(err)
+	}
+	if ledger.Feedback == nil {
+		t.Fatal("method ledger omitted feedback")
+	}
+	if err := ledger.Feedback.ValidateBundle(bundle, etcdraftv2.CorePSSMapper{}); err != nil {
+		t.Fatal(err)
+	}
+	plan := report.Config.Runs[0].Policy.TraceMutation
+	if plan == nil || plan.SchemaVersion != controlexperiment.TraceMutationPlanVersionV2 ||
+		!strings.Contains(report.Config.Runs[0].Policy.Version, "mutation-policy/v2") ||
+		len(ledger.SourceCorpus.Entries) != 1 || len(ledger.Records) != 3 ||
+		ledger.Records[0].Kind != controlexperiment.MethodRecordSource ||
+		ledger.Records[1].Kind != controlexperiment.MethodRecordProposal ||
+		ledger.Records[2].Kind != controlexperiment.MethodRecordExecution {
+		t.Fatalf("unexpected method structure: plan=%#v ledger=%#v", plan, ledger)
+	}
+	wantPhase := controlexperiment.PhaseWork{
+		SetupAttempts: 2, RuntimeInitializations: 2, PrepareActions: 2,
+		SchedulerDecisions: 192, WorkUnits: 196,
+	}
+	if ledger.Totals.Primary != wantPhase || ledger.Totals.Replay != wantPhase ||
+		ledger.Feedback.Samples != 97 || len(ledger.Feedback.States) != 56 ||
+		ledger.Feedback.SourceBundleDigest != bundle.Digest ||
+		report.Digest != "471d30662a53a9d18011a0eaa3a2b42eb0a3dea3d2a9f5b34d1ecd2808c8a6ab" ||
+		bundle.Digest != "0019ec7d3b4f9ad5f24878b497ac0140cf34a73b07a41bd85340ee6ac0a9f303" ||
+		plan.Digest != "b3c716e51eff51c5620faa99182f549b565d2e16bcf04ec8ec9483e60c8f2b63" ||
+		ledger.SourceCorpus.Digest != "1f93dd84588d979c371bafa58195f566b3abe228f6f6fd77185d0ab78d69f600" ||
+		ledger.Feedback.Digest != "9b47d8a9add57b3113a926a353c51ecff772f9a0082e01cb36fa5009bfc8d52a" ||
+		ledger.Digest != "7a993f97fbed00246c1c595784be6d91958da7a38f7d484ae62d700fa7b95a08" {
+		t.Fatalf("unexpected method totals/feedback: totals=%#v feedback=%#v",
+			ledger.Totals, ledger.Feedback)
+	}
+	t.Logf("report=%s bundle=%s plan=%s corpus=%s feedback=%s ledger=%s",
+		report.Digest, bundle.Digest, plan.Digest, ledger.SourceCorpus.Digest,
+		ledger.Feedback.Digest, ledger.Digest)
+}
+
+func TestEtcdraftM517c2MethodsUseCommonQualifiedSourcesAndCompleteAccounting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("high-cost real three-run method regression")
+	}
+	uniform := sharedEtcdraftUniformMethodFixture(t)
+	if err := uniform.Observation.ValidateBundles(uniform.Bundles, etcdraftv2.CorePSSMapper{}); err != nil {
+		t.Fatal(err)
+	}
+	guided, err := etcdraftPSSGuidedCorpusMethodFromUniformSources(
+		context.Background(), 96, 1, uniform.Reports[:2], uniform.Bundles[:2],
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guided.Observation.ValidateBundles(guided.Bundles, etcdraftv2.CorePSSMapper{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(uniform.Bundles) != 3 || len(guided.Bundles) < 2 ||
+		uniform.Observation.Guidance != nil || guided.Observation.Guidance == nil {
+		t.Fatalf("unexpected method shapes: uniform=%#v guided=%#v", uniform.Observation, guided.Observation)
+	}
+	for index := 0; index < 2; index++ {
+		if uniform.Bundles[index].Digest != guided.Bundles[index].Digest ||
+			uniform.Bundles[index].Qualification.Qualification.Digest !=
+				guided.Bundles[index].Qualification.Qualification.Digest ||
+			uniform.Reports[index].Config.FaultEnvelope == nil ||
+			*uniform.Reports[index].Config.FaultEnvelope != *guided.Reports[index].Config.FaultEnvelope ||
+			uniform.Reports[index].Config.Runs[0].Workload.ID !=
+				guided.Reports[index].Config.Runs[0].Workload.ID {
+			t.Fatalf("common source %d drifted", index+1)
 		}
-		if first.Runs[index].SeedDigest != other.Runs[index].SeedDigest ||
-			first.Runs[index].SeedDigest != first.Runs[0].SeedDigest {
-			t.Fatalf("run %d policy seed changed Runtime seed digest", index+1)
+	}
+	wantUniform := controlexperiment.PhaseWork{
+		SetupAttempts: 3, RuntimeInitializations: 3, PrepareActions: 3,
+		SchedulerDecisions: 288, WorkUnits: 294,
+	}
+	wantGuidedPrimary := controlexperiment.PhaseWork{
+		SetupAttempts: 3, RuntimeInitializations: 3, PrepareActions: 3,
+		SchedulerDecisions: 257, WorkUnits: 263,
+	}
+	wantGuidedReplay := controlexperiment.PhaseWork{
+		SetupAttempts: 2, RuntimeInitializations: 2, PrepareActions: 2,
+		SchedulerDecisions: 192, WorkUnits: 196,
+	}
+	choice := guided.Observation.Guidance
+	lastRecord := guided.Observation.Ledger.Records[len(guided.Observation.Ledger.Records)-1]
+	if uniform.Observation.Ledger.Totals.Primary != wantUniform ||
+		uniform.Observation.Ledger.Totals.Replay != wantUniform ||
+		uniform.Observation.Measurement.TotalSamples != 291 ||
+		uniform.Observation.Measurement.UniqueStates != 238 ||
+		uniform.Observation.Digest != "90fb30c3a789de5f7c52c66e82b410e4558cc21a8a701160f584eca2fbdeff75" ||
+		guided.Failure == nil || guided.Failure.Code != "EXPERIMENT_TRACE_MUTATION_ACTION_NOT_ENABLED" ||
+		guided.Failure.Decision != 66 || lastRecord.Outcome != controlexperiment.MethodOutcomeExecutionFailed ||
+		guided.Observation.Ledger.Totals.Primary != wantGuidedPrimary ||
+		guided.Observation.Ledger.Totals.Replay != wantGuidedReplay ||
+		guided.Observation.Measurement.TotalSamples != 194 ||
+		guided.Observation.Measurement.UniqueStates != 157 ||
+		choice.CandidateCount != 4 || choice.SelectedSourceOrdinal != 2 ||
+		choice.SelectedSourceUniqueStates != 75 || choice.SelectedStateGlobalVisits != 1 ||
+		choice.FirstDecision != 65 ||
+		choice.Mutation.Digest != "313d66bac594616c237b7b2d85e6afbf91835193d92658e6a7d8a50425a5a5b2" ||
+		guided.Observation.Digest != "8fd25881a9f1d9315cfbc6650213485be2689c7755cc3bc5e80c935bc386ecf1" {
+		t.Fatalf("M5.17c2 method result drifted: uniform=%#v guided=%#v failure=%#v",
+			uniform.Observation, guided.Observation, guided.Failure)
+	}
+	tampered := *choice
+	tampered.FirstDecision++
+	if err := tampered.Validate(); err == nil {
+		t.Fatal("tampered PSS guidance was accepted")
+	}
+	tamperedObservation := uniform.Observation
+	tamperedObservation.Budget.MaxPrimaryWorkUnits--
+	if err := tamperedObservation.Validate(); err == nil ||
+		!strings.Contains(err.Error(), "METHOD_BUDGET_EXCEEDED") {
+		t.Fatalf("undersized method budget error = %v", err)
+	}
+	t.Logf("uniform=%s states=%d work=%d/%d; guided=%s states=%d work=%d/%d failure=%s@%d",
+		uniform.Observation.Digest, uniform.Observation.Measurement.UniqueStates,
+		uniform.Observation.Ledger.Totals.Primary.WorkUnits,
+		uniform.Observation.Ledger.Totals.Replay.WorkUnits,
+		guided.Observation.Digest, guided.Observation.Measurement.UniqueStates,
+		guided.Observation.Ledger.Totals.Primary.WorkUnits,
+		guided.Observation.Ledger.Totals.Replay.WorkUnits,
+		guided.Failure.Code, guided.Failure.Decision)
+}
+
+func TestEtcdraftM518aBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
+	baseline, err := etcdraftReport(context.Background(), "workload-evaluation-v3", 96, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := controlexperiment.MethodConfigProjectionDigest(baseline.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := controlexperiment.NewMethodSpec(controlexperiment.MethodSpec{
+		ID:       "public-etcdraft-v2-fixed-calibration-m5.18a",
+		Strategy: "workload-evaluation-v3", Decisions: 96, PolicySeed: 1,
+		Budget: controlexperiment.MethodBudget{
+			MaxExecutionAttempts: 1, MaxPrimaryWorkUnits: 98, MaxReplayWorkUnits: 98,
+		},
+		PSSID: etcdraftv2.CorePSSMappingID, ProjectorID: etcdraftv2.DecisionProjectionID,
+		ConfigProjectionDigest: projection, TimeoutMillis: 120_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozenBytes, err := os.ReadFile("../../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/method-spec.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frozenSpec controlexperiment.MethodSpec
+	if err := json.Unmarshal(frozenBytes, &frozenSpec); err != nil {
+		t.Fatal(err)
+	}
+	if err := frozenSpec.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if frozenSpec != spec {
+		t.Fatalf("frozen/fresh MethodSpec drifted: frozen=%#v fresh=%#v", frozenSpec, spec)
+	}
+	report, bundle, err := etcdraftBundleV3(
+		context.Background(), spec.Strategy, spec.Decisions, spec.PolicySeed, spec.Digest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.ValidateExecution(report, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.ValidateProjection(etcdraftv2.DecisionProjector{}); err != nil {
+		t.Fatal(err)
+	}
+	persistedBytes, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persistedBundle controlexperiment.ExecutionBundle
+	if err := json.Unmarshal(persistedBytes, &persistedBundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.ValidateExecution(report, persistedBundle); err != nil {
+		t.Fatalf("persisted v3 bundle failed validation: %v", err)
+	}
+	if bundle.SchemaVersion != controlexperiment.ExecutionBundleSchemaVersionV3 ||
+		bundle.OperationHistory == nil || len(bundle.OperationHistory.Operations) != 1 ||
+		bundle.OperationHistory.Operations[0].RequestID != "m5.15-write-1" ||
+		bundle.OperationHistory.Operations[0].Response == nil ||
+		bundle.OperationHistory.Operations[0].Response.Status != "committed" ||
+		bundle.OperationHistory.Operations[0].ReturnStep <
+			bundle.OperationHistory.Operations[0].InvokeStep ||
+		bundle.Identity.MethodSpecDigest != spec.Digest {
+		t.Fatalf("incomplete v3 operation evidence: %#v", bundle.OperationHistory)
+	}
+
+	tampered := bundle
+	tamperedHistory := *bundle.OperationHistory
+	tamperedHistory.Operations = append(
+		[]controlexperiment.OperationRecord(nil), bundle.OperationHistory.Operations...,
+	)
+	tamperedHistory.Operations[0].ReturnStep++
+	tampered.OperationHistory = &tamperedHistory
+	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "OPERATION_HISTORY_RETURN_MISMATCH") {
+		t.Fatalf("tampered operation history error = %v", err)
+	}
+
+	invalidSpec := spec
+	invalidSpec.Strategy = "workload;unexpected"
+	if _, err := controlexperiment.NewMethodSpec(invalidSpec); err == nil {
+		t.Fatal("method strategy containing non-token syntax was accepted")
+	}
+	t.Logf("method=%s report=%s bundle=%s operations=%s projection=%s",
+		spec.Digest, report.Digest, bundle.Digest, bundle.OperationHistory.Digest, projection)
+}
+
+func TestRetiredUnqualifiedStrategiesStayUnavailable(t *testing.T) {
+	for _, strategy := range []string{"fixed", "random", "stub-planner", "deepseek-planner"} {
+		_, err := etcdraftReport(context.Background(), strategy, 1, 1)
+		if err == nil || !strings.Contains(err.Error(), "unsupported -strategy") {
+			t.Fatalf("strategy %q error = %v, want unsupported", strategy, err)
 		}
-	}
-	if !allReplayStable(first) || first.StateDiscovery.TotalDecisions != 64 ||
-		first.Work.Primary.WorkUnits != 66 || first.Work.Replay.WorkUnits != 66 {
-		t.Fatalf("unexpected random budget/replay: %#v", first.Work)
-	}
-	if first.Runs[0].UniqueCoreStates != 29 || first.Runs[1].UniqueCoreStates != 26 ||
-		first.StateDiscovery.UniqueStates != 53 || first.StateDiscovery.PrefixArea != 1843 {
-		t.Fatalf("unexpected seed-1 discovery: %#v", first.StateDiscovery)
-	}
-	t.Logf("seed=1 states=29/26 union=%d prefix_area=%d digest=%s", first.StateDiscovery.UniqueStates,
-		first.StateDiscovery.PrefixArea, first.Digest)
-}
-
-func TestStubPlannerAttemptUsesTheSoleExecutor(t *testing.T) {
-	attempt, err := etcdraftPlannerAttempt(context.Background(), 32, stubPlannerProposal())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if attempt.Status != controlexperiment.PlannerStatusComplete || attempt.Experiment == nil ||
-		attempt.Work.ProposalAttempts != 1 || attempt.Work.Model.Calls != 0 {
-		t.Fatalf("unexpected attempt envelope: %#v", attempt)
-	}
-	report := attempt.Experiment
-	if report.StateDiscovery.UniqueStates != 45 || report.StateDiscovery.PrefixArea != 1454 ||
-		report.Work.Primary.WorkUnits != 66 || report.Work.Replay.WorkUnits != 66 ||
-		attempt.Work.Execution != report.Work {
-		t.Fatalf("unexpected compiled execution: %#v", report)
-	}
-	encoded, err := json.Marshal(attempt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var persisted controlexperiment.PlannerAttempt
-	if err := json.Unmarshal(encoded, &persisted); err != nil {
-		t.Fatal(err)
-	}
-	if err := persisted.Validate(); err != nil {
-		t.Fatalf("persisted Validate() error = %v", err)
-	}
-}
-
-func TestStubPlannerRejectedAndUnreachableProposalsAreExplicitAndCharged(t *testing.T) {
-	rejectedProposal := stubPlannerProposal()
-	rejectedProposal.Policies = rejectedProposal.Policies[:1]
-	rejected, err := etcdraftPlannerAttempt(context.Background(), 32, rejectedProposal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rejected.Status != controlexperiment.PlannerStatusRejected || rejected.Failure == nil ||
-		rejected.Failure.ReasonCode != controlexperiment.ProposalRunSetInvalid ||
-		rejected.Work.ProposalAttempts != 1 || rejected.Work.Execution.Primary.SetupAttempts != 0 {
-		t.Fatalf("unexpected rejected attempt: %#v", rejected)
-	}
-
-	unreachableProposal := stubPlannerProposal()
-	unreachableProposal.Policies[0].Rules = []controlexperiment.DecisionRule{{
-		Decision: 1, Kind: control.ActionRestart, Node: "n1",
-	}}
-	unreachable, err := etcdraftPlannerAttempt(context.Background(), 32, unreachableProposal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if unreachable.Status != controlexperiment.PlannerStatusExecutionFailed || unreachable.Failure == nil ||
-		unreachable.Failure.ReasonCode != "EXPERIMENT_POLICY_RULE_NOT_ENABLED" ||
-		unreachable.Failure.Phase != "primary-policy" || unreachable.Failure.Run != 1 ||
-		unreachable.Failure.Decision != 1 || unreachable.Work.ProposalAttempts != 1 ||
-		unreachable.Work.Execution.Primary.SetupAttempts != 1 ||
-		unreachable.Work.Execution.Primary.RuntimeInitializations != 1 ||
-		unreachable.Work.Execution.Primary.SchedulerDecisions != 0 ||
-		unreachable.Work.Execution.Primary.WorkUnits != 1 ||
-		unreachable.Work.Execution.Replay.SetupAttempts != 0 {
-		t.Fatalf("unexpected unreachable attempt: %#v", unreachable)
-	}
-}
-
-func TestStubPlannerCLIWritesRejectedAttemptWithoutPanicking(t *testing.T) {
-	output := filepath.Join(t.TempDir(), "attempt.json")
-	var stdout bytes.Buffer
-	if err := run(context.Background(), []string{
-		"-strategy", "stub-planner", "-decisions", "1", "-out", output,
-	}, &stdout); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(stdout.String(), "status=proposal-rejected") ||
-		!strings.Contains(stdout.String(), controlexperiment.ProposalPolicyInvalid) {
-		t.Fatalf("unexpected stdout: %s", stdout.String())
-	}
-}
-
-func TestCheckedInDeepSeekAttemptIsExplicitAndSelfValidating(t *testing.T) {
-	encoded, err := os.ReadFile("../../benchmarks/experiments/etcdraft-v2-deepseek-planner-m5.13/attempt.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var attempt controlexperiment.PlannerAttempt
-	if err := json.Unmarshal(encoded, &attempt); err != nil {
-		t.Fatal(err)
-	}
-	if err := attempt.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if attempt.Status != controlexperiment.PlannerStatusExecutionFailed || attempt.Failure == nil ||
-		attempt.Failure.ReasonCode != "EXPERIMENT_POLICY_RULE_NOT_ENABLED" ||
-		attempt.Failure.Run != 2 || attempt.Failure.Decision != 3 ||
-		attempt.Work.Model != (controlexperiment.ModelWork{
-			Calls: 1, InputTokens: 555, OutputTokens: 189, TotalTokens: 744,
-		}) || attempt.Work.Execution.Primary.SchedulerDecisions != 34 ||
-		attempt.Work.Execution.Replay.SchedulerDecisions != 32 {
-		t.Fatalf("unexpected checked-in attempt: %#v", attempt)
-	}
-	sum := sha256.Sum256(encoded)
-	if got := hex.EncodeToString(sum[:]); got != "7d6658693ebaf3e05b6e2a130cfd65f79350a2b649276a26c01b8c2fa2689e71" {
-		t.Fatalf("artifact SHA-256 = %s", got)
 	}
 }

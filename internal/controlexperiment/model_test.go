@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -154,6 +155,49 @@ func TestActionClassRandomHonorsFrozenWorkloadPriority(t *testing.T) {
 	}
 }
 
+func TestAdmissibleUniformIsOrderIndependentAndHonorsPreparationPriority(t *testing.T) {
+	policy := Policy{
+		Version: AdmissibleUniformPolicyVersion, ID: "qualified-uniform", SeedHex: "01",
+		Priority: []control.ActionKind{control.ActionInvoke},
+	}
+	if err := policy.Validate(64); err != nil {
+		t.Fatal(err)
+	}
+	actions := []control.Action{
+		{ID: "timer", Kind: control.ActionFireTemporal},
+		{ID: "deliver", Kind: control.ActionDeliverMessage},
+		{ID: "drop", Kind: control.ActionDropMessage},
+	}
+	reordered := append([]control.Action(nil), actions...)
+	slices.Reverse(reordered)
+	seen := make(map[control.ActionID]bool)
+	for decision := 1; decision <= 64; decision++ {
+		selected, err := policy.selectAction(decision, actions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		repeated, err := policy.selectAction(decision, reordered)
+		if err != nil || repeated.ID != selected.ID {
+			t.Fatalf("reordered decision %d = %s/%v, want %s", decision, repeated.ID, err, selected.ID)
+		}
+		seen[selected.ID] = true
+	}
+	if len(seen) != len(actions) {
+		t.Fatalf("uniform policy did not reach all fixture actions: %#v", seen)
+	}
+	selected, err := policy.selectAction(1, append(actions,
+		control.Action{ID: "invoke", Kind: control.ActionInvoke},
+	))
+	if err != nil || selected.ID != "invoke" {
+		t.Fatalf("preparation selection = %s/%v, want invoke", selected.ID, err)
+	}
+	invalid := policy
+	invalid.Rules = []DecisionRule{{Decision: 1, Kind: control.ActionCrash}}
+	if err := invalid.Validate(64); err == nil || err.Error() != "EXPERIMENT_ADMISSIBLE_UNIFORM_POLICY_INVALID" {
+		t.Fatalf("mixed policy error = %v", err)
+	}
+}
+
 func TestAdjacentTraceMutationUsesExactSpliceAndDeclaredSuffix(t *testing.T) {
 	trace, err := (controlruntime.Trace{Records: []controlruntime.ActionRecord{
 		{Action: control.Action{ID: "a", Kind: control.ActionCompleteEffect}},
@@ -201,5 +245,114 @@ func TestAdjacentTraceMutationUsesExactSpliceAndDeclaredSuffix(t *testing.T) {
 	tampered.FirstActionID = "changed"
 	if err := tampered.Validate(4); err == nil || err.Error() != "EXPERIMENT_TRACE_MUTATION_DIGEST_MISMATCH" {
 		t.Fatalf("tampered plan error = %v", err)
+	}
+}
+
+func TestOccurrenceAwareMutationAcceptsRepeatedSourceActionID(t *testing.T) {
+	trace, err := (controlruntime.Trace{
+		ManifestDigest: strings.Repeat("a", 64),
+		Records: []controlruntime.ActionRecord{
+			{Action: control.Action{ID: "repeat", Kind: control.ActionCompleteEffect}},
+			{Action: control.Action{ID: "middle", Kind: control.ActionDeliverMessage}},
+			{Action: control.Action{ID: "repeat", Kind: control.ActionCompleteEffect}},
+			{Action: control.Action{ID: "tail", Kind: control.ActionFireTemporal}},
+		},
+	}).Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := MutationSourceEntry{
+		SchemaVersion: MutationSourceEntryVersion, ID: "source-1",
+		BundleDigest: strings.Repeat("b", 64), ReportDigest: strings.Repeat("c", 64),
+		ConfigDigest: strings.Repeat("d", 64), TraceDigest: trace.Digest,
+		ManifestDigest: trace.ManifestDigest, PSSID: "test/core-pss-v1",
+		PolicyID: "any-qualified-policy", PolicyDigest: strings.Repeat("e", 64),
+		TraceSchema: trace.SchemaVersion, Decisions: len(trace.Records),
+		CorePSSDigest: strings.Repeat("f", 64), QualificationID: strings.Repeat("1", 64),
+	}
+	entry, err = entry.seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := NewOccurrenceAwareAdjacentTraceMutation(
+		"swap-repeat-tail", trace, entry,
+		[]control.ActionKind{control.ActionDeliverMessage}, 3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.SchemaVersion != TraceMutationPlanVersionV2 ||
+		plan.FirstActionRef == nil || plan.FirstActionRef.Occurrence != 2 ||
+		plan.SecondActionRef == nil || plan.SecondActionRef.Occurrence != 1 ||
+		len(plan.PrefixActionRefs) != 2 || plan.PrefixActionRefs[0].Occurrence != 1 {
+		t.Fatalf("unexpected occurrence plan: %#v", plan)
+	}
+	policy := Policy{
+		Version: TraceMutationPolicyVersionV2, ID: "occurrence-mutation", TraceMutation: &plan,
+	}
+	if err := policy.Validate(4); err != nil {
+		t.Fatal(err)
+	}
+	wants := []control.ActionID{"repeat", "middle", "tail", "repeat"}
+	for decision, want := range wants {
+		action, err := policy.selectAction(decision+1, []control.Action{{
+			ID: want, Kind: trace.Records[decision].Action.Kind,
+		}})
+		if err != nil || action.ID != want {
+			t.Fatalf("decision %d selected %s/%v, want %s", decision+1, action.ID, err, want)
+		}
+	}
+	tampered := plan
+	ref := *tampered.FirstActionRef
+	ref.Occurrence = 1
+	tampered.FirstActionRef = &ref
+	tampered, err = tampered.seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tampered.Validate(4); err == nil || !strings.Contains(err.Error(), "OCCURRENCE_INVALID") {
+		t.Fatalf("tampered occurrence error = %v", err)
+	}
+}
+
+func TestMutationSourceCorpusPreservesExplicitOrderAndRejectsDuplicates(t *testing.T) {
+	base := MutationSourceEntry{
+		SchemaVersion: MutationSourceEntryVersion, ID: "first",
+		BundleDigest: strings.Repeat("a", 64), ReportDigest: strings.Repeat("b", 64),
+		ConfigDigest: strings.Repeat("c", 64), TraceDigest: strings.Repeat("d", 64),
+		ManifestDigest: strings.Repeat("e", 64), PSSID: "test/core-pss-v1",
+		PolicyID: "policy-1", PolicyDigest: strings.Repeat("f", 64),
+		TraceSchema: controlruntime.TraceSchemaVersion, Decisions: 4,
+		CorePSSDigest: strings.Repeat("1", 64), QualificationID: strings.Repeat("2", 64),
+	}
+	first, err := base.seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.ID = "second"
+	base.BundleDigest = strings.Repeat("3", 64)
+	base.TraceDigest = strings.Repeat("4", 64)
+	second, err := base.seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus, err := NewMutationSourceCorpus("ordered-sources", []MutationSourceEntry{second, first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if corpus.Entries[0].ID != "second" || corpus.Entries[1].ID != "first" {
+		t.Fatalf("corpus order changed: %#v", corpus.Entries)
+	}
+	if _, err := NewMutationSourceCorpus("duplicates", []MutationSourceEntry{first, first}); err == nil || !strings.Contains(err.Error(), "SOURCE_DUPLICATE") {
+		t.Fatalf("duplicate corpus error = %v", err)
+	}
+	renamed := first
+	renamed.ID = "renamed-same-bundle"
+	renamed, err = renamed.seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewMutationSourceCorpus("renamed-duplicate", []MutationSourceEntry{first, renamed}); err == nil || !strings.Contains(err.Error(), "SOURCE_DUPLICATE") {
+		t.Fatalf("renamed duplicate bundle error = %v", err)
 	}
 }
