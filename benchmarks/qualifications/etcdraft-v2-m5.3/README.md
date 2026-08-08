@@ -5,7 +5,7 @@
 重新生成：
 
 ```bash
-make adapter-qualify-etcdraftv2
+make adapter-qualify-etcdraftv2-legacy
 ```
 
 本工件把三个 fresh 外部 suite 的 case 与 `portable-cft-control-v1` Profile 机械合并：

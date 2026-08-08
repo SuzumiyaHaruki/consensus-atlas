@@ -642,8 +642,15 @@ Agent 位于控制层上方，不获得 Adapter 对象或任意代码执行权�
 
 Agent 输出分两层：
 
-1. **宏观 TestIntent**：只能引用冻结的 intent/obligation/risk ID，解释文本不参与执行；
+1. **宏观 Guarded TestIntent**：引用冻结的 intent/obligation/risk ID、semantic guard、fault envelope
+   和 Action class selector，解释文本不参与执行；
 2. **微观排序或计划**：只能引用当前 enabled ActionID 或受限 selector，由确定性 concretizer 解析。
+
+宏观 intent 不使用未来绝对 decision number。`must` 约束违反时机械拒绝；`prefer` 在当前 frontier
+未命中时记录 miss、计入预算并使用冻结 fallback。Agent 不需要预测瞬时 ActionID，可信 compiler
+在每一步从 `EnabledActions + Core/Extended semantic view` 解析具体动作。Agent 可以读取冻结的
+协议知识和批次级 PSS/Coverage/near-miss 反馈，但不能读取 candidate/control 身份、补丁、根因、
+已知触发轨迹或私有 Oracle 结论。
 
 对时间，Agent 只能选择 Runtime 提供的 `FireTemporalEvent(TemporalID)`，不能提交 deadline 或 delta；
 对随机性，第一版只能选择预冻结 SUT seed 的 run，不能指定一次 RandomDraw 的返回值。
@@ -774,6 +781,46 @@ release 5,139/drop 0 字节。framing 因而明确属于目标 Binding，Runtime
 自动构造器安装、三节点闭环或 Runtime integration，故资格保持未授予。当前按停止线进入 M5.9 v1
 消费者迁移/删除门，EPaxos 最小 Binding 在减负后恢复。
 
+### M5.14 以后：从可调度测量转入测试闭环
+
+M5.13 的单调用 LLM smoke 已证明模型 transport、严格 proposal decoder、执行失败账本和成本记录可以
+连通，同时也机械暴露了 `decision N -> Action kind/node` 无法预测未来 enabled frontier。原计划的一次
+同形 repair 不再作为主线。后续顺序冻结为：
+
+1. **Experiment admission**：统一 Runtime 不拆 strict/best-effort 两套模式；Experiment 声明所需
+   capability，composition 将其绑定到 digest-bound QualificationReport，只有 required subset 全部
+   `validated` 才能进入相应执行。基础控制可运行不等于 strict benchmark 准入。
+2. **Workload/Fault Provider**：Provider 只能调用 `OfferInvoke`、`OfferPartition` 等 Runtime 入口；
+   Runtime 冻结 ID 后，`EnabledActions` 仍是唯一候选集合。工作负载、故障次数/并发上限及全部
+   setup/offer/primary/replay 成本进入同一预算。
+3. **ExecutionBundle + Oracle/DefectBench**：在第一个 v2 Oracle 消费者出现时才定义最小 bundle，
+   先迁 TraceIntegrity/Agreement 和公开 calibration，不预建完整 evidence/campaign 目录树。
+4. **强 baseline**：先 action-class random、trace mutation、PSS-guided corpus；PCT/POS/DPOR 等有
+   具体缺口后再加入。
+5. **Guarded TestIntent**：单个 protocol-aware、defect-blind Strategy Agent 生成少量 intent，本地
+   搜索器批量执行；多 Agent 只有 holdout 结果证明职责拆分必要时才增加。
+
+M5.14 已完成第 1 项，M5.15 已完成第 2 项。M5.16 又完成第 3 项：最小
+`ExecutionBundle` 绑定完整 trace、prepare transition、Evidence/client history、Core PSS、
+Qualification、Replay 和 work ledger。target-owned `DecisionProjector` 将 etcd/raft Evidence 转换为
+position/value digest，通用 TraceIntegrity/Agreement 不导入 Raft 类型。公开 calibration
+以共同 96 decisions/98 primary work 得到 control-pass/killed，PSS/Coverage 不参与 verdict。
+
+M5.16R 随后将 legacy production import edge 从 28 降为 0，并删除 v1 Engine/Host/Driver、
+Coverage/Campaign、Raft Family、onboarding、旧 Agent 和 migration 实现锥体。历史文档/JSON
+保留为 archive，当前 `make audit-no-v1` 防止可编译源码回流。M5.17a 已完成第 4 项的第一部分：
+action-class random 只在 Runtime enabled 集的 digest-bound FaultEnvelope 子集中按 ActionKind/成员两级
+均匀采样，原均匀 Action random 不变。同一公开 candidate 在 fixed policy 下被检出、在发现更多 Core
+PSS 状态的 action-class seed 1 下 survived，证明 coarse discovery 不能代替 root-cause detection。
+M5.17b 随后完成 trace mutation：按 source 顺序选择第一对相邻 message deliveries，执行 exact prefix、
+adjacent swap 和 digest-bound priority suffix；引用 ID 不 enabled 时产生稳定、计费的失败，不静默
+fallback。source 与 mutation 的完整方法成本为 196 primary / 196 replay，而不是只报告 mutation 自身
+的 98/98。下一步是 PSS-guided corpus，再实现 Guarded TestIntent。
+
+ControlSurfaceReport 与 ControlPathAssessment 停止扩展并只作为既有 portability 研究工件复验；生产
+准入只消费 Manifest、外部 Conformance 和 QualificationReport。Core PSS 继续只用于 coarse feedback
+和 discovery，不参与未证明保守的状态等价、DPOR 或 visited-state pruning。
+
 ## 21. 第一实现阶段验收标准
 
 M5.1 必须同时满足：
@@ -803,16 +850,18 @@ internal/control/          v2 公共数据模型、ID、Manifest、Action、Item
 internal/controlruntime/   v2 确定性状态机、enabled、trace、replay
 internal/controlentropy/   分域 deterministic entropy 与 RandomDraw tape
 internal/conformance/      与具体 Adapter 分离的准入套件
-internal/adapterkit/       两个真实目标消费后才提升的生命周期样板（不预建，非 Runtime backend）
 internal/psscore/          固定 Core PSS IR、Runtime Control Context、规范化与 digest
 adapters/fixture/          无协议 fixture Adapter
-adapters/etcdraft/         后续 Legacy Ready Bridge
-evidence/raft/             RaftEvidenceV1 与 Core/Extended Mapper
-schemas/control/v2/        Manifest、trace、emission 等 JSON Schema
+adapters/etcdraftv2/       官方 RawNode Binding、Core Mapper 与 DecisionProjector
+adapters/hashicorpraftv2/  第二实现的部分资格 Binding
+internal/controlexperiment/ admission、workload、policy、report 与 ExecutionBundle
+internal/semantic/         最小 decision observation
+internal/oracle/           v2 TraceIntegrity/Agreement
+internal/defectbench/      最小 control/candidate evaluator
 ```
 
-v1 的 `internal/engine`、`internal/host`、`internal/driver` 和 `drivers/etcdraft` 暂不删除。迁移完成前
-两套实现通过包路径、schema version 和 CLI composition root 明确隔离。
+M5.16R 已删除 v1 的 `internal/engine`、`internal/host`、`internal/driver` 和
+`drivers/etcdraft`，当前仓库不再存在并行 Runtime。
 
 ## 23. 防漂移检查表
 

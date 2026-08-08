@@ -6,17 +6,20 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
 )
 
-func TestFrozenPSSIDUsesManifestAndRestrictsLegacyFallback(t *testing.T) {
-	manifest := defectbench.Manifest{PSSID: "frozen-pss-v1"}
-	got, err := frozenPSSID(manifest, "ignored-legacy")
-	if err != nil || got != manifest.PSSID {
-		t.Fatalf("manifest PSS = %q, %v", got, err)
+func TestPairTrialsRequiresOnePublicPair(t *testing.T) {
+	manifest, err := (defectbench.BundleBenchmark{
+		ID: "pair", Classification: "public-calibration-only", ProjectorID: "projector",
+		Budget: defectbench.BundleBudget{MaxDecisions: 1, MaxPrimaryWorkUnits: 1},
+		Variants: []defectbench.BundleVariant{
+			{TrialID: "trial-control", VariantID: "official-control", Kind: defectbench.BundleKindControl, ExpectedBuildID: "official"},
+			{TrialID: "trial-candidate", VariantID: "public-candidate", Kind: defectbench.BundleKindCalibration, RootCauseID: "root", ExpectedBuildID: "candidate"},
+		},
+	}).Seal()
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, err = frozenPSSID(defectbench.Manifest{}, "archived-pss-v1")
-	if err != nil || got != "archived-pss-v1" {
-		t.Fatalf("legacy PSS = %q, %v", got, err)
-	}
-	if _, err := frozenPSSID(defectbench.Manifest{}, ""); err == nil {
-		t.Fatal("missing PSS identity was accepted")
+	control, candidate, err := pairTrials(manifest)
+	if err != nil || control != "trial-control" || candidate != "trial-candidate" {
+		t.Fatalf("pair = %s/%s, %v", control, candidate, err)
 	}
 }

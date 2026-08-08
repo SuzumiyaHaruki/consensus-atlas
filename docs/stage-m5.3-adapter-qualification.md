@@ -54,7 +54,7 @@ sealed QualificationProfile
 - `adapters/TEMPLATE.md`：新实现目录、所有权、Manifest、外部 suite 和禁止修改项；
 - Manifest、Qualification Profile 和 Qualification Report 三份 JSON Schema；
 - `qualifications/etcdraftv2`：唯一的 etcd/raft M5.3 composition root；
-- `cmd/adapter-qualify-etcdraftv2` 与 `make adapter-qualify-etcdraftv2`：fresh 执行并生成冻结 bundle。
+- `cmd/adapter-qualify` 与 `make adapter-qualify-etcdraftv2-legacy`：fresh 执行并生成冻结 bundle。
 
 通用资格器没有 Raft、Ready、term、日志或消息类型分支。Profile 的自然时间要求接受 one-shot、
 periodic pulse 或 sleep wakeup 中任一种，避免把 etcd/raft 的 Tick 形状固化成公共接口。

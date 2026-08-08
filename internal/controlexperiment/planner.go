@@ -3,7 +3,6 @@ package controlexperiment
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -306,7 +305,7 @@ func runPlannerAttempt(
 			Run: compilation.FailedRun}
 		return sealAndValidateAttempt(attempt)
 	}
-	report, err := Execute(ctx, config, newAdapter, mapper)
+	report, err := ExecuteLegacy(ctx, config, newAdapter, mapper)
 	if err != nil {
 		var failure *ExecutionFailure
 		if !errors.As(err, &failure) {
@@ -438,9 +437,4 @@ func containsRun(runs []int, target int) bool {
 		}
 	}
 	return false
-}
-
-func validSHA256(value string) bool {
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == 32 && hex.EncodeToString(decoded) == value
 }

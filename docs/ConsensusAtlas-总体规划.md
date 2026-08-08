@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.5
-> 日期：2026-08-07
+> 状态：Draft v1.8（M5.17b Trace Mutation 基线完成）
+> 日期：2026-08-08
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -1307,15 +1307,32 @@ Generate proposal
 
 ### 15.4 Strategy Agent
 
-输入已验证 Profile、覆盖债务、PSS 发现记录和历史失败，输出声明式语义目标/假设。确定性 DFS/DPOR/combinatorial concretizer 负责在 enabled events 上实现目标。Agent 不直接修改 Runtime 状态，也不单独决定覆盖成立。
+输入已验证 Profile、冻结的 Protocol/Family Knowledge、覆盖债务、Core/Extended PSS 发现记录和历史
+机械反馈，输出协议级 `Guarded TestIntent`。Agent 可以理解 leader/epoch/log/QC 等 Family 语义，但
+不能读取 candidate/control 身份、补丁、根因、已知触发轨迹或私有 Oracle 结论；这一边界称为
+`protocol-aware, defect-blind`。确定性搜索器负责把 intent 在当前 enabled frontier 上解析成真实
+ActionID。Agent 不预测未来绝对 decision number，不直接修改 Runtime 状态，也不单独决定覆盖成立。
+
+`Guarded TestIntent` 至少区分两类约束：
+
+- `must`：fault envelope、预算、最终恢复条件和 capability 等硬约束；违反即机械拒绝；
+- `prefer`：在语义 guard 成立时优先选择某个 Action class/selector；当前未命中时记录 miss、计费并按
+  冻结 fallback 继续，而不是令整个 run 作废。
+
+Agent 不接触瞬时 ActionID。可信 compiler 每一步组合 `EnabledActions + Core/Extended semantic view +
+validated capability`，解析具体 ActionID 并保留完整选择证据。一次 Agent 调用应产生少量 intent，
+由 Random、mutation、PSS-guided 或以后加入的 DPOR 后端批量执行，再把聚合的 coverage debt、
+state discovery、near-miss 和无进展原因反馈给下一轮 Agent。
 
 与 Random/DFS/DPOR 比较时固定 scheduler-decision 预算与 measurement window，同时报告模型调用、token、墙钟时间和费用。无固定分母的 PSS 状态发现曲线评价搜索效率，固定 Contract/Profile 分数评价最终测试债务；两者不混合。
 
-Strategy Agent 在实现上拆成 Planner、Scenario、Search 和 Critic 四个角色。Planner 读取风险优先 Coverage Debt；Scenario 只能生成 schema 约束的 Test Plan；Search 通过确定性 concretizer 调用现有搜索器；Critic 只依据 `PRECONDITION_UNREACHABLE`、`BUDGET_EXHAUSTED`、`ORACLE_NOT_ACTIVATED`、`REPLAY_MISMATCH` 等机械 finding 生成完整替代计划。任何 Agent 都不能直接执行 SUT API 或写 Coverage Ledger。
+第一版只实现一个 Strategy Agent，不预建 Planner/Scenario/Search/Critic 多角色。只有 holdout 实验
+证明 hypothesis generation、预算分配或 feedback repair 的职责混合造成具体漏检后，才拆分角色。
+任何 Agent 都不能直接执行 SUT API、提交自由 payload 或写 Coverage/Defect Ledger。
 
 Strategy 能力按两级独立准入：
 
-- **宏观计划**：选择覆盖债务、拓扑、工作负载、确定前缀、故障模型和搜索后端；
+- **宏观 intent**：选择风险假设、覆盖债务、工作负载、guard、fault envelope 和搜索后端；
 - **微观排序**：对 Runtime 已枚举的 `EnabledActionSet` 排序，只能返回其中的
   `ActionRef`。
 
@@ -1459,46 +1476,44 @@ Input
 
 ```text
 cmd/
-  atlas/                     CLI
+  adapter-qualify/           Adapter 资格组合入口
+  control-experiment/        唯一 v2 实验/Bundle composition
+  defect-eval/               control/candidate 评测
+  sut-build/                 source-bound 构建
 
 internal/
-  runtime/                   确定性事件、逻辑时钟、网络、故障
-  mailbox/                   message lifecycle 与 link sequence
-  hostops/                   batch、persist/sync/release/apply/ack
-  replay/                    Decision Log 与严格校验
-  trace/                     raw trace 与工件格式
-  scenario/                  声明式 DSL
-  canonical/                 structural + semantic graph
-  oracle/                    通用 Oracle
-  coverage/                  ledger、profile compiler、score
+  control/                   Action/Item/Manifest/opaque envelope
+  controlruntime/            enabled、状态机、trace/replay
+  controlentropy/            分域随机与 tape
+  conformance/               外部见证与 Qualification
+  controlexperiment/         admission/workload/policy/ExecutionBundle
+  psscore/                   固定 Core PSS IR
+  protocolstate/             discovery/aggregate
+  semantic/                  decision observation
+  oracle/                    TraceIntegrity/Agreement
+  defectbench/               最小 v2 evaluator
+  sutbuild/                  source/module/binary audit
 
-drivers/
-  etcdraft/                  唯一允许 import 官方 etcd/raft 的实现
-  process/                   通用进程/代理接入基础设施
+adapters/
+  etcdraftv2/                官方 etcd/raft strict Binding/Mapping
+  hashicorpraftv2/           第二实现的部分资格 Binding
+  fixture/                   公共契约 fixture
 
-families/
-  raft/
-    pss/
-    oracles/
-    patterns/
-  hotstuff/
-  tendermint/
-
-profiles/
-scenarios/
-agents/
+qualifications/              真实 Adapter 资格 composition
+benchmarks/                  小型冻结工件与历史 archive
 docs/
-  adr/
 artifacts/
+                             被 Git 忽略的可再生成完整 Bundle/二进制
 ```
 
-实际重构可以渐进完成，但依赖方向必须保持：
+M5.16R 已删除 v1 `Engine/Host/Driver`、Raft Family、Coverage/Campaign、onboarding、旧 Agent
+与 migration 可编译源码。历史文档/JSON 可继续引用旧路径，当前生产依赖只允许：
 
 ```text
-runtime -> core contracts
-drivers -> runtime/core contracts + SUT
-runtime -X-> any specific consensus package
-oracle/coverage -X-> Agent
+cmd/qualifications -> adapters + trusted internal packages
+adapters           -> official SUT + internal/control*
+oracle/evaluator   -> generic bundle + semantic observation
+internal/control*  -X-> adapters or any specific consensus package
 ```
 
 ---
@@ -1956,7 +1971,7 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 ## 23. 当前立即执行顺序
 
-截至 2026-08-07 的落地状态：
+截至 2026-08-08 的落地状态：
 
 1. [X] 定义 Protocol Knowledge Contract v1、严格 Go 模型、canonical digest 和 JSON schema。
 2. [X] 实现 Contract 到 Profile 的确定性编译；实现支持状态不影响 atom 分母。
@@ -2093,12 +2108,48 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     primary + 32 replay，run 2 在 decision 3 的 exact `drop-message/node=n1` rule 不可达，得到计费的
     `execution-failed`：1 call/744 tokens、34 primary decisions、32 replay decisions。没有 PSS summary、
     Coverage/Oracle 输入、免费修复或方法优势结论。
-52. [ ] M5.14 先冻结 transport-attempt ledger，再定义只含 phase/reason/run/decision/proposed-rule 的
-    最小机械 repair 输入，不公开 enabled set、Action IDs、trace、PSS、Coverage 或 Oracle；随后允许
-    恰好一次 repair call，并累计两次 proposal/model cost。目标只验证机械 finding 能否形成可执行
-    计划，不进行方法比较。
+52. [X] M5.14 已完成审计后的减负与实验准入：删除 4 个未使用公共枚举和 1 个不可达
+    native Drop 分支；生产 Qualification 统一到 `portable-cft-control-v2`，历史 v1 工件仅由显式
+    legacy 入口逐字节复验。新增 digest-bound `ExecutionAdmission`，把所需 capability 子集与完整
+    Qualification/Adapter/Implementation/Build/Configuration/Manifest identity 绑定，并在实际 Runtime
+    初始化后复核 Manifest。etcd/raft 当前 8/8 required validated；HashiCorp 严格准入被机械拒绝。
+53. [X] M5.15 已在现有 v2 Experiment composition root 完成确定性 Workload/Fault envelope，没有
+    新建 Campaign 或执行器。Provider 通过 Semantic Mapping 等待唯一 `coordinating` participant，再
+    调用 `OfferInvoke`；Policy 仍只从 Runtime enabled set 选择。FaultEnvelope 限制 crash/drop/duplicate/
+    partition 总量及 crash/partition 并发数。公开 etcd/raft calibration 以 1 prepare + 96 decisions
+    完成 1 次 committed write、applied PSS witness 和 96/96 strict replay；primary/replay 各 98 work units。
+54. [X] M5.16 已定义最小 `ExecutionBundle`，绑定完整 Action trace、prepare state transition、
+    Evidence/client history、Core PSS、Qualification、Replay 和成本。target-owned
+    `DecisionProjector` 将 etcd/raft Evidence 投影为 position/value digest；通用 TraceIntegrity/
+    Agreement 不解析 Raft。公开 control/candidate 在共同 96 decisions/98 work 下得到
+    `control-pass/killed`，1/1 root cause、0 false positive、0 invalid；PSS/Coverage 不参与 verdict。
+55. [X] M5.16R 已在冻结 M5.15/M5.16 identity 后删除 v1 实现锥体：旧
+    Engine/Host/Driver、Raft Family、Coverage/Campaign、onboarding、DefectBench、Python Agent、migration
+    和对应 CLI 不再进入编译。production/test 由 29,931/12,559 行降为
+    14,564/6,299 行，legacy production import edge 由 28 归零。历史文档/JSON 保留为 archive。
+56. [X] M5.17a 已在共同 workload/FaultEnvelope/96 decisions/98 work 上实现 action-class random：
+    先均匀选 ActionKind，再选该 class 成员；旧 uniform Action random 身份不变。选择器只在
+    Runtime enabled 中不超过冻结 envelope 的子集采样，不修改 enabled/ActionID。seed 1 的
+    control 发现 83 个 Core PSS states 且严格重放；同一公开 candidate 在此策略下
+    `survived`，而 M5.16 fixed 只发现 56 states 却 `killed`。这一负结果已固化，不筛 seed，
+    证明 PSS discovery 不能代替根因检出。
+57. [X] M5.17b 已实现协议无关 trace mutation operator：精确 source prefix、相邻
+    Action swap 和 digest-bound priority suffix。公共规则按 source 顺序取首对相邻
+    message deliveries，不尝试多个 pair 后筛选。不可执行引用产生稳定 reason code
+    和 partial work，不静默 fallback。source/mutation 各 98/98，方法完整成本为
+    196 primary / 196 replay；失败校准的 35 primary 另计。本阶段只有正确
+    control，没有 candidate verdict。
+58. [ ] M5.17c 实现最小 PSS-guided corpus。PSS 只作为 batch feedback，不用于未证明
+    保守的 visited-state pruning。PCT/POS、DPOR 只有在前述基线暴露具体搜索
+    缺口后才进入。
+59. [ ] M5.18 将 `LLM -> exact decision rule` 替换为 `LLM -> Guarded TestIntent -> deterministic
+    local search`。Agent 读取协议知识和批次级机械反馈，不读取隐藏缺陷身份；hard constraint 与
+    preference 分开，preference miss 计费后确定性 fallback。先做单 Agent、one-shot/feedback 消融，
+    不增加多 Agent。
 
-当前主线不再继续盲目增加单 Planner 重试、复合义务或 Agent 角色。
+当前主线已完成 v2 的第一个真实测试闭环、v1 删除、action-class random 和 trace
+mutation 两个强基线。接下来做最小 PSS-guided corpus，不恢复旧 Campaign/Coverage，也不盲目增加
+Planner 重试、复合义务或 Agent 角色。
 Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
 历史回归复现、M4.10 虚拟时间边界和经 M4.11.1 加固的 Ready.MustSync 语义重构均已冻结。
 `Blind Planner Agent v1` 的无模型受限闭环已冻结：Agent 只读取 opaque trial ID、冻结 Profile
@@ -2163,8 +2214,9 @@ opaque Gateway 不能自行提供消息边界。该结果仍没有取得 validat
 v2 非 Agent `measurement-complete` 报告并冻结唯一执行路径。M5.11 已在其上加入独立策略 entropy
 的确定性 Random 基线。M5.12 又冻结受限 Planner Proposal 编译、strict decode、显式失败和部分工作
 计费，并用 0-call stub 贯通。M5.13 已完成第一次真实单调用 LLM transport，并诚实保存运行期不可达
-结果；M5.14 才加入一次最小机械 repair。Oracle、Coverage、Campaign、benchmark composition 和
-EPaxos 最小 Binding 随后按删除门推进。
+结果；该结果机械否证了“协议盲、无 workload 的绝对步号策略”作为正式 Agent 接口。原 M5.14 一次
+repair 已退出主线；当前依次推进 admission、workload/fault envelope、v2 Oracle/DefectBench、强基线
+和 Guarded TestIntent。EPaxos 最小 Binding 在形成首个 v2 测试闭环后再按停止线恢复。
 
 ---
 
@@ -2230,8 +2282,34 @@ EPaxos 最小 Binding 随后按删除门推进。
     stable item、strict replay、完整 Adapter 或目标正确性。
 53. connection byte chunk 不能当作 Message Item；无原生 message API 的目标必须在薄 Binding 中提供
     source-bound codec/framing，Runtime 只接收完整 opaque bytes 和稳定身份，不导入协议 decoder。
-54. legacy execution 的生产 consumer 集合必须由 `go list` 冻结并只允许显式收缩；没有归零的包不能
-    为追求删除数字强行移除，重复 composition root 和确定死代码可以先删且必须保持工件身份。
+54. legacy execution 的生产 consumer 集合先由 `go list` 冻结并逐步收缩；M5.16R 在当前消费者归零、
+    M5.15/M5.16 identity 冻结后删除实现锥体。历史工件不要求主分支在线重放，但必须保留摘要和文档。
+55. Control Runtime 只有一套执行语义；exploratory 与 strict 的差异由 Experiment 声明的 capability
+    requirements 和 digest-bound QualificationReport 机械准入，不由 Runtime 类型分支或 Adapter 自报决定。
+56. Workload/Fault Provider 只能调用 Runtime 的公开 Offer 入口；`EnabledActions` 始终是唯一可选择
+    动作集合，Provider、Agent 和搜索器不能在外部伪造 ActionID。
+57. Agent 默认是 protocol-aware、defect-blind：可读取冻结协议知识、Family semantic view 和批次级
+    机械反馈，不可读取隐藏候选身份、补丁、根因、已知触发轨迹或私有 Oracle 结论。
+58. 第一版 Agent 输出 Guarded TestIntent 而非未来绝对 decision rule；hard constraint 不可降级，
+    preference miss 必须记录、计费并使用冻结 fallback。
+59. Core PSS 只用于 coarse feedback/discovery；具体因果身份被压缩时不得用于状态等价或剪枝，Family
+    风险信息进入分开版本的 Extended PSS/semantic view。
+60. 不按目录蓝图预建 `evidence/search/intent/campaignv2` 等包；只有第一个真实消费者出现并证明重复
+    机制后才提升公共抽象。
+61. `ExecutionBundle` 是 trusted evaluator 的完整证据边界；普通 measurement report 不得被当成可独立重算
+    Oracle 的 bundle。
+62. Runtime Offer/prepare 等 scheduler 决策外的状态变化必须有显式 state-digest transition；不得通过放宽
+    TraceIntegrity 隐藏证据链缺口。
+63. 通用 Oracle 只消费最小 semantic observation；协议 Evidence 解码属于 target-owned trusted projector，
+    projector identity 和重算结果必须进入 bundle digest。
+64. TraceIntegrity/Qualification/Projection 失败的 trial 只能记为 `invalid`，不得记 candidate kill 或
+    control false positive；PSS/Coverage 不参与 defect verdict。
+65. 强基线只能在 Runtime 枚举的 enabled Action 中选择；FaultEnvelope 可以约束某一策略的
+    selectable 子集，但不得改写 Runtime enabled、ActionID 或协议 Adapter 语义。
+66. control/candidate 方法比较可显式绑定每个 variant 的完整 config digest；替换 policy、
+    workload、FaultEnvelope、admission 或 SUT identity 的 trial 只能记为 `invalid`。
+67. PSS state count/prefix area 是 coarse discovery 指标，不是最终测试质量分数；即使状态
+    数增加，也必须分开报告 root-cause kill、correct-control false positive 和完整成本。
 
 ---
 

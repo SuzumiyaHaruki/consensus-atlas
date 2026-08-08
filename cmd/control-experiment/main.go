@@ -17,6 +17,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
 
 func main() {
@@ -29,7 +30,8 @@ func main() {
 func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("control-experiment", flag.ContinueOnError)
 	out := flags.String("out", "", "report output path")
-	strategy := flags.String("strategy", "fixed", "policy set: fixed, random, stub-planner, or deepseek-planner")
+	bundleOut := flags.String("bundle-out", "", "optional execution bundle output path (qualified workload strategies only)")
+	strategy := flags.String("strategy", "fixed", "policy set: fixed, random, workload, workload-action-class-random, workload-trace-mutation, stub-planner, or deepseek-planner")
 	decisions := flags.Int("decisions", 32, "charged decisions per run")
 	policySeed := flags.Uint64("policy-seed", 1, "public random-policy seed")
 	repoRoot := flags.String("repo", ".", "repository root for the model client")
@@ -76,7 +78,20 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		return persistPlannerAttempt(*out, attempt, stdout)
 	}
-	report, err := etcdraftReport(ctx, *strategy, *decisions, *policySeed)
+	var report controlexperiment.Report
+	var bundle *controlexperiment.ExecutionBundle
+	var err error
+	if *bundleOut != "" {
+		if *strategy != "workload" && *strategy != "workload-action-class-random" &&
+			*strategy != "workload-trace-mutation" {
+			return errors.New("-bundle-out requires a qualified workload strategy")
+		}
+		var captured controlexperiment.ExecutionBundle
+		report, captured, err = etcdraftBundle(ctx, *strategy, *decisions, *policySeed)
+		bundle = &captured
+	} else {
+		report, err = etcdraftReport(ctx, *strategy, *decisions, *policySeed)
+	}
 	if err != nil {
 		return err
 	}
@@ -94,10 +109,38 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := writeReport(*out, encoded); err != nil {
 		return err
 	}
+	if bundle != nil {
+		bundleBytes, err := json.MarshalIndent(bundle, "", "  ")
+		if err != nil {
+			return err
+		}
+		var persistedBundle controlexperiment.ExecutionBundle
+		if err := json.Unmarshal(bundleBytes, &persistedBundle); err != nil {
+			return err
+		}
+		if err := persistedBundle.Validate(); err != nil {
+			return fmt.Errorf("validate persisted execution bundle: %w", err)
+		}
+		if err := persistedBundle.ValidateProjection(etcdraftv2.DecisionProjector{}); err != nil {
+			return fmt.Errorf("validate persisted decision projection: %w", err)
+		}
+		if err := writeReport(*bundleOut, bundleBytes); err != nil {
+			return err
+		}
+	}
 	fmt.Fprintf(stdout, "wrote %s\nruns=%d decisions=%d states=%d replay=%t digest=%s\n",
 		*out, len(report.Runs), report.StateDiscovery.TotalDecisions,
 		report.StateDiscovery.UniqueStates, allReplayStable(report), report.Digest)
 	return nil
+}
+
+func etcdraftBundle(
+	ctx context.Context,
+	strategy string,
+	decisions int,
+	policySeed uint64,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	return etcdraftExecution(ctx, strategy, decisions, policySeed, true)
 }
 
 func persistPlannerAttempt(path string, attempt controlexperiment.PlannerAttempt, stdout io.Writer) error {
@@ -144,11 +187,28 @@ func etcdraftReport(
 	decisions int,
 	policySeed uint64,
 ) (controlexperiment.Report, error) {
+	report, _, err := etcdraftExecution(ctx, strategy, decisions, policySeed, false)
+	return report, err
+}
+
+func etcdraftExecution(
+	ctx context.Context,
+	strategy string,
+	decisions int,
+	policySeed uint64,
+	captureBundle bool,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	if strategy == "workload-trace-mutation" {
+		return etcdraftTraceMutationExecution(ctx, decisions, policySeed, captureBundle)
+	}
 	progress := []control.ActionKind{
 		control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal,
 	}
 	var experimentID string
 	var runs []controlexperiment.RunPlan
+	var admission *controlexperiment.ExecutionAdmission
+	var qualificationReport *qualification.Bundle
+	var faultEnvelope *controlexperiment.FaultEnvelope
 	switch strategy {
 	case "fixed":
 		experimentID = "public-etcdraft-v2-fixed-baselines-m5.10"
@@ -174,8 +234,43 @@ func etcdraftReport(
 				SeedHex: randomPolicySeed(policySeed, run),
 			}})
 		}
+	case "workload", "workload-action-class-random":
+		bundle, bound, workload, err := etcdraftQualifiedWorkload(ctx)
+		if err != nil {
+			return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+		}
+		admission = &bound
+		qualificationReport = &bundle
+		policy := controlexperiment.Policy{
+			Version: controlexperiment.PolicyVersion, ID: "semantic-workload-progress-v1",
+			Priority: []control.ActionKind{
+				control.ActionInvoke, control.ActionCompleteEffect,
+				control.ActionDeliverMessage, control.ActionFireTemporal,
+			},
+		}
+		if strategy == "workload" {
+			experimentID = "public-etcdraft-v2-semantic-workload-m5.15"
+			faultEnvelope = &controlexperiment.FaultEnvelope{
+				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
+				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
+			}
+		} else {
+			experimentID = fmt.Sprintf("public-etcdraft-v2-action-class-random-m5.17a-seed-%d", policySeed)
+			policy = controlexperiment.Policy{
+				Version: controlexperiment.ActionClassPolicyVersion,
+				ID:      "action-class-random-v1/run-1", SeedHex: randomPolicySeed(policySeed, 1),
+				Priority: []control.ActionKind{control.ActionInvoke},
+			}
+			faultEnvelope = &controlexperiment.FaultEnvelope{
+				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
+				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
+			}
+		}
+		runs = []controlexperiment.RunPlan{{
+			Run: 1, Policy: policy, Workload: &workload,
+		}}
 	default:
-		return controlexperiment.Report{}, fmt.Errorf("unsupported -strategy %q", strategy)
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, fmt.Errorf("unsupported -strategy %q", strategy)
 	}
 	config := controlexperiment.Config{
 		SchemaVersion: controlexperiment.SchemaVersion,
@@ -184,12 +279,99 @@ func etcdraftReport(
 		Runtime: controlexperiment.RuntimeConfig{
 			SeedHex: hex.EncodeToString([]byte("official-etcdraft-v2-cluster-seed")), MaxClones: 1,
 		},
+		Admission: admission, FaultEnvelope: faultEnvelope,
 		DecisionsPerRun: decisions, RequireReplay: true, Runs: runs,
 	}
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
 	}
-	return controlexperiment.Execute(ctx, config, factory, etcdraftv2.CorePSSMapper{})
+	if qualificationReport != nil {
+		if captureBundle {
+			return controlexperiment.ExecuteQualifiedBundle(
+				ctx, config, *qualificationReport, factory, etcdraftv2.CorePSSMapper{},
+				etcdraftv2.DecisionProjector{},
+			)
+		}
+		report, err := controlexperiment.ExecuteQualified(
+			ctx, config, qualificationReport.Qualification, factory, etcdraftv2.CorePSSMapper{},
+		)
+		return report, controlexperiment.ExecutionBundle{}, err
+	}
+	if captureBundle {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+			errors.New("execution bundle requires qualified workload")
+	}
+	report, err := controlexperiment.ExecuteLegacy(ctx, config, factory, etcdraftv2.CorePSSMapper{})
+	return report, controlexperiment.ExecutionBundle{}, err
+}
+
+func etcdraftTraceMutationExecution(
+	ctx context.Context,
+	decisions int,
+	policySeed uint64,
+	captureBundle bool,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	seedReport, seedBundle, err := etcdraftExecution(ctx, "workload", decisions, policySeed, true)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+	}
+	plan, err := controlexperiment.NewFirstAdjacentTraceMutation(
+		"first-adjacent-message-deliveries-v1", seedBundle.Trace,
+		seedReport.Config.Runs[0].Policy, control.ActionDeliverMessage,
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+	}
+	config := seedReport.Config
+	config.ID = "public-etcdraft-v2-trace-mutation-m5.17b"
+	config.Runs = append([]controlexperiment.RunPlan(nil), seedReport.Config.Runs...)
+	config.Runs[0].Policy = controlexperiment.Policy{
+		Version: controlexperiment.TraceMutationPolicyVersion,
+		ID:      "adjacent-message-swap-v1/run-1", TraceMutation: &plan,
+	}
+	factory := func() (control.Adapter, error) {
+		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+	}
+	if captureBundle {
+		return controlexperiment.ExecuteQualifiedBundle(
+			ctx, config, seedBundle.Qualification, factory, etcdraftv2.CorePSSMapper{},
+			etcdraftv2.DecisionProjector{},
+		)
+	}
+	report, err := controlexperiment.ExecuteQualified(
+		ctx, config, seedBundle.Qualification.Qualification, factory, etcdraftv2.CorePSSMapper{},
+	)
+	return report, controlexperiment.ExecutionBundle{}, err
+}
+
+func etcdraftQualifiedWorkload(
+	ctx context.Context,
+) (qualification.Bundle, controlexperiment.ExecutionAdmission, controlexperiment.WorkloadPlan, error) {
+	bundle, err := qualification.Run(ctx)
+	if err != nil {
+		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
+	}
+	bound, err := controlexperiment.BindExecutionAdmission(
+		bundle.Qualification,
+		controlexperiment.ExecutionRequirements{Capabilities: bundle.Profile.RequiredCapabilityIDs()},
+	)
+	if err != nil {
+		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
+	}
+	const requestID = "m5.15-write-1"
+	payload, err := etcdraftv2.InputPayload(etcdraftv2.Input{
+		Operation: etcdraftv2.OperationPropose, RequestID: requestID, Value: []byte("alpha"),
+	})
+	if err != nil {
+		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
+	}
+	return bundle, bound, controlexperiment.WorkloadPlan{
+		SchemaVersion: controlexperiment.WorkloadPlanVersion, ID: "single-write-v1",
+		TargetSelector: controlexperiment.TargetSingleCoordinatingMember,
+		Invocations: []controlexperiment.WorkloadInvocation{{
+			ID: requestID, Input: payload, ExpectedStatus: "committed",
+		}},
+	}, nil
 }
 
 func randomPolicySeed(base uint64, run int) string {

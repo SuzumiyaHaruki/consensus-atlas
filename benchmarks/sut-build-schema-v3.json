@@ -13,7 +13,7 @@
     "module": {"$ref": "#/$defs/module"},
     "module_digest": {"$ref": "#/$defs/digest"},
     "package": {"type": "string", "minLength": 1},
-    "identity_variable": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*)+$"},
+    "identity_variable": {"type": "string", "pattern": "^[A-Za-z0-9_/-]+(\\.[A-Za-z0-9_/-]+)+$"},
     "sut_build_identity": {"type": "string", "minLength": 1},
     "command_allowlist": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"enum": ["go-build", "go-list-module"]}},
     "output_path": {"type": "string", "minLength": 1}

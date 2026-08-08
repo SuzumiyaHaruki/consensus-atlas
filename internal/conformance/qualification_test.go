@@ -45,7 +45,7 @@ func TestQualificationIsMechanicalAndPartial(t *testing.T) {
 	want := map[string]conformance.CapabilityStatus{
 		"message-retention": conformance.CapabilityValidated,
 		"natural-time":      conformance.CapabilityUnsupported,
-		"trial-cancel":      conformance.CapabilityUndeclared,
+		"process-crash":     conformance.CapabilityUndeclared,
 		"opaque-invoke":     conformance.CapabilityUnvalidated,
 	}
 	for _, result := range report.Capabilities {
@@ -130,11 +130,11 @@ func qualificationProfile(t *testing.T) conformance.QualificationProfile {
 				ConformanceCases: []string{"earliest-temporal-only"},
 			},
 			{
-				ID: "trial-cancel", Required: true,
+				ID: "process-crash", Required: true,
 				Manifest: conformance.ManifestRequirements{
-					Actions: []control.ActionKind{control.ActionCancelTrial},
+					CrashModes: []string{"process-kill"},
 				},
-				ConformanceCases: []string{"trial-cancel-boundary"},
+				ConformanceCases: []string{"process-crash-boundary"},
 			},
 			{
 				ID: "opaque-invoke", Required: true,

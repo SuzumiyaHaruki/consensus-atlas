@@ -162,7 +162,7 @@ func validateState(state State) error {
 			return fmt.Errorf("CORE_PSS_PARTICIPANT_ID_INVALID: %s", participant.ID)
 		}
 		switch participant.Lifecycle {
-		case control.NodeStopped, control.NodeStarting, control.NodeRunning, control.NodeCrashing:
+		case control.NodeStopped, control.NodeRunning:
 		default:
 			return fmt.Errorf("CORE_PSS_LIFECYCLE_UNSUPPORTED: %s", participant.Lifecycle)
 		}
@@ -178,7 +178,7 @@ func validateState(state State) error {
 			return err
 		}
 		switch item.State {
-		case control.ItemProduced, control.ItemBlocked, control.ItemEnabled, control.ItemSelected:
+		case control.ItemProduced, control.ItemBlocked, control.ItemEnabled:
 		default:
 			return fmt.Errorf("CORE_PSS_PENDING_STATE_INVALID: %s", item.State)
 		}

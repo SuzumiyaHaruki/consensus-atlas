@@ -29,7 +29,7 @@ func Run(ctx context.Context) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
-	profile, err := conformance.PortableCFTProfileV2()
+	profile, err := conformance.PortableCFTProfile()
 	if err != nil {
 		return Bundle{}, err
 	}

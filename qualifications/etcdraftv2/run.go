@@ -1,5 +1,5 @@
-// Package etcdraftv2 is the protocol-specific composition root for the M5.3
-// qualification pilot. Generic qualification logic remains in
+// Package etcdraftv2 is the protocol-specific composition root for the current
+// portable CFT qualification. Generic qualification logic remains in
 // internal/conformance.
 package etcdraftv2
 
@@ -30,29 +30,39 @@ func Run(ctx context.Context) (Bundle, error) {
 		return Bundle{}, err
 	}
 	core, err := conformance.EvaluateCore(ctx, factory, conformance.CorePlan{
-		Seed:                 []byte("m5.3-etcdraft-core"),
+		Seed:                 []byte("portable-v2-etcd-core"),
 		ExpectedEntropyNodes: []control.NodeID{"n1", "n2", "n3"},
 	})
 	if err != nil {
 		return Bundle{}, err
 	}
-	lifecycle, err := conformance.EvaluateNaturalLifecycle(ctx, factory, conformance.NaturalLifecyclePlan{
-		Seed: []byte("m5.3-etcdraft-lifecycle"), DecisionBound: 192,
-	})
+	lifecyclePlan := conformance.NaturalLifecyclePlan{
+		Seed: []byte("portable-v2-etcd-lifecycle"), DecisionBound: 192,
+	}
+	natural, err := conformance.EvaluateNaturalLifecycle(ctx, factory, lifecyclePlan)
+	if err != nil {
+		return Bundle{}, err
+	}
+	released, err := conformance.EvaluateReleasedMessageLifecycle(ctx, factory, lifecyclePlan)
 	if err != nil {
 		return Bundle{}, err
 	}
 	input, err := adapterv2.InputPayload(adapterv2.Input{
 		Operation: adapterv2.OperationPropose,
-		RequestID: "m5.3-qualification-request",
-		Value:     []byte("m5.3-opaque-value"),
+		RequestID: "portable-v2",
+		Value:     []byte("value"),
 	})
 	if err != nil {
 		return Bundle{}, err
 	}
-	invoke, err := conformance.EvaluateOpaqueInvoke(ctx, factory, conformance.OpaqueInvokePlan{
-		Seed: []byte("m5.3-etcdraft-invoke"), Node: "n1", Input: input, DecisionBound: 256,
-	})
+	invokePlan := conformance.OpaqueInvokePlan{
+		Seed: []byte("portable-v2-etcd-invoke"), Node: "n1", Input: input, DecisionBound: 256,
+	}
+	invokeReplay, err := conformance.EvaluateOpaqueInvoke(ctx, factory, invokePlan)
+	if err != nil {
+		return Bundle{}, err
+	}
+	invokeAccepted, err := conformance.EvaluateOpaqueInvokeAccepted(ctx, factory, invokePlan)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -60,7 +70,7 @@ func Run(ctx context.Context) (Bundle, error) {
 		CapabilityID: "formal-process-isolation",
 		ReasonCode:   conformance.UnsupportedProcessIsolation,
 	}}
-	reports := []conformance.Report{core, lifecycle, invoke}
+	reports := []conformance.Report{core, natural, released, invokeReplay, invokeAccepted}
 	qualification, err := conformance.Qualify(manifest, profile, unsupported, reports)
 	if err != nil {
 		return Bundle{}, err

@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
-	adapterv2 "github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
 
@@ -36,12 +36,12 @@ func TestQualificationBundleIsStableAndMechanicallyQualified(t *testing.T) {
 	if left.Qualification.Summary != want {
 		t.Fatalf("qualification summary = %+v, want %+v", left.Qualification.Summary, want)
 	}
-	if len(left.ConformanceReports) != 3 {
-		t.Fatalf("conformance reports = %d, want 3", len(left.ConformanceReports))
+	if left.Profile.ID != "portable-cft-control-v2" || len(left.ConformanceReports) != 5 {
+		t.Fatalf("profile/reports = %s/%d, want portable v2/5", left.Profile.ID, len(left.ConformanceReports))
 	}
 }
 
-func TestPortableCFTProfileV2RemainsFullyQualified(t *testing.T) {
+func TestPortableCFTProfileRemainsFullyQualified(t *testing.T) {
 	report := portableV2Qualification(t)
 	want := conformance.QualificationSummary{Total: 9, Required: 8, Validated: 8, Unsupported: 1}
 	if !report.Qualified || report.Summary != want {
@@ -49,80 +49,43 @@ func TestPortableCFTProfileV2RemainsFullyQualified(t *testing.T) {
 	}
 }
 
-func portableV2Qualification(t *testing.T) conformance.QualificationReport {
-	t.Helper()
-	ctx := context.Background()
-	factory := func() control.Adapter {
-		adapter, err := adapterv2.NewWithConfig(adapterv2.ThreeNodeConfig())
-		if err != nil {
-			t.Fatal(err)
-		}
-		return adapter
-	}
-	manifest, err := factory().Manifest(ctx)
+func TestStrictAdmissionAcceptsEtcdAndRejectsHashicorp(t *testing.T) {
+	etcd, err := qualification.Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile, err := conformance.PortableCFTProfileV2()
+	requirements := controlexperiment.ExecutionRequirements{
+		Capabilities: etcd.Profile.RequiredCapabilityIDs(),
+	}
+	if len(requirements.Capabilities) != 8 {
+		t.Fatalf("strict requirements = %d, want 8", len(requirements.Capabilities))
+	}
+	if _, err := controlexperiment.BindExecutionAdmission(etcd.Qualification, requirements); err != nil {
+		t.Fatalf("etcd strict admission: %v", err)
+	}
+
+	encoded, err := os.ReadFile("../../benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	core, err := conformance.EvaluateCore(ctx, factory, conformance.CorePlan{
-		Seed: []byte("portable-v2-etcd-core"), ExpectedEntropyNodes: []control.NodeID{"n1", "n2", "n3"},
-	})
-	if err != nil {
+	var hash conformance.QualificationBundle
+	if err := json.Unmarshal(encoded, &hash); err != nil {
 		t.Fatal(err)
 	}
-	plan := conformance.NaturalLifecyclePlan{Seed: []byte("portable-v2-etcd-lifecycle"), DecisionBound: 192}
-	natural, err := conformance.EvaluateNaturalLifecycle(ctx, factory, plan)
-	if err != nil {
+	if err := hash.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	released, err := conformance.EvaluateReleasedMessageLifecycle(ctx, factory, plan)
-	if err != nil {
-		t.Fatal(err)
+	_, err = controlexperiment.BindExecutionAdmission(hash.Qualification, requirements)
+	if err == nil || !strings.HasPrefix(err.Error(), "EXPERIMENT_ADMISSION_CAPABILITY_NOT_VALIDATED:") {
+		t.Fatalf("HashiCorp strict admission error = %v", err)
 	}
-	input, err := adapterv2.InputPayload(adapterv2.Input{
-		Operation: adapterv2.OperationPropose, RequestID: "portable-v2", Value: []byte("value"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	invokePlan := conformance.OpaqueInvokePlan{Seed: []byte("portable-v2-etcd-invoke"), Node: "n1", Input: input, DecisionBound: 256}
-	invokeReplay, err := conformance.EvaluateOpaqueInvoke(ctx, factory, invokePlan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	invokeAccepted, err := conformance.EvaluateOpaqueInvokeAccepted(ctx, factory, invokePlan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	report, err := conformance.Qualify(manifest, profile, []conformance.UnsupportedDeclaration{{
-		CapabilityID: "formal-process-isolation", ReasonCode: conformance.UnsupportedProcessIsolation,
-	}}, []conformance.Report{core, natural, released, invokeReplay, invokeAccepted})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return report
 }
 
-func TestCheckedQualificationBundleMatchesFreshRun(t *testing.T) {
-	encoded, err := os.ReadFile("../../benchmarks/qualifications/etcdraft-v2-m5.3/report.json")
+func portableV2Qualification(t *testing.T) conformance.QualificationReport {
+	t.Helper()
+	bundle, err := qualification.Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var checked qualification.Bundle
-	if err := json.Unmarshal(encoded, &checked); err != nil {
-		t.Fatal(err)
-	}
-	if err := checked.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	fresh, err := qualification.Run(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if checked.Digest != fresh.Digest {
-		t.Fatalf("checked bundle is stale: %s != %s", checked.Digest, fresh.Digest)
-	}
+	return bundle.Qualification
 }

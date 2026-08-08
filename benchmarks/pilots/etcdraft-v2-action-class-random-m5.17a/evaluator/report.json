@@ -1,0 +1,55 @@
+{
+  "schema_version": "consensus-atlas/bundle-defect-evaluation/v1",
+  "benchmark_id": "public-etcdraft-v2-action-class-random-calibration-m5.17a",
+  "benchmark_digest": "b132e29774536abc9e449c3e0a0ee64b074cd23beb580a51248fdecb432ff838",
+  "classification": "public-calibration-only",
+  "results": [
+    {
+      "trial_id": "trial-calibration",
+      "variant_id": "public-command-divergence",
+      "kind": "calibration-candidate",
+      "root_cause_id": "calibration-command-data-divergence",
+      "status": "survived",
+      "bundle_digest": "be43d14586fb342b22013434d44a3558a4f85fe841f2cb9c4712769b26231e2b",
+      "build_id": "sut-c9811ab0ed8e2f39",
+      "decisions": 96,
+      "primary_work_units": 98,
+      "replay_work_units": 98,
+      "oracle": {
+        "checked": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violations": null
+      }
+    },
+    {
+      "trial_id": "trial-control",
+      "variant_id": "official-control",
+      "kind": "control",
+      "status": "control-pass",
+      "bundle_digest": "b766e3f13e8be015b950032df449762b2ee90e3c80d87e87383c8ff80ac6c9b1",
+      "build_id": "go.etcd.io/raft/v3@v3.6.0",
+      "decisions": 96,
+      "primary_work_units": 98,
+      "replay_work_units": 98,
+      "oracle": {
+        "checked": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violations": null
+      }
+    }
+  ],
+  "summary": {
+    "controls": 1,
+    "false_positives": 0,
+    "calibration_candidates": 1,
+    "killed_calibration_candidates": 0,
+    "root_causes": 1,
+    "killed_root_causes": 0,
+    "invalid_trials": 0
+  },
+  "digest": "3886388d346ad436684c4bffda6198f0585427336642b12b264c052c8478cb68"
+}

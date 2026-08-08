@@ -5,9 +5,42 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
+
+const DecisionProjectionID = "official-etcdraft-v2/applied-prefix-digest-v1"
+
+type DecisionProjector struct{}
+
+func (DecisionProjector) ID() string { return DecisionProjectionID }
+
+// Project maps a node's exact applied log frontier and cumulative application
+// digest into the generic Agreement input. The generic monitor never imports
+// Raft types or decodes this Adapter's Evidence schema.
+func (DecisionProjector) Project(envelope control.EvidenceEnvelope) ([]semantic.DecisionObservation, error) {
+	evidence, err := ProjectEvidence(envelope)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]semantic.DecisionObservation, 0, len(evidence.Nodes))
+	for _, node := range evidence.Nodes {
+		if node.Applied == 0 {
+			continue
+		}
+		observation := semantic.DecisionObservation{
+			Participant: node.Node, Position: strconv.FormatUint(node.Applied, 10),
+			ValueDigest: node.ApplicationDigest,
+		}
+		if err := observation.Validate(); err != nil {
+			return nil, err
+		}
+		result = append(result, observation)
+	}
+	return result, nil
+}
 
 // Evidence is the stable Adapter-owned projection available to PSS, Oracle,
 // migration, and diagnostics. It intentionally omits native raft structs.

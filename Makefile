@@ -1,206 +1,116 @@
-DEEPSEEK_KEY_FILE ?= key.txt
-BLIND_BENCHMARK_ID ?= public-development-v1
-BLIND_BENCHMARK_DIGEST ?= dd82d3a5e3b43b0a0035a3fa4044d04910c4fd840d49129a58d299b336c0df1c
-BLIND_TRIAL_ID ?= public-etcdraft-v1
-EPAXOS_GOPATH ?=
+DEEPSEEK_KEY_FILE ?= ../key.txt
 
-.PHONY: fmt test adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-legacy-consumers audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces audit-blackbox-target audit-blackbox-gateway audit-unified-partition audit-partition-binding audit-gateway-actuator audit-control-paths audit-efficient-epaxos-feasibility probe-efficient-epaxos-message-port v1v2-compare-etcdraft contract-compile-etcdraft auto-onboard-etcdraft auto-onboard-etcdraft-llm coverage-compile-etcdraft campaign-etcdraft campaign-baselines-etcdraft agent-campaign-etcdraft run-raft run-raft-onboarding run-raft-llm experiment-random experiment-dfs experiment-etcdraft-v2 experiment-etcdraft-v2-random experiment-etcdraft-v2-stub-planner experiment-etcdraft-v2-deepseek-planner
+.PHONY: fmt test audit-no-v1 adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2 experiment-etcdraft-v2-random experiment-etcdraft-v2-workload experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-stub-planner experiment-etcdraft-v2-deepseek-planner
 
 fmt:
-	gofmt -w $$(find adapters bindings cmd drivers families internal migrations qualifications -type f -name '*.go')
+	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
 
-test: audit-legacy-consumers
+test: audit-no-v1
 	go test ./...
-	python3 -m unittest discover -s agents -p 'test_*.py'
+
+# M5.16R guard: archived documents and experiment artifacts may mention v1,
+# but no compiled source may import or recreate the deleted implementation cone.
+audit-no-v1:
+	@test -z "$$(find agents bindings catalogs drivers families migrations -type f \
+		\( -name '*.go' -o -name '*.py' \) -print 2>/dev/null)"
+	@if rg -n 'github.com/SuzumiyaHaruki/consensus-atlas/(internal/(adapter|agentcampaign|autoonboard|blackbox|campaign|core|coverage|driver|engine|explore|host|migration|protocolcontract|scenario|testplan)|drivers/etcdraft|families/raft|migrations/etcdraftv1v2)' --glob '*.go' .; then \
+		echo 'M5.16R violation: compiled source references the deleted v1 cone' >&2; \
+		exit 1; \
+	fi
 
 adapter-qualify-etcdraftv2:
 	go run ./cmd/adapter-qualify -target etcdraftv2 \
-		-out benchmarks/qualifications/etcdraft-v2-m5.3/report.json
+		-out artifacts/qualifications/etcdraft-v2-current/report.json
 
 adapter-qualify-hashicorpraftv2:
 	go run ./cmd/adapter-qualify -target hashicorpraftv2 \
-		-out benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json
-
-audit-legacy-consumers:
-	@go list -f '{{range .Imports}}{{$$.ImportPath}}|{{.}}{{"\n"}}{{end}}' ./... \
-		| rg '\|github.com/SuzumiyaHaruki/consensus-atlas/(internal/(adapter|host|engine|explore|scenario)|drivers/etcdraft)$$' \
-		| sed 's#github.com/SuzumiyaHaruki/consensus-atlas/##g' \
-		| LC_ALL=C sort \
-		| diff -u benchmarks/migrations/v1-consumers-m5.9a/production-edges.txt -
+		-out artifacts/qualifications/hashicorp-raft-v2-current/report.json
 
 audit-hashicorp-determinism:
 	go test ./adapters/hashicorpraftv2 \
 		-run TestOfficialDeterminismBoundaryMatchesFrozenAudit -count=1
 
 audit-portable-cft-matrix:
-	go test ./adapters/hashicorpraftv2 \
-		-run TestOfficialDeterminismBoundaryMatchesFrozenAudit -count=1
 	go test ./qualifications/etcdraftv2 \
 		-run TestFrozenPortableCapabilityMatrixMatchesMechanicalQualification -count=1
+	go test ./qualifications/hashicorpraftv2 -count=1
 
 audit-control-surfaces:
 	go test ./qualifications/etcdraftv2 \
 		-run 'TestFrozenControlSurfaceComparisonMatchesFreshQualifications|TestSurfaceDeclarationCannotSelfAwardSchedulerControl' -count=1
 
-audit-blackbox-target:
-	go test ./internal/blackbox -count=5
-
-audit-blackbox-gateway:
-	go test ./internal/blackbox -run TestConnectionGatewayPartitionsTwoProcesses -count=20
-
-audit-unified-partition:
-	go test ./internal/blackbox -run TestSamePartitionActionsDriveEtcdMailboxAndBlackboxGateway -count=20
-
-audit-partition-binding:
-	go test ./internal/control -run TestPartitionParametersAreCanonicalAndSelfValidating -count=20
-	go test ./internal/blackbox -run 'TestGatewayBinding|TestSamePartitionActions' -count=20
-
-audit-gateway-actuator:
-	go test ./internal/blackbox -run 'TestGatewayActuator|TestGatewayEligibility|TestOverlappingPartitionActions' -count=20
-
-audit-control-paths:
-	go test ./internal/conformance -run TestControlPath -count=20
-	go test ./internal/blackbox -run TestFrozenControlPathMatrix -count=20
-
-audit-efficient-epaxos-feasibility:
-	go test ./internal/architecture \
-		-run TestFrozenEfficientEPaxosFeasibilityMatchesDerivedDecision -count=1
-
-probe-efficient-epaxos-message-port:
-	@test -n "$(EPAXOS_GOPATH)" || { echo "EPAXOS_GOPATH is required" >&2; exit 2; }
-	@test -d "$(EPAXOS_GOPATH)/src/epaxos" || { echo "EPAXOS_GOPATH is not an efficient/epaxos GOPATH" >&2; exit 2; }
-	@test "$$(git -C "$(EPAXOS_GOPATH)" rev-parse HEAD)" = "791b115669fca472d3136f6a2eda46c00b3f8251"
-	@test "$$(git -C "$(EPAXOS_GOPATH)" rev-parse 'HEAD^{tree}')" = "708b8e37f6b50a4e6b6fcbb95045dc53ad7d6344"
-	@test -z "$$(git -C "$(EPAXOS_GOPATH)" status --porcelain --untracked-files=no)"
-	@test -z "$$(git -C "$(EPAXOS_GOPATH)" ls-files --others --exclude-standard -- 'src/**/*.go')"
-	@env GOPATH="$(EPAXOS_GOPATH)" GO111MODULE=off go run -race \
-		benchmarks/feasibility/efficient-epaxos-m5.8b/testdata/messageport/main.go \
-		benchmarks/feasibility/efficient-epaxos-m5.8b/result.json
-
-v1v2-compare-etcdraft:
-	go run ./cmd/v1v2-compare \
-		-out benchmarks/migrations/etcdraft-v1-v2-m5.2.5/report.json
-
-contract-compile-etcdraft:
-	go run ./cmd/contract-compile \
-		-contract contracts/etcdraft-v1.json
-
-auto-onboard-etcdraft:
-	go run ./cmd/auto-onboard \
-		-repo . \
-		-contract contracts/etcdraft-v1.json \
-		-binding onboarding/etcdraft-binding-v1.json \
-		-report-out artifacts/onboarding/etcdraft-v1.json \
-		-profile-out artifacts/onboarding/etcdraft-profile-v1.json
-
-auto-onboard-etcdraft-llm:
-	go run ./cmd/auto-onboard-llm \
-		-repo . \
-		-contract contracts/etcdraft-v1.json \
-		-key-file $(DEEPSEEK_KEY_FILE) \
-		-model deepseek-v4-flash \
-		-max-attempts 5 \
-		-report-out artifacts/onboarding/deepseek-etcdraft-v1.json \
-		-binding-out artifacts/onboarding/deepseek-etcdraft-binding-v1.json \
-		-profile-out artifacts/onboarding/deepseek-etcdraft-profile-v1.json
-
-coverage-compile-etcdraft: auto-onboard-etcdraft
-	go run ./cmd/coverage-compile \
-		-base-profile artifacts/onboarding/etcdraft-profile-v1.json \
-		-spec profiles/raft/three-node-cft-v1.json \
-		-out artifacts/profiles/etcdraft-campaign-v1.json
-
-run-raft-onboarding: auto-onboard-etcdraft
-	go run ./cmd/runner \
-		-profile artifacts/onboarding/etcdraft-profile-v1.json \
-		-scenario scenarios/etcdraft-election-crash.json \
-		-out artifacts/etcdraft-onboarding-run.json
-
-run-raft: coverage-compile-etcdraft
-	go run ./cmd/runner \
-		-profile artifacts/profiles/etcdraft-campaign-v1.json \
-		-scenario scenarios/etcdraft-election-crash.json \
-		-out artifacts/etcdraft-campaign-run.json
-
-campaign-etcdraft: coverage-compile-etcdraft
-	go run ./cmd/campaign \
-		-profile artifacts/profiles/etcdraft-campaign-v1.json \
-		-plans plans/etcdraft-expert-v1.json \
-		-out artifacts/campaigns/etcdraft-expert-v1.json
-
-campaign-baselines-etcdraft: coverage-compile-etcdraft
-	go run ./cmd/campaign \
-		-profile artifacts/profiles/etcdraft-campaign-v1.json \
-		-plans plans/baselines/etcdraft-partition-random-256-v1.json \
-		-out artifacts/campaigns/etcdraft-partition-random-256-v1.json
-	go run ./cmd/campaign \
-		-profile artifacts/profiles/etcdraft-campaign-v1.json \
-		-plans plans/baselines/etcdraft-partition-dfs-256-v1.json \
-		-out artifacts/campaigns/etcdraft-partition-dfs-256-v1.json
-
-# This target performs real model calls and is intentionally excluded from test.
-agent-campaign-etcdraft: coverage-compile-etcdraft
-	go run ./cmd/agent-campaign \
-		-repo . \
-		-profile artifacts/profiles/etcdraft-campaign-v1.json \
-		-blind-benchmark-id $(BLIND_BENCHMARK_ID) \
-		-blind-benchmark-digest $(BLIND_BENCHMARK_DIGEST) \
-		-blind-trial-id $(BLIND_TRIAL_ID) \
-		-key-file $(DEEPSEEK_KEY_FILE) \
-		-model deepseek-v4-flash \
-		-campaign-id deepseek-etcdraft-blind-v1 \
-		-max-attempts 6 \
-		-max-no-progress 3 \
-		-max-runs 20 \
-		-max-decisions 1024 \
-		-max-tokens 200000 \
-		-out artifacts/agent-campaigns/deepseek-etcdraft-blind-v1.json
-
-run-raft-llm: auto-onboard-etcdraft-llm
-	go run ./cmd/runner \
-		-profile artifacts/onboarding/deepseek-etcdraft-profile-v1.json \
-		-scenario scenarios/etcdraft-election-crash.json \
-		-out artifacts/deepseek-etcdraft-run.json
-
-experiment-random: auto-onboard-etcdraft
-	go run ./cmd/experiment \
-		-profile artifacts/onboarding/etcdraft-profile-v1.json \
-		-setup scenarios/etcdraft-explore-setup.json \
-		-strategy random -runs 64 -budget 64 -decision-budget 128 -seed 1 \
-		-out artifacts/etcdraft-random-experiment.json
-
-experiment-dfs: auto-onboard-etcdraft
-	go run ./cmd/experiment \
-		-profile artifacts/onboarding/etcdraft-profile-v1.json \
-		-setup scenarios/etcdraft-explore-setup.json \
-		-strategy dfs -runs 64 -budget 64 -decision-budget 128 \
-		-out artifacts/etcdraft-dfs-experiment.json
-
 experiment-etcdraft-v2:
-	go run ./cmd/control-experiment \
-		-strategy fixed \
-		-decisions 32 \
+	go run ./cmd/control-experiment -strategy fixed -decisions 32 \
 		-out benchmarks/experiments/etcdraft-v2-fixed-baselines-m5.10/report.json
 
 experiment-etcdraft-v2-random:
-	go run ./cmd/control-experiment \
-		-strategy random \
-		-policy-seed 1 \
-		-decisions 32 \
+	go run ./cmd/control-experiment -strategy random -policy-seed 1 -decisions 32 \
 		-out benchmarks/experiments/etcdraft-v2-random-m5.11/report.json
 
+experiment-etcdraft-v2-workload:
+	go run ./cmd/control-experiment -strategy workload -decisions 96 \
+		-out benchmarks/experiments/etcdraft-v2-workload-m5.15/report.json
+
+experiment-etcdraft-v2-bundle:
+	go run ./cmd/control-experiment -strategy workload -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-bundle-m5.16/report.json \
+		-bundle-out artifacts/experiments/etcdraft-v2-bundle-m5.16/bundle.json
+
+experiment-etcdraft-v2-action-class-random:
+	go run ./cmd/control-experiment -strategy workload-action-class-random \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-action-class-random-m5.17a/report.json \
+		-bundle-out artifacts/experiments/etcdraft-v2-action-class-random-m5.17a/bundle.json
+
+experiment-etcdraft-v2-trace-mutation:
+	go run ./cmd/control-experiment -strategy workload-trace-mutation \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-trace-mutation-m5.17b/report.json \
+		-bundle-out artifacts/experiments/etcdraft-v2-trace-mutation-m5.17b/bundle.json
+
+build-etcdraft-v2-calibration:
+	go run ./cmd/sut-build -repo . \
+		-spec benchmarks/pilots/etcdraft-v2-calibration-m5.16/build-input/candidate.json \
+		-audit-out benchmarks/pilots/etcdraft-v2-calibration-m5.16/build-audit/candidate.json
+
+experiment-etcdraft-v2-calibration: build-etcdraft-v2-calibration
+	artifacts/pilots/etcdraft-v2-calibration-m5.16/bin/sut-c9811ab0ed8e2f39-bundle-v1 \
+		-strategy workload -decisions 96 \
+		-out artifacts/pilots/etcdraft-v2-calibration-m5.16/candidate/report.json \
+		-bundle-out artifacts/pilots/etcdraft-v2-calibration-m5.16/candidate/bundle.json
+
+evaluate-etcdraft-v2-calibration:
+	go run ./cmd/defect-eval \
+		-manifest benchmarks/pilots/etcdraft-v2-calibration-m5.16/evaluator/manifest.json \
+		-control-bundle artifacts/experiments/etcdraft-v2-bundle-m5.16/bundle.json \
+		-candidate-bundle artifacts/pilots/etcdraft-v2-calibration-m5.16/candidate/bundle.json \
+		-out benchmarks/pilots/etcdraft-v2-calibration-m5.16/evaluator/report.json
+
+build-etcdraft-v2-action-class-calibration:
+	go run ./cmd/sut-build -repo . \
+		-spec benchmarks/pilots/etcdraft-v2-action-class-random-m5.17a/build-input/candidate.json \
+		-audit-out benchmarks/pilots/etcdraft-v2-action-class-random-m5.17a/build-audit/candidate.json
+
+experiment-etcdraft-v2-action-class-calibration: build-etcdraft-v2-action-class-calibration
+	artifacts/pilots/etcdraft-v2-action-class-random-m5.17a/bin/sut-c9811ab0ed8e2f39-action-class-v1 \
+		-strategy workload-action-class-random -policy-seed 1 -decisions 96 \
+		-out artifacts/pilots/etcdraft-v2-action-class-random-m5.17a/candidate/report.json \
+		-bundle-out artifacts/pilots/etcdraft-v2-action-class-random-m5.17a/candidate/bundle.json
+
+evaluate-etcdraft-v2-action-class-calibration:
+	go run ./cmd/defect-eval \
+		-manifest benchmarks/pilots/etcdraft-v2-action-class-random-m5.17a/evaluator/manifest.json \
+		-control-bundle artifacts/experiments/etcdraft-v2-action-class-random-m5.17a/bundle.json \
+		-candidate-bundle artifacts/pilots/etcdraft-v2-action-class-random-m5.17a/candidate/bundle.json \
+		-out benchmarks/pilots/etcdraft-v2-action-class-random-m5.17a/evaluator/report.json
+
 experiment-etcdraft-v2-stub-planner:
-	go run ./cmd/control-experiment \
-		-strategy stub-planner \
-		-decisions 32 \
+	go run ./cmd/control-experiment -strategy stub-planner -decisions 32 \
 		-out benchmarks/experiments/etcdraft-v2-stub-planner-m5.12/attempt.json
 
-# This target performs exactly one real model call and is intentionally excluded from test.
+# This target performs exactly one real model call and is excluded from test.
 experiment-etcdraft-v2-deepseek-planner:
-	go run ./cmd/control-experiment \
-		-strategy deepseek-planner \
-		-key-file ../key.txt \
-		-model deepseek-v4-flash \
-		-model-timeout 5m \
+	go run ./cmd/control-experiment -strategy deepseek-planner \
+		-key-file $(DEEPSEEK_KEY_FILE) -model deepseek-v4-flash -model-timeout 5m \
 		-decisions 32 \
 		-out benchmarks/experiments/etcdraft-v2-deepseek-planner-m5.13/attempt.json

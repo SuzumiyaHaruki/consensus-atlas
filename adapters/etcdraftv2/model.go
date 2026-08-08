@@ -14,7 +14,7 @@ const (
 	adapterID       = "official-etcdraft-v2alpha1"
 	implementation  = "go.etcd.io/raft/v3"
 	implementationV = "v3.6.0"
-	buildID         = "go.etcd.io/raft/v3@v3.6.0"
+	defaultBuildID  = "go.etcd.io/raft/v3@v3.6.0"
 
 	evidenceSchema = "consensus-atlas/etcdraft-v2-evidence/v1"
 	readySchema    = "consensus-atlas/etcdraft-v2-ready-effect/v1"
@@ -26,6 +26,10 @@ const (
 	effectReadyPersist = "raft-ready-persist"
 	effectReadyAdvance = "raft-ready-advance"
 )
+
+// SUTBuildIdentity is replaced only by the audited source-variation builder.
+// The official in-process control retains defaultBuildID byte-for-byte.
+var SUTBuildIdentity = defaultBuildID
 
 type NodeConfig struct {
 	Node   control.NodeID `json:"node"`

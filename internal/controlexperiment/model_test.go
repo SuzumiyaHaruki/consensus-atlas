@@ -1,10 +1,14 @@
 package controlexperiment
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 )
 
 func TestPolicyUsesExactRuleBeforeFallbackPriority(t *testing.T) {
@@ -88,5 +92,114 @@ func TestRandomPolicyIsSeededAndDeterministic(t *testing.T) {
 	}
 	if reflect.DeepEqual(leftIDs, rightIDs) {
 		t.Fatal("different random policy seeds produced the same selection sequence")
+	}
+}
+
+func TestActionClassRandomDoesNotWeightClassesByActionMultiplicity(t *testing.T) {
+	actions := []control.Action{{ID: "deliver", Kind: control.ActionDeliverMessage}}
+	for index := 0; index < 15; index++ {
+		actions = append(actions, control.Action{
+			ID: control.ActionID(fmt.Sprintf("drop-%02d", index)), Kind: control.ActionDropMessage,
+		})
+	}
+	policy := Policy{Version: ActionClassPolicyVersion, ID: "class-random", SeedHex: "01"}
+	if err := policy.Validate(256); err != nil {
+		t.Fatal(err)
+	}
+	deliveries := 0
+	var first []control.ActionID
+	for decision := 1; decision <= 256; decision++ {
+		selected, err := policy.selectAction(decision, actions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		repeated, _ := policy.selectAction(decision, actions)
+		if repeated.ID != selected.ID {
+			t.Fatalf("decision %d changed from %s to %s", decision, selected.ID, repeated.ID)
+		}
+		if selected.Kind == control.ActionDeliverMessage {
+			deliveries++
+		}
+		if decision <= 8 {
+			first = append(first, selected.ID)
+		}
+	}
+	if deliveries < 96 || deliveries > 160 {
+		t.Fatalf("deliver class selected %d/256 times, want approximately half", deliveries)
+	}
+	reordered := append([]control.Action(nil), actions...)
+	slices.Reverse(reordered)
+	for decision, want := range first {
+		selected, err := policy.selectAction(decision+1, reordered)
+		if err != nil || selected.ID != want {
+			t.Fatalf("reordered decision %d = %s/%v, want %s", decision+1, selected.ID, err, want)
+		}
+	}
+}
+
+func TestActionClassRandomHonorsFrozenWorkloadPriority(t *testing.T) {
+	policy := Policy{
+		Version: ActionClassPolicyVersion, ID: "workload-class-random", SeedHex: "01",
+		Priority: []control.ActionKind{control.ActionInvoke},
+	}
+	if err := policy.Validate(1); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := policy.selectAction(1, []control.Action{
+		{ID: "drop", Kind: control.ActionDropMessage},
+		{ID: "invoke", Kind: control.ActionInvoke},
+	})
+	if err != nil || selected.ID != "invoke" {
+		t.Fatalf("selected = %s/%v, want frozen invoke", selected.ID, err)
+	}
+}
+
+func TestAdjacentTraceMutationUsesExactSpliceAndDeclaredSuffix(t *testing.T) {
+	trace, err := (controlruntime.Trace{Records: []controlruntime.ActionRecord{
+		{Action: control.Action{ID: "a", Kind: control.ActionCompleteEffect}},
+		{Action: control.Action{ID: "b", Kind: control.ActionDeliverMessage}},
+		{Action: control.Action{ID: "c", Kind: control.ActionCompleteEffect}},
+		{Action: control.Action{ID: "d", Kind: control.ActionFireTemporal}},
+	}}).Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := Policy{
+		Version: PolicyVersion, ID: "source",
+		Priority: []control.ActionKind{control.ActionDeliverMessage, control.ActionFireTemporal},
+	}
+	plan, err := NewAdjacentTraceMutation("swap-2-3", trace, source, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := Policy{Version: TraceMutationPolicyVersion, ID: "mutation", TraceMutation: &plan}
+	if err := policy.Validate(4); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		decision int
+		enabled  []control.Action
+		want     control.ActionID
+	}{
+		{1, []control.Action{{ID: "a", Kind: control.ActionCompleteEffect}}, "a"},
+		{2, []control.Action{{ID: "b", Kind: control.ActionDeliverMessage}, {ID: "c", Kind: control.ActionCompleteEffect}}, "c"},
+		{3, []control.Action{{ID: "b", Kind: control.ActionDeliverMessage}}, "b"},
+		{4, []control.Action{{ID: "x", Kind: control.ActionFireTemporal}, {ID: "y", Kind: control.ActionDeliverMessage}}, "y"},
+	}
+	for _, test := range tests {
+		selected, err := policy.selectAction(test.decision, test.enabled)
+		if err != nil || selected.ID != test.want {
+			t.Fatalf("decision %d selected %s/%v, want %s", test.decision, selected.ID, err, test.want)
+		}
+	}
+	_, err = policy.selectAction(2, []control.Action{{ID: "b", Kind: control.ActionDeliverMessage}})
+	var selection *policySelectionError
+	if !errors.As(err, &selection) || selection.failureCode() != "EXPERIMENT_TRACE_MUTATION_ACTION_NOT_ENABLED" {
+		t.Fatalf("missing swapped action error = %v", err)
+	}
+	tampered := plan
+	tampered.FirstActionID = "changed"
+	if err := tampered.Validate(4); err == nil || err.Error() != "EXPERIMENT_TRACE_MUTATION_DIGEST_MISMATCH" {
+		t.Fatalf("tampered plan error = %v", err)
 	}
 }

@@ -86,7 +86,7 @@ func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, erro
 	return control.AdapterManifest{
 		SchemaVersion: control.SchemaVersion,
 		AdapterID:     adapterID, ImplementationID: implementation + "@" + implementationV,
-		BuildID: buildID, ConfigurationDigest: configurationDigest, Nodes: adapter.config.nodeIDs(),
+		BuildID: SUTBuildIdentity, ConfigurationDigest: configurationDigest, Nodes: adapter.config.nodeIDs(),
 		Capabilities: control.CapabilityManifest{
 			Actions: actions,
 			Items:   items,

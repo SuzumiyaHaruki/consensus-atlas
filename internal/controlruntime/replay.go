@@ -17,6 +17,8 @@ type ReplayDivergenceError struct {
 // lets callers charge failed replay attempts without duplicating replay logic.
 type ReplayProgress struct {
 	RuntimeInitialized bool
+	PrepareActions     int
+	WorkloadOffers     int
 	Decisions          int
 }
 
@@ -64,6 +66,10 @@ func ReplayWithProgress(
 	for _, want := range expected.Records {
 		if want.Action.Kind == control.ActionInvoke || want.Action.Kind == control.ActionPartition {
 			runtime.offered[want.Action.ID] = want.Action
+			progress.PrepareActions++
+			if want.Action.Kind == control.ActionInvoke {
+				progress.WorkloadOffers++
+			}
 		}
 		got, err := runtime.Select(ctx, want.Action.ID)
 		if err != nil {

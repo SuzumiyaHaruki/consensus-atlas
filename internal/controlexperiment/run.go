@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/protocolstate"
@@ -17,6 +18,13 @@ import (
 )
 
 type AdapterFactory func() (control.Adapter, error)
+
+type runCapture struct {
+	trace    controlruntime.Trace
+	samples  []protocolstate.Sample
+	snapshot controlruntime.Snapshot
+	prepares []PreparationRecord
+}
 
 // ExecutionFailure preserves the work completed by the sole experiment path
 // when a proposed policy cannot finish. It is an execution result, not a
@@ -55,11 +63,43 @@ func executionFailure(
 	}
 }
 
-func Execute(
+// ExecuteLegacy preserves the frozen M5.10-M5.13 unqualified measurement
+// path. New experiments must bind a QualificationReport and call
+// ExecuteQualified.
+func ExecuteLegacy(
 	ctx context.Context,
 	config Config,
 	newAdapter AdapterFactory,
 	mapper psscore.SemanticMapper,
+) (Report, error) {
+	if config.Admission != nil {
+		return Report{}, errors.New("EXPERIMENT_QUALIFICATION_REPORT_REQUIRED")
+	}
+	return execute(ctx, config, newAdapter, mapper, nil)
+}
+
+func ExecuteQualified(
+	ctx context.Context,
+	config Config,
+	qualification conformance.QualificationReport,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+) (Report, error) {
+	if config.Admission == nil {
+		return Report{}, errors.New("EXPERIMENT_ADMISSION_REQUIRED")
+	}
+	if err := config.Admission.VerifyQualification(qualification); err != nil {
+		return Report{}, err
+	}
+	return execute(ctx, config, newAdapter, mapper, nil)
+}
+
+func execute(
+	ctx context.Context,
+	config Config,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	captures *[]runCapture,
 ) (Report, error) {
 	if err := config.Validate(); err != nil {
 		return Report{}, err
@@ -76,8 +116,10 @@ func Execute(
 	}
 	measured := make([]protocolstate.MeasuredRun, 0, len(config.Runs))
 	for _, plan := range config.Runs {
+		var capture runCapture
 		run, samples, err := executeRun(
-			ctx, config.DecisionsPerRun, runtimeConfig, plan, newAdapter, mapper, &report.Work,
+			ctx, config.DecisionsPerRun, runtimeConfig, plan, config.Admission, config.FaultEnvelope,
+			newAdapter, mapper, &report.Work, &capture,
 		)
 		if err != nil {
 			return Report{}, err
@@ -92,6 +134,9 @@ func Execute(
 			)
 		}
 		report.Runs = append(report.Runs, run)
+		if captures != nil {
+			*captures = append(*captures, capture)
+		}
 		current := protocolstate.MeasuredRun{Run: plan.Run, Initial: samples[0]}
 		for index := 1; index < len(samples); index++ {
 			sample := samples[index]
@@ -127,9 +172,12 @@ func executeRun(
 	decisionBudget int,
 	runtimeConfig controlruntime.Config,
 	plan RunPlan,
+	admission *ExecutionAdmission,
+	faultEnvelope *FaultEnvelope,
 	newAdapter AdapterFactory,
 	mapper psscore.SemanticMapper,
 	work *WorkLedger,
+	capture *runCapture,
 ) (RunReport, []protocolstate.Sample, error) {
 	chargeSetup(&work.Primary)
 	adapter, err := newAdapter()
@@ -151,24 +199,71 @@ func executeRun(
 			"primary-observe", "EXPERIMENT_PRIMARY_TRACE_FAILED", plan.Run, 0, *work, err,
 		)
 	}
+	if admission != nil && initialTrace.ManifestDigest != admission.ManifestDigest {
+		cause := fmt.Errorf("EXPERIMENT_ADMISSION_MANIFEST_MISMATCH: run=%d", plan.Run)
+		return RunReport{}, nil, executionFailure(
+			"admission", "EXPERIMENT_ADMISSION_MANIFEST_MISMATCH", plan.Run, 0, *work, cause,
+		)
+	}
 	sampler, err := psscore.NewOnlineSampler(mapper, runtime.Snapshot(), initialTrace.InitialEvidence)
 	if err != nil {
 		return RunReport{}, nil, executionFailure(
 			"primary-sample", "EXPERIMENT_PRIMARY_SAMPLE_FAILED", plan.Run, 0, *work, err,
 		)
 	}
+	currentEvidence := initialTrace.InitialEvidence
+	offeredWorkload := 0
+	faultUsage := FaultUsage{}
 	for decision := 1; decision <= decisionBudget; decision++ {
+		prepareBefore := runtime.Snapshot()
+		offeredAction, offered, err := offerNextWorkloadInvocation(
+			ctx, plan.Workload, offeredWorkload, runtime, mapper, currentEvidence,
+		)
+		if err != nil {
+			return RunReport{}, nil, executionFailure(
+				"primary-prepare", "EXPERIMENT_WORKLOAD_PREPARE_FAILED", plan.Run, decision, *work, err,
+			)
+		}
+		if offered {
+			chargePrepareActions(&work.Primary, 1)
+			prepare, err := newPreparationRecord(
+				len(capture.prepares)+1, decision, offeredAction, prepareBefore, runtime.Snapshot(),
+			)
+			if err != nil {
+				return RunReport{}, nil, executionFailure(
+					"primary-prepare", "EXPERIMENT_PREPARATION_RECORD_FAILED", plan.Run, decision, *work, err,
+				)
+			}
+			capture.prepares = append(capture.prepares, prepare)
+		}
 		enabled, err := runtime.EnabledActions(ctx)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-observe", "EXPERIMENT_ENABLED_ACTIONS_FAILED", plan.Run, decision, *work, err,
 			)
 		}
-		action, err := plan.Policy.selectAction(decision, enabled)
+		selectable := enabled
+		if plan.Policy.Version == ActionClassPolicyVersion && faultEnvelope != nil {
+			selectable = faultUsage.constrain(*faultEnvelope, enabled, runtime.Snapshot())
+		}
+		action, err := plan.Policy.selectAction(decision, selectable)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-policy", "EXPERIMENT_POLICY_SELECTION_FAILED", plan.Run, decision, *work, err,
 			)
+		}
+		if offered && action.ID != offeredAction {
+			cause := fmt.Errorf("EXPERIMENT_WORKLOAD_OFFER_NOT_SELECTED: %s", offeredAction)
+			return RunReport{}, nil, executionFailure(
+				"primary-policy", "EXPERIMENT_WORKLOAD_OFFER_NOT_SELECTED", plan.Run, decision, *work, cause,
+			)
+		}
+		if faultEnvelope != nil {
+			if err := faultUsage.check(*faultEnvelope, action, runtime.Snapshot()); err != nil {
+				return RunReport{}, nil, executionFailure(
+					"primary-envelope", "EXPERIMENT_FAULT_ENVELOPE_EXCEEDED", plan.Run, decision, *work, err,
+				)
+			}
 		}
 		record, err := runtime.Select(ctx, action.ID)
 		if err != nil {
@@ -176,7 +271,15 @@ func executeRun(
 				"primary-select", "EXPERIMENT_ACTION_SELECT_FAILED", plan.Run, decision, *work, err,
 			)
 		}
+		if offered {
+			offeredWorkload++
+		}
 		chargeDecisions(&work.Primary, 1)
+		faultUsage.record(action)
+		if record.Evidence != nil {
+			currentEvidence = *record.Evidence
+			currentEvidence.Payload.Bytes = append([]byte(nil), record.Evidence.Payload.Bytes...)
+		}
 		if err := sampler.Capture(record, runtime.Snapshot()); err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-sample", "EXPERIMENT_PRIMARY_SAMPLE_FAILED", plan.Run, decision, *work, err,
@@ -187,6 +290,12 @@ func executeRun(
 	if err != nil {
 		return RunReport{}, nil, executionFailure(
 			"primary-observe", "EXPERIMENT_PRIMARY_TRACE_FAILED", plan.Run, decisionBudget, *work, err,
+		)
+	}
+	workloadReport, err := finishWorkload(plan.Workload, offeredWorkload, runtime.Snapshot())
+	if err != nil {
+		return RunReport{}, nil, executionFailure(
+			"primary-workload", "EXPERIMENT_WORKLOAD_INCOMPLETE", plan.Run, decisionBudget, *work, err,
 		)
 	}
 	chargeSetup(&work.Replay)
@@ -200,6 +309,7 @@ func executeRun(
 	if progress.RuntimeInitialized {
 		chargeRuntimeInitialization(&work.Replay)
 	}
+	chargePrepareActions(&work.Replay, progress.PrepareActions)
 	chargeDecisions(&work.Replay, progress.Decisions)
 	if err != nil {
 		return RunReport{}, nil, executionFailure(
@@ -210,6 +320,18 @@ func executeRun(
 	if err != nil {
 		return RunReport{}, nil, executionFailure(
 			"replay", "EXPERIMENT_REPLAY_TRACE_FAILED", plan.Run, progress.Decisions, *work, err,
+		)
+	}
+	replayWorkload, err := finishWorkload(plan.Workload, progress.WorkloadOffers, replayed.Snapshot())
+	if err != nil {
+		return RunReport{}, nil, executionFailure(
+			"replay-workload", "EXPERIMENT_REPLAY_WORKLOAD_MISMATCH", plan.Run, progress.Decisions, *work, err,
+		)
+	}
+	if !reflect.DeepEqual(workloadReport, replayWorkload) {
+		cause := errors.New("EXPERIMENT_REPLAY_WORKLOAD_MISMATCH")
+		return RunReport{}, nil, executionFailure(
+			"replay-workload", "EXPERIMENT_REPLAY_WORKLOAD_MISMATCH", plan.Run, progress.Decisions, *work, cause,
 		)
 	}
 	discovery, err := sampler.Discovery()
@@ -226,17 +348,33 @@ func executeRun(
 			"primary-sample", "EXPERIMENT_SAMPLE_DIGEST_FAILED", plan.Run, decisionBudget, *work, err,
 		)
 	}
-	return RunReport{
+	runReport := RunReport{
 		Run: plan.Run, PolicyID: plan.Policy.ID, PolicyDigest: policyDigest,
 		TargetDecisions: decisionBudget, ChargedDecisions: len(trace.Records), BudgetReached: true,
 		ManifestDigest: trace.ManifestDigest, TraceSchemaVersion: trace.SchemaVersion, TraceDigest: trace.Digest,
 		SeedDigest: trace.SeedDigest, InitialStateDigest: trace.InitialStateDigest,
 		FinalStateDigest: trace.FinalStateDigest, CorePSSSamples: len(samples),
 		CorePSSSamplesDigest: samplesDigest, UniqueCoreStates: discovery.UniqueStates,
+		Workload: workloadReport,
 		Replay: ReplayResult{
 			Required: true, Stable: true, Decisions: len(replayTrace.Records), TraceDigest: replayTrace.Digest,
 		},
-	}, samples, nil
+	}
+	if capture != nil {
+		capture.trace = trace
+		capture.samples = append([]protocolstate.Sample(nil), samples...)
+		capture.snapshot = runtime.Snapshot()
+	}
+	if faultEnvelope != nil {
+		if err := faultUsage.validate(*faultEnvelope); err != nil {
+			return RunReport{}, nil, executionFailure(
+				"primary-envelope", "EXPERIMENT_FAULT_USAGE_INVALID", plan.Run, decisionBudget, *work, err,
+			)
+		}
+		usage := faultUsage
+		runReport.Faults = &usage
+	}
+	return runReport, samples, nil
 }
 
 func (report Report) Seal() (Report, error) {
@@ -292,6 +430,24 @@ func (report Report) Validate() error {
 		if run.CorePSSSamples != report.Config.DecisionsPerRun+1 || run.CorePSSSamplesDigest == "" ||
 			run.UniqueCoreStates <= 0 {
 			return fmt.Errorf("EXPERIMENT_REPORT_SAMPLE_COUNT_MISMATCH: %d", run.Run)
+		}
+		if plan.Workload == nil {
+			if run.Workload != nil {
+				return fmt.Errorf("EXPERIMENT_WORKLOAD_REPORT_UNEXPECTED: %d", run.Run)
+			}
+		} else if run.Workload == nil {
+			return fmt.Errorf("EXPERIMENT_WORKLOAD_REPORT_REQUIRED: %d", run.Run)
+		} else if err := run.Workload.validate(*plan.Workload); err != nil {
+			return fmt.Errorf("run %d: %w", run.Run, err)
+		}
+		if report.Config.FaultEnvelope == nil {
+			if run.Faults != nil {
+				return fmt.Errorf("EXPERIMENT_FAULT_USAGE_UNEXPECTED: %d", run.Run)
+			}
+		} else if run.Faults == nil {
+			return fmt.Errorf("EXPERIMENT_FAULT_USAGE_REQUIRED: %d", run.Run)
+		} else if err := run.Faults.validate(*report.Config.FaultEnvelope); err != nil {
+			return fmt.Errorf("run %d: %w", run.Run, err)
 		}
 	}
 	if err := validateDiscovery(report); err != nil {

@@ -34,6 +34,10 @@
       }
     },
     "package": {"type": "string", "minLength": 1},
+    "identity_variable": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_/-]+(\\.[A-Za-z0-9_/-]+)+$"
+    },
     "sut_build_identity": {"type": "string", "minLength": 1},
     "command_allowlist": {
       "type": "array",

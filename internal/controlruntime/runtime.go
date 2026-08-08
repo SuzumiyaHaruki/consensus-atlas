@@ -350,12 +350,6 @@ func (runtime *Runtime) commitAdapterAction(action control.Action, emission cont
 
 func (runtime *Runtime) executeNative(action control.Action) error {
 	switch action.Kind {
-	case control.ActionDropMessage:
-		entry := runtime.items[action.Item]
-		if entry == nil || entry.item.Kind != control.ItemMessage || entry.state != control.ItemEnabled {
-			return fmt.Errorf("DROP_ITEM_INVALID: %s", action.Item)
-		}
-		entry.state = control.ItemDropped
 	case control.ActionDuplicateMessage:
 		entry := runtime.items[action.Item]
 		if entry == nil || entry.item.Kind != control.ItemMessage || entry.state != control.ItemEnabled {
@@ -402,8 +396,6 @@ func (runtime *Runtime) executeNative(action control.Action) error {
 			return fmt.Errorf("PARTITION_NOT_ACTIVE: %s", parameters.ID)
 		}
 		delete(runtime.partitions, parameters.ID)
-	case control.ActionCancelTrial:
-		return errors.New("TRIAL_CANCELED")
 	default:
 		return fmt.Errorf("NATIVE_ACTION_UNSUPPORTED: %s", action.Kind)
 	}

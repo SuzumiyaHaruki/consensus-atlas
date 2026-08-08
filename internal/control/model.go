@@ -39,10 +39,8 @@ func (r NodeRef) Validate() error {
 type NodeLifecycle string
 
 const (
-	NodeStopped  NodeLifecycle = "stopped"
-	NodeStarting NodeLifecycle = "starting"
-	NodeRunning  NodeLifecycle = "running"
-	NodeCrashing NodeLifecycle = "crashing"
+	NodeStopped NodeLifecycle = "stopped"
+	NodeRunning NodeLifecycle = "running"
 )
 
 type ActionKind string
@@ -52,7 +50,6 @@ const (
 	ActionDuplicateMessage ActionKind = "duplicate-message"
 	ActionPartition        ActionKind = "partition"
 	ActionHeal             ActionKind = "heal"
-	ActionCancelTrial      ActionKind = "cancel-trial"
 	ActionInvoke           ActionKind = "invoke"
 	ActionDeliverMessage   ActionKind = "deliver-message"
 	ActionFireTemporal     ActionKind = "fire-temporal-event"
@@ -65,7 +62,7 @@ const (
 
 var allActionKinds = map[ActionKind]struct{}{
 	ActionDropMessage: {}, ActionDuplicateMessage: {}, ActionPartition: {},
-	ActionHeal: {}, ActionCancelTrial: {}, ActionInvoke: {},
+	ActionHeal: {}, ActionInvoke: {},
 	ActionDeliverMessage: {}, ActionFireTemporal: {}, ActionCrash: {},
 	ActionRestart: {}, ActionCompleteEffect: {}, ActionFailEffect: {},
 	ActionCompleteCallback: {},
@@ -124,7 +121,6 @@ const (
 	ItemProduced  ItemState = "produced"
 	ItemBlocked   ItemState = "blocked"
 	ItemEnabled   ItemState = "enabled"
-	ItemSelected  ItemState = "selected"
 	ItemCompleted ItemState = "completed"
 	ItemCanceled  ItemState = "canceled"
 	ItemFailed    ItemState = "failed"

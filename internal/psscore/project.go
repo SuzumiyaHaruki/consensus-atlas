@@ -179,7 +179,7 @@ func projectControl(snapshot controlruntime.Snapshot) (ControlContext, error) {
 
 func pendingState(state control.ItemState) bool {
 	switch state {
-	case control.ItemProduced, control.ItemBlocked, control.ItemEnabled, control.ItemSelected:
+	case control.ItemProduced, control.ItemBlocked, control.ItemEnabled:
 		return true
 	default:
 		return false
