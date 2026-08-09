@@ -24,37 +24,6 @@ func TestEtcdraftM518b4ConsumesFrozenArmThroughV2Outcome(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("completed", func(t *testing.T) {
-		proposal := b4ConsumerProposal(t, freeze.Baseline, "offline-no-feedback", etcdraftBackendActionClass)
-		client, calls := b4ConsumerMockClient(t, freeze.NoFeedback.RequestBytes, proposal, nil)
-		result, err := consumeEtcdraftAgentB4Arm(
-			context.Background(), "test-secret", client, freeze,
-			controlexperiment.AgentAblationArmNoFeedback,
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if *calls != 1 || result.Audit.Status != controlexperiment.AgentInvocationCompleted ||
-			result.Intent == nil || result.Plan == nil || result.Instance == nil ||
-			result.Report == nil || result.Bundle == nil || result.Outcome == nil ||
-			result.Instance.PolicySeed != freeze.Freeze.FollowUpSeed ||
-			result.Instance.Budget != freeze.Freeze.ExecutionBudget ||
-			result.Audit.RequestDigest != freeze.NoFeedback.RequestDigest ||
-			result.Audit.Work.Model.Calls != 1 {
-			t.Fatalf("unexpected completed consumer result: audit=%#v", result.Audit)
-		}
-		if err := validateEtcdraftAgentB4ArmResult(freeze, result); err != nil {
-			t.Fatalf("completed result does not revalidate: %v", err)
-		}
-		encoded, err := json.Marshal(result)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if bytes.Contains(encoded, []byte("test-secret")) {
-			t.Fatal("consumer result contains the model key")
-		}
-	})
-
 	t.Run("baseline-rejected-before-execution", func(t *testing.T) {
 		proposal := freeze.Baseline
 		proposal.ID = "offline-hard-change"

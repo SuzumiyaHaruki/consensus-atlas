@@ -2,7 +2,7 @@
 
 日期：2026-08-09
 
-阶段：M5.18b4 frozen request consumer 完成；未调用模型
+阶段：M5.18b4 pair orchestration/persistence 已完成；未调用模型
 
 ## 输入、处理、输出
 
@@ -15,13 +15,15 @@
 处理
   one prompt builder -> feedback=null / trusted feedback
   -> exact prompt/request bytes -> digest-bound two-arm freeze
-  -> selected frozen arm -> one invoke -> audit/strict parse/baseline check
-  -> plan v2 -> seed-4 instance -> existing executor -> IntentOutcome
+  -> fixed no-feedback/with-feedback order -> each exact request invoked once
+  -> per-arm audit/strict parse/baseline check -> optional seed-4 execution/outcome
+  -> recomputed pair ledger -> new artifact directory only
                          |
                          v
 输出
   same view/risk/must/budget/transport + only feedback exposure differs
-  + offline success/failure audits + seed 4 + 1 call/arm + 0 retry
+  + one pair ledger + offline success/failure artifacts
+  + seed 4 + 1 call/arm + 0 retry + complete per-arm charged work
   + real model_calls=0
 ```
 
@@ -63,6 +65,12 @@ M5.18b4 consumer 没有重新生成 request。它按 arm ID 取得冻结 prepare
 commitment 后只调用一次 `invokePrepared`，再复用现有 audit、strict parser、baseline validator、
 plan v2、seed-4 instance、qualified executor、projector 和 IntentOutcome。当前清单增加为 25 项；
 离线成功、越权拒绝、transport failure 和 request tamper 均通过，真实模型调用仍为 0。
+
+M5.18b4 pair orchestration 也没有新增执行器或状态机。它固定按 no-feedback/with-feedback 各调用一次
+上述 consumer；第一臂失败仍会执行第二臂。pair ledger 绑定共同 freeze、两份 invocation audit、
+可选 instance/outcome digest 和每臂完整 source/post-freeze/model 成本；大型工件独立写入全新目录。
+篡改 ledger、目录覆盖、key 落盘和 transport 私有诊断泄漏都有离线拒绝见证。当前 exact-once 清单为
+26 项，真实模型调用仍为 0。
 
 ## 为什么需要显式 preparation
 
@@ -463,6 +471,10 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
   新的分片 full gate，不回写上面两次历史单 binary 失败；
 - M5.18b4 consumer 后 exact-once 清单为 method 6、execution 7、agent 12，共 25 项；定向普通测试
   12.164 秒、定向 race 165.074 秒、完整 agent shard race 361.838 秒，均通过；
+- M5.18b4 pair 后 exact-once 清单为 method 6、execution 7、agent 13，共 26 项；最终普通全量测试中
+  composition package 为 101.670 秒，受影响的完整 agent shard race 为 652.141 秒，均通过且没有
+  data-race 报告；最终 ledger body 自校验修改后的单项 pair race 又以 407.280 秒通过。该耗时高于
+  上一阶段，已如实记录但未抬高 20 分钟 ceiling；
 - `go test -count=1 ./...` 和 `go vet ./...`：通过，composition package 为 94.621 秒；
 - 147 个非 artifacts JSON、23 个 schema JSON、4 个 M5.18a build input/audit schema 实例和 146 个
   Markdown 本地链接：通过；
@@ -488,36 +500,37 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 - 当前只有一个人工冻结的 etcd/raft risk 和 target-owned backend catalog，不证明知识包已普适；
 - 新 IntentOutcome 仍只证明 ActionKind 前置，没有 RiskWitness 证明协议里程碑偏序；
 - 没有 FaultProvider，所以 Partition/Heal 在新 b4 backend surface 中明确关闭；
-- request 已冻结，单臂 consumer 只用离线 mock 验证；尚未获得真实模型回复，也没有两臂 pair ledger
-  或两臂 execution 结果；
+- request 已冻结，单臂 consumer 和双臂 pair ledger 只用离线 mock 验证；尚未获得本轮真实模型回复，
+  也没有正式双臂模型结果；
 - 没有证明 etcd/raft、ConsensusAtlas 或任何目标实现正确、完备或无缺陷。
 
 ## 下一步
 
-继续 M5.18b4：复用已完成的单臂 consumer，只增加两臂 orchestration/persistence 和一份 pair ledger，
-绑定共同 freeze、两份 invocation audit、可选 instance/outcome 与完整 source/follow-up/model 成本。
-模型运行仍需用户明确要求；每臂最多 1 call、0 retry，任何失败都原样计费。b4 只是
-backend-preference micro-ablation。
+为已经完成的 [M5.18b4 pair ledger](stage-m5.18b4-pair-ledger.md) 增加显式 opt-in 运行入口。入口必须
+先构造并验证完整 freeze，再读取用户明确指定的 key 文件；随后只调用现有 pair consumer，并在返回
+arm failure 前持久化 pair ledger。不得自动重试、替换 response/backend/seed 或覆盖旧目录。增加入口
+本身不授权真实模型调用；b4 仍只是 backend-preference micro-ablation。
 
 ## 阅读顺序
 
-1. [M5.18b4 frozen request consumer](stage-m5.18b4-request-consumer.md)
-2. [M5.18b4R race gate topology](stage-m5.18b4r-race-gate-topology.md)
-3. [M5.18b4 request freeze](stage-m5.18b4-request-freeze.md)
-4. [M5.18b4-pre trust corrections](stage-m5.18b4-pre-trust-corrections.md)
-5. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
-6. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
-7. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
-8. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
-9. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
-10. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
-11. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
-12. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
-13. [架构](architecture.md)
-14. [总体规划](ConsensusAtlas-总体规划.md)
-15. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
-16. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
-17. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
-18. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
-19. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
-20. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)
+1. [M5.18b4 pair orchestration/persistence](stage-m5.18b4-pair-ledger.md)
+2. [M5.18b4 frozen request consumer](stage-m5.18b4-request-consumer.md)
+3. [M5.18b4R race gate topology](stage-m5.18b4r-race-gate-topology.md)
+4. [M5.18b4 request freeze](stage-m5.18b4-request-freeze.md)
+5. [M5.18b4-pre trust corrections](stage-m5.18b4-pre-trust-corrections.md)
+6. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
+7. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
+8. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
+9. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
+10. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
+11. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
+12. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
+13. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
+14. [架构](architecture.md)
+15. [总体规划](ConsensusAtlas-总体规划.md)
+16. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
+17. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
+18. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
+19. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
+20. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
+21. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)

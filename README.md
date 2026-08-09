@@ -5,10 +5,12 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段是 **M5.18b4 frozen request consumer 完成**：只把 freeze 已绑定的 exact request 接入既有
+当前阶段已完成 **M5.18b4 pair orchestration/persistence**：复用 frozen request consumer，
+以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
+未调用模型。单臂 consumer 已把 freeze 绑定的 exact request 接入既有
 response audit、strict parser、baseline validator、plan v2、seed-4 execution 和 IntentOutcome。
-离线 mock 已验证成功、越权拒绝、transport failure 和 request tamper；没有读取 key 或调用模型。
-M5.18b4R 当前清单为 25/25 exact-once，受影响 agent shard race 已通过。M5.18b4 已冻结的
+pair 层已验证固定顺序、首臂失败隔离、ledger 篡改拒绝、禁止覆盖以及 key/私有诊断不落盘。
+M5.18b4R 当前清单为 26/26 exact-once，受影响的 13 项 agent shard race 已通过。M5.18b4 已冻结的
 no-feedback/with-feedback 两臂精确 prompt/request bytes、共同
 hard baseline、seed 4、执行预算和 transport 上限已在
 读取 key 前冻结。唯一可见信息差异是 feedback 为 JSON `null` 或可重算对象。本轮没有调用模型。
@@ -329,11 +331,13 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段实现冻结 request 的单一消费路径：response audit、strict parse、baseline 校验、
-plan v2、seed-4 instance、existing executor 和 IntentOutcome。只有用户明确要求运行模型实验时才读取 key；
-b4 只是 backend-preference feedback micro-ablation，不承担最终 Agent 效果结论。
+下一阶段为已完成的 pair consumer 增加显式 opt-in 入口：先完成 freeze，再读取用户指定的 key，调用
+双臂后即使出现 arm failure 也先持久化 ledger。增加入口不等于授权真实调用；b4 只是
+backend-preference feedback micro-ablation，不承担最终 Agent 效果结论。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.18b4](docs/stage-m5.18b4-request-freeze.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
+[M5.18b4 consumer](docs/stage-m5.18b4-request-consumer.md)、
+[M5.18b4 freeze](docs/stage-m5.18b4-request-freeze.md)、
 [M5.18b4-pre](docs/stage-m5.18b4-pre-trust-corrections.md)、
 [M5.18b3](docs/stage-m5.18b3-unseen-follow-up.md)、
 [M5.18b2](docs/stage-m5.18b2-defect-blind-batch-feedback.md)、

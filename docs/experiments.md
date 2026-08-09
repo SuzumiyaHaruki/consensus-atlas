@@ -74,6 +74,12 @@ qualified executor 和 IntentOutcome；没有 retry、reply repair 或 backend/s
 离线 mock 验证成功和失败边界，没有 CLI 或真实模型调用。完整规范见
 `stage-m5.18b4-request-consumer.md`。
 
+M5.18b4 pair orchestration 固定按 no-feedback/with-feedback 顺序各消费一次冻结 request；第一臂失败
+不阻断第二臂。pair ledger 对每臂分别绑定 invocation audit、可选 execution/outcome digest，并把共享
+source 成本完整计入两臂。结构化工件和 exact prompt/request bytes 只写入全新目录；篡改 ledger、
+覆盖目录、key 落盘和 transport 私有诊断泄漏均由离线测试拒绝。本阶段没有 CLI 或真实模型调用，
+完整规范见 `stage-m5.18b4-pair-ledger.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

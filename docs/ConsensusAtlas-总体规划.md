@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.20（M5.18b4 frozen request consumer 完成）
+> 状态：Draft v1.22（M5.18b4 pair ledger 已完成；显式 opt-in 运行入口待实现）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2233,6 +2233,13 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     新 request bytes。单臂依次执行一次 transport、response audit、strict parse、baseline validation、
     plan v2、seed-4 instance、已有 qualified executor 和 IntentOutcome；每个失败阶段保留稳定分类和
     已发生成本，无 retry、回复修复、backend/seed 替换或 hard constraint fallback。
+66. [X] M5.18b4 pair orchestration 固定按 no-feedback/with-feedback 各调用一次现有 consumer，单臂
+    失败不阻断另一臂。唯一 pair ledger 绑定共同 freeze、两份 invocation audit、可选 instance/outcome
+    和每臂完整 source/post-freeze/model 成本；大型 report/bundle 独立持久化，不进入 ledger body。
+67. [ ] M5.18b4 显式 opt-in pair 入口必须先完成并验证 freeze，再读取用户显式指定的 key
+    文件。入口只调用现有 pair consumer；任一 arm 失败时仍必须先把完整 pair ledger
+    持久化到全新目录，再向调用方返回失败。不得自动重试、替换 response/backend/seed 或
+    覆盖旧工件；增加入口本身不授权真实模型调用。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2248,9 +2255,13 @@ parser、单份 baseline 校验、plan v2、seed-4 instance、qualified executor
 IntentOutcome。离线成功、hard-baseline 越权、transport failure 和 request tamper 回归通过；没有新增
 CLI、临时 summary schema、执行器或真实模型调用。当前 exact-once 清单为 25 项，受影响 agent shard
 12 项以 361.838 秒通过 race。
-下一阶段继续 M5.18b4：只增加两臂 orchestration/persistence，把共同 freeze、两个 invocation audit、
-可选 execution instance/outcome 和每臂完整 source/follow-up/model 成本写入一份 pair ledger；失败 arm
-原样保留，不替换 response/backend/seed。只有用户明确要求运行模型实验时才读取 key 并执行两臂。b4 只报告
+M5.18b4 pair orchestration/persistence 已完成：固定顺序各消费一次 exact frozen request，
+第一臂失败仍执行第二臂。唯一 ledger 绑定共同 freeze、两份 audit、可选 instance/outcome
+digest 和每臂完整成本；大型工件独立写入全新目录。离线回归已拒绝 ledger 篡改、目录覆盖、
+key 落盘和 transport 私有诊断泄漏。当前 exact-once 清单为 26 项，受影响的 agent shard 13 项
+以 652.141 秒通过 race；未读取 key，真实模型调用为 0。
+下一阶段只增加显式 opt-in pair 入口，并保证 freeze-before-key 与 failure-before-return
+persistence。只有用户明确要求运行模型实验时才读取 key 并执行两臂。b4 只报告
 backend-preference feedback micro-ablation，不报告 LLM-guided consensus testing effectiveness。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
@@ -2495,6 +2506,12 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
     配置、follow-up seed 与 execution budget 必须从 freeze 机械取得。response audit、strict parse、
     baseline validation、compile、execution 和 intent reachability 必须分阶段记账；任何阶段失败都
     不得触发 retry、人工修复、backend fallback 或替换 seed。
+96. 双臂 orchestration 必须保留失败 arm 并继续另一 arm，不得以第一臂失败为由提前结束或替换输入。
+    source 物理复用不改变每臂逻辑计费；pair ledger 只绑定现有 audit/instance/outcome identity，不复制
+    transport、compiler、executor 或大型 bundle。持久化目标必须是全新目录，禁止覆盖已有实验工件。
+97. 正式 pair 入口必须遵守 freeze-before-key；key 读取和 transport 不得影响已冻结的输入。
+    pair consumer 返回可持久化结果和独立失败，因此调用方必须先落盘完整 ledger，再向外返回
+    arm failure；不得因非零错误丢弃已发生的模型成本或失败 audit。
 
 ---
 
