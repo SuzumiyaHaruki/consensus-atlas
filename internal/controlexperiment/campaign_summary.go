@@ -207,6 +207,11 @@ func (recovered *CampaignRecovery) ReadAttemptArtifact(ordinal int) ([]byte, err
 		return nil, fmt.Errorf("EXPERIMENT_CAMPAIGN_ARTIFACT_OPEN: %w", err)
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !openedInfo.Mode().IsRegular() || openedInfo.Size() > campaignMaxArtifactBytes ||
+		!os.SameFile(info, openedInfo) {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_ARTIFACT_FILE_CHANGED")
+	}
 	artifact, err := io.ReadAll(io.LimitReader(file, campaignMaxArtifactBytes+1))
 	if err != nil || len(artifact) > campaignMaxArtifactBytes {
 		return nil, errors.New("EXPERIMENT_CAMPAIGN_ARTIFACT_READ_INVALID")

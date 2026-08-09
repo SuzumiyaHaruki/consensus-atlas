@@ -2,31 +2,42 @@
 
 日期：2026-08-09
 
-阶段：M5.19c 首个真实 etcd/raft Campaign Provider 已完成；模型调用为 0
+阶段：M5.19d Campaign Summary/Artifact Reader/离线 Runner 已完成；模型调用为 0
 
 ## 输入、处理、输出
 
 ```text
 输入
-  frozen etcd/raft CampaignSpec + Adapter Manifest identity
-  + trusted CampaignRecovery/logical allowance
+  attempts + decisions + first seed + wall ceiling
+  + new directory | explicit exact-config resume
                          |
                          v
 处理
-  digest-bound request(config/head/ordinal/allowance)
-  -> thin target provider derives frozen seed
-  -> existing etcdraftExecution/ExecuteQualifiedBundle
-  -> completed report+bundle | typed failed artifact
-  -> generic artifact-first checkpoint / durable failure marker
-  -> full recovery and next attempt
+  M5.19c provider -> generic Coordinator/checkpoints
+  -> validated CampaignRecovery
+  -> small CampaignSummary(records/totals/status)
+  -> committed-ordinal artifact reader
+  -> fsync/no-replace summary outside trusted root
                          |
                          v
 输出
-  2-attempt recoverable real Campaign (seeds 41/42)
-  + replay-stable bundles/Core PSS + 32 decisions, 36/36 work
-  + cross-process no-retry for artifact-less provider failure
-  + no generic CLI/aggregate score/model call yet
+  runnable/resumable etcd/raft Campaign
+  + running/stopped/failed summary and exact WorkLedger
+  + content-addressed full artifacts stored once
+  + no cross-attempt observation/final score/model call yet
 ```
+
+M5.19d 增加的 `CampaignSummary/v1` 只复制小型 terminal records 和 checkpoint digest 索引，并保存
+config/target/spec identity、totals、elapsed、stop reason 和可选 failure marker。`running`、`stopped`、
+`failed` 是运行状态，不是 pass/fail verdict。`ReadAttemptArtifact` 只能从带私有令牌的完整恢复状态
+按 committed ordinal 读取，并重验 regular-file、64 MiB 上限和 SHA-256；orphan/pending/任意路径
+不对外暴露。
+
+`campaign-etcdraft-v1` 现接受显式 Campaign 参数。真实新运行以 seeds 61/62 完成 2 个
+8-decision attempts，得到 16 primary decisions 和 18/18 primary/replay work。独立 resume 见证在
+seed 71 后结束进程，CLI 以 exact config 完成 seed 72；修改 decisions 的恢复被拒绝。非 resume
+不接管已有目录，Summary 不覆盖已有文件且不能放入可信 Campaign 根目录。artifact-less
+provider error 在返回错误前已保存 failed Summary，未泄漏私有诊断。
 
 M5.19c 没有增加执行器。etcd/raft target-owned provider 冻结 admissible-uniform strategy、每 attempt
 16 decisions、first-seed-plus-ordinal-minus-one 规则和 artifact schema，然后直接调用现有 qualified bundle
@@ -540,17 +551,18 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 
 ## 下一步
 
-进入 M5.19d：先实现协议无关 Campaign summary/reader，只暴露已校验的 attempt/outcome/work/
-artifact 索引以及 stop/failure 状态，不复制大型 report/bundle。随后增加显式 etcd/raft 离线
-runner，使用者可以输入新目录、attempt/decision/wall ceiling 和 first seed 运行现有 provider。
-runner 只组装已冻结对象，不新建执行器、PSS/Oracle 或模型路径。
+进入 M5.20：从 committed-ordinal reader 取得已校验 etcd/raft artifact，通过 target-owned projector
+生成跨 attempt Campaign Observation。第一版只分开展示 terminal outcomes/cost、Core PSS 并集与
+发现曲线、fault/workload 统计和 Oracle 触发索引。不增加执行外壳，不让通用 Summary 解析
+etcd/raft，不把多个指标拼成无外部效度证据的“完备度分数”。
 
 ## 阅读顺序
 
-1. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-2. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-3. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-4. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-5. [架构](architecture.md)
-6. [总体规划](ConsensusAtlas-总体规划.md)
-7. [完整文档导航](README.md)
+1. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+2. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+3. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+4. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+5. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+6. [架构](architecture.md)
+7. [总体规划](ConsensusAtlas-总体规划.md)
+8. [完整文档导航](README.md)

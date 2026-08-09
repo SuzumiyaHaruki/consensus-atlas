@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.31（M5.19c 首个真实 Campaign Provider 完成）
+> 状态：Draft v1.32（M5.19d Campaign Summary/Runner 完成）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2258,11 +2258,15 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     当作同一 ordinal 重试。marker 只保存 config/head/request 身份和稳定分类，不保存私有
     错误文本；现有 `ExecutionFailure.Work` 必须转成带 artifact 的 terminal failed attempt。接入不能
     复制 Runtime、replay、PSS 或 Oracle 路径，也不在通用包中引入 etcd/raft 类型。
-72. [ ] M5.19d 先增加协议无关 Campaign summary/reader，只输出已校验 checkpoint 的
+72. [X] M5.19d 先增加协议无关 Campaign summary/reader，只输出已校验 checkpoint 的
     attempt/outcome/work/artifact 索引和停止/失败状态，不复制大型 artifact。然后增加显式 opt-in
     etcd/raft 离线 runner，只组装冻结 spec、Campaign 目录和现有 provider；不在 CLI 内新建执行、
     PSS 或 Oracle 逻辑。Summary 的 `running/stopped/failed` 不能被表述为 pass/fail verdict；reader 只能
     按 committed ordinal 读取内容寻址 artifact，不暴露任意路径或 orphan。
+73. [ ] M5.20 从 reader 返回的已校验 artifact 机械投影跨 attempt Campaign Observation。第一版
+    只分开报告 terminal outcomes/cost、Core PSS 并集与发现曲线、fault/workload 统计和 Oracle
+    触发索引；不把 PSS 状态数、义务或 Oracle 结果拼成一个自定义综合分数。投影器是
+    target-owned composition，通用 Summary/Coordinator 不解析 etcd/raft artifact。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2306,6 +2310,12 @@ Coordinator 不重试。M5.19c 已补齐跨进程 durable failure marker，并�
 32 decisions 和 36/36 primary/replay work。现有 `ExecutionFailure.Work` 已保留为 terminal failed artifact，
 普通 provider/result error 则以不含私有诊断的 `failure.json` 封住 exact next request。本阶段未新增
 Runtime、Replay、PSS 或 Oracle 路径，真实模型调用为 0。
+M5.19d 已增加协议无关 `CampaignSummary/v1` 和 committed-ordinal artifact reader；Summary 只保存
+小型 record/checkpoint 索引、totals 与 `running/stopped/failed` 状态，不复制 report/bundle。
+`campaign-etcdraft-v1` runner 现可按 attempts/decisions/first seed/wall ceiling 启动新 Campaign，或以
+显式 flag 恢复 exact config。真实 2-attempt 见证以 seeds 61/62 得到 16 decisions 和 18/18 work；
+独立见证从 seed 71 的 head 恢复完成 seed 72。artifact-less error 在返回前保存 failed Summary，
+私有诊断未落盘。当前 Summary 不是 verdict，也没有跨 attempt 的 PSS/Coverage/Oracle 聚合。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
 但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race

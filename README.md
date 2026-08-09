@@ -5,17 +5,19 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.19c Real Campaign Provider**：首个真实 provider 仅在 etcd/raft
-composition root 中冻结 spec/seed/target/artifact，并直接调用现有 qualified executor。两个
-attempt 在首项后完整恢复，保存的 report/bundle 均 replay-stable 且含 Core PSS；总账本为
-32 primary decisions 和 36/36 primary/replay work。普通 provider error 及非法 result 现会写入
-digest-bound `failure.json`，新进程不得重试同一 ordinal；已发生可证成本的
-`ExecutionFailure` 则转为带 artifact/WorkLedger 的 terminal failed attempt。M5.19a 的协议无关 Campaign 目录以
+当前阶段已完成 **M5.19d Campaign Summary/Runner**：用户现可给定 attempts、decisions、first seed
+和 wall-clock ceiling，启动新 etcd/raft Campaign 或显式恢复 exact config。协议无关
+`CampaignSummary/v1` 只保存 terminal records/checkpoint 索引、totals 和 `running/stopped/failed`
+状态，不复制大型 report/bundle；reader 只能按 committed ordinal 读取并重验 artifact。真实
+runner 见证以 seeds 61/62 完成 2 attempts，得到 16 primary decisions 和 18/18
+primary/replay work。M5.19c 的 provider 仍直接调用现有 qualified executor；普通 provider error 及
+非法 result 会写入 digest-bound `failure.json`，已发生可证成本的 `ExecutionFailure` 则转为
+带 artifact/WorkLedger 的 terminal failed attempt。M5.19a 的协议无关 Campaign 目录以
 artifact-first、checkpoint-second 的 fsync/no-replace 顺序提交，恢复会重验完整链、artifact 引用和
 config/target/spec identity，并把中断残留作为不计入账本的 orphan/pending 报告。M5.19 基础已经冻结
 target/spec identity、
 逻辑预算、运维 wall-clock ceiling、四类 terminal attempt 和 O(n) previous-digest checkpoint 链。
-当前真实 provider 仍只有定向组合和回归入口，尚没有通用 Campaign CLI 或跨 attempt 汇总报告。
+当前已有离线 runner 和成本/结果索引，但尚没有跨 attempt PSS/Coverage/Oracle 观测报告。
 此前 M5.18b4 pair orchestration/persistence 已接到
 freeze-before-key、failure-before-return-persistence 的正式 CLI 和 Make 入口。已有 pair 复用 frozen request consumer，
 以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
@@ -81,6 +83,7 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - 外部 Conformance Suite、版本化 Qualification 和 digest-bound Experiment admission；
 - 固定 Core PSS IR、可信在线采样和跨 run 状态发现；
 - opaque workload、Semantic Mapping guard、FaultEnvelope 和完整成本账本；
+- 可恢复多-attempt Campaign、内容寻址 artifact、小型 Summary/reader 和 etcd/raft 离线 runner；
 - qualified fixed workload、action-class random 与 trace mutation policy；策略不能提交 enabled set；
 - 自包含 ExecutionBundle：完整 trace、preparation state transition、Evidence、最终 Snapshot、Core PSS、
   client history、decision history、Qualification 和 work ledger；
@@ -263,17 +266,19 @@ go vet ./...
 make test-race-full
 ```
 
-M5.18b4 继续在测试进程内复用不可变 source fixture；物理复用不减少方法账本中的 source 成本，
-也不改变历史 identity。`make test` 已通过，`cmd/control-experiment` 用时 90.785 秒。
-`make test-race-full` 两次都在 20 分钟 ceiling 超时且未报告 data race，因此当前完整 race 门禁状态是
-**未通过**；已按阶段 timebox 停止，不再抬高上限或继续重跑。workload/trace-mutation 定向 race
-以 84.420 秒通过。
+M5.18b4R 已将全部顶层重测试机械分入 exact-once race shards，完整门禁已通过；早期单进程
+20 分钟超时仍作为历史失败记录保留。M5.19d 的普通全仓测试通过，
+`cmd/control-experiment` 用时 103.970 秒；Summary/reader 与真实 runner 定向 race 分别以
+1.449/45.984 秒通过。本阶段没有无界重跑无关的全量 race。
 
 重跑官方 bundle 和公开 calibration：
 
 ```bash
 make experiment-etcdraft-v2-bundle
 make experiment-etcdraft-v2-semantics
+make experiment-etcdraft-v2-campaign
+# 仅用于上一进程未产生 summary 的 exact-config 恢复
+make experiment-etcdraft-v2-campaign-resume
 make experiment-etcdraft-v2-calibration
 make evaluate-etcdraft-v2-calibration
 make experiment-etcdraft-v2-action-class-random
@@ -346,14 +351,15 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段将在不复制大型 artifact 的前提下增加协议无关 Campaign summary/reader，再提供显式的
-etcd/raft 离线 runner。wall-clock 只作为运维上限，权威预算仍是 primary/replay work、decisions、
-attempts 和 model cost；本阶段的 Coverage/PSS 仍只存在每个已验证 bundle 中，还未表述为最终评分。
+下一阶段从已验证 artifact 投影跨 attempt Campaign Observation，分开展示 outcome/work、
+Core PSS 并集、fault/workload 统计和 Oracle 触发索引。wall-clock 只作为运维上限；当前不将
+这些指标拼成一个自定义“完备度分数”。
 
 阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
 [M5.19a persistence](docs/stage-m5.19a-campaign-persistence.md)、
 [M5.19b Coordinator](docs/stage-m5.19b-campaign-coordinator.md)、
 [M5.19c real provider](docs/stage-m5.19c-real-campaign-provider.md)、
+[M5.19d summary/runner](docs/stage-m5.19d-campaign-summary-runner.md)、
 [M5.18b4 runner](docs/stage-m5.18b4-pair-runner.md)、
 [M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
 [M5.18b4 consumer](docs/stage-m5.18b4-request-consumer.md)、

@@ -110,6 +110,12 @@ config/head/request 和稳定分类，使 artifact-less error 跨进程不可重
 attempt。第一个真实 etcd/raft provider 只存在 composition root，它冻结 strategy/seed/artifact schema 并
 调用现有 `etcdraftExecution -> ExecuteQualifiedBundle`。通用 Campaign 包仍不导入协议类型。
 
+M5.19d 在这条链上增加读取面，不增加执行面。协议无关 `CampaignSummary/v1` 只从完整
+验证的 `CampaignRecovery` 派生，它索引 terminal records/checkpoints/totals/status，不嵌入
+artifact。`ReadAttemptArtifact` 使用同一私有恢复令牌限制 committed ordinal，然后重验文件和
+digest。etcd/raft runner 只组装 spec/provider/config/Coordinator/Summary，新运行和 resume 使用同一
+executor。Summary 的运行状态不是协议 verdict，跨 attempt 观测留在后续 target-owned projection 层。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

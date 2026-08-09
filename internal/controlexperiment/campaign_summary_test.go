@@ -143,6 +143,9 @@ func TestCampaignArtifactReaderRejectsChangedOrOversizedCommittedFile(t *testing
 		name   string
 		change func(string) error
 	}{
+		{name: "missing", change: func(path string) error {
+			return os.Rename(path, path+".missing")
+		}},
 		{name: "changed", change: func(path string) error {
 			return os.WriteFile(path, []byte("changed"), 0o600)
 		}},

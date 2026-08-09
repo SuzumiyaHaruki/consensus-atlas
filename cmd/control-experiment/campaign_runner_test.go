@@ -92,6 +92,13 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 		resumed.Attempts[0].CheckpointDigest != first.Digest {
 		t.Fatalf("explicit resume did not continue the same head: %#v", resumed)
 	}
+	driftArgs := append([]string(nil), resumeArgs...)
+	driftArgs[10] = "9"
+	driftArgs[len(driftArgs)-1] = filepath.Join(root, "resume", "drift-summary.json")
+	if err := run(ctx, driftArgs, &bytes.Buffer{}); err == nil ||
+		!strings.Contains(err.Error(), "IDENTITY_MISMATCH") {
+		t.Fatalf("resume accepted a changed config: %v", err)
+	}
 
 	failureOptions := etcdraftCampaignRunOptions{
 		Directory:  filepath.Join(root, "failed", "campaign"),

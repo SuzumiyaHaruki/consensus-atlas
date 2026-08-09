@@ -2,7 +2,7 @@
 
 日期：2026-08-09
 
-状态：设计冻结，实现在推进
+状态：完成
 
 ## 目的
 
@@ -47,15 +47,15 @@ RecoverCampaignDirectory -> validated CampaignRecovery
 
 ## 最小验收
 
-- [ ] stopped/running/failed 三类 Summary 均可 canonical seal/revalidate；
-- [ ] Summary totals 等于 terminal records 逐项求和，head/previous digest 顺序不能篡改；
-- [ ] Summary JSON 不包含真实 artifact payload，读取 API 只返回 exact committed ordinal；
-- [ ] artifact 缺失、替换、超限、ordinal 越界和被修改的 recovery token 均被拒绝；
-- [ ] 新 runner 完成至少一个多-attempt etcd/raft Campaign 并输出可重验 Summary；
-- [ ] 显式 resume 延续同一 config/head，非 resume 不接管已有目录，summary 不覆盖旧文件；
-- [ ] runner 失败路径在返回错误前保存可验证 summary；
-- [ ] 普通全量、vet、受影响 race、结构审计、总体规划镜像和 `git diff --check` 通过；
-- [ ] 不读取 key、不调用模型、不提交大型实验 artifact。
+- [x] stopped/running/failed 三类 Summary 均可 canonical seal/revalidate；
+- [x] Summary totals 等于 terminal records 逐项求和，head/previous digest 顺序不能篡改；
+- [x] Summary JSON 不包含真实 artifact payload，读取 API 只返回 exact committed ordinal；
+- [x] artifact 缺失、替换、超限、ordinal 越界和被修改的 recovery token 均被拒绝；
+- [x] 新 runner 完成一个多-attempt etcd/raft Campaign 并输出可重验 Summary；
+- [x] 显式 resume 延续同一 config/head，非 resume 不接管已有目录，summary 不覆盖旧文件；
+- [x] runner 失败路径在返回错误前保存可验证 summary；
+- [x] 普通全量、vet、受影响 race、结构审计、总体规划镜像和 `git diff --check` 通过；
+- [x] 不读取 key、不调用模型、不提交大型实验 artifact。
 
 ## 明确不在本阶段完成
 
@@ -64,3 +64,34 @@ RecoverCampaignDirectory -> validated CampaignRecovery
 - 第二个协议的 Campaign provider/runner；
 - 对后台 goroutine 或外部进程进行强制终止；
 - 声称 etcd/raft、ConsensusAtlas 或测试方法正确、完备或更优。
+
+## 实现结果
+
+`CampaignSummary/v1` 保存 config/target/spec identity、initial/head checkpoint digest、每个小型
+terminal record、totals、elapsed、stop reason 和可选 failure marker。它从带私有校验令牌的
+`CampaignRecovery` 机械派生，不嵌入 artifact bytes。`ReadAttemptArtifact` 只接受 committed
+ordinal，读取后重验 regular-file、64 MiB 上限和 SHA-256。
+
+`campaign-etcdraft-v1` 策略只接受 `-campaign-dir`、`-campaign-attempts`、
+`-campaign-wall-clock-ms`、`-decisions`、`-policy-seed`、`-out` 和可选 `-campaign-resume`。
+新运行要求 Campaign 目录不存在；恢复要求显式 flag 且 exact config digest 不漂移。Summary
+位于 Campaign 根目录外，以 fsync + no-replace hard-link 提交。
+
+真实回归使用 2 attempts、8 decisions/attempt 和 seeds 61/62，得到 16 primary decisions、
+18 primary work 和 18 replay work，以 `attempt-limit` 停止。独立 resume 见证先直接提交 seed 71，
+随后 CLI 以 exact config 恢复并完成 seed 72；修改 decisions 的恢复在 SUT 执行前被 identity
+校验拒绝。注入的 artifact-less provider error 生成 `failed` Summary 后才返回错误，且未保存
+私有诊断。
+
+## 验证结果
+
+- `go test -count=1 -timeout 20m ./...`：通过；`cmd/control-experiment` 103.970 秒；
+- `go vet ./...`：通过；
+- Summary/reader 定向 race：通过，1.449 秒；
+- 真实 runner/resume 定向 race：通过，45.984 秒；
+- race shard exact-once、no-v1、no-retired-experiment、通用包协议依赖和总体规划镜像：通过；
+- 没有读取 key、调用模型或产生 checked-in 大型实验工件。
+
+下一阶段不再增加运行外壳。应从已校验 artifact 机械投影一个跨 attempt 观测报告，
+先给出 outcome/work、Core PSS 并集、fault/workload 统计和 Oracle 触发索引；这些必须保持为
+独立指标，尚不合成一个“测试完备度分数”。
