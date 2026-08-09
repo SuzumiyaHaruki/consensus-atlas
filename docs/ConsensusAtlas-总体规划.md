@@ -2261,7 +2261,8 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 72. [ ] M5.19d 先增加协议无关 Campaign summary/reader，只输出已校验 checkpoint 的
     attempt/outcome/work/artifact 索引和停止/失败状态，不复制大型 artifact。然后增加显式 opt-in
     etcd/raft 离线 runner，只组装冻结 spec、Campaign 目录和现有 provider；不在 CLI 内新建执行、
-    PSS 或 Oracle 逻辑。
+    PSS 或 Oracle 逻辑。Summary 的 `running/stopped/failed` 不能被表述为 pass/fail verdict；reader 只能
+    按 committed ordinal 读取内容寻址 artifact，不暴露任意路径或 orphan。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

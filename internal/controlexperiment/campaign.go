@@ -219,11 +219,8 @@ func (marker CampaignFailureMarker) ValidateInputs(
 	config CampaignConfig,
 	head CampaignCheckpoint,
 ) error {
-	if marker.SchemaVersion != CampaignFailureVersion ||
-		!validMethodToken(marker.CampaignID) || !validSHA256(marker.ConfigDigest) ||
-		!validSHA256(marker.HeadDigest) || marker.Ordinal <= 0 ||
-		!validSHA256(marker.RequestDigest) || !validMethodToken(marker.Code) {
-		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_INVALID")
+	if err := marker.Validate(); err != nil {
+		return err
 	}
 	if err := head.ValidateInputs(config); err != nil {
 		return err
@@ -236,6 +233,16 @@ func (marker CampaignFailureMarker) ValidateInputs(
 		marker.HeadDigest != head.Digest || marker.Ordinal != request.Ordinal ||
 		marker.RequestDigest != request.Digest {
 		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_IDENTITY_MISMATCH")
+	}
+	return nil
+}
+
+func (marker CampaignFailureMarker) Validate() error {
+	if marker.SchemaVersion != CampaignFailureVersion ||
+		!validMethodToken(marker.CampaignID) || !validSHA256(marker.ConfigDigest) ||
+		!validSHA256(marker.HeadDigest) || marker.Ordinal <= 0 ||
+		!validSHA256(marker.RequestDigest) || !validMethodToken(marker.Code) {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_INVALID")
 	}
 	sealed, err := marker.seal()
 	if err != nil || !validSHA256(marker.Digest) || sealed.Digest != marker.Digest {
