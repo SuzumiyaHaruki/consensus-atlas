@@ -93,8 +93,13 @@ Campaign Coordinator，也不处理进程被强制终止时的中间 arm 恢复�
 M5.19 在 `internal/controlexperiment` 增加协议无关 Campaign 数据面，但不增加执行器。
 `CampaignConfig` 冻结 target/spec identity、逻辑预算和 wall-clock 运维上限；每个 terminal attempt
 引用独立 artifact digest 并携带完整 WorkLedger。checkpoint 采用增量 hash chain，每项只保存一个
-新 record、累计 totals 和 previous digest，避免重复完整历史。当前内存对象只能验证链与 resume
-identity；crash-safe 文件落盘和 Coordinator 尚未实现。
+新 record、累计 totals 和 previous digest，避免重复完整历史。M5.19 的内存对象只验证链与 resume
+identity；M5.19a 在不改变对象 identity 的前提下增加文件落盘。
+
+M5.19a 将该链落到全新 Campaign 目录。完整恢复返回带私有校验令牌的 `CampaignRecovery`；只有该对象
+可以核对当前磁盘 head 后续写。artifact 采用 SHA-256 内容寻址，先 file sync 和 no-replace link，
+checkpoint 随后以相同方式提交。恢复重新验证全部 config/checkpoint/artifact，orphan 和 pending
+只作为运行诊断，不进入 head、WorkLedger、PSS 或 verdict。当前明确是 single-writer，尚无 Coordinator。
 
 ## 唯一执行路径
 

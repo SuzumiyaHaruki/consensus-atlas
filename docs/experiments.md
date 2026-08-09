@@ -89,6 +89,10 @@ M5.19 先定义协议无关 CampaignConfig、terminal attempt 和增量 checkpoi
 运维上限，逻辑比较仍按 attempts、decisions、primary/replay work 和 model cost。该阶段没有运行
 SUT 或模型，也没有新增实验结果；完整规范见 `stage-m5.19-campaign-foundation.md`。
 
+M5.19a 将上述对象落到 artifact-first、checkpoint-second 的 crash-safe 目录，并验证完整恢复、
+artifact-only 中断、stale head、篡改、缺链和 symlink 边界。该阶段仍没有运行 SUT 或模型，也没有
+新增实验结果；完整规范见 `stage-m5.19a-campaign-persistence.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

@@ -2,36 +2,38 @@
 
 日期：2026-08-09
 
-阶段：M5.19 Campaign config/checkpoint 基础已完成；不运行 SUT 或模型
+阶段：M5.19a Campaign crash-safe persistence 已完成；不运行 SUT 或模型
 
 ## 输入、处理、输出
 
 ```text
 输入
-  target identity + experiment spec identity
-  + attempts/decisions/work/model logical ceiling
-  + operational wall-clock ceiling
+  validated CampaignConfig + new directory
+  + terminal attempt record + exact artifact bytes
                          |
                          v
 处理
-  canonical CampaignConfig
-  -> terminal CampaignAttemptRecord + complete WorkLedger
-  -> one-record append-only checkpoint
-  -> previous-digest chain + cumulative totals recheck
-  -> mechanical attempt/logical/wall-clock stop reason
+  create/recover full checkpoint chain
+  -> private recovery token + current disk head recheck
+  -> artifact sha256 match -> fsync -> no-replace durable link
+  -> one-record checkpoint -> fsync -> no-replace durable link
+  -> read-back previous digest/totals validation
                          |
                          v
 输出
-  O(n) checkpoint chain bound to config/target/spec identity
-  + completed/rejected/failed/invalid terminal evidence references
-  + resume/tamper/budget validation
-  + no file persistence, Coordinator loop, SUT run or model call yet
+  recoverable O(n) Campaign directory + trusted head
+  + explicit orphan/pending report
+  + tamper/gap/symlink/identity/stale-head rejection
+  + no Coordinator loop, SUT run or model call yet
 ```
 
-M5.19 新增的是协议无关 Campaign 数据面，不是第二套 Runtime。wall clock 只决定运维停止，
+M5.19a 将协议无关 Campaign 数据面落为 crash-safe 目录，不是第二套 Runtime。只有创建或完整恢复返回的
+`CampaignRecovery` 才能提交下一 attempt；artifact durable 在前，checkpoint durable 在后。中断留下的
+orphan/pending 不进入可信 totals。正常连续提交为 O(n) 总 I/O，重启时执行一次 O(n) 完整恢复。
+
+M5.19 基础中 wall clock 只决定运维停止，
 attempt、primary scheduler decisions、primary/replay work 和 model calls/tokens 才进入权威逻辑预算。
-checkpoint 不复制完整历史；每项只保存当前 record、累计 totals 和 previous digest，完整链为 O(n)。
-artifact 当前只以 digest 引用，下一阶段的 crash-safe persistence 才负责验证对应文件已经 durable。
+checkpoint 不复制完整历史；每项只保存当前 record、累计 totals 和 previous digest。
 
 M5.17a/b 没有增加第二套执行器。action-class random 在 M5.16 的唯一 bundle 路径上均匀选择
 ActionKind，再在该 class 内选择 Runtime 当前提供的 Action；trace mutation 精确重放源 Trace 前缀、

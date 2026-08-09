@@ -5,9 +5,12 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.19 Campaign config/checkpoint 基础**：协议无关层已冻结 target/spec identity、
+当前阶段已完成 **M5.19a Campaign crash-safe persistence**。协议无关 Campaign 目录现在以
+artifact-first、checkpoint-second 的 fsync/no-replace 顺序提交，恢复会重验完整链、artifact 引用和
+config/target/spec identity，并把中断残留作为不计入账本的 orphan/pending 报告。M5.19 基础已经冻结
+target/spec identity、
 逻辑预算、运维 wall-clock ceiling、四类 terminal attempt 和 O(n) previous-digest checkpoint 链。
-它尚未实现文件持久化或执行循环。此前 M5.18b4 pair orchestration/persistence 已接到
+它尚未实现自动多 attempt Coordinator 循环。此前 M5.18b4 pair orchestration/persistence 已接到
 freeze-before-key、failure-before-return-persistence 的正式 CLI 和 Make 入口。已有 pair 复用 frozen request consumer，
 以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
 未调用模型。单臂 consumer 已把 freeze 绑定的 exact request 接入既有
@@ -337,11 +340,12 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段实现 M5.19 的 crash-safe checkpoint 文件布局和确定性 attempt provider，再连接多 attempt
-Coordinator。wall-clock 只作为运维上限，权威预算仍是 primary/replay work、decisions、attempts 和
-model cost。
+下一阶段实现 remaining-budget allowance 和不调用模型的 deterministic attempt provider，再连接最小
+多 attempt Coordinator。wall-clock 只作为运维上限，权威预算仍是 primary/replay work、decisions、
+attempts 和 model cost。
 
 阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
+[M5.19a persistence](docs/stage-m5.19a-campaign-persistence.md)、
 [M5.18b4 runner](docs/stage-m5.18b4-pair-runner.md)、
 [M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
 [M5.18b4 consumer](docs/stage-m5.18b4-request-consumer.md)、
