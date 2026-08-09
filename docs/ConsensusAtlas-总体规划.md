@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.18（M5.18b4 preference ablation request freeze 完成）
-> 日期：2026-08-08
+> 状态：Draft v1.19（M5.18b4R race gate topology 完成）
+> 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -2224,10 +2224,20 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     `AgentPreferenceAblationFreeze/v1` 绑定。新增单份 proposal 对冻结 baseline 的
     机械校验，避免两份回复同时非法修改 hard 字段却通过 pairwise 比较。
     已知 b3/b4-pre outcome 身份与结果词未进入 request；本阶段仍为 0 model calls。
+64. [X] M5.18b4R 只重构验证门禁，不修改 Runtime、Adapter、Action、PSS、Oracle、Agent request、
+    freeze identity 或实验语义。`cmd/control-experiment` 的全部顶层测试必须由版本化清单机械枚举，
+    与 `go test -list` 精确对账并恰好归入一个 race shard；每个 shard 使用独立 test binary、独立
+    20 分钟 ceiling 和 `-count=1`。`test-race-core` 只提供开发期并发回归信号，不能替代穷尽清单的
+    `test-race-full`。分片按共享 fixture 组织，不为拆分 seed 1 而增加原本不存在的 SUT run。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
 M5.17c2 保留了 PSS-guided proposal 不可执行的负结果，不为获得成功 trace 临时改启发式。
+M5.18b4R 已完成：24 个顶层 experiment 测试与 `go test -list` 机械 exact-once 对账，并按共享
+fixture 分入三个独立 race test binary。method/execution/agent 分别以 353.374/128.527/88.508 秒
+通过，其余 package race 也全部通过；所有调用均使用 `-count=1`，没有 data-race 报告。该阶段没有
+优化 Snapshot 深拷贝、拆分 execution API 或改变 SUT run 数，验证了门禁拓扑调整本身足以消除
+单一进程累计成本造成的超时。
 下一阶段继续 M5.18b4：只实现冻结 request bytes 的单一消费路径，依次进入
 response audit、strict parse、baseline 校验、plan v2、seed-4 execution instance、已有
 qualified executor 和 IntentOutcome。不再改动 Runtime/Action/PSS/Oracle。每个 arm 最多 1 call、
@@ -2239,6 +2249,9 @@ M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后
 但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race
 门禁明确保持未通过。普通全量测试通过并由 fixture 复用保持在 90.785 秒，workload/trace-mutation
 定向 race 以 84.420 秒通过。后续阶段不得无界复制真实轨迹测试。
+M5.18b4R 保留上述历史失败记录，并用 exact-once 分片重新建立完整门禁：三个
+`cmd/control-experiment` shard 和排除该 package 的其余仓库 race 均通过。分片总计执行原有 24 个
+顶层测试，不依赖 `testing.Short`，也没有把 core gate 冒充 full gate。
 Agent 仍不读取 private variant、build transform、root cause 或 Oracle 私有结果。Control
 Runtime、统一 Action、消息所有权、自然时间和严格 replay 核心继续冻结。
 Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
@@ -2466,6 +2479,10 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
     但 digest、length、seed、budget、call/retry 上限必须进入可提交的小型承诺工件。
 93. preference-only 权限必须对每份 proposal 分别与调用前冻结 baseline 机械比较，
     不能只比较两臂回复彼此相同。两臂同时改动 risk/must/budget 仍是越权，必须拒绝并计费。
+94. race correctness gate 与完整研究回归必须分开命名。快速 core gate 只提供局部信号；完整 gate
+    可以用多个独立 test binary 分片，但必须由机器验证全部顶层测试恰好执行一次、不得依赖
+    `testing.Short` 静默缩减、不得复用 Go test cache，并为每个分片保留明确 timeout。测试拓扑变化
+    不得改变 SUT 执行次数、随机 seed、实验 fixture、冻结 identity 或可信结论。
 
 ---
 

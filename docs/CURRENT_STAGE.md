@@ -2,7 +2,7 @@
 
 日期：2026-08-09
 
-阶段：M5.18b4 preference ablation request freeze 完成；未调用模型
+阶段：M5.18b4R race gate topology 完成；未调用模型
 
 ## 输入、处理、输出
 
@@ -49,6 +49,12 @@ Experiment-producible 和 backend-selectable，并用新的 plan/instance/outcom
 
 M5.18b4 request-freeze 也没有修改 Control Runtime 或执行 follow-up。它只把两份模型请求的
 精确 bytes、可见信息差异、共同 hard baseline、seed、预算和 transport 上限在调用前冻结。
+
+M5.18b4R 只调整验证拓扑。`cmd/control-experiment` 的全部顶层测试已由版本化清单与
+`go test -list` 机械对账，并按共享 fixture 分入独立 race test binary；它不修改任何实验语义或冻结身份。
+
+实际清单为 24/24、重复 0。method/execution/agent shard 分别以 353.374/128.527/88.508 秒通过，
+其余 package race 全部通过且没有 data-race 报告；历史单 test binary 超时保留为失败记录。
 
 ## 为什么需要显式 preparation
 
@@ -444,6 +450,9 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 - `make test-race-full`：**未通过**。两次均在显式 20 分钟 ceiling 超时，第一次运行到 adjacent
   trace mutation，最终一次运行到 M5.17c2 method 回归；两次均未报告 data race。按 timebox 停止，
   没有抬高 timeout，也没有把未见告警记为通过；
+- M5.18b4R exact-once race topology：24 个顶层测试机械分为 method 6、execution 7、agent 11；
+  三个 shard 分别以 353.374、128.527、88.508 秒通过，其余 package race 全部通过。该结果恢复的是
+  新的分片 full gate，不回写上面两次历史单 binary 失败；
 - 147 个非 artifacts JSON、23 个 schema JSON、4 个 M5.18a build input/audit schema 实例和 146 个
   Markdown 本地链接：通过；
 - Python 历史 Agent 已删除，`unittest discover` 正常发现 0 项；
@@ -473,27 +482,29 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 
 ## 下一步
 
-继续 M5.18b4：实现从冻结 request bytes 到 response audit、strict parse、单份 baseline 校验、
-plan v2、seed-4 instance、既有 executor 和 IntentOutcome 的单一消费路径。模型运行仍需用户明确要求；
+继续 M5.18b4，从冻结 request bytes 进入 response audit、strict parse、单份 baseline 校验、
+plan v2、seed-4 instance、
+既有 executor 和 IntentOutcome 的单一消费路径。模型运行仍需用户明确要求；
 每臂最多 1 call、0 retry，任何失败都原样计费。b4 只是 backend-preference micro-ablation。
 
 ## 阅读顺序
 
-1. [M5.18b4 request freeze](stage-m5.18b4-request-freeze.md)
-2. [M5.18b4-pre trust corrections](stage-m5.18b4-pre-trust-corrections.md)
-3. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
-4. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
-5. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
-6. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
-7. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
-8. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
-9. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
-10. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
-11. [架构](architecture.md)
-12. [总体规划](ConsensusAtlas-总体规划.md)
-13. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
-14. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
-15. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
-16. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
-17. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
-18. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)
+1. [M5.18b4R race gate topology](stage-m5.18b4r-race-gate-topology.md)
+2. [M5.18b4 request freeze](stage-m5.18b4-request-freeze.md)
+3. [M5.18b4-pre trust corrections](stage-m5.18b4-pre-trust-corrections.md)
+4. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
+5. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
+6. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
+7. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
+8. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
+9. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
+10. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
+11. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
+12. [架构](architecture.md)
+13. [总体规划](ConsensusAtlas-总体规划.md)
+14. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
+15. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
+16. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
+17. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
+18. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
+19. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)

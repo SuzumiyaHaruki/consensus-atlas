@@ -63,6 +63,11 @@ feedback 暴露不同，共用 hard baseline、seed 4、98/98 execution ceiling�
 单份 proposal 未来必须分别与 baseline 校验，不能只做 pairwise 比较。本阶段 model calls=0，
 完整规范见 `stage-m5.18b4-request-freeze.md`。
 
+M5.18b4R 不改变上述实验。它只把 `cmd/control-experiment` 的完整 race 回归按共享 fixture 拆成
+独立 test binary，并用版本化清单与 `go test -list` 机械验证全部顶层测试恰好归类一次。
+`test-race-core` 是开发期信号，只有全部 shard 和其余 package 都通过的 `test-race-full` 才是完整门禁。
+完整规范见 `stage-m5.18b4r-race-gate-topology.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

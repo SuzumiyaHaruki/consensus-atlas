@@ -5,8 +5,11 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段是 **M5.18b4 preference ablation request freeze 完成**：no-feedback/with-feedback
-两臂的精确 prompt/request bytes、共同 hard baseline、seed 4、执行预算和 transport 上限已在
+当前阶段是 **M5.18b4R race gate topology 完成**：在不改变 Runtime、Adapter、PSS、Oracle 或 Agent
+request identity 的前提下，把累计超过 20 分钟的单一 race test binary 改为机械 exact-once 的
+可审计分片；24 个顶层测试及其余 package race 已全部通过。M5.18b4 已冻结的
+no-feedback/with-feedback 两臂精确 prompt/request bytes、共同
+hard baseline、seed 4、执行预算和 transport 上限已在
 读取 key 前冻结。唯一可见信息差异是 feedback 为 JSON `null` 或可重算对象。本轮没有调用模型。
 
 ## 当前闭环

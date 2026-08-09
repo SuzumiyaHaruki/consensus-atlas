@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-full audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -11,11 +11,58 @@ test: audit-no-v1 audit-no-retired-experiment
 test-fast: audit-no-v1 audit-no-retired-experiment
 	go test -short ./...
 
-test-race-full: audit-no-v1 audit-no-retired-experiment
-	# The real three-node method witnesses exceed Go's default 10-minute
-	# package timeout under race instrumentation. Keep the full witnesses and
-	# make the validation ceiling explicit instead of silently skipping them.
-	go test -race -timeout 20m ./...
+# Developer signal for the shared control boundary. This is deliberately not
+# a substitute for the mechanically exhaustive `test-race-full` gate.
+test-race-core: audit-no-v1 audit-no-retired-experiment
+	go test -race -count=1 -timeout 20m ./adapters/... ./internal/control ./internal/controlruntime
+	go test -race -count=1 -timeout 20m ./cmd/control-experiment \
+		-run '^(TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable|TestEtcdraftM518b0GuardedIntentCompilesAndUsesQualifiedExecutor)$$'
+
+# The manifest must be an exact partition of every top-level test in the heavy
+# composition package. A new, renamed, duplicated or unclassified test fails
+# before any long-running race witness starts.
+audit-race-shards:
+	@manifest=cmd/control-experiment/race-shards.txt; \
+	awk 'NF != 2 || $$1 !~ /^(method|execution|agent)$$/ || $$2 !~ /^Test[[:alnum:]_]+$$/ { \
+		print "invalid race shard entry at line " NR ": " $$0 > "/dev/stderr"; bad=1 \
+	} END { if (NR == 0 || bad) exit 1 }' "$$manifest"
+	@duplicates="$$(awk '{print $$2}' cmd/control-experiment/race-shards.txt | sort | uniq -d)"; \
+	if test -n "$$duplicates"; then \
+		echo "duplicate race shard tests:" >&2; echo "$$duplicates" >&2; exit 1; \
+	fi
+	@for shard in method execution agent; do \
+		count="$$(awk -v shard="$$shard" '$$1 == shard { count++ } END { print count + 0 }' \
+			cmd/control-experiment/race-shards.txt)"; \
+		test "$$count" -gt 0 || { echo "empty race shard: $$shard" >&2; exit 1; }; \
+	done
+	@actual_raw="$$(go test -list '^Test' ./cmd/control-experiment)" || exit 1; \
+	actual="$$(printf '%s\n' "$$actual_raw" | sed -n '/^Test/p' | sort)"; \
+	declared="$$(awk '{print $$2}' cmd/control-experiment/race-shards.txt | sort)"; \
+	if test "$$actual" != "$$declared"; then \
+		echo "race shard manifest does not exactly match go test -list" >&2; \
+		echo "declared:" >&2; echo "$$declared" >&2; \
+		echo "actual:" >&2; echo "$$actual" >&2; exit 1; \
+	fi
+
+test-race-control-shards: audit-race-shards
+	@set -e; for shard in method execution agent; do \
+		pattern="$$(awk -v shard="$$shard" '$$1 == shard { \
+			if (count++) printf "|"; printf "%s", $$2 \
+		} END { print "" }' cmd/control-experiment/race-shards.txt)"; \
+		echo "==> race shard: $$shard"; \
+		go test -race -count=1 -timeout 20m ./cmd/control-experiment -run "^($$pattern)$$"; \
+	done
+
+test-race-other:
+	@packages="$$(go list ./... | sed '\|/cmd/control-experiment$$|d')"; \
+	test -n "$$packages"; \
+	go test -race -count=1 -timeout 20m $$packages
+
+# Full means every top-level control-experiment test exactly once plus every
+# remaining package. Independent binaries keep the 20-minute ceiling honest.
+test-race-full: audit-no-v1 audit-no-retired-experiment audit-race-shards
+	$(MAKE) --no-print-directory test-race-control-shards
+	$(MAKE) --no-print-directory test-race-other
 
 # M5.16R guard: archived documents and experiment artifacts may mention v1,
 # but no compiled source may import or recreate the deleted implementation cone.
