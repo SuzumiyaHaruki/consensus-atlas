@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-campaign experiment-etcdraft-v2-campaign-resume experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -117,6 +117,20 @@ experiment-etcdraft-v2-bundle:
 	go run ./cmd/control-experiment -strategy workload -decisions 96 \
 		-out artifacts/experiments/etcdraft-v2-bundle-m5.16/report.json \
 		-bundle-out artifacts/experiments/etcdraft-v2-bundle-m5.16/bundle.json
+
+experiment-etcdraft-v2-campaign:
+	go run ./cmd/control-experiment -strategy campaign-etcdraft-v1 \
+		-campaign-dir artifacts/experiments/etcdraft-v2-campaign-m5.19d/campaign \
+		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json
+
+experiment-etcdraft-v2-campaign-resume:
+	go run ./cmd/control-experiment -strategy campaign-etcdraft-v1 -campaign-resume \
+		-campaign-dir artifacts/experiments/etcdraft-v2-campaign-m5.19d/campaign \
+		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json
 
 experiment-etcdraft-v2-action-class-random:
 	go run ./cmd/control-experiment -strategy workload-action-class-random \

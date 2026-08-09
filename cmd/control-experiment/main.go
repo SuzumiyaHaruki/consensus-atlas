@@ -37,11 +37,31 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
 	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
 	agentArtifacts := flags.String("agent-artifacts", "", "new output directory for an explicit opt-in Agent strategy")
+	campaignDirectory := flags.String("campaign-dir", "", "Campaign directory for an explicit Campaign strategy")
+	campaignAttempts := flags.Int("campaign-attempts", 0, "attempt limit for an explicit Campaign strategy")
+	campaignWallClock := flags.Int64("campaign-wall-clock-ms", 0, "wall-clock ceiling for an explicit Campaign strategy")
+	campaignResume := flags.Bool("campaign-resume", false, "resume an existing exact Campaign config")
 	strategy := flags.String("strategy", "workload", "qualified strategy, including explicit opt-in Agent strategies")
 	decisions := flags.Int("decisions", 96, "charged decisions per run")
 	policySeed := flags.Uint64("policy-seed", 1, "public random-policy seed")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *strategy == etcdraftCampaignRunnerStrategy {
+		if *out == "" || *campaignDirectory == "" || *campaignAttempts <= 0 ||
+			*campaignWallClock <= 0 || *bundleOut != "" || *sourceBundleOut != "" ||
+			*methodOut != "" || *methodArtifacts != "" || *bundleEvidenceVersion != 0 ||
+			*methodSpecDigest != "" || *agentKeyFile != "" || *agentArtifacts != "" {
+			return errors.New("Campaign strategy requires only -out, Campaign, decision, and seed flags")
+		}
+		return runEtcdraftCampaign(ctx, etcdraftCampaignRunOptions{
+			Directory: *campaignDirectory, SummaryOut: *out, Resume: *campaignResume,
+			Attempts: *campaignAttempts, DecisionsPerAttempt: *decisions,
+			FirstPolicySeed: *policySeed, WallClockCeilingMillis: *campaignWallClock,
+		}, stdout)
+	}
+	if *campaignDirectory != "" || *campaignAttempts != 0 || *campaignWallClock != 0 || *campaignResume {
+		return errors.New("Campaign flags require an explicit Campaign strategy")
 	}
 	if *strategy == "workload-guarded-agent-one-shot" {
 		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
