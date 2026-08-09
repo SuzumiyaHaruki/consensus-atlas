@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.16（M5.18b3 unseen follow-up baseline 完成）
+> 状态：Draft v1.18（M5.18b4 preference ablation request freeze 完成）
 > 日期：2026-08-08
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2205,16 +2205,40 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     但 workload pending 且 hard ActionKind 不完整，以计费的 `execution-failed` 保留，不替换
     backend/seed；实际合计 685/685，0 model calls。尚缺冻结后的 no-feedback/
     feedback 两次真实调用，因此本项保持未完成。
+    M5.18b4 调用前插入一个不调用模型的 pre 阶段：历史 b0/b1/b2/b3 identity 不回写，
+    新 b4 Agent view 只声明 Experiment 当前能实际产生并交给 backend 选择的 Action；
+    在 FaultProvider 实现前关闭 Partition/Heal 与 partition envelope。新执行结果将
+    execution validity、intent reachability 和 Oracle outcome 分开；hard ActionKind 未全部出现
+    记为 `intent-not-reached`，不再记为 Runtime/replay execution failure。新 compiler plan
+    不再写入实际 policy seed，由 digest-bound execution instance 绑定 plan + seed + 单执行预算。
+    M5.18b4-pre 已完成：新 catalog/view 在 backend surface 关闭当前无 FaultProvider 的
+    Partition/Heal，新 plan v2 不含 seed，execution instance 独立绑定 seed 4 和 98/98
+    ceiling。真实 seed-4 轨迹通过 qualified execution 和 strict replay，消耗 97/97 work、
+    发现 79 states；因 Trace 缺少 `invoke`，新 `IntentOutcome` 记为 execution `valid`、intent
+    `not-reached`、Oracle `not-evaluated`，模型调用为 0。这仅是 public trust-boundary calibration。
+    M5.18b4 request-freeze 已完成：两臂共用同一 semantic view、risk、must、
+    source seeds 1/2/3、unseen seed 4、98/98 execution ceiling 和 transport 上限。两份
+    request 由同一 builder 生成，system prompt 逐字节相同，实验信息差异只是
+    `agent_batch_feedback` 为 `null` 或可重算 feedback v2。精确 prompt/request digest、
+    byte length、每臂 1 call/0 retry 和完整 source 计费已由
+    `AgentPreferenceAblationFreeze/v1` 绑定。新增单份 proposal 对冻结 baseline 的
+    机械校验，避免两份回复同时非法修改 hard 字段却通过 pairwise 比较。
+    已知 b3/b4-pre outcome 身份与结果词未进入 request；本阶段仍为 0 model calls。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
 M5.17c2 保留了 PSS-guided proposal 不可执行的负结果，不为获得成功 trace 临时改启发式。
-下一阶段进入 M5.18b4：在任何调用前冻结 no-feedback/feedback 两份 prompt/request
-bytes、共同 seed 4 和完整 per-arm 账本。两边的 semantic view、risk、hard constraints 和预算
-相同，feedback 只能改 preference；M5.18b3 已知 deterministic outcome 不得进入模型视图。
-每个 arm 最多 1 call、无重试，任何 parse/compile/execution/hard-action 失败都原样计费。
-source fixture 复用已使 full race 恢复通过，`cmd/control-experiment` 在 race 下耗时
-983.930 秒，但距 20 分钟 ceiling 只余约 3 分 36 秒，后续不得无界增加真实轨迹测试。
+下一阶段继续 M5.18b4：只实现冻结 request bytes 的单一消费路径，依次进入
+response audit、strict parse、baseline 校验、plan v2、seed-4 execution instance、已有
+qualified executor 和 IntentOutcome。不再改动 Runtime/Action/PSS/Oracle。每个 arm 最多 1 call、
+无重试，任何 transport/parse/compile/invalid execution/intent-not-reached 都分类计费。只有用户
+明确要求运行模型实验时才读取 key 并执行两臂。b4 只报告
+backend-preference feedback micro-ablation，不报告 LLM-guided consensus testing effectiveness。
+M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
+均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
+但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race
+门禁明确保持未通过。普通全量测试通过并由 fixture 复用保持在 90.785 秒，workload/trace-mutation
+定向 race 以 84.420 秒通过。后续阶段不得无界复制真实轨迹测试。
 Agent 仍不读取 private variant、build transform、root cause 或 Oracle 私有结果。Control
 Runtime、统一 Action、消息所有权、自然时间和严格 replay 核心继续冻结。
 Coverage Kernel、首个 Planner、M4.7 评价基础、M4.8 公开校准、M4.8.1 可信链、M4.9
@@ -2418,6 +2442,30 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
     attempt 定义和成本投影相同的方法反馈才能直接比较，历史不可比 identity 不回写。
 84. unseen follow-up 的 source seeds、follow-up seed、选择规则和每个 arm 总成本必须在
     结果前冻结。失败 arm 保留并计费，不替换 backend/seed，已知 deterministic outcome 不得泄露给后续 Agent。
+85. capability 必须区分 Runtime-supported、Experiment-producible 和 backend-selectable。
+    Manifest 能执行某 Action 不等于当前 Experiment 能将它 Offer 到 frontier；后两层不成立时
+    Agent catalog 必须明确关闭，不得让 compiler 接受必然不可达的 hard Action。
+86. execution validity、intent reachability 和 protocol correctness 是三个独立结论。
+    report/bundle/replay 有效但 hard Action 或后续 RiskWitness 未到达时，记 `intent-not-reached`，
+    不得改写为 execution invalid，也不得产生 Oracle violation。
+87. 宏观 CompiledIntentPlan 只绑定 risk、backend strategy、hard constraints 和 compiler 工作；
+    实际 policy seed 属于独立、digest-bound 的 execution instance。同一 plan 可在多个预先冻结
+    seed 上执行，但 Agent 不能提交或覆盖这些 seed。
+88. b4 后优先增加小型可信 RiskWitness，不建立开放 temporal DSL。target-owned projector
+    从 Trace/Evidence 投影 semantic milestones，family-owned 冻结 witness 偏序，通用层只验证
+    identity、step ordering 和 digest。Agent 只选 risk_id，不提交 milestone 或 reached 结果。
+89. b4 的研究定位固定为 backend-preference feedback micro-ablation。它不能证明 Agent
+    构造了协议时序场景；只有 RiskWitness 和多个证据驱动 risk 进入后才评价协议语义规划。
+90. 当前已验证对外范围为 leader-based CFT/Raft。Control Runtime 可保留 limited-BFT
+    扩展目标，但在拜占庭 Action、witness、Oracle 和第二 strict 实现证据出现前不声称 BFT 适用性。
+91. RiskWitness 和 target-side backend definition 完成后，在大量增加 Raft 专用 risk/
+    workload/Oracle 前必须插入第二 strict CFT 实现迁移门，避免 Agent/Experiment 层重新与 etcd/raft 绑死。
+92. feedback ablation 的精确 prompt/request bytes 必须在读取 key 和首次调用前冻结。
+    两臂使用同一 prompt builder、semantic view、hard baseline 和 transport 限制；唯一实验信息
+    差异是结构化 feedback 为 `null` 或可重算对象。精确 bytes 可保存在 ignored artifacts，
+    但 digest、length、seed、budget、call/retry 上限必须进入可提交的小型承诺工件。
+93. preference-only 权限必须对每份 proposal 分别与调用前冻结 baseline 机械比较，
+    不能只比较两臂回复彼此相同。两臂同时改动 risk/must/budget 仍是越权，必须拒绝并计费。
 
 ---
 

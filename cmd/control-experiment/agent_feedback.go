@@ -127,6 +127,22 @@ func newEtcdraftAgentFeedbackBatchFromInputs(
 	uniform etcdraftMethodExecution,
 	workloadOutcomes bool,
 ) (etcdraftAgentFeedbackBatch, error) {
+	feedbackID := "etcdraft-agent-batch-feedback-m5-18b2"
+	if workloadOutcomes {
+		feedbackID = "etcdraft-comparable-agent-feedback-m5-18b3"
+	}
+	return newEtcdraftAgentFeedbackBatchFromInputsWithID(
+		intentInputs, actionClass, uniform, workloadOutcomes, feedbackID,
+	)
+}
+
+func newEtcdraftAgentFeedbackBatchFromInputsWithID(
+	intentInputs etcdraftIntentInputs,
+	actionClass etcdraftMethodExecution,
+	uniform etcdraftMethodExecution,
+	workloadOutcomes bool,
+	feedbackID string,
+) (etcdraftAgentFeedbackBatch, error) {
 	sources := []controlexperiment.AgentBatchFeedbackInput{
 		{
 			BackendID: etcdraftBackendActionClass, Observation: actionClass.Observation,
@@ -141,11 +157,11 @@ func newEtcdraftAgentFeedbackBatchFromInputs(
 	var err error
 	if workloadOutcomes {
 		feedback, err = controlexperiment.NewAgentBatchFeedbackViewV2(
-			"etcdraft-comparable-agent-feedback-m5-18b3", intentInputs.View, sources,
+			feedbackID, intentInputs.View, sources,
 		)
 	} else {
 		feedback, err = controlexperiment.NewAgentBatchFeedbackView(
-			"etcdraft-agent-batch-feedback-m5-18b2", intentInputs.View, sources,
+			feedbackID, intentInputs.View, sources,
 		)
 	}
 	if err != nil {

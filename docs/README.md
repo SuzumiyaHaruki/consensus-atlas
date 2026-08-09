@@ -5,24 +5,26 @@
 
 ## 当前主线阅读顺序
 
-1. [当前阶段：M5.18b3](CURRENT_STAGE.md)
-2. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
-3. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
-4. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
-5. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
-6. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
-7. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
-8. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
-9. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
-10. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
-11. [架构](architecture.md)
-12. [Control Runtime v2](control-runtime-v2.md)
-13. [总体规划](ConsensusAtlas-总体规划.md)
-14. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
-15. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
-16. [M5.16 ExecutionBundle 与可信评测](stage-m5.16-execution-bundle.md)
-17. [M5.16R v1 实现锥体删除](stage-m5.16r-legacy-removal.md)
-18. [M5.15 Semantic Workload](stage-m5.15-semantic-workload.md)
+1. [当前阶段：M5.18b4 request freeze](CURRENT_STAGE.md)
+2. [M5.18b4 preference ablation request freeze](stage-m5.18b4-request-freeze.md)
+3. [M5.18b4-pre Agent experiment trust corrections](stage-m5.18b4-pre-trust-corrections.md)
+4. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
+5. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
+6. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
+7. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
+8. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
+9. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
+10. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
+11. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
+12. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
+13. [架构](architecture.md)
+14. [Control Runtime v2](control-runtime-v2.md)
+15. [总体规划](ConsensusAtlas-总体规划.md)
+16. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
+17. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
+18. [M5.16 ExecutionBundle 与可信评测](stage-m5.16-execution-bundle.md)
+19. [M5.16R v1 实现锥体删除](stage-m5.16r-legacy-removal.md)
+20. [M5.15 Semantic Workload](stage-m5.15-semantic-workload.md)
 
 公开 calibration 工件见
 [etcd/raft v2 M5.16](../benchmarks/pilots/etcdraft-v2-calibration-m5.16/README.md)。它只验证链路，不是
@@ -39,6 +41,10 @@
 保存从完整 bundle 重算的共同预算、完成度、成本和粗粒度 PSS 证据；它不包含缺陷或 Oracle 身份。
 [M5.18b3 follow-up summary](../benchmarks/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json)
 保存纠正终止语义后的 source 账本、未见 seed 4 的确定性负结果和完整计费边界；它没有调用模型。
+[M5.18b4-pre summary](../benchmarks/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/summary.json)
+保存 honest action surface、seed-free plan、execution instance 和三轴 IntentOutcome；它不是 Agent 效果结果。
+[M5.18b4 request freeze](../benchmarks/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/freeze.json)
+保存两臂 exact-byte digest、共同 hard baseline、seed/budget 与 1-call/0-retry 边界；模型调用数为 0。
 
 ## 当前实现主题
 
@@ -64,6 +70,8 @@
 - [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)。
 - [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)。
 - [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)。
+- [M5.18b4-pre Agent experiment trust corrections](stage-m5.18b4-pre-trust-corrections.md)。
+- [M5.18b4 preference ablation request freeze](stage-m5.18b4-request-freeze.md)。
 
 ## 历史研究记录
 

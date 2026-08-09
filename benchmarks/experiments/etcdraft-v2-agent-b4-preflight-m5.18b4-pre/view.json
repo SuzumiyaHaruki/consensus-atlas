@@ -1,0 +1,143 @@
+{
+  "schema_version": "consensus-atlas/agent-semantic-view/v1",
+  "id": "etcdraft-feedback-ablation-view-m5-18b4-pre",
+  "knowledge_pack": {
+    "schema_version": "consensus-atlas/protocol-knowledge-pack/v1",
+    "id": "etcdraft-public-knowledge-m5-18b0",
+    "family": "raft",
+    "protocol": "etcdraft",
+    "knowledge": [
+      {
+        "id": "natural-election",
+        "text": "Leadership changes arise from released periodic pulses and message delivery, not a forced leader-change command."
+      },
+      {
+        "id": "quorum-log-agreement",
+        "text": "Committed commands at the same log position must agree across participants."
+      },
+      {
+        "id": "runtime-owned-messages",
+        "text": "Released peer messages remain Runtime-owned across controlled node lifecycle transitions until delivery or drop."
+      }
+    ],
+    "risks": [
+      {
+        "id": "leader-change-with-inflight-proposal",
+        "summary": "Exercise an opaque proposal while natural temporal progress, peer delivery, and crash/restart may change the coordinating participant.",
+        "required_capabilities": [
+          "crash-restart-incarnation",
+          "natural-temporal-progress",
+          "opaque-invoke-boundary",
+          "runtime-owned-message",
+          "strict-decision-replay"
+        ],
+        "required_actions": [
+          "crash",
+          "deliver-message",
+          "fire-temporal-event",
+          "invoke",
+          "restart"
+        ],
+        "allowed_backend_ids": [
+          "action-class-random",
+          "admissible-uniform"
+        ]
+      }
+    ],
+    "digest": "1921bdc375f9618436d7ae31d426ba2087dc715443ec0f822628ce0e51199980"
+  },
+  "catalog_digest": "2effd56ba9bc3687ac040be714da3c75b43b1e430fc90e40ab4d22a0d594f861",
+  "profile_id": "portable-cft-control-v2",
+  "profile_digest": "8ceb2e870d0b5bc67fbdf5019f93f103a358c4f850bd3f6cebb2af3aa2a5f3c8",
+  "adapter_id": "official-etcdraft-v2alpha1",
+  "validated_capabilities": [
+    "audited-entropy-replay",
+    "crash-restart-incarnation",
+    "natural-temporal-progress",
+    "opaque-invoke-boundary",
+    "pure-enabled-check",
+    "runtime-owned-message",
+    "strict-decision-replay",
+    "strict-yield-evidence"
+  ],
+  "available_actions": [
+    "complete-effect",
+    "crash",
+    "deliver-message",
+    "drop-message",
+    "duplicate-message",
+    "fire-temporal-event",
+    "heal",
+    "invoke",
+    "partition",
+    "restart"
+  ],
+  "eligible_backends": [
+    {
+      "id": "action-class-random",
+      "supported_actions": [
+        "complete-effect",
+        "crash",
+        "deliver-message",
+        "drop-message",
+        "duplicate-message",
+        "fire-temporal-event",
+        "invoke",
+        "restart"
+      ],
+      "min_decisions": 1,
+      "max_decisions": 96,
+      "max_fault_envelope": {
+        "max_crashes": 1,
+        "max_concurrent_crashes": 1,
+        "max_message_drops": 2,
+        "max_message_duplicates": 1,
+        "max_partitions": 0,
+        "max_active_partitions": 0
+      }
+    },
+    {
+      "id": "admissible-uniform",
+      "supported_actions": [
+        "complete-effect",
+        "crash",
+        "deliver-message",
+        "drop-message",
+        "duplicate-message",
+        "fire-temporal-event",
+        "invoke",
+        "restart"
+      ],
+      "min_decisions": 1,
+      "max_decisions": 96,
+      "max_fault_envelope": {
+        "max_crashes": 1,
+        "max_concurrent_crashes": 1,
+        "max_message_drops": 2,
+        "max_message_duplicates": 1,
+        "max_partitions": 0,
+        "max_active_partitions": 0
+      }
+    },
+    {
+      "id": "fixed-progress",
+      "supported_actions": [
+        "complete-effect",
+        "deliver-message",
+        "fire-temporal-event",
+        "invoke"
+      ],
+      "min_decisions": 1,
+      "max_decisions": 96,
+      "max_fault_envelope": {
+        "max_crashes": 0,
+        "max_concurrent_crashes": 0,
+        "max_message_drops": 0,
+        "max_message_duplicates": 0,
+        "max_partitions": 0,
+        "max_active_partitions": 0
+      }
+    }
+  ],
+  "digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036"
+}

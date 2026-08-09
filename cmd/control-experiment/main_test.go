@@ -15,7 +15,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
-	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
 
 type traceMutationSummaryWork struct {
@@ -59,10 +58,7 @@ type traceMutationCheckedSummary struct {
 }
 
 func TestEtcdraftExecutionBundleClosesTrustedV2Boundary(t *testing.T) {
-	report, bundle, err := etcdraftBundle(context.Background(), "workload", 96, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	report, bundle := sharedEtcdraftWorkloadBundleFixture(t)
 	if err := bundle.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -126,10 +122,7 @@ func TestEtcdraftExecutionBundleClosesTrustedV2Boundary(t *testing.T) {
 }
 
 func TestEtcdraftActionClassRandomRunsBoundedFaultWorkloadAndReplays(t *testing.T) {
-	report, bundle, err := etcdraftBundle(context.Background(), "workload-action-class-random", 96, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	report, bundle := sharedEtcdraftActionClassBundleFixture(t)
 	if report.Digest != "fc0cb500876b1d3d75dc7d8f83dd672513d1c010c523069f12e3be2f6472260a" ||
 		bundle.Digest != "b766e3f13e8be015b950032df449762b2ee90e3c80d87e87383c8ff80ac6c9b1" ||
 		report.StateDiscovery.UniqueStates != 83 || report.StateDiscovery.PrefixArea != 3681 {
@@ -161,10 +154,7 @@ func TestEtcdraftActionClassRandomRunsBoundedFaultWorkloadAndReplays(t *testing.
 }
 
 func TestEtcdraftAdjacentTraceMutationCompletesOrFailsExplicitly(t *testing.T) {
-	seedReport, seedBundle, err := etcdraftBundle(context.Background(), "workload", 96, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	seedReport, seedBundle := sharedEtcdraftWorkloadBundleFixture(t)
 	run := func(first int, planID string) (controlexperiment.Report, controlexperiment.ExecutionBundle, controlexperiment.TraceMutationPlan, error) {
 		plan, err := controlexperiment.NewAdjacentTraceMutation(
 			planID, seedBundle.Trace, seedReport.Config.Runs[0].Policy, first,
@@ -257,15 +247,9 @@ func TestEtcdraftAdjacentTraceMutationCompletesOrFailsExplicitly(t *testing.T) {
 }
 
 func TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable(t *testing.T) {
-	report, err := etcdraftReport(context.Background(), "workload", 96, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle, err := qualification.Run(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := report.ValidateWithQualification(bundle.Qualification); err != nil {
+	report, executionBundle := sharedEtcdraftWorkloadBundleFixture(t)
+	qualificationReport := executionBundle.Qualification.Qualification
+	if err := report.ValidateWithQualification(qualificationReport); err != nil {
 		t.Fatal(err)
 	}
 	if len(report.Runs) != 1 || report.Runs[0].Workload == nil ||
@@ -284,7 +268,7 @@ func TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable(t *testing.
 	if err := json.Unmarshal(encoded, &checked); err != nil {
 		t.Fatal(err)
 	}
-	if err := checked.ValidateWithQualification(bundle.Qualification); err != nil {
+	if err := checked.ValidateWithQualification(qualificationReport); err != nil {
 		t.Fatal(err)
 	}
 	if checked.Digest != report.Digest || checked.Digest !=

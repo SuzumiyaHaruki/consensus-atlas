@@ -91,6 +91,15 @@ type deepSeekCall struct {
 	FailureCode    string
 }
 
+// deepSeekPreparedRequest freezes the exact public prompt and request bytes
+// before a key is read or any transport is attempted.
+type deepSeekPreparedRequest struct {
+	PromptBytes   []byte
+	RequestBytes  []byte
+	PromptDigest  string
+	RequestDigest string
+}
+
 type etcdraftAgentOneShot struct {
 	View   controlexperiment.AgentSemanticView
 	Intent *controlexperiment.GuardedTestIntent
@@ -298,6 +307,22 @@ func (client deepSeekIntentClient) invoke(
 	if err != nil {
 		return deepSeekCall{}, err
 	}
+	prepared, err := client.prepare(systemPrompt, userPrompt)
+	if err != nil {
+		return deepSeekCall{}, err
+	}
+	return client.invokePrepared(ctx, key, prepared)
+}
+
+func (client deepSeekIntentClient) prepare(
+	systemPrompt string,
+	userPrompt string,
+) (deepSeekPreparedRequest, error) {
+	if client.Endpoint != deepSeekChatEndpoint || client.Model != deepSeekV4Flash ||
+		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > 4096 ||
+		strings.TrimSpace(systemPrompt) == "" || strings.TrimSpace(userPrompt) == "" {
+		return deepSeekPreparedRequest{}, errors.New("AGENT_CLIENT_CONFIG_INVALID")
+	}
 	messages := []deepSeekMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
@@ -310,18 +335,65 @@ func (client deepSeekIntentClient) invoke(
 	requestBody.Thinking.Type = "disabled"
 	encodedRequest, err := json.Marshal(requestBody)
 	if err != nil {
-		return deepSeekCall{}, err
+		return deepSeekPreparedRequest{}, err
 	}
 	encodedPrompt, err := json.Marshal(messages)
 	if err != nil {
+		return deepSeekPreparedRequest{}, err
+	}
+	prepared := deepSeekPreparedRequest{
+		PromptBytes: append([]byte(nil), encodedPrompt...), RequestBytes: append([]byte(nil), encodedRequest...),
+		PromptDigest:  controlexperiment.AgentInvocationDigest(encodedPrompt),
+		RequestDigest: controlexperiment.AgentInvocationDigest(encodedRequest),
+	}
+	if err := prepared.validate(client); err != nil {
+		return deepSeekPreparedRequest{}, err
+	}
+	return prepared, nil
+}
+
+func (prepared deepSeekPreparedRequest) validate(client deepSeekIntentClient) error {
+	if len(prepared.PromptBytes) == 0 || len(prepared.RequestBytes) == 0 ||
+		controlexperiment.AgentInvocationDigest(prepared.PromptBytes) != prepared.PromptDigest ||
+		controlexperiment.AgentInvocationDigest(prepared.RequestBytes) != prepared.RequestDigest {
+		return errors.New("AGENT_PREPARED_REQUEST_DIGEST_MISMATCH")
+	}
+	var messages []deepSeekMessage
+	var request deepSeekChatRequest
+	if err := json.Unmarshal(prepared.PromptBytes, &messages); err != nil ||
+		json.Unmarshal(prepared.RequestBytes, &request) != nil || len(messages) != 2 ||
+		request.Model != client.Model || request.ResponseFormat.Type != "json_object" ||
+		request.Thinking.Type != "disabled" || request.Temperature != 0 || request.Stream ||
+		request.MaxTokens != client.MaxOutputTokens || len(request.Messages) != len(messages) {
+		return errors.New("AGENT_PREPARED_REQUEST_INVALID")
+	}
+	encodedMessages, err := json.Marshal(request.Messages)
+	if err != nil || !bytes.Equal(encodedMessages, prepared.PromptBytes) {
+		return errors.New("AGENT_PREPARED_REQUEST_PROMPT_MISMATCH")
+	}
+	return nil
+}
+
+func (client deepSeekIntentClient) invokePrepared(
+	ctx context.Context,
+	key string,
+	prepared deepSeekPreparedRequest,
+) (deepSeekCall, error) {
+	if client.Endpoint != deepSeekChatEndpoint || client.Model != deepSeekV4Flash ||
+		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > 4096 || client.HTTP == nil ||
+		strings.TrimSpace(key) == "" {
+		return deepSeekCall{}, errors.New("AGENT_CLIENT_CONFIG_INVALID")
+	}
+	if err := prepared.validate(client); err != nil {
 		return deepSeekCall{}, err
 	}
 	call := deepSeekCall{
-		PromptDigest:  controlexperiment.AgentInvocationDigest(encodedPrompt),
-		RequestDigest: controlexperiment.AgentInvocationDigest(encodedRequest),
-		Work:          controlexperiment.ModelWork{Calls: 1},
+		PromptDigest: prepared.PromptDigest, RequestDigest: prepared.RequestDigest,
+		Work: controlexperiment.ModelWork{Calls: 1},
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.Endpoint, bytes.NewReader(encodedRequest))
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, client.Endpoint, bytes.NewReader(prepared.RequestBytes),
+	)
 	if err != nil {
 		return deepSeekCall{}, errors.New("AGENT_REQUEST_CONSTRUCTION_FAILED")
 	}
@@ -455,6 +527,55 @@ func guardedFeedbackIntentPrompt(
 		"Baseline GuardedTestIntent JSON:\n" + string(baselineJSON) +
 		"\n\nAgentBatchFeedbackView JSON:\n" + string(feedbackJSON) +
 		"\n\nAgentSemanticView JSON:\n" + string(viewJSON)
+	return system, user, nil
+}
+
+type preferenceAblationPromptInput struct {
+	SemanticView controlexperiment.AgentSemanticView       `json:"agent_semantic_view"`
+	Baseline     controlexperiment.GuardedTestIntent       `json:"hard_constraint_baseline"`
+	Feedback     *controlexperiment.AgentBatchFeedbackView `json:"agent_batch_feedback"`
+}
+
+// guardedPreferenceAblationPrompt builds both b4 arms through one template.
+// The no-feedback arm carries an explicit JSON null; the other carries the
+// trusted feedback object. All semantic and hard fields are otherwise exact.
+func guardedPreferenceAblationPrompt(
+	view controlexperiment.AgentSemanticView,
+	baseline controlexperiment.GuardedTestIntent,
+	feedback *controlexperiment.AgentBatchFeedbackView,
+) (string, string, error) {
+	if err := view.Validate(); err != nil {
+		return "", "", err
+	}
+	if err := baseline.Validate(); err != nil {
+		return "", "", err
+	}
+	if baseline.ViewDigest != view.Digest || len(baseline.Prefer.BackendIDs) != 0 ||
+		len(baseline.Prefer.Actions) != 0 {
+		return "", "", errors.New("AGENT_ABLATION_PROMPT_BASELINE_INVALID")
+	}
+	if feedback == nil {
+		// Explicit nil is the entire experimental information difference.
+	} else {
+		if err := feedback.Validate(); err != nil {
+			return "", "", err
+		}
+		if feedback.SemanticViewDigest != view.Digest {
+			return "", "", errors.New("AGENT_ABLATION_PROMPT_FEEDBACK_INPUT_INVALID")
+		}
+	}
+	inputJSON, err := json.MarshalIndent(preferenceAblationPromptInput{
+		SemanticView: view, Baseline: baseline, Feedback: feedback,
+	}, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	system := "You are a constrained distributed-consensus preference planner in a two-arm ablation. " +
+		"Return exactly one GuardedTestIntent JSON object and no prose. Copy view_digest, risk_id, and every must field exactly from hard_constraint_baseline. " +
+		"Create a new lowercase-hyphenated id, leave digest empty, and change only prefer.backend_ids and prefer.actions using eligible values from agent_semantic_view. " +
+		"When agent_batch_feedback is null, use only the semantic view. When it is present, treat it only as coarse discovery and cost evidence, not completeness, correctness, an oracle result, or a defect label. " +
+		"Do not add action IDs, node IDs, decision sequences, or verdict claims."
+	user := "Produce the preference-only proposal from this frozen input:\n" + string(inputJSON)
 	return system, user, nil
 }
 

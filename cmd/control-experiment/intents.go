@@ -26,16 +26,20 @@ type etcdraftIntentInputs struct {
 }
 
 func newEtcdraftIntentInputs(ctx context.Context) (etcdraftIntentInputs, error) {
-	return newEtcdraftIntentInputsWithCatalog(ctx, false)
+	return newEtcdraftIntentInputsWithCatalog(ctx, "legacy")
 }
 
 func newEtcdraftFeedbackIntentInputs(ctx context.Context) (etcdraftIntentInputs, error) {
-	return newEtcdraftIntentInputsWithCatalog(ctx, true)
+	return newEtcdraftIntentInputsWithCatalog(ctx, "feedback-v2")
+}
+
+func newEtcdraftB4IntentInputs(ctx context.Context) (etcdraftIntentInputs, error) {
+	return newEtcdraftIntentInputsWithCatalog(ctx, "b4-pre")
 }
 
 func newEtcdraftIntentInputsWithCatalog(
 	ctx context.Context,
-	feedbackV2 bool,
+	variant string,
 ) (etcdraftIntentInputs, error) {
 	qualified, err := qualification.Run(ctx)
 	if err != nil {
@@ -46,17 +50,24 @@ func newEtcdraftIntentInputsWithCatalog(
 		return etcdraftIntentInputs{}, err
 	}
 	var catalog controlexperiment.IntentCompilerCatalog
-	if feedbackV2 {
-		catalog, err = etcdraftFeedbackIntentCatalog(qualified.Profile)
-	} else {
+	switch variant {
+	case "legacy":
 		catalog, err = etcdraftIntentCatalog(qualified.Profile)
+	case "feedback-v2":
+		catalog, err = etcdraftFeedbackIntentCatalog(qualified.Profile)
+	case "b4-pre":
+		catalog, err = etcdraftB4IntentCatalog(qualified.Profile)
+	default:
+		return etcdraftIntentInputs{}, errors.New("ETCDRAFT_INTENT_CATALOG_VARIANT_INVALID")
 	}
 	if err != nil {
 		return etcdraftIntentInputs{}, err
 	}
 	viewID := "etcdraft-one-shot-view-m5-18b0"
-	if feedbackV2 {
+	if variant == "feedback-v2" {
 		viewID = "etcdraft-feedback-view-m5-18b3"
+	} else if variant == "b4-pre" {
+		viewID = "etcdraft-feedback-ablation-view-m5-18b4-pre"
 	}
 	view, err := controlexperiment.NewAgentSemanticView(
 		viewID, knowledge, catalog,
@@ -99,6 +110,7 @@ func etcdraftIntentCatalog(
 ) (controlexperiment.IntentCompilerCatalog, error) {
 	return etcdraftIntentCatalogWithActionStrategy(
 		profile, "etcdraft-qualified-backends-m5-18b0", "workload-action-class-random",
+		"workload-admissible-uniform", 1, true,
 	)
 }
 
@@ -107,6 +119,16 @@ func etcdraftFeedbackIntentCatalog(
 ) (controlexperiment.IntentCompilerCatalog, error) {
 	return etcdraftIntentCatalogWithActionStrategy(
 		profile, "etcdraft-qualified-backends-m5-18b3", "workload-action-class-random-v2",
+		"workload-admissible-uniform", 1, true,
+	)
+}
+
+func etcdraftB4IntentCatalog(
+	profile conformance.QualificationProfile,
+) (controlexperiment.IntentCompilerCatalog, error) {
+	return etcdraftIntentCatalogWithActionStrategy(
+		profile, "etcdraft-qualified-backends-m5-18b4-pre", "workload-action-class-random-b4",
+		"workload-admissible-uniform-b4", 0, false,
 	)
 }
 
@@ -114,10 +136,13 @@ func etcdraftIntentCatalogWithActionStrategy(
 	profile conformance.QualificationProfile,
 	catalogID string,
 	actionStrategy string,
+	uniformStrategy string,
+	policySeed uint64,
+	partitionProducible bool,
 ) (controlexperiment.IntentCompilerCatalog, error) {
 	fullEnvelope := controlexperiment.FaultEnvelope{
 		MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
-		MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
+		MaxMessageDuplicates: 1,
 	}
 	progressActions := []control.ActionKind{
 		control.ActionInvoke, control.ActionCompleteEffect,
@@ -125,24 +150,32 @@ func etcdraftIntentCatalogWithActionStrategy(
 	}
 	searchActions := append(append([]control.ActionKind(nil), progressActions...),
 		control.ActionCrash, control.ActionRestart, control.ActionDropMessage,
-		control.ActionDuplicateMessage, control.ActionPartition, control.ActionHeal,
+		control.ActionDuplicateMessage,
 	)
+	if partitionProducible {
+		fullEnvelope.MaxPartitions, fullEnvelope.MaxActivePartitions = 1, 1
+		searchActions = append(searchActions, control.ActionPartition, control.ActionHeal)
+	}
+	fixedEnvelope := fullEnvelope
+	if !partitionProducible {
+		fixedEnvelope = controlexperiment.FaultEnvelope{}
+	}
 	required := profile.RequiredCapabilityIDs()
 	return controlexperiment.NewIntentCompilerCatalog(controlexperiment.IntentCompilerCatalog{
 		ID: catalogID,
 		Templates: []controlexperiment.IntentBackendTemplate{
 			{
-				ID: etcdraftBackendFixed, Strategy: "workload", PolicySeed: 1,
+				ID: etcdraftBackendFixed, Strategy: "workload", PolicySeed: policySeed,
 				RequiredCapabilities: required, SupportedActions: progressActions,
-				MinDecisions: 1, MaxDecisions: 96, MaxFaultEnvelope: fullEnvelope, FallbackRank: 1,
+				MinDecisions: 1, MaxDecisions: 96, MaxFaultEnvelope: fixedEnvelope, FallbackRank: 1,
 			},
 			{
-				ID: etcdraftBackendActionClass, Strategy: actionStrategy, PolicySeed: 1,
+				ID: etcdraftBackendActionClass, Strategy: actionStrategy, PolicySeed: policySeed,
 				RequiredCapabilities: required, SupportedActions: searchActions,
 				MinDecisions: 1, MaxDecisions: 96, MaxFaultEnvelope: fullEnvelope, FallbackRank: 2,
 			},
 			{
-				ID: etcdraftBackendUniform, Strategy: "workload-admissible-uniform", PolicySeed: 1,
+				ID: etcdraftBackendUniform, Strategy: uniformStrategy, PolicySeed: policySeed,
 				RequiredCapabilities: required, SupportedActions: searchActions,
 				MinDecisions: 1, MaxDecisions: 96, MaxFaultEnvelope: fullEnvelope, FallbackRank: 3,
 			},

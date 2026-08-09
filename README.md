@@ -1,13 +1,13 @@
 # ConsensusAtlas
 
-ConsensusAtlas 是面向 CFT/BFT 共识实现的确定性测试研究框架。当前主线已经收敛到一套协议无关的
+ConsensusAtlas 是面向共识实现的确定性测试研究框架。当前已验证范围是 leader-based
+CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称已具备 BFT 适用性。主线已经收敛到一套协议无关的
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段是 **M5.18b3 unseen follow-up baseline 完成**：通用内核从完整 ExecutionBundle 和绑定
-PSS Mapper 重算可比较的 feedback v2，冻结 source seeds 1/2/3、未见 seed 4 和每个 arm 的完整成本，
-再通过已有 qualified executor 执行确定性 follow-up。本轮没有调用模型，也不把状态数当作缺陷效果或
-覆盖完整度。
+当前阶段是 **M5.18b4 preference ablation request freeze 完成**：no-feedback/with-feedback
+两臂的精确 prompt/request bytes、共同 hard baseline、seed 4、执行预算和 transport 上限已在
+读取 key 前冻结。唯一可见信息差异是 feedback 为 JSON `null` 或可重算对象。本轮没有调用模型。
 
 ## 当前闭环
 
@@ -81,6 +81,9 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - 有界 one-shot DeepSeek JSON transport、安全 key-file 读取和 digest-bound AgentInvocationAudit；
 - bundle-backed `AgentBatchFeedbackView`、敏感身份去除与 preference-only 消融边界；
 - execution/workload 分离的 feedback v2、冻结 source/unseen seed 与完整 per-arm 成本的 follow-up spec；
+- Runtime-supported / Experiment-producible / backend-selectable 三层 Action surface；
+- seed-free CompiledIntentPlan v2、digest-bound execution instance 和独立 IntentOutcome；
+- pre-call exact-byte request freeze、单份 proposal/baseline 校验与 1-call/0-retry 消融边界；
 - 按 ActionKind 再按成员均匀采样的确定性随机基线，以及 digest-bound FaultEnvelope selectable view；
 - 精确 source prefix、相邻 Action swap、显式 priority suffix 与不可执行变体记账的 trace mutation；
 - 官方 `go.etcd.io/raft/v3 v3.6.0` 的完整 strict 路径；
@@ -209,6 +212,27 @@ intent 的全部 hard ActionKind，所以结果原样记为计费的 `execution-
 每个 arm 连同 source 实际计费 685/685，模型调用数为 0。这不是缺陷 verdict 或方法优劣结论。小型工件见
 [summary.json](benchmarks/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json)。
 
+## M5.18b4-pre 可信边界修正
+
+新的 b4 catalog 不再把 Runtime 能表示、但当前 Experiment 没有 producer 的 Partition/Heal 声明成
+backend-selectable，并将对应 envelope 收紧为 0。`CompiledIntentPlan/v2` 不含 seed；可信
+`IntentExecutionInstance/v1` 单独绑定 seed 4 和 98/98 ceiling。
+
+该实例通过 qualified execution 和 strict replay，实际消耗 97/97 work、发现 79 states，但 Trace 缺少
+hard `invoke`。结果因此是 execution `valid`、intent `not-reached`、Oracle `not-evaluated`，而不是
+execution failure。它只校准可信边界，不是 RiskWitness、缺陷 verdict 或 Agent 效果结论。小型工件见
+[summary.json](benchmarks/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/summary.json)。
+
+## M5.18b4 Preference ablation request freeze
+
+两臂使用相同 system prompt、semantic view、risk、must、seed 4、98/98 execution ceiling 和
+transport 限制。no-feedback request 显式包含 `agent_batch_feedback: null`，with-feedback request
+包含可重算 feedback v2。精确 request digest 分别为 `562d3bda...31ce5c` 和
+`eb44d738...f6826f`；冻结对象为 `2591cf89...eed8c1`。
+
+未读取 key，模型调用数为 0。小型承诺工件见
+[freeze.json](benchmarks/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/freeze.json)。
+
 ## 快速验证
 
 ```bash
@@ -218,9 +242,11 @@ go vet ./...
 make test-race-full
 ```
 
-M5.18b3 已在测试进程内复用不可变 source fixture；物理复用不减少方法账本中的 source 成本，也不改变
-历史 identity。`make test-race-full` 已通过，其中 `cmd/control-experiment` 用时 983.930 秒，低于
-20 分钟 ceiling。
+M5.18b4 继续在测试进程内复用不可变 source fixture；物理复用不减少方法账本中的 source 成本，
+也不改变历史 identity。`make test` 已通过，`cmd/control-experiment` 用时 90.785 秒。
+`make test-race-full` 两次都在 20 分钟 ceiling 超时且未报告 data race，因此当前完整 race 门禁状态是
+**未通过**；已按阶段 timebox 停止，不再抬高上限或继续重跑。workload/trace-mutation 定向 race
+以 84.420 秒通过。
 
 重跑官方 bundle 和公开 calibration：
 
@@ -239,6 +265,8 @@ make experiment-etcdraft-v2-pss-guided-method
 make experiment-etcdraft-v2-action-class-method
 make experiment-etcdraft-v2-agent-feedback-batch
 make experiment-etcdraft-v2-agent-follow-up-baseline
+make experiment-etcdraft-v2-agent-b4-preflight
+make experiment-etcdraft-v2-agent-b4-freeze
 make build-etcdraft-v2-method-evaluation
 make evaluate-etcdraft-v2-method-evaluation
 ```
@@ -297,11 +325,13 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段 M5.18b4 在调用前冻结无 feedback/有 feedback 两个 prompt/request 和共同 seed 4。两边只能在
-preference 上不同，每边最多一次调用且无重试；M5.18b3 已知的 deterministic outcome 不进入模型视图。
-只有完整 race 门通过后才允许调用。
+下一阶段实现冻结 request 的单一消费路径：response audit、strict parse、baseline 校验、
+plan v2、seed-4 instance、existing executor 和 IntentOutcome。只有用户明确要求运行模型实验时才读取 key；
+b4 只是 backend-preference feedback micro-ablation，不承担最终 Agent 效果结论。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.18b3](docs/stage-m5.18b3-unseen-follow-up.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.18b4](docs/stage-m5.18b4-request-freeze.md)、
+[M5.18b4-pre](docs/stage-m5.18b4-pre-trust-corrections.md)、
+[M5.18b3](docs/stage-m5.18b3-unseen-follow-up.md)、
 [M5.18b2](docs/stage-m5.18b2-defect-blind-batch-feedback.md)、
 [M5.18b1](docs/stage-m5.18b1-one-shot-agent-transport.md)、
 [M5.18b0](docs/stage-m5.18b0-guarded-intent-compiler.md)、

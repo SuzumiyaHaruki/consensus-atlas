@@ -1,0 +1,51 @@
+{
+  "schema_version": "consensus-atlas/agent-follow-up-spec/v1",
+  "id": "etcdraft-agent-preference-ablation-m5-18b4",
+  "semantic_view_digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036",
+  "feedback_digest": "94b0862bb0445fb724a7a603160ded55e19670cade73fb8b69f9f3bd275c66bf",
+  "feedback_source_digest": "c1de0afc4f7d09282fa67a6f52cdffa80a9481231e6e1623a3a5f441296fb2a5",
+  "pss_id": "official-etcdraft-v2/core-pss-v1",
+  "backend_ids": [
+    "action-class-random",
+    "admissible-uniform"
+  ],
+  "source_seeds": [
+    1,
+    2,
+    3
+  ],
+  "follow_up_seed": 4,
+  "decisions": 96,
+  "source_budget": {
+    "max_execution_attempts": 6,
+    "max_primary_work_units": 588,
+    "max_replay_work_units": 588
+  },
+  "source_observed_work": {
+    "execution_attempts": 6,
+    "primary_work_units": 588,
+    "replay_work_units": 588,
+    "model": {
+      "calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  "follow_up_budget": {
+    "max_execution_attempts": 1,
+    "max_primary_work_units": 98,
+    "max_replay_work_units": 98
+  },
+  "per_arm_budget": {
+    "max_execution_attempts": 7,
+    "max_primary_work_units": 686,
+    "max_replay_work_units": 686
+  },
+  "max_model_calls": 1,
+  "max_output_tokens": 1200,
+  "source_reuse_policy": "shared-verified-source-charged-to-each-arm",
+  "deterministic_rule": "workload-completion-then-execution-canonical-v2",
+  "deterministic_backend_id": "action-class-random",
+  "digest": "bf632a687fe8a507866affd980c138a385716ea59941c442b22f0a03064af262"
+}

@@ -96,6 +96,28 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		return persistEtcdraftAgentFollowUpBaseline(*out, *methodArtifacts, result, stdout)
 	}
+	if *strategy == "workload-agent-b4-preflight" {
+		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
+			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("Agent b4 preflight requires only -out and -method-artifacts")
+		}
+		result, err := newEtcdraftAgentB4Preflight(ctx, *decisions, *policySeed)
+		if err != nil {
+			return err
+		}
+		return persistEtcdraftAgentB4Preflight(*out, *methodArtifacts, result, stdout)
+	}
+	if *strategy == "workload-agent-b4-freeze" {
+		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
+			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("Agent b4 request freeze requires only -out and -method-artifacts")
+		}
+		result, err := newEtcdraftAgentB4RequestFreeze(ctx, *decisions, *policySeed)
+		if err != nil {
+			return err
+		}
+		return persistEtcdraftAgentB4RequestFreeze(*out, *methodArtifacts, result, stdout)
+	}
 	if *strategy == "workload-admissible-uniform-method" ||
 		*strategy == "workload-action-class-random-method" ||
 		*strategy == "workload-pss-guided-corpus" {
@@ -118,7 +140,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return persistEtcdraftMethodExecution(*out, *methodArtifacts, result, stdout)
 	}
 	if *methodArtifacts != "" {
-		return errors.New("-method-artifacts requires an M5.17c2 method strategy")
+		return errors.New("-method-artifacts requires a method or Agent evidence strategy")
 	}
 	if (*bundleEvidenceVersion != 0 || *methodSpecDigest != "") && *bundleOut == "" {
 		return errors.New("bundle evidence flags require -bundle-out")
@@ -398,7 +420,7 @@ func etcdraftExecutionWithMethodSpec(
 	schemaVersion := controlexperiment.SchemaVersion
 	workloadRouterID := ""
 	switch strategy {
-	case "workload", "workload-semantics-v2", "workload-evaluation-v3", "workload-admissible-uniform", "workload-action-class-random", "workload-action-class-random-v2":
+	case "workload", "workload-semantics-v2", "workload-evaluation-v3", "workload-admissible-uniform", "workload-admissible-uniform-b4", "workload-action-class-random", "workload-action-class-random-v2", "workload-action-class-random-b4":
 		bundle, bound, workload, err := etcdraftQualifiedWorkload(ctx)
 		if err != nil {
 			return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
@@ -429,10 +451,14 @@ func etcdraftExecutionWithMethodSpec(
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
 				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
 			}
-		} else if strategy == "workload-action-class-random" || strategy == "workload-action-class-random-v2" {
+		} else if strategy == "workload-action-class-random" || strategy == "workload-action-class-random-v2" || strategy == "workload-action-class-random-b4" {
 			experimentID = fmt.Sprintf("public-etcdraft-v2-action-class-random-m5.17a-seed-%d", policySeed)
 			if strategy == "workload-action-class-random-v2" {
 				experimentID = fmt.Sprintf("public-etcdraft-v2-action-class-random-m5.18b3-seed-%d", policySeed)
+				schemaVersion = controlexperiment.SchemaVersionV2
+				workloadRouterID = etcdraftv2.WorkloadRouterID
+			} else if strategy == "workload-action-class-random-b4" {
+				experimentID = fmt.Sprintf("public-etcdraft-v2-action-class-random-m5.18b4-pre-seed-%d", policySeed)
 				schemaVersion = controlexperiment.SchemaVersionV2
 				workloadRouterID = etcdraftv2.WorkloadRouterID
 			}
@@ -444,6 +470,9 @@ func etcdraftExecutionWithMethodSpec(
 			faultEnvelope = &controlexperiment.FaultEnvelope{
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
 				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
+			}
+			if strategy == "workload-action-class-random-b4" {
+				faultEnvelope.MaxPartitions, faultEnvelope.MaxActivePartitions = 0, 0
 			}
 		} else {
 			experimentID = fmt.Sprintf("public-etcdraft-v2-admissible-uniform-m5.17c2-seed-%d", policySeed)
@@ -457,6 +486,10 @@ func etcdraftExecutionWithMethodSpec(
 			faultEnvelope = &controlexperiment.FaultEnvelope{
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
 				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
+			}
+			if strategy == "workload-admissible-uniform-b4" {
+				experimentID = fmt.Sprintf("public-etcdraft-v2-admissible-uniform-m5.18b4-pre-seed-%d", policySeed)
+				faultEnvelope.MaxPartitions, faultEnvelope.MaxActivePartitions = 0, 0
 			}
 		}
 		runs = []controlexperiment.RunPlan{{

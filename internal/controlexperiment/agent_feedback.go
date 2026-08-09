@@ -242,6 +242,33 @@ func ValidateFeedbackPreferenceAblation(
 	return nil
 }
 
+// ValidatePreferenceOnlyProposal checks one model proposal against the
+// trusted pre-call baseline. Pairwise arm equality is insufficient: two arms
+// could otherwise make the same unauthorized hard-field change.
+func ValidatePreferenceOnlyProposal(
+	semantic AgentSemanticView,
+	baseline GuardedTestIntent,
+	proposal GuardedTestIntent,
+) error {
+	if err := semantic.Validate(); err != nil {
+		return err
+	}
+	if err := baseline.Validate(); err != nil {
+		return err
+	}
+	if err := proposal.Validate(); err != nil {
+		return err
+	}
+	if baseline.ViewDigest != semantic.Digest || proposal.ViewDigest != semantic.Digest ||
+		baseline.RiskID != proposal.RiskID || baseline.Must.Decisions != proposal.Must.Decisions ||
+		baseline.Must.FaultEnvelope != proposal.Must.FaultEnvelope ||
+		!slices.Equal(baseline.Must.RequiredCapabilities, proposal.Must.RequiredCapabilities) ||
+		!slices.Equal(baseline.Must.RequiredActions, proposal.Must.RequiredActions) {
+		return errors.New("EXPERIMENT_AGENT_PREFERENCE_PROPOSAL_HARD_CONSTRAINT_CHANGED")
+	}
+	return nil
+}
+
 func projectAgentBackendFeedback(
 	version string,
 	backendID string,

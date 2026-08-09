@@ -1,0 +1,16 @@
+{
+  "schema_version": "consensus-atlas/intent-outcome/v1",
+  "id": "etcdraft-feedback-ablation-seed-4-m5-18b4-pre",
+  "execution_instance_digest": "2bbf81a1ea76e84aa6fcc38bafa38aeb2eb29f6b4331f9b0892157f002f3b5ea",
+  "plan_digest": "4b263fd42f9a472bd475cb3b3be04ed8753f0103a80c4b5f6e7df66e0e326e87",
+  "report_digest": "7d7c1765a855d13b0dea1b43cfc21f3f726fb6426e53912a2dffeb18468e8c1e",
+  "bundle_digest": "373f6740b74e21ded96835ce27903e4f85ce17334bfcfadb9da92ec51e6996b7",
+  "execution_status": "valid",
+  "intent_status": "not-reached",
+  "reason_code": "INTENT_REQUIRED_ACTION_NOT_REACHED",
+  "missing_actions": [
+    "invoke"
+  ],
+  "oracle_status": "not-evaluated",
+  "digest": "be4779d5d6851261ad3c7a72c284fa93d1101b0b5a75c87f29c4dfcd2529a980"
+}

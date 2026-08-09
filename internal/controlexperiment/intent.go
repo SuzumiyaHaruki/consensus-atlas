@@ -119,7 +119,7 @@ func (pack ProtocolKnowledgePack) seal() (ProtocolKnowledgePack, error) {
 type IntentBackendTemplate struct {
 	ID                   string               `json:"id"`
 	Strategy             string               `json:"strategy"`
-	PolicySeed           uint64               `json:"policy_seed"`
+	PolicySeed           uint64               `json:"policy_seed,omitempty"`
 	RequiredCapabilities []string             `json:"required_capabilities"`
 	SupportedActions     []control.ActionKind `json:"supported_actions"`
 	MinDecisions         int                  `json:"min_decisions"`

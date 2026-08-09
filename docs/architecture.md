@@ -73,6 +73,18 @@ M5.18b3 增加可比较的 `AgentBatchFeedbackView/v2` 和 `AgentFollowUpSpec/v1
 source 可以物理复用，但每个 arm 仍承担全部逻辑成本。实际 follow-up seed 由该 spec 与 report seed
 共同验证，Agent 仍不能控制它。
 
+M5.18b4-pre 不修改 Runtime，而是修正 Agent/Experiment 之间的真实边界。新 b4 catalog
+区分 Runtime-supported、Experiment-producible 和 backend-selectable；没有 FaultProvider 时不对
+Agent 声明 Partition/Heal。`CompiledIntentPlan/v2` 与 policy seed 解耦，后者由
+`IntentExecutionInstance/v1` 绑定。对已验证 report/bundle 的 hard Action 缺失生成
+`IntentOutcome{execution=valid,intent=not-reached}`，不再伪装成 execution invalid。历史 v1 plan
+和 b3 summary 保持原 identity。
+
+M5.18b4 request-freeze 将 model request 构造与 transport 分开。`deepSeekPreparedRequest` 保存精确
+messages/request bytes 及 digest；协议无关 `AgentPreferenceAblationFreeze` 绑定 semantic view、
+feedback、hard baseline、FollowUpSpec、transport 限制和两臂 commitment。key 只能在 freeze 验证后进入
+`invokePrepared`，不参与 request 生成或 identity。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

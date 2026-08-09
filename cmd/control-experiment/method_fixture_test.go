@@ -4,9 +4,16 @@ import (
 	"context"
 	"sync"
 	"testing"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
 var (
+	etcdraftWorkloadFixtureOnce   sync.Once
+	etcdraftWorkloadFixtureReport controlexperiment.Report
+	etcdraftWorkloadFixtureBundle controlexperiment.ExecutionBundle
+	etcdraftWorkloadFixtureErr    error
+
 	etcdraftUniformFixtureOnce sync.Once
 	etcdraftUniformFixture     etcdraftMethodExecution
 	etcdraftUniformFixtureErr  error
@@ -18,7 +25,30 @@ var (
 	etcdraftActionV2FixtureOnce sync.Once
 	etcdraftActionV2Fixture     etcdraftMethodExecution
 	etcdraftActionV2FixtureErr  error
+
+	etcdraftB4InputsFixtureOnce sync.Once
+	etcdraftB4InputsFixture     etcdraftIntentInputs
+	etcdraftB4InputsFixtureErr  error
 )
+
+// sharedEtcdraftWorkloadBundleFixture avoids rebuilding the same immutable
+// workload/96/seed-1 witness in two independent regression tests. Each test
+// still validates the complete report and bundle; this physical reuse does
+// not change any persisted method cost or identity.
+func sharedEtcdraftWorkloadBundleFixture(t *testing.T) (
+	controlexperiment.Report,
+	controlexperiment.ExecutionBundle,
+) {
+	t.Helper()
+	etcdraftWorkloadFixtureOnce.Do(func() {
+		etcdraftWorkloadFixtureReport, etcdraftWorkloadFixtureBundle, etcdraftWorkloadFixtureErr =
+			etcdraftBundle(context.Background(), "workload", 96, 1)
+	})
+	if etcdraftWorkloadFixtureErr != nil {
+		t.Fatal(etcdraftWorkloadFixtureErr)
+	}
+	return etcdraftWorkloadFixtureReport, etcdraftWorkloadFixtureBundle
+}
 
 // These package-local fixtures execute each frozen seeds-1/2/3 source batch
 // once. Every consumer still reconstructs and validates its own corpus,
@@ -49,6 +79,18 @@ func sharedEtcdraftActionMethodFixture(t *testing.T) etcdraftMethodExecution {
 	return etcdraftActionFixture
 }
 
+func sharedEtcdraftActionClassBundleFixture(t *testing.T) (
+	controlexperiment.Report,
+	controlexperiment.ExecutionBundle,
+) {
+	t.Helper()
+	method := sharedEtcdraftActionMethodFixture(t)
+	if len(method.Reports) == 0 || len(method.Bundles) == 0 {
+		t.Fatal("shared action-class method has no completed source")
+	}
+	return method.Reports[0], method.Bundles[0]
+}
+
 func sharedEtcdraftActionV2MethodFixture(t *testing.T) etcdraftMethodExecution {
 	t.Helper()
 	etcdraftActionV2FixtureOnce.Do(func() {
@@ -60,4 +102,17 @@ func sharedEtcdraftActionV2MethodFixture(t *testing.T) etcdraftMethodExecution {
 		t.Fatal(etcdraftActionV2FixtureErr)
 	}
 	return etcdraftActionV2Fixture
+}
+
+func sharedEtcdraftB4IntentInputsFixture(t *testing.T) etcdraftIntentInputs {
+	t.Helper()
+	etcdraftB4InputsFixtureOnce.Do(func() {
+		etcdraftB4InputsFixture, etcdraftB4InputsFixtureErr = newEtcdraftB4IntentInputs(
+			context.Background(),
+		)
+	})
+	if etcdraftB4InputsFixtureErr != nil {
+		t.Fatal(etcdraftB4InputsFixtureErr)
+	}
+	return etcdraftB4InputsFixture
 }

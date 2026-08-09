@@ -53,6 +53,16 @@ identity 但禁止用它排名。修正后的 feedback v2 让两种方法都以 
 follow-up 通过 replay，但 workload pending 且 hard ActionKind 不完整，原样记为计费失败。完整规范见
 `stage-m5.18b3-unseen-follow-up.md`。
 
+M5.18b4-pre 修正三个评价边界：backend 只声明当前 Experiment 可产生并可选择的 Action；宏观
+`CompiledIntentPlan/v2` 不再绑定 seed；有效执行未覆盖 hard Action 时单独记为 intent
+`not-reached`，不再伪装成 execution failure。seed-4 见证为 execution valid、missing invoke、Oracle
+not-evaluated，且模型调用数为 0。完整规范见 `stage-m5.18b4-pre-trust-corrections.md`。
+
+M5.18b4 request-freeze 在任何 key/transport 之前冻结两臂精确 prompt/request bytes。两臂只允许
+feedback 暴露不同，共用 hard baseline、seed 4、98/98 execution ceiling、每臂 1 call 和 0 retry。
+单份 proposal 未来必须分别与 baseline 校验，不能只做 pairwise 比较。本阶段 model calls=0，
+完整规范见 `stage-m5.18b4-request-freeze.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

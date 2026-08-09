@@ -1,6 +1,6 @@
 # ConsensusAtlas Control Runtime v2 设计与实现基线
 
-状态：`v2alpha1 / M5.18b3 complete`；控制内核冻结，可比较 feedback 与 unseen follow-up 已接入 Agent 边界
+状态：`v2alpha1 / M5.18b4 request freeze complete`；控制内核冻结，两臂请求已在调用前冻结
 
 分支：`feature/control-runtime-v2`
 
@@ -852,6 +852,12 @@ ActionKind。M5.18b1 已接入单次受限 transport；M5.18b2 已从完整 bund
 batch feedback，且冻结反馈只能改变 intent preference。两个阶段都没有修改 Runtime 或在线调度权限。
 M5.18b3 又将 execution 与 workload completion 分离，冻结 source/follow-up seed 和完整计费，并通过
 现有 executor 保存 seed-4 hard-action miss；它同样没有修改 Runtime 或给 Agent 增加在线权限。
+M5.18b4-pre 进一步区分 Runtime-supported、Experiment-producible 和 backend-selectable Action；
+macro plan 与 execution seed 分离，并把 execution validity、intent reachability 和 Oracle outcome
+拆成独立结果轴。它仍复用唯一 executor，且没有新增 Runtime Action 或开放 DSL。
+M5.18b4 request-freeze 只在 Agent/transport 上层工作：同一 builder 生成 feedback=null/
+trusted-feedback 两份精确 request，digest-bound freeze 绑定 hard baseline、seed、预算和 1-call/
+0-retry 限制。它没有执行 follow-up，也没有修改 Runtime、PSS 或 Oracle。
 
 Workload 只负责声明外部输入和测试意图，不拥有正确性。`ExpectedStatus` 不能决定一条运行是否有效；
 planned/offered/completed/pending/actual response 都必须进入证据。目标选择由 target-owned、确定性的

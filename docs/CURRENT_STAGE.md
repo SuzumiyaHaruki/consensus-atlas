@@ -1,27 +1,25 @@
 # 当前阶段
 
-日期：2026-08-08
+日期：2026-08-09
 
-阶段：M5.18b3 unseen follow-up baseline 完成；未调用模型
+阶段：M5.18b4 preference ablation request freeze 完成；未调用模型
 
 ## 输入、处理、输出
 
 ```text
 输入
-  comparable action-class-v2/uniform source bundles
-  + bound PSS mapper + source seeds 1/2/3 + unseen seed 4
+  honest b4 semantic view + corrected feedback v2
+  + frozen hard baseline + source seeds 1/2/3 + unseen seed 4
                          |
                          v
 处理
-  common Experiment-v2 semantics -> feedback v2 reprojection
-  -> freeze source/follow-up/per-arm cost
-  -> deterministic backend rule -> qualified execution + strict replay
+  one prompt builder -> feedback=null / trusted feedback
+  -> exact prompt/request bytes -> digest-bound two-arm freeze
                          |
                          v
 输出
-  digest-bound AgentFollowUpSpec
-  + charged seed-4 deterministic follow-up
-  + small feedback/spec/summary evidence
+  same view/risk/must/budget/transport + only feedback exposure differs
+  + seed 4, 1 call/arm, 0 retry + model_calls=0
 ```
 
 M5.17a/b 没有增加第二套执行器。action-class random 在 M5.16 的唯一 bundle 路径上均匀选择
@@ -45,6 +43,12 @@ frontier；PSS 只在 source batch 完成后冻结一个 proposal，不介入在
 
 M5.18b3 也没有增加执行器。source fixture 只在同一测试进程中复用已验证的不可变结果，逻辑账本仍为
 每个 arm 计入全部 source construction；follow-up 最终仍进入现有 qualified executor 和 fresh replay。
+
+M5.18b4-pre 仍没有修改 Control Runtime。它在 composition/catalog 层区分 Runtime-supported、
+Experiment-producible 和 backend-selectable，并用新的 plan/instance/outcome 身份组织同一执行路径。
+
+M5.18b4 request-freeze 也没有修改 Control Runtime 或执行 follow-up。它只把两份模型请求的
+精确 bytes、可见信息差异、共同 hard baseline、seed、预算和 transport 上限在调用前冻结。
 
 ## 为什么需要显式 preparation
 
@@ -307,6 +311,44 @@ backend 或 seed。source 实际 588/588，合计实际 685/685，低于 per-arm
 source fixture 复用把普通 package 测试降到约 39 秒，但没有减少方法成本。`241 > 238` 和 seed 4 的
 79 states 都不是缺陷 verdict、覆盖完整度或方法优越性证据。
 
+## M5.18b4-pre 实际结果
+
+新 Agent view 仍显示 Manifest 声明的 Runtime-supported Partition/Heal，但两个可选搜索
+backend 的 `supported_actions` 已删除二者，partition envelope 为 0；fixed-progress 的
+全部 fault envelope 为 0。hard Partition 在 compile 阶段就被机械拒绝。
+
+`CompiledIntentPlan/v2` 不再序列化 policy seed，`IntentExecutionInstance/v1` 单独绑定
+seed 4 和 98/98 ceiling。修正后的 action-class execution 实际消耗 97/97 work、strict replay
+稳定、发现 79 states，但 Trace 没有 `invoke`。新结果为：
+
+| axis | result |
+|---|---|
+| execution | `valid` |
+| intent | `not-reached` / `INTENT_REQUIRED_ACTION_NOT_REACHED` / missing `invoke` |
+| oracle | `not-evaluated` |
+| model | 0 calls |
+
+这只是 public trust-boundary calibration，不是 RiskWitness、defect verdict 或 Agent 效果结论。
+
+feedback 的六条 source 物理复用 b3 冻结 bundle，其历史 Config 仍记录 partition 上限 1；
+因 composition 没有 FaultProvider，新增回归逐条确认 Trace 中无 Partition/Heal。b4 follow-up
+的 Config/catalog 则都是 0。这是减少重复执行的证据复用，不是 source/follow-up Config identity 相同声明。
+
+## M5.18b4 request freeze 实际结果
+
+两臂使用同一 system prompt 和结构化 input builder。no-feedback 臂的
+`agent_batch_feedback` 是 JSON `null`；with-feedback 臂是从六条绑定 source bundle 重算的
+feedback v2。其他 view、risk、must、seed 4、98/98 execution ceiling、transport 参数完全相同。
+
+| arm | prompt/request bytes | request digest |
+|---|---:|---|
+| no-feedback | 6,446 / 6,608 | `562d3bda...31ce5c` |
+| with-feedback | 8,800 / 8,962 | `eb44d738...f6826f` |
+
+request-freeze digest 为 `2591cf89...eed8c1`，follow-up spec 为 `bf632a68...af262`，hard baseline 为
+`8261d484...79c05`。已知 b3/b4-pre report/bundle/outcome 身份和结果词没有进入请求。
+本阶段 model calls = 0，没有 Agent proposal 或 execution result。
+
 ## M5.16R 删除结果
 
 删除前冻结基线：
@@ -338,6 +380,11 @@ composition 和见证后为 20,405/7,888，合计 28,293 行，净增 843 produc
 M5.18b3 加入可比较 feedback v2、follow-up spec/composition、source fixture 复用和见证后为
 21,260/8,088，合计 29,348 行，净增 855 production / 200 tests。没有新 Agent、Runtime、PSS 维度、
 Oracle 或 backend；Control Runtime 核心没有修改。
+M5.18b4-pre 完成后为 21,963 行 production、8,284 行 tests，合计 30,247 行；相比
+b3 净增 703/196。本阶段没有新 Agent、Runtime、PSS 维度、Oracle、Risk DSL 或 backend。
+M5.18b4 request freeze 完成后为 22,447 行 production、8,497 行 tests，合计 30,944 行；相比
+b4-pre 净增 484/213。新增代码集中在精确 request 构造、通用 freeze commitment、composition、
+可信校验和回归；没有修改 Control Runtime、Adapter、PSS mapper 或 Oracle。
 
 实际 Git diff 当前净删除超过 2.2 万行。旧 Engine/Host/Driver、Raft Family、Coverage/Campaign、旧
 DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI 均已删除；旧资格在线重放
@@ -378,17 +425,26 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 | M5.18b3 follow-up spec | `bd8fbc93...eab0be7`；source 588/588；per-arm ceiling 686/686 |
 | M5.18b3 seed-4 execution | report `1ce8ae13...ef8588a`；bundle `31916d15...12b8f6d`；79 states |
 | M5.18b3 summary | `e0bda99f...e60677e`；execution-failed；actual charged 685/685 |
+| M5.18b4-pre action surface | catalog `2effd56b...94f861`；view `d20b9fea...2e036` |
+| M5.18b4-pre execution identity | plan `4b263fd4...26e87`；instance `2bbf81a1...3b5ea` |
+| M5.18b4-pre outcome | `be4779d5...9a980`；valid/not-reached/not-evaluated |
+| M5.18b4-pre execution | report `7d7c1765...e8c1e`；bundle `373f6740...96b7`；97/97 |
+| M5.18b4-pre summary | `362afa36...e649`；0 model calls |
+| M5.18b4 request freeze | `2591cf89...eed8c1`；2 arms；0 model calls |
+| M5.18b4 hard/spec | baseline `8261d484...79c05`；spec `bf632a68...af262` |
+| M5.18b4 requests | no-feedback `562d3bda...31ce5c`；with-feedback `eb44d738...f6826f` |
 
 完整 bundle 约 1.9 MB/份，属于可再生本地证据并保存在 ignored `artifacts/`。仓库只提交约 15.1 KB 的
 构建与评测摘要，避免 JSON 工件继续主导仓库体积。
 
 ## 本阶段验证
 
-- `make test-fast`、`make test` 和 `go vet ./...`：通过；source fixture 复用后普通
-  `cmd/control-experiment` 全测约 39 秒；
-- `make test-race-full`：通过；`cmd/control-experiment` race package 耗时 983.930 秒，低于显式
-  20 分钟 ceiling，未报告 race。剩余余量约 3 分 36 秒，下一阶段不得无界增加真实轨迹测试；
-- 137 个非 artifacts JSON、23 个 schema JSON、4 个 M5.18a build input/audit schema 实例和 133 个
+- `make test` 和 `go vet ./...`：通过；最终 `cmd/control-experiment` 普通测试耗时 90.785 秒；
+- workload/trace-mutation 两项定向 race 以 84.420 秒通过；
+- `make test-race-full`：**未通过**。两次均在显式 20 分钟 ceiling 超时，第一次运行到 adjacent
+  trace mutation，最终一次运行到 M5.17c2 method 回归；两次均未报告 data race。按 timebox 停止，
+  没有抬高 timeout，也没有把未见告警记为通过；
+- 147 个非 artifacts JSON、23 个 schema JSON、4 个 M5.18a build input/audit schema 实例和 146 个
   Markdown 本地链接：通过；
 - Python 历史 Agent 已删除，`unittest discover` 正常发现 0 项；
 - 两份总体规划逐字节一致，`git diff --check` 通过；
@@ -410,30 +466,34 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 - b2 的 `238 > 165` 来自不可比终止语义，不能排名；b3 的 `241 > 238` 也不证明 action-class 更容易
   检出缺陷；workload pending 与 hard-action miss 都不是 defect verdict；
 - 当前只有一个人工冻结的 etcd/raft risk 和 target-owned backend catalog，不证明知识包已普适；
+- 新 IntentOutcome 仍只证明 ActionKind 前置，没有 RiskWitness 证明协议里程碑偏序；
+- 没有 FaultProvider，所以 Partition/Heal 在新 b4 backend surface 中明确关闭；
+- request 已冻结，但尚未获得任何模型回复、proposal、plan 或两臂 execution；
 - 没有证明 etcd/raft、ConsensusAtlas 或任何目标实现正确、完备或无缺陷。
 
 ## 下一步
 
-进入 M5.18b4：在任何调用前冻结无 feedback/有 feedback 两份 prompt/request bytes、共同 seed 4 和
-完整 per-arm 账本。两个 Agent arm 的 semantic view、risk、hard constraints 和预算必须相同，feedback
-只能改变 preference；M5.18b3 已知的 deterministic outcome 不得进入模型视图。每个 arm 最多 1 call、
-无重试，parse/compile/execution/hard-action 失败都原样计费。完整 race 门通过前不调用模型。
+继续 M5.18b4：实现从冻结 request bytes 到 response audit、strict parse、单份 baseline 校验、
+plan v2、seed-4 instance、既有 executor 和 IntentOutcome 的单一消费路径。模型运行仍需用户明确要求；
+每臂最多 1 call、0 retry，任何失败都原样计费。b4 只是 backend-preference micro-ablation。
 
 ## 阅读顺序
 
-1. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
-2. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
-3. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
-4. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
-5. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
-6. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
-7. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
-8. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
-9. [架构](architecture.md)
-10. [总体规划](ConsensusAtlas-总体规划.md)
-11. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
-12. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
-13. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
-14. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
-15. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
-16. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)
+1. [M5.18b4 request freeze](stage-m5.18b4-request-freeze.md)
+2. [M5.18b4-pre trust corrections](stage-m5.18b4-pre-trust-corrections.md)
+3. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
+4. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
+5. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
+6. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
+7. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
+8. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
+9. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
+10. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
+11. [架构](architecture.md)
+12. [总体规划](ConsensusAtlas-总体规划.md)
+13. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
+14. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
+15. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
+16. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
+17. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
+18. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)

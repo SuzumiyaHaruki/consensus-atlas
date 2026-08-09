@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-full audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
+.PHONY: fmt test test-fast test-race-full audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -114,6 +114,18 @@ experiment-etcdraft-v2-agent-follow-up-baseline:
 		-policy-seed 1 -decisions 96 \
 		-out artifacts/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json \
 		-method-artifacts artifacts/experiments/etcdraft-v2-agent-follow-up-m5.18b3/evidence
+
+experiment-etcdraft-v2-agent-b4-preflight:
+	go run ./cmd/control-experiment -strategy workload-agent-b4-preflight \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/summary.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/evidence
+
+experiment-etcdraft-v2-agent-b4-freeze:
+	go run ./cmd/control-experiment -strategy workload-agent-b4-freeze \
+		-policy-seed 1 -decisions 96 \
+		-out artifacts/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/freeze.json \
+		-method-artifacts artifacts/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/evidence
 
 experiment-etcdraft-v2-pss-guided-method:
 	go run ./cmd/control-experiment -strategy workload-pss-guided-corpus \

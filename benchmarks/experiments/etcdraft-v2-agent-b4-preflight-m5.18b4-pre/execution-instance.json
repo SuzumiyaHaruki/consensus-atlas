@@ -1,0 +1,12 @@
+{
+  "schema_version": "consensus-atlas/intent-execution-instance/v1",
+  "id": "etcdraft-feedback-ablation-seed-4-m5-18b4-pre",
+  "plan_digest": "4b263fd42f9a472bd475cb3b3be04ed8753f0103a80c4b5f6e7df66e0e326e87",
+  "policy_seed": 4,
+  "budget": {
+    "max_execution_attempts": 1,
+    "max_primary_work_units": 98,
+    "max_replay_work_units": 98
+  },
+  "digest": "2bbf81a1ea76e84aa6fcc38bafa38aeb2eb29f6b4331f9b0892157f002f3b5ea"
+}
