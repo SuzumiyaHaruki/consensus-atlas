@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -100,6 +101,29 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 		checked.Head.Totals.Replay.WorkUnits != replayWork {
 		t.Fatalf("campaign totals do not equal real artifacts: %#v", checked.Head.Totals)
 	}
+	observation, err := newEtcdraftCampaignObservation(&checked, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.Terminal.Status != controlexperiment.CampaignSummaryStatusStopped ||
+		observation.Terminal.Completed != 2 || observation.Terminal.Work != checked.Head.Totals ||
+		observation.PSS == nil || observation.PSS.EvidenceAttempts != 2 ||
+		observation.PSS.TotalDecisions != 32 || observation.PSS.TotalSamples != 34 ||
+		observation.PSS.UniqueStates <= 0 || observation.Faults.ObservedAttempts != 2 ||
+		observation.Workload.ObservedAttempts != 2 || observation.Workload.Planned != 2 ||
+		observation.Workload.Pending != observation.Workload.Planned-observation.Workload.Completed ||
+		len(observation.Monitors.Checked) != 2 || observation.Monitors.Checked[0].Count != 2 ||
+		observation.Monitors.Checked[1].Count != 2 || len(observation.Monitors.Triggers) != 0 {
+		t.Fatalf("campaign observation drifted: %#v", observation)
+	}
+	observationJSON, err := json.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(observationJSON, []byte(`"report"`)) ||
+		bytes.Contains(observationJSON, []byte(`"final_snapshot"`)) {
+		t.Fatal("campaign observation copied a report or bundle")
+	}
 
 	request, err := controlexperiment.NewCampaignAttemptRequest(config, checked.Checkpoints[0])
 	if err != nil {
@@ -128,5 +152,14 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 	if err := failedArtifact.validate(request, spec, provider.targetIdentityDigest); err != nil ||
 		failedArtifact.Report != nil || failedArtifact.Bundle != nil {
 		t.Fatalf("failed terminal artifact did not revalidate: %#v/%v", failedArtifact, err)
+	}
+}
+
+func TestEtcdraftCampaignObservationUsesStrictArtifactJSON(t *testing.T) {
+	if _, err := decodeEtcdraftCampaignArtifact([]byte(`{"unexpected":true}`)); err == nil {
+		t.Fatal("campaign observation accepted an unknown artifact field")
+	}
+	if _, err := decodeEtcdraftCampaignArtifact([]byte(`{} {}`)); err == nil {
+		t.Fatal("campaign observation accepted trailing JSON")
 	}
 }
