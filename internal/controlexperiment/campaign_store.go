@@ -16,6 +16,7 @@ import (
 
 const (
 	campaignConfigFile       = "config.json"
+	campaignFailureFile      = "failure.json"
 	campaignArtifactsDir     = "artifacts"
 	campaignCheckpointsDir   = "checkpoints"
 	campaignArtifactSuffix   = ".artifact"
@@ -28,11 +29,13 @@ type CampaignRecovery struct {
 	Config                   CampaignConfig
 	Checkpoints              []CampaignCheckpoint
 	Head                     CampaignCheckpoint
+	Failure                  *CampaignFailureMarker
 	OrphanArtifactDigests    []string
 	PendingRelativeFilePaths []string
 	directory                string
 	validatedConfigDigest    string
 	validatedHeadDigest      string
+	validatedFailureDigest   string
 }
 
 func CampaignArtifactDigest(artifact []byte) string {
@@ -100,7 +103,8 @@ func (recovered *CampaignRecovery) CommitAttempt(
 	artifact []byte,
 	elapsedMillis int64,
 ) (CampaignCheckpoint, error) {
-	if recovered == nil || recovered.directory == "" ||
+	if recovered == nil || recovered.directory == "" || recovered.Failure != nil ||
+		recovered.validatedFailureDigest != "" ||
 		recovered.Config.Digest != recovered.validatedConfigDigest ||
 		recovered.Head.Digest != recovered.validatedHeadDigest {
 		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
@@ -119,6 +123,34 @@ func (recovered *CampaignRecovery) CommitAttempt(
 		recovered.OrphanArtifactDigests, record.ArtifactDigest,
 	)
 	return recovered.Head, nil
+}
+
+// FailAttempt durably closes the exact next request without inventing an
+// artifact or WorkLedger. It is only for provider/coordinator failures whose
+// executed cost cannot be represented as a terminal attempt result.
+func (recovered *CampaignRecovery) FailAttempt(
+	request CampaignAttemptRequest,
+	code string,
+) (CampaignFailureMarker, error) {
+	if recovered == nil || recovered.directory == "" || recovered.Failure != nil ||
+		recovered.validatedFailureDigest != "" ||
+		recovered.Config.Digest != recovered.validatedConfigDigest ||
+		recovered.Head.Digest != recovered.validatedHeadDigest {
+		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
+	}
+	marker, err := NewCampaignFailureMarker(recovered.Config, recovered.Head, request, code)
+	if err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	checked, err := commitCampaignFailureMarker(
+		recovered.directory, recovered.Config, recovered.Head, marker,
+	)
+	if err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	recovered.Failure = &checked
+	recovered.validatedFailureDigest = checked.Digest
+	return checked, nil
 }
 
 func commitCampaignAttempt(
@@ -158,6 +190,11 @@ func commitCampaignAttempt(
 	if storedHead.ValidateInputs(config) != nil || storedHead.Digest != previous.Digest {
 		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_HEAD_MISMATCH")
 	}
+	if _, err := os.Lstat(filepath.Join(clean, campaignFailureFile)); err == nil {
+		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_FAILURE_LOCKED")
+	} else if !os.IsNotExist(err) {
+		return CampaignCheckpoint{}, fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_FAILURE_STAT: %w", err)
+	}
 	nextPath := filepath.Join(
 		clean, campaignCheckpointsDir, campaignCheckpointFile(previous.Sequence+1),
 	)
@@ -193,6 +230,61 @@ func commitCampaignAttempt(
 	}
 	if checked.Digest != next.Digest || checked.ValidatePrevious(config, previous) != nil {
 		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_COMMIT_MISMATCH")
+	}
+	return checked, nil
+}
+
+func commitCampaignFailureMarker(
+	directory string,
+	config CampaignConfig,
+	head CampaignCheckpoint,
+	marker CampaignFailureMarker,
+) (CampaignFailureMarker, error) {
+	clean, err := validateCampaignDirectoryArgument(directory)
+	if err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if err := marker.ValidateInputs(config, head); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if err := validateCampaignRoot(clean, new([]string)); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	var storedConfig CampaignConfig
+	if err := readCampaignJSON(filepath.Join(clean, campaignConfigFile), &storedConfig); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if storedConfig.Validate() != nil || storedConfig.Digest != config.Digest {
+		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_IDENTITY_MISMATCH")
+	}
+	var storedHead CampaignCheckpoint
+	if err := readCampaignJSON(
+		filepath.Join(clean, campaignCheckpointsDir, campaignCheckpointFile(head.Sequence)), &storedHead,
+	); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if storedHead.ValidateInputs(config) != nil || storedHead.Digest != head.Digest {
+		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_HEAD_MISMATCH")
+	}
+	nextPath := filepath.Join(clean, campaignCheckpointsDir, campaignCheckpointFile(head.Sequence+1))
+	if _, err := os.Lstat(nextPath); err == nil {
+		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_HEAD_STALE")
+	} else if !os.IsNotExist(err) {
+		return CampaignFailureMarker{}, fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_HEAD_STAT: %w", err)
+	}
+	encoded, err := campaignJSONBytes(marker)
+	if err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if err := writeCampaignFileNoReplace(clean, campaignFailureFile, encoded); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	var checked CampaignFailureMarker
+	if err := readCampaignJSON(filepath.Join(clean, campaignFailureFile), &checked); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if checked.Digest != marker.Digest || checked.ValidateInputs(config, head) != nil {
+		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_FAILURE_COMMIT_MISMATCH")
 	}
 	return checked, nil
 }
@@ -248,11 +340,41 @@ func RecoverCampaignDirectory(
 	sort.Strings(pending)
 	head := checkpoints[len(checkpoints)-1]
 	head.Record = cloneCampaignRecord(head.Record)
+	failure, err := readCampaignFailure(clean, stored, head)
+	if err != nil {
+		return CampaignRecovery{}, err
+	}
+	validatedFailureDigest := ""
+	if failure != nil {
+		validatedFailureDigest = failure.Digest
+	}
 	return CampaignRecovery{
-		Config: stored, Checkpoints: checkpoints, Head: head,
+		Config: stored, Checkpoints: checkpoints, Head: head, Failure: failure,
 		OrphanArtifactDigests: orphans, PendingRelativeFilePaths: pending,
 		directory: clean, validatedConfigDigest: stored.Digest, validatedHeadDigest: head.Digest,
+		validatedFailureDigest: validatedFailureDigest,
 	}, nil
+}
+
+func readCampaignFailure(
+	root string,
+	config CampaignConfig,
+	head CampaignCheckpoint,
+) (*CampaignFailureMarker, error) {
+	path := filepath.Join(root, campaignFailureFile)
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_FAILURE_STAT: %w", err)
+	}
+	var marker CampaignFailureMarker
+	if err := readCampaignJSON(path, &marker); err != nil {
+		return nil, err
+	}
+	if err := marker.ValidateInputs(config, head); err != nil {
+		return nil, err
+	}
+	return &marker, nil
 }
 
 func removeCampaignDigest(digests []string, removed string) []string {
@@ -286,11 +408,11 @@ func validateCampaignRoot(root string, pending *[]string) error {
 	if err != nil {
 		return fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_READ: %w", err)
 	}
-	seen := make(map[string]bool, 3)
+	seen := make(map[string]bool, 4)
 	for _, entry := range entries {
 		name := entry.Name()
 		switch name {
-		case campaignConfigFile:
+		case campaignConfigFile, campaignFailureFile:
 			if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
 				return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 			}

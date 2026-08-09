@@ -111,6 +111,65 @@ func TestCampaignDirectoryRecoversArtifactOnlyInterruption(t *testing.T) {
 	}
 }
 
+func TestCampaignDirectoryPersistsFailureMarkerAndRejectsFurtherWrites(t *testing.T) {
+	config := campaignStoreTestConfig(t, "failure-marker")
+	directory := filepath.Join(t.TempDir(), "campaign")
+	recovered, err := CreateCampaignDirectory(directory, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCampaignAttemptRequest(config, recovered.Head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, err := recovered.FailAttempt(request, CampaignFailureProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker.Ordinal != 1 || marker.RequestDigest != request.Digest ||
+		marker.Code != CampaignFailureProvider {
+		t.Fatalf("failure marker drifted: %#v", marker)
+	}
+	artifact := []byte("must not be committed after failure")
+	record := campaignStoreTestRecord(t, 1, "after-failure", artifact)
+	if _, err := recovered.CommitAttempt(record, artifact, 1); err == nil ||
+		!strings.Contains(err.Error(), "RECOVERY_TOKEN_INVALID") {
+		t.Fatalf("failed recovery remained writable: %v", err)
+	}
+
+	checked, err := RecoverCampaignDirectory(directory, config)
+	if err != nil || checked.Failure == nil || checked.Failure.Digest != marker.Digest ||
+		checked.Head.Sequence != 0 {
+		t.Fatalf("failure marker did not recover: %#v/%v", checked, err)
+	}
+	if _, err := checked.FailAttempt(request, CampaignFailureProvider); err == nil ||
+		!strings.Contains(err.Error(), "RECOVERY_TOKEN_INVALID") {
+		t.Fatalf("failure marker was replaceable: %v", err)
+	}
+
+	path := filepath.Join(directory, campaignFailureFile)
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tampered CampaignFailureMarker
+	if err := json.Unmarshal(encoded, &tampered); err != nil {
+		t.Fatal(err)
+	}
+	tampered.Code = CampaignFailureClock
+	encoded, err = campaignJSONBytes(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil ||
+		!strings.Contains(err.Error(), "FAILURE_DIGEST_MISMATCH") {
+		t.Fatalf("tampered failure marker recovered: %v", err)
+	}
+}
+
 func TestCampaignDirectoryRejectsUntrustedDiskState(t *testing.T) {
 	t.Run("artifact-input-mismatch", func(t *testing.T) {
 		config, directory, recovered := newCampaignStoreFixture(t, "input-mismatch")

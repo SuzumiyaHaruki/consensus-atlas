@@ -9,6 +9,7 @@ const (
 	CampaignConfigVersion     = "consensus-atlas/campaign-config/v1"
 	CampaignAttemptVersion    = "consensus-atlas/campaign-attempt/v1"
 	CampaignCheckpointVersion = "consensus-atlas/campaign-checkpoint/v1"
+	CampaignFailureVersion    = "consensus-atlas/campaign-failure/v1"
 	CampaignCheckpointPolicy  = "checkpoint-after-each-terminal-attempt"
 	CampaignAttemptCompleted  = "completed"
 	CampaignAttemptRejected   = "rejected"
@@ -18,6 +19,9 @@ const (
 	CampaignStopAttemptLimit  = "attempt-limit"
 	CampaignStopLogicalBudget = "logical-budget"
 	CampaignStopWallClock     = "wall-clock-ceiling"
+	CampaignFailureProvider   = "provider-error"
+	CampaignFailureClock      = "clock-invalid"
+	CampaignFailureResult     = "provider-result-invalid"
 )
 
 type CampaignLogicalBudget struct {
@@ -170,6 +174,84 @@ func (record CampaignAttemptRecord) seal() (CampaignAttemptRecord, error) {
 	}
 	record.Digest = digest
 	return record, nil
+}
+
+// CampaignFailureMarker makes an artifact-less coordinator failure durable.
+// It deliberately excludes the provider's diagnostic text: the marker only
+// prevents the exact next request from being retried after process recovery.
+type CampaignFailureMarker struct {
+	SchemaVersion string `json:"schema_version"`
+	CampaignID    string `json:"campaign_id"`
+	ConfigDigest  string `json:"config_digest"`
+	HeadDigest    string `json:"head_digest"`
+	Ordinal       int    `json:"ordinal"`
+	RequestDigest string `json:"request_digest"`
+	Code          string `json:"code"`
+	Digest        string `json:"digest"`
+}
+
+func NewCampaignFailureMarker(
+	config CampaignConfig,
+	head CampaignCheckpoint,
+	request CampaignAttemptRequest,
+	code string,
+) (CampaignFailureMarker, error) {
+	marker := CampaignFailureMarker{
+		SchemaVersion: CampaignFailureVersion,
+		CampaignID:    config.ID,
+		ConfigDigest:  config.Digest,
+		HeadDigest:    head.Digest,
+		Ordinal:       request.Ordinal,
+		RequestDigest: request.Digest,
+		Code:          code,
+	}
+	sealed, err := marker.seal()
+	if err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	if err := sealed.ValidateInputs(config, head); err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	return sealed, nil
+}
+
+func (marker CampaignFailureMarker) ValidateInputs(
+	config CampaignConfig,
+	head CampaignCheckpoint,
+) error {
+	if marker.SchemaVersion != CampaignFailureVersion ||
+		!validMethodToken(marker.CampaignID) || !validSHA256(marker.ConfigDigest) ||
+		!validSHA256(marker.HeadDigest) || marker.Ordinal <= 0 ||
+		!validSHA256(marker.RequestDigest) || !validMethodToken(marker.Code) {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_INVALID")
+	}
+	if err := head.ValidateInputs(config); err != nil {
+		return err
+	}
+	request, err := NewCampaignAttemptRequest(config, head)
+	if err != nil {
+		return err
+	}
+	if marker.CampaignID != config.ID || marker.ConfigDigest != config.Digest ||
+		marker.HeadDigest != head.Digest || marker.Ordinal != request.Ordinal ||
+		marker.RequestDigest != request.Digest {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_IDENTITY_MISMATCH")
+	}
+	sealed, err := marker.seal()
+	if err != nil || !validSHA256(marker.Digest) || sealed.Digest != marker.Digest {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_DIGEST_MISMATCH")
+	}
+	return nil
+}
+
+func (marker CampaignFailureMarker) seal() (CampaignFailureMarker, error) {
+	marker.Digest = ""
+	digest, err := portableJSONDigest(marker)
+	if err != nil {
+		return CampaignFailureMarker{}, err
+	}
+	marker.Digest = digest
+	return marker, nil
 }
 
 type CampaignCheckpoint struct {

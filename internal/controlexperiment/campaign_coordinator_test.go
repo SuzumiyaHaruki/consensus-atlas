@@ -188,8 +188,22 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 				t.Fatalf("failed provider was retried: calls=%d err=%v", calls, err)
 			}
 			checked, err := RecoverCampaignDirectory(directory, config)
-			if err != nil || checked.Head.Sequence != 0 || len(checked.OrphanArtifactDigests) != 0 {
+			if err != nil || checked.Head.Sequence != 0 || len(checked.OrphanArtifactDigests) != 0 ||
+				checked.Failure == nil || checked.Failure.Ordinal != 1 ||
+				checked.Failure.RequestDigest == "" {
 				t.Fatalf("invalid provider changed durable campaign: %#v/%v", checked, err)
+			}
+			wantCode := CampaignFailureResult
+			if test.providerError != nil {
+				wantCode = CampaignFailureProvider
+			}
+			if checked.Failure.Code != wantCode {
+				t.Fatalf("durable failure code = %q, want %q", checked.Failure.Code, wantCode)
+			}
+			if _, err := newCampaignCoordinator(
+				&checked, provider, newCampaignTestClock(0).Now,
+			); err == nil || !strings.Contains(err.Error(), "COORDINATOR_INPUT_INVALID") || calls != 1 {
+				t.Fatalf("recovered failed request became retryable: calls=%d err=%v", calls, err)
 			}
 		})
 	}

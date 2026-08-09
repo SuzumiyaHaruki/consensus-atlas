@@ -2255,7 +2255,9 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 71. [ ] M5.19c 将现有 etcd/raft qualified executor 包装为第一个真实 Campaign provider，并冻结
     experiment spec、seed/policy/workload 与 artifact schema。provider 必须把任何已发生成本的失败返回为
     terminal result；同时补 durable coordinator failure marker，避免 artifact-less error 跨进程后被
-    当作同一 ordinal 重试。接入不能复制 Runtime、replay、PSS 或 Oracle 路径。
+    当作同一 ordinal 重试。marker 只保存 config/head/request 身份和稳定分类，不保存私有
+    错误文本；现有 `ExecutionFailure.Work` 必须转成带 artifact 的 terminal failed attempt。接入不能
+    复制 Runtime、replay、PSS 或 Oracle 路径，也不在通用包中引入 etcd/raft 类型。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

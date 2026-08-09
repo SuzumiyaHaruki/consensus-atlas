@@ -160,6 +160,7 @@ func newCampaignCoordinator(
 	now func() time.Time,
 ) (*CampaignCoordinator, error) {
 	if recovered == nil || provider == nil || now == nil || recovered.directory == "" ||
+		recovered.Failure != nil || recovered.validatedFailureDigest != "" ||
 		recovered.Config.Digest != recovered.validatedConfigDigest ||
 		recovered.Head.Digest != recovered.validatedHeadDigest ||
 		recovered.Head.ValidateInputs(recovered.Config) != nil {
@@ -212,20 +213,29 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 	result, providerErr := coordinator.provider.Attempt(attemptContext, request)
 	cancel()
 	if providerErr != nil {
-		return coordinator.failAttempt(fmt.Errorf("EXPERIMENT_CAMPAIGN_PROVIDER_FAILED: %w", providerErr))
+		return coordinator.failAttempt(
+			request, CampaignFailureProvider,
+			fmt.Errorf("EXPERIMENT_CAMPAIGN_PROVIDER_FAILED: %w", providerErr),
+		)
 	}
 	elapsedAfter, err := coordinator.elapsedMillis()
 	if err != nil || elapsedAfter < elapsedBefore {
-		return coordinator.failAttempt(errors.New("EXPERIMENT_CAMPAIGN_CLOCK_INVALID"))
+		return coordinator.failAttempt(
+			request, CampaignFailureClock, errors.New("EXPERIMENT_CAMPAIGN_CLOCK_INVALID"),
+		)
 	}
 	if len(result.Artifact) == 0 || len(result.Artifact) > campaignMaxArtifactBytes {
-		return coordinator.failAttempt(errors.New("EXPERIMENT_CAMPAIGN_ARTIFACT_INVALID"))
+		return coordinator.failAttempt(
+			request, CampaignFailureResult, errors.New("EXPERIMENT_CAMPAIGN_ARTIFACT_INVALID"),
+		)
 	}
 	if err := validateMethodWork(result.Work); err != nil {
-		return coordinator.failAttempt(err)
+		return coordinator.failAttempt(request, CampaignFailureResult, err)
 	}
 	if !campaignWorkWithinAllowance(result.Work, request.Allowance) {
-		return coordinator.failAttempt(errors.New("EXPERIMENT_CAMPAIGN_ALLOWANCE_EXCEEDED"))
+		return coordinator.failAttempt(
+			request, CampaignFailureResult, errors.New("EXPERIMENT_CAMPAIGN_ALLOWANCE_EXCEEDED"),
+		)
 	}
 	record, err := NewCampaignAttemptRecord(CampaignAttemptRecord{
 		Ordinal:     request.Ordinal,
@@ -234,18 +244,26 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 		Outcome: result.Outcome, Failure: result.Failure, Work: result.Work,
 	})
 	if err != nil {
-		return coordinator.failAttempt(err)
+		return coordinator.failAttempt(request, CampaignFailureResult, err)
 	}
 	head, err := coordinator.recovered.CommitAttempt(record, result.Artifact, elapsedAfter)
 	if err != nil {
-		return coordinator.failAttempt(err)
+		coordinator.failed = true
+		return CampaignCheckpoint{}, err
 	}
 	return head, nil
 }
 
-func (coordinator *CampaignCoordinator) failAttempt(err error) (CampaignCheckpoint, error) {
+func (coordinator *CampaignCoordinator) failAttempt(
+	request CampaignAttemptRequest,
+	code string,
+	cause error,
+) (CampaignCheckpoint, error) {
 	coordinator.failed = true
-	return CampaignCheckpoint{}, err
+	if _, err := coordinator.recovered.FailAttempt(request, code); err != nil {
+		return CampaignCheckpoint{}, fmt.Errorf("%v; EXPERIMENT_CAMPAIGN_FAILURE_MARKER_FAILED: %w", cause, err)
+	}
+	return CampaignCheckpoint{}, cause
 }
 
 func (coordinator *CampaignCoordinator) elapsedMillis() (int64, error) {
