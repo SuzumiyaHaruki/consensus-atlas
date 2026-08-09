@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.30（M5.19b Deterministic Campaign Coordinator 完成）
+> 状态：Draft v1.31（M5.19c 首个真实 Campaign Provider 完成）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2252,12 +2252,16 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     持有可信恢复会话的最小 Coordinator。provider 不能写 checkpoint/totals/stop reason；普通 error
     不重试，超 allowance 在 artifact 落盘前拒绝。先用 deterministic provider 验证多 attempt/恢复，
     再以同一接口连接现有 qualified executor，不新增 Runtime 或目标专用 Campaign。
-71. [ ] M5.19c 将现有 etcd/raft qualified executor 包装为第一个真实 Campaign provider，并冻结
+71. [X] M5.19c 将现有 etcd/raft qualified executor 包装为第一个真实 Campaign provider，并冻结
     experiment spec、seed/policy/workload 与 artifact schema。provider 必须把任何已发生成本的失败返回为
     terminal result；同时补 durable coordinator failure marker，避免 artifact-less error 跨进程后被
     当作同一 ordinal 重试。marker 只保存 config/head/request 身份和稳定分类，不保存私有
     错误文本；现有 `ExecutionFailure.Work` 必须转成带 artifact 的 terminal failed attempt。接入不能
     复制 Runtime、replay、PSS 或 Oracle 路径，也不在通用包中引入 etcd/raft 类型。
+72. [ ] M5.19d 先增加协议无关 Campaign summary/reader，只输出已校验 checkpoint 的
+    attempt/outcome/work/artifact 索引和停止/失败状态，不复制大型 artifact。然后增加显式 opt-in
+    etcd/raft 离线 runner，只组装冻结 spec、Campaign 目录和现有 provider；不在 CLI 内新建执行、
+    PSS 或 Oracle 逻辑。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2295,8 +2299,12 @@ M5.19b deterministic Coordinator 已完成：request 绑定 config/head/ordinal 
 work/model allowance；provider 只能返回 terminal outcome、WorkLedger 和 opaque artifact。确定性见证在
 attempt 1 后恢复并继续至 attempt 3，保留一次 terminal failed 成本，最终以 15 decisions、18/18 work
 到达 attempt limit；logical 和 wall-clock stop 也独立通过。非法 provider result 不落盘且当前
-Coordinator 不重试。尚未接真实 SUT provider，artifact-less error 也还没有跨进程 durable marker。
-下一阶段 M5.19c 只连接现有 etcd/raft qualified executor 并补上述 marker，不修改 Runtime 或重做实验链。
+Coordinator 不重试。M5.19c 已补齐跨进程 durable failure marker，并在 etcd/raft composition root 中
+冻结第一个真实 provider。两个 16-decision attempts 以 seeds 41/42 通过现有 qualified executor，
+在中途完整恢复后到达 attempt limit；两个 artifact 均含 replay-stable bundle/Core PSS，总账本为
+32 decisions 和 36/36 primary/replay work。现有 `ExecutionFailure.Work` 已保留为 terminal failed artifact，
+普通 provider/result error 则以不含私有诊断的 `failure.json` 封住 exact next request。本阶段未新增
+Runtime、Replay、PSS 或 Oracle 路径，真实模型调用为 0。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
 但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race

@@ -168,6 +168,29 @@ func TestCampaignDirectoryPersistsFailureMarkerAndRejectsFurtherWrites(t *testin
 		!strings.Contains(err.Error(), "FAILURE_DIGEST_MISMATCH") {
 		t.Fatalf("tampered failure marker recovered: %v", err)
 	}
+
+	stoppedConfig := campaignTestConfig(t, "failure-after-stop", strings.Repeat("a", 64), CampaignLogicalBudget{
+		MaxAttempts: 1, MaxPrimarySchedulerDecisions: 5,
+		MaxPrimaryWorkUnits: 6, MaxReplayWorkUnits: 6,
+	}, 1_000)
+	stoppedDirectory := filepath.Join(t.TempDir(), "stopped-campaign")
+	stopped, err := CreateCampaignDirectory(stoppedDirectory, stoppedConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleRequest, err := NewCampaignAttemptRequest(stoppedConfig, stopped.Head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stoppedArtifact := []byte("terminal artifact")
+	stoppedRecord := campaignStoreTestRecord(t, 1, "terminal-attempt", stoppedArtifact)
+	if _, err := stopped.CommitAttempt(stoppedRecord, stoppedArtifact, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stopped.FailAttempt(staleRequest, CampaignFailureProvider); err == nil ||
+		!strings.Contains(err.Error(), "ALREADY_STOPPED") {
+		t.Fatalf("stopped head accepted a failure marker: %v", err)
+	}
 }
 
 func TestCampaignDirectoryRejectsUntrustedDiskState(t *testing.T) {

@@ -105,8 +105,10 @@ Coordinator；M5.19b 在下一层补齐该循环。
 M5.19b 增加唯一的协议无关 Campaign Coordinator。它从可信恢复状态机械计算 remaining allowance，构造
 绑定 config/head/ordinal 的 request，并只接受 provider 返回的 terminal outcome、WorkLedger 和 opaque
 artifact。attempt identity、digest、累计账本和停止原因仍由可信层产生。Coordinator 最终调用 M5.19a
-的 `CommitAttempt`，不直接访问 Adapter 或复制 Runtime。当前 provider 是确定性 fixture；真实 etcd/raft
-composition 和跨进程 durable provider-failure marker 尚未接入。
+的 `CommitAttempt`，不直接访问 Adapter 或复制 Runtime。M5.19c 增加的 `failure.json` 只绑定
+config/head/request 和稳定分类，使 artifact-less error 跨进程不可重试；它不伪造成本或 terminal
+attempt。第一个真实 etcd/raft provider 只存在 composition root，它冻结 strategy/seed/artifact schema 并
+调用现有 `etcdraftExecution -> ExecuteQualifiedBundle`。通用 Campaign 包仍不导入协议类型。
 
 ## 唯一执行路径
 

@@ -5,15 +5,18 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.19b Deterministic Campaign Coordinator**：digest-bound request 将 config/head/
-ordinal 和 remaining allowance 交给有界 provider；可信层验证 terminal result、机械构造 attempt 并经
-M5.19a persistence 逐项提交。确定性见证已跨一次运行中恢复完成 3 attempts，并验证 attempt/logical/
-wall-clock stop。M5.19a 的协议无关 Campaign 目录以
+当前阶段已完成 **M5.19c Real Campaign Provider**：首个真实 provider 仅在 etcd/raft
+composition root 中冻结 spec/seed/target/artifact，并直接调用现有 qualified executor。两个
+attempt 在首项后完整恢复，保存的 report/bundle 均 replay-stable 且含 Core PSS；总账本为
+32 primary decisions 和 36/36 primary/replay work。普通 provider error 及非法 result 现会写入
+digest-bound `failure.json`，新进程不得重试同一 ordinal；已发生可证成本的
+`ExecutionFailure` 则转为带 artifact/WorkLedger 的 terminal failed attempt。M5.19a 的协议无关 Campaign 目录以
 artifact-first、checkpoint-second 的 fsync/no-replace 顺序提交，恢复会重验完整链、artifact 引用和
 config/target/spec identity，并把中断残留作为不计入账本的 orphan/pending 报告。M5.19 基础已经冻结
 target/spec identity、
 逻辑预算、运维 wall-clock ceiling、四类 terminal attempt 和 O(n) previous-digest checkpoint 链。
-当前尚未接入真实 SUT Campaign provider。此前 M5.18b4 pair orchestration/persistence 已接到
+当前真实 provider 仍只有定向组合和回归入口，尚没有通用 Campaign CLI 或跨 attempt 汇总报告。
+此前 M5.18b4 pair orchestration/persistence 已接到
 freeze-before-key、failure-before-return-persistence 的正式 CLI 和 Make 入口。已有 pair 复用 frozen request consumer，
 以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
 未调用模型。单臂 consumer 已把 freeze 绑定的 exact request 接入既有
@@ -343,13 +346,14 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段将现有 etcd/raft qualified executor 包装为第一个真实 Campaign provider，并补充
-artifact-less provider error 的 durable failure marker。wall-clock 只作为运维上限，权威预算仍是
-primary/replay work、decisions、attempts 和 model cost。
+下一阶段将在不复制大型 artifact 的前提下增加协议无关 Campaign summary/reader，再提供显式的
+etcd/raft 离线 runner。wall-clock 只作为运维上限，权威预算仍是 primary/replay work、decisions、
+attempts 和 model cost；本阶段的 Coverage/PSS 仍只存在每个已验证 bundle 中，还未表述为最终评分。
 
 阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
 [M5.19a persistence](docs/stage-m5.19a-campaign-persistence.md)、
 [M5.19b Coordinator](docs/stage-m5.19b-campaign-coordinator.md)、
+[M5.19c real provider](docs/stage-m5.19c-real-campaign-provider.md)、
 [M5.18b4 runner](docs/stage-m5.18b4-pair-runner.md)、
 [M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
 [M5.18b4 consumer](docs/stage-m5.18b4-request-consumer.md)、

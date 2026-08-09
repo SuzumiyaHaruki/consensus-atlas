@@ -2,36 +2,45 @@
 
 日期：2026-08-09
 
-阶段：M5.19b Deterministic Campaign Coordinator 已完成；不运行 SUT 或模型
+阶段：M5.19c 首个真实 etcd/raft Campaign Provider 已完成；模型调用为 0
 
 ## 输入、处理、输出
 
 ```text
 输入
-  trusted CampaignRecovery + bounded provider
-  + CampaignConfig logical/wall-clock ceilings
+  frozen etcd/raft CampaignSpec + Adapter Manifest identity
+  + trusted CampaignRecovery/logical allowance
                          |
                          v
 处理
-  mechanical remaining allowance
-  -> digest-bound request(config/head/ordinal/allowance)
-  -> provider(context with remaining wall deadline)
-  -> terminal result/outcome/work/artifact validation
-  -> M5.19a artifact-first checkpoint commit
-  -> repeat Step until mechanical stop
+  digest-bound request(config/head/ordinal/allowance)
+  -> thin target provider derives frozen seed
+  -> existing etcdraftExecution/ExecuteQualifiedBundle
+  -> completed report+bundle | typed failed artifact
+  -> generic artifact-first checkpoint / durable failure marker
+  -> full recovery and next attempt
                          |
                          v
 输出
-  recoverable multi-attempt Campaign + exact WorkLedger totals
-  + attempt/logical/wall-clock stop reason
-  + failed attempt evidence and no automatic provider retry
-  + no real SUT provider or model call yet
+  2-attempt recoverable real Campaign (seeds 41/42)
+  + replay-stable bundles/Core PSS + 32 decisions, 36/36 work
+  + cross-process no-retry for artifact-less provider failure
+  + no generic CLI/aggregate score/model call yet
 ```
 
-M5.19b 新增协议无关 `CampaignAttemptRequest`、remaining allowance、provider contract 和最小
-`CampaignCoordinator`。确定性见证在 attempt 1 后恢复目录，继续完成 attempt 2/3；其中 terminal failed
-attempt 仍保留 artifact 和成本，最终由 attempt limit 机械停止。普通 provider error 会锁死当前
-Coordinator 但尚无跨进程 durable failure marker，因此不能将该目录视为正式完整结果。
+M5.19c 没有增加执行器。etcd/raft target-owned provider 冻结 admissible-uniform strategy、每 attempt
+16 decisions、first-seed-plus-ordinal-minus-one 规则和 artifact schema，然后直接调用现有 qualified bundle
+路径。实际见证在 attempt 1 后完整恢复，再执行 attempt 2；两项都为 completed、replay-stable，
+并各含 17 个 Core PSS samples。最终由 attempt limit 停止，累计 32 primary decisions 和 36/36
+primary/replay work。
+
+协议无关 `failure.json` 与 config/head/next request digest 绑定，不保存 provider 私有错误文本。
+完整恢复见到 marker 后不能新建 Coordinator 或追加 checkpoint；marker 篡改、stopped-head marker
+和 marker 后续写均被拒绝。现有 `ExecutionFailure.Work` 不走这个空失败通道，而是保留为
+terminal failed artifact 和完整成本。
+
+M5.19b 的协议无关 `CampaignAttemptRequest`、remaining allowance、provider contract 和
+`CampaignCoordinator` 仍是唯一多-attempt 外壳；M5.19c 只增加目标组合，通用包没有 etcd/raft 依赖。
 
 M5.19a 将协议无关 Campaign 数据面落为 crash-safe 目录，不是第二套 Runtime。只有创建或完整恢复返回的
 `CampaignRecovery` 才能提交下一 attempt；artifact durable 在前，checkpoint durable 在后。中断留下的
@@ -531,31 +540,17 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 
 ## 下一步
 
-进入 M5.19 Campaign Coordinator v1 设计：先冻结 Campaign/config/target identity、多 attempt 状态机、
-append-only checkpoint 和 resume 校验，再实现按配置时间运行。wall-clock 只是停止上限；统计和方法比较
-仍以 primary/replay work、decisions、attempts 和 model cost 为权威预算。下一阶段不调用真实模型。
+进入 M5.19d：先实现协议无关 Campaign summary/reader，只暴露已校验的 attempt/outcome/work/
+artifact 索引以及 stop/failure 状态，不复制大型 report/bundle。随后增加显式 etcd/raft 离线
+runner，使用者可以输入新目录、attempt/decision/wall ceiling 和 first seed 运行现有 provider。
+runner 只组装已冻结对象，不新建执行器、PSS/Oracle 或模型路径。
 
 ## 阅读顺序
 
-1. [M5.18b4 explicit opt-in pair runner](stage-m5.18b4-pair-runner.md)
-2. [M5.18b4 pair orchestration/persistence](stage-m5.18b4-pair-ledger.md)
-3. [M5.18b4 frozen request consumer](stage-m5.18b4-request-consumer.md)
-4. [M5.18b4R race gate topology](stage-m5.18b4r-race-gate-topology.md)
-5. [M5.18b4 request freeze](stage-m5.18b4-request-freeze.md)
-6. [M5.18b4-pre trust corrections](stage-m5.18b4-pre-trust-corrections.md)
-7. [M5.18b3 unseen follow-up baseline](stage-m5.18b3-unseen-follow-up.md)
-8. [M5.18b2 defect-blind batch feedback](stage-m5.18b2-defect-blind-batch-feedback.md)
-9. [M5.18b1 one-shot Agent transport](stage-m5.18b1-one-shot-agent-transport.md)
-10. [M5.18b0 Guarded TestIntent compiler](stage-m5.18b0-guarded-intent-compiler.md)
-11. [M5.18a 可信方法评价前提](stage-m5.18a-method-evaluation-prerequisites.md)
-12. [M5.17c2 Batch PSS Guidance](stage-m5.17c2-batch-pss-guidance.md)
-13. [M5.17c1 Corpus 可信前提](stage-m5.17c1-corpus-trust-prerequisites.md)
-14. [M5.17c0 Experiment 语义加固](stage-m5.17c0-experiment-semantics.md)
-15. [架构](architecture.md)
-16. [总体规划](ConsensusAtlas-总体规划.md)
-17. [M5.17bR2 在线旧路径删除](stage-m5.17b-r2-experiment-path-pruning.md)
-18. [M5.17b Trace Mutation](stage-m5.17b-trace-mutation.md)
-19. [M5.17b 小型账本](../benchmarks/experiments/etcdraft-v2-trace-mutation-m5.17b/README.md)
-20. [M5.17a Action-class Random](stage-m5.17a-action-class-random.md)
-21. [M5.16 ExecutionBundle](stage-m5.16-execution-bundle.md)
-22. [M5.16R v1 删除](stage-m5.16r-legacy-removal.md)
+1. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+2. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+3. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+4. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+5. [架构](architecture.md)
+6. [总体规划](ConsensusAtlas-总体规划.md)
+7. [完整文档导航](README.md)
