@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.24（M5.18b4 显式 opt-in pair runner 已完成；M5.19 Campaign Coordinator 待设计）
+> 状态：Draft v1.26（M5.19 Campaign config/checkpoint 基础完成）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2240,10 +2240,15 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     文件。入口只调用现有 pair consumer；任一 arm 失败时仍必须先把完整 pair ledger
     持久化到全新目录，再向调用方返回失败。不得自动重试、替换 response/backend/seed 或
     覆盖旧工件；增加入口本身不授权真实模型调用。
-68. [ ] M5.19 Campaign Coordinator v1 先冻结配置、停止与检查点语义，再组织多 attempt。
+68. [X] M5.19 Campaign Coordinator v1 的协议无关数据基础先冻结配置、停止与检查点语义。
     wall-clock 只是运维停止上限，不是方法效果的可比预算；权威账本仍使用 primary/replay
-    work、decisions、attempts 和 model calls/tokens。每个 attempt 完成后以 append-only checkpoint
-    保存，resume 必须重新校验 Campaign/config/target/freeze identity，不得因墙钟停止丢弃已完成成本。
+    work、decisions、attempts 和 model calls/tokens。terminal attempt 必须引用 artifact digest 并携带
+    完整 WorkLedger；checkpoint 以 one-record + cumulative totals + previous digest 构成 O(n) 增量链，
+    resume 重新校验 Campaign/config/target/spec identity。当前没有文件 persistence 或执行循环。
+69. [ ] M5.19 下一小阶段实现 crash-safe checkpoint 文件布局和确定性 attempt provider。只有 artifact
+    文件 durable 且 digest 对账后才能提交 terminal record；恢复必须读取完整链并拒绝缺项、篡改、
+    identity 漂移和已停止后续写。随后才以同一接口连接现有 deterministic baseline/Agent pair，
+    不新增 Runtime 或目标专用 Campaign。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2269,8 +2274,11 @@ artifact directory，依次执行目录预检、freeze construction/full validat
 consumer 与 persistence。离线见证中第一臂 transport failure、第二臂 baseline rejection，两份 audit
 均先落盘再返回失败；私有诊断、key 和无效 freeze 均未越过边界。最终普通全量测试的
 composition 耗时 99.492 秒，受影响 pair race 以 426.731 秒通过；真实模型调用为 0。
-下一阶段进入 M5.19 Campaign Coordinator 设计，不再延伸 b4 micro-ablation。只有用户明确
-执行 opt-in 命令时才会读取 key 并进行真实两臂调用。
+M5.19 Campaign 数据基础已完成：config、四类 terminal attempt、逻辑/墙钟停止和增量 hash-chain
+checkpoint 均可 canonical seal/revalidate。定向回归覆盖 resume identity、预算、顺序、缺链和篡改；
+普通全量、vet、受影响包 race 与旧路径审计通过。该阶段没有运行 SUT 或模型，也没有文件恢复。
+下一阶段实现 crash-safe checkpoint 文件布局和 deterministic attempt provider，不再延伸 b4
+micro-ablation。只有用户明确执行 opt-in 命令时才会读取 key 并进行真实两臂调用。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
 但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race
@@ -2523,6 +2531,9 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 98. Campaign 的 wall-clock ceiling 只能作为运维安全上限；因机器性能不同而完成的不同
     work 不能直接用于方法排名。正式统计必须同时报告 wall time 和确定的 logical/primary
     work；方法比较使用共同 work ceiling 或共同前缀，不使用“同样跑 N 分钟”代替等预算。
+99. Campaign checkpoint 必须按 terminal attempt 增量提交，不在每个 checkpoint 重复完整历史。
+    每项只保存当前 record、累计 WorkLedger 和 previous digest；完整链验证负责重算累计值和恢复
+    identity。artifact digest 只有经持久化层与 durable 文件对账后，才能成为可恢复的已完成证据。
 
 ---
 

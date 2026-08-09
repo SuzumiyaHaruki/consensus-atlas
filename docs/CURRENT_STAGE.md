@@ -2,34 +2,36 @@
 
 日期：2026-08-09
 
-阶段：M5.18b4 显式 opt-in pair runner 已完成；未调用模型
+阶段：M5.19 Campaign config/checkpoint 基础已完成；不运行 SUT 或模型
 
 ## 输入、处理、输出
 
 ```text
 输入
-  honest b4 semantic view + corrected feedback v2
-  + frozen hard baseline + source seeds 1/2/3 + unseen seed 4
+  target identity + experiment spec identity
+  + attempts/decisions/work/model logical ceiling
+  + operational wall-clock ceiling
                          |
                          v
 处理
-  explicit pair strategy + new artifact directory
-  -> source construction -> one prompt builder
-  -> feedback=null / trusted feedback
-  -> exact prompt/request bytes -> digest-bound two-arm freeze
-  -> full freeze validation -> read key
-  -> fixed no-feedback/with-feedback order -> each exact request invoked once
-  -> per-arm audit/strict parse/baseline check -> optional seed-4 execution/outcome
-  -> recomputed pair ledger -> persist before returning typed arm failure
+  canonical CampaignConfig
+  -> terminal CampaignAttemptRecord + complete WorkLedger
+  -> one-record append-only checkpoint
+  -> previous-digest chain + cumulative totals recheck
+  -> mechanical attempt/logical/wall-clock stop reason
                          |
                          v
 输出
-  same view/risk/must/budget/transport + only feedback exposure differs
-  + one pair ledger + offline success/failure artifacts
-  + seed 4 + 1 call/arm + 0 retry + complete per-arm charged work
-  + opt-in CLI / Make target; no automatic invocation
-  + real model_calls=0
+  O(n) checkpoint chain bound to config/target/spec identity
+  + completed/rejected/failed/invalid terminal evidence references
+  + resume/tamper/budget validation
+  + no file persistence, Coordinator loop, SUT run or model call yet
 ```
+
+M5.19 新增的是协议无关 Campaign 数据面，不是第二套 Runtime。wall clock 只决定运维停止，
+attempt、primary scheduler decisions、primary/replay work 和 model calls/tokens 才进入权威逻辑预算。
+checkpoint 不复制完整历史；每项只保存当前 record、累计 totals 和 previous digest，完整链为 O(n)。
+artifact 当前只以 digest 引用，下一阶段的 crash-safe persistence 才负责验证对应文件已经 durable。
 
 M5.17a/b 没有增加第二套执行器。action-class random 在 M5.16 的唯一 bundle 路径上均匀选择
 ActionKind，再在该 class 内选择 Runtime 当前提供的 Action；trace mutation 精确重放源 Trace 前缀、

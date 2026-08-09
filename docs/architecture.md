@@ -90,6 +90,12 @@ directory，完成 source construction 和 full freeze validation 后才读取 k
 typed arm failure 作为数据先进入 pair ledger 和全新目录，再作为进程错误返回。runner 不是
 Campaign Coordinator，也不处理进程被强制终止时的中间 arm 恢复。
 
+M5.19 在 `internal/controlexperiment` 增加协议无关 Campaign 数据面，但不增加执行器。
+`CampaignConfig` 冻结 target/spec identity、逻辑预算和 wall-clock 运维上限；每个 terminal attempt
+引用独立 artifact digest 并携带完整 WorkLedger。checkpoint 采用增量 hash chain，每项只保存一个
+新 record、累计 totals 和 previous digest，避免重复完整历史。当前内存对象只能验证链与 resume
+identity；crash-safe 文件落盘和 Coordinator 尚未实现。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

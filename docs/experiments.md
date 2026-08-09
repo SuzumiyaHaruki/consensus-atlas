@@ -85,6 +85,10 @@ M5.18b4 explicit pair runner 新增手动 opt-in CLI/Make 入口。它先拒绝�
 ledger 再返回非零错误。入口不被任何测试目标依赖；本阶段只用离线 mock，真实模型调用为 0。
 完整规范见 `stage-m5.18b4-pair-runner.md`。
 
+M5.19 先定义协议无关 CampaignConfig、terminal attempt 和增量 checkpoint chain。wall clock 只是
+运维上限，逻辑比较仍按 attempts、decisions、primary/replay work 和 model cost。该阶段没有运行
+SUT 或模型，也没有新增实验结果；完整规范见 `stage-m5.19-campaign-foundation.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

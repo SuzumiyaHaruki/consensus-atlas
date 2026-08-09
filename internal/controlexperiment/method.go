@@ -240,21 +240,26 @@ func validateMethodWork(work WorkLedger) error {
 func sumMethodWork(records []MethodRecord) WorkLedger {
 	total := emptyWork()
 	for _, record := range records {
-		addPhaseWork := func(target *PhaseWork, source PhaseWork) {
-			target.SetupAttempts += source.SetupAttempts
-			target.RuntimeInitializations += source.RuntimeInitializations
-			target.PrepareActions += source.PrepareActions
-			target.SchedulerDecisions += source.SchedulerDecisions
-			updateWorkUnits(target)
-		}
-		addPhaseWork(&total.Primary, record.Work.Primary)
-		addPhaseWork(&total.Replay, record.Work.Replay)
-		total.Model.Calls += record.Work.Model.Calls
-		total.Model.InputTokens += record.Work.Model.InputTokens
-		total.Model.OutputTokens += record.Work.Model.OutputTokens
-		total.Model.TotalTokens = total.Model.InputTokens + total.Model.OutputTokens
+		total = addWorkLedgers(total, record.Work)
 	}
 	return total
+}
+
+func addWorkLedgers(left WorkLedger, right WorkLedger) WorkLedger {
+	addPhaseWork := func(target *PhaseWork, source PhaseWork) {
+		target.SetupAttempts += source.SetupAttempts
+		target.RuntimeInitializations += source.RuntimeInitializations
+		target.PrepareActions += source.PrepareActions
+		target.SchedulerDecisions += source.SchedulerDecisions
+		updateWorkUnits(target)
+	}
+	addPhaseWork(&left.Primary, right.Primary)
+	addPhaseWork(&left.Replay, right.Replay)
+	left.Model.Calls += right.Model.Calls
+	left.Model.InputTokens += right.Model.InputTokens
+	left.Model.OutputTokens += right.Model.OutputTokens
+	left.Model.TotalTokens = left.Model.InputTokens + left.Model.OutputTokens
+	return left
 }
 
 func (ledger MethodLedger) seal() (MethodLedger, error) {
