@@ -35,9 +35,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	methodArtifacts := flags.String("method-artifacts", "", "report/bundle directory (M5.17c2 method strategies only)")
 	bundleEvidenceVersion := flags.Int("bundle-evidence-version", 0, "optional trusted bundle evidence version (3 only)")
 	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
-	agentKeyFile := flags.String("agent-key-file", "", "key file for the opt-in one-shot Agent strategy")
-	agentArtifacts := flags.String("agent-artifacts", "", "new output directory for the opt-in one-shot Agent strategy")
-	strategy := flags.String("strategy", "workload", "qualified strategy, including opt-in workload-guarded-agent-one-shot")
+	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
+	agentArtifacts := flags.String("agent-artifacts", "", "new output directory for an explicit opt-in Agent strategy")
+	strategy := flags.String("strategy", "workload", "qualified strategy, including explicit opt-in Agent strategies")
 	decisions := flags.Int("decisions", 96, "charged decisions per run")
 	policySeed := flags.Uint64("policy-seed", 1, "public random-policy seed")
 	if err := flags.Parse(args); err != nil {
@@ -68,8 +68,18 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			*agentArtifacts, result.Audit.Status, result.Audit.Work.Model.Calls, result.Audit.Digest)
 		return stageErr
 	}
+	if *strategy == etcdraftAgentB4PairStrategy {
+		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
+			*sourceBundleOut != "" || *methodOut != "" || *methodArtifacts != "" ||
+			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
+			return errors.New("Agent b4 pair strategy requires only -agent-key-file and -agent-artifacts")
+		}
+		return runEtcdraftAgentB4PairOptIn(
+			ctx, *decisions, *policySeed, *agentKeyFile, *agentArtifacts, stdout,
+		)
+	}
 	if *agentKeyFile != "" || *agentArtifacts != "" {
-		return errors.New("Agent flags require workload-guarded-agent-one-shot")
+		return errors.New("Agent flags require an explicit opt-in Agent strategy")
 	}
 	if *out == "" {
 		return errors.New("-out is required")

@@ -5,11 +5,14 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.18b4 pair orchestration/persistence**：复用 frozen request consumer，
+当前已完成 **M5.18b4 显式 opt-in pair runner**：pair orchestration/persistence 已接到
+freeze-before-key、failure-before-return-persistence 的正式 CLI 和 Make 入口。已有 pair 复用 frozen request consumer，
 以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
 未调用模型。单臂 consumer 已把 freeze 绑定的 exact request 接入既有
 response audit、strict parser、baseline validator、plan v2、seed-4 execution 和 IntentOutcome。
 pair 层已验证固定顺序、首臂失败隔离、ledger 篡改拒绝、禁止覆盖以及 key/私有诊断不落盘。
+runner 还已验证已存在目录在 source construction 前拒绝、无效 freeze 在 key 前拒绝，两个 typed
+arm failure 先落盘再返回。入口不被任何测试目标自动调用。
 M5.18b4R 当前清单为 26/26 exact-once，受影响的 13 项 agent shard race 已通过。M5.18b4 已冻结的
 no-feedback/with-feedback 两臂精确 prompt/request bytes、共同
 hard baseline、seed 4、执行预算和 transport 上限已在
@@ -86,6 +89,7 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - hard capability/action/fault/budget 拒绝、preference miss/compiler work 与 Trace-backed hard Action 验证；
 - 有界 one-shot DeepSeek JSON transport、安全 key-file 读取和 digest-bound AgentInvocationAudit；
 - bundle-backed `AgentBatchFeedbackView`、敏感身份去除与 preference-only 消融边界；
+- freeze-before-key、typed-failure-before-return-persistence 的显式 opt-in pair runner；
 - execution/workload 分离的 feedback v2、冻结 source/unseen seed 与完整 per-arm 成本的 follow-up spec；
 - Runtime-supported / Experiment-producible / backend-selectable 三层 Action surface；
 - seed-free CompiledIntentPlan v2、digest-bound execution instance 和独立 IntentOutcome；
@@ -331,11 +335,11 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段为已完成的 pair consumer 增加显式 opt-in 入口：先完成 freeze，再读取用户指定的 key，调用
-双臂后即使出现 arm failure 也先持久化 ledger。增加入口不等于授权真实调用；b4 只是
-backend-preference feedback micro-ablation，不承担最终 Agent 效果结论。
+下一阶段进入 M5.19 Campaign Coordinator：冻结多 attempt、停止、checkpoint 和 resume 语义。
+wall-clock 只作为运维上限，权威预算仍是 primary/replay work、decisions、attempts 和 model cost。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.18b4 runner](docs/stage-m5.18b4-pair-runner.md)、
+[M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
 [M5.18b4 consumer](docs/stage-m5.18b4-request-consumer.md)、
 [M5.18b4 freeze](docs/stage-m5.18b4-request-freeze.md)、
 [M5.18b4-pre](docs/stage-m5.18b4-pre-trust-corrections.md)、

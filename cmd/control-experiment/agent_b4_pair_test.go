@@ -156,6 +156,125 @@ func TestEtcdraftM518b4PersistsFixedOrderPairLedger(t *testing.T) {
 			t.Fatalf("private transport diagnostic escaped the audit boundary: %v", marshalErr)
 		}
 	})
+
+	t.Run("runner-freezes-before-key-and-persists-before-return", func(t *testing.T) {
+		first, second := freeze.Baseline, freeze.Baseline
+		first.ID, first.Digest = "runner-first-transport-failure", ""
+		second.ID, second.Digest, second.Must.Decisions = "runner-second-rejected", "", second.Must.Decisions-1
+		client, calls := b4PairMockClient(
+			t, freeze, []controlexperiment.GuardedTestIntent{first, second},
+			[]error{errors.New("private runner transport detail"), nil},
+		)
+		events := make([]string, 0, 2)
+		build := func(context.Context, int, uint64) (etcdraftAgentB4RequestFreeze, error) {
+			events = append(events, "freeze")
+			return freeze, nil
+		}
+		readKey := func(path string) (string, error) {
+			events = append(events, "key")
+			if path != "explicit-test-key" {
+				t.Fatalf("runner changed the key path: %s", path)
+			}
+			return "test-secret", nil
+		}
+		directory := filepath.Join(t.TempDir(), "runner-pair")
+		var output bytes.Buffer
+		err := runEtcdraftAgentB4Pair(
+			context.Background(), 96, 1, "explicit-test-key", directory, &output,
+			build, readKey, client,
+		)
+		if err == nil || !strings.Contains(err.Error(), deepSeekFailureTransport) ||
+			!strings.Contains(err.Error(), deepSeekFailureBaseline) ||
+			*calls != 2 || len(events) != 2 || events[0] != "freeze" || events[1] != "key" {
+			t.Fatalf("runner order/result drifted: events=%v calls=%d err=%v", events, *calls, err)
+		}
+		ledgerBytes, readErr := os.ReadFile(filepath.Join(directory, "pair-ledger.json"))
+		var ledger etcdraftAgentB4PairLedger
+		decodeErr := json.Unmarshal(ledgerBytes, &ledger)
+		leakErr := filepath.WalkDir(directory, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil || entry.IsDir() {
+				return walkErr
+			}
+			artifact, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if bytes.Contains(artifact, []byte("test-secret")) ||
+				bytes.Contains(artifact, []byte("private runner transport detail")) {
+				return errors.New("runner artifact crossed the private boundary")
+			}
+			return nil
+		})
+		if readErr != nil || bytes.Contains(ledgerBytes, []byte("test-secret")) ||
+			bytes.Contains(ledgerBytes, []byte("private runner transport detail")) ||
+			bytes.Contains(output.Bytes(), []byte("test-secret")) ||
+			bytes.Contains(output.Bytes(), []byte("private runner transport detail")) ||
+			strings.Contains(err.Error(), "private runner transport detail") || decodeErr != nil || leakErr != nil ||
+			len(ledger.Arms) != 2 ||
+			ledger.Arms[0].Invocation.Status != controlexperiment.AgentInvocationTransportFailed ||
+			ledger.Arms[1].Invocation.Status != controlexperiment.AgentInvocationCompileRejected ||
+			!strings.Contains(output.String(), "model_calls=2") {
+			t.Fatalf("runner did not persist a safe failure ledger: read=%v decode=%v leak=%v output=%q",
+				readErr, decodeErr, leakErr, output.String())
+		}
+	})
+
+	t.Run("runner-rejects-before-key-or-source-work", func(t *testing.T) {
+		keyReads, builds, transports := 0, 0, 0
+		readKey := func(string) (string, error) {
+			keyReads++
+			return "test-secret", nil
+		}
+		client := defaultDeepSeekIntentClient()
+		client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+			transports++
+			return nil, errors.New("must not be called")
+		})
+		existing := t.TempDir()
+		err := runEtcdraftAgentB4Pair(
+			context.Background(), 96, 1, "unused", existing, io.Discard,
+			func(context.Context, int, uint64) (etcdraftAgentB4RequestFreeze, error) {
+				builds++
+				return freeze, nil
+			}, readKey, client,
+		)
+		if err == nil || !strings.Contains(err.Error(), "DIRECTORY_NOT_NEW") ||
+			builds != 0 || keyReads != 0 || transports != 0 {
+			t.Fatalf("existing directory crossed runner boundary: %d/%d/%d %v",
+				builds, keyReads, transports, err)
+		}
+
+		invalid := freeze
+		invalid.Spec.SchemaVersion = ""
+		directory := filepath.Join(t.TempDir(), "invalid-freeze")
+		err = runEtcdraftAgentB4Pair(
+			context.Background(), 96, 1, "unused", directory, io.Discard,
+			func(context.Context, int, uint64) (etcdraftAgentB4RequestFreeze, error) {
+				builds++
+				return invalid, nil
+			}, readKey, client,
+		)
+		if err == nil || builds != 1 || keyReads != 0 || transports != 0 {
+			t.Fatalf("invalid freeze reached key or transport: %d/%d/%d %v",
+				builds, keyReads, transports, err)
+		}
+		if _, statErr := os.Stat(directory); !os.IsNotExist(statErr) {
+			t.Fatalf("invalid freeze created artifacts: %v", statErr)
+		}
+	})
+
+	t.Run("runner-cli-flags-fail-closed", func(t *testing.T) {
+		if err := run(context.Background(), []string{"-strategy", etcdraftAgentB4PairStrategy}, io.Discard); err == nil ||
+			!strings.Contains(err.Error(), "requires only") {
+			t.Fatalf("pair CLI accepted missing flags: %v", err)
+		}
+		if err := run(context.Background(), []string{
+			"-strategy", "workload", "-out", "unused", "-agent-key-file", "unused",
+			"-agent-artifacts", "unused",
+		}, io.Discard); err == nil || !strings.Contains(err.Error(), "explicit opt-in") {
+			t.Fatalf("non-Agent strategy accepted Agent flags: %v", err)
+		}
+	})
 }
 
 func b4PairMockClient(

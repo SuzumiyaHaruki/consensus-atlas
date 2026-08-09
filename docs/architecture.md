@@ -85,6 +85,11 @@ messages/request bytes 及 digest；协议无关 `AgentPreferenceAblationFreeze`
 feedback、hard baseline、FollowUpSpec、transport 限制和两臂 commitment。key 只能在 freeze 验证后进入
 `invokePrepared`，不参与 request 生成或 identity。
 
+M5.18b4 pair runner 只在 etcd/raft composition root 组织上述对象。它先拒绝已存在的 artifact
+directory，完成 source construction 和 full freeze validation 后才读取 key，然后固定消费两臂。
+typed arm failure 作为数据先进入 pair ledger 和全新目录，再作为进程错误返回。runner 不是
+Campaign Coordinator，也不处理进程被强制终止时的中间 arm 恢复。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

@@ -80,6 +80,11 @@ source 成本完整计入两臂。结构化工件和 exact prompt/request bytes 
 覆盖目录、key 落盘和 transport 私有诊断泄漏均由离线测试拒绝。本阶段没有 CLI 或真实模型调用，
 完整规范见 `stage-m5.18b4-pair-ledger.md`。
 
+M5.18b4 explicit pair runner 新增手动 opt-in CLI/Make 入口。它先拒绝已存在 artifact path，
+构造并完整复核 freeze 后才读取用户指定的 key。pair 返回 typed arm failure 时先持久化
+ledger 再返回非零错误。入口不被任何测试目标依赖；本阶段只用离线 mock，真实模型调用为 0。
+完整规范见 `stage-m5.18b4-pair-runner.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window
