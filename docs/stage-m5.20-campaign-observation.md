@@ -2,7 +2,7 @@
 
 日期：2026-08-09
 
-状态：设计冻结，待实现
+状态：完成
 
 ## 目的
 
@@ -70,14 +70,14 @@ validated CampaignRecovery + committed artifact bytes
 
 ## 最小验收
 
-- [ ] 通用 Observation 可 canonical seal/revalidate，且不依赖 etcd/raft 包；
-- [ ] projection 数量、顺序、artifact/outcome/work 绑定和 Campaign/Summary identity 篡改均被拒绝；
-- [ ] 两个真实 committed attempts 的 Core PSS union/curve 可从 bundle 机械重算；
-- [ ] fault/workload 合计和 monitor trigger index 可逐 attempt 追溯；
-- [ ] failed/running、零 attempt 和无 evidence 边界不会被误写成 pass/fail 或覆盖率结论；
-- [ ] runner 在 Summary 之外以全新文件持久化 Observation，失败时不覆盖旧文件；
-- [ ] 普通全量、vet、受影响 race、依赖审计、规划镜像和 `git diff --check` 通过；
-- [ ] 不读取 key、不调用模型、不提交大型实验 artifact。
+- [x] 通用 Observation 可 canonical seal/revalidate，且不依赖 etcd/raft 包；
+- [x] projection 数量、顺序、artifact/outcome/work 绑定和 Campaign/Summary identity 篡改均被拒绝；
+- [x] 两个真实 committed attempts 的 Core PSS union/curve 可从 bundle 机械重算；
+- [x] fault/workload 合计和 monitor trigger index 可逐 attempt 追溯；
+- [x] failed/running、零 attempt 和无 evidence 边界不会被误写成 pass/fail 或覆盖率结论；
+- [x] runner 在 Summary 之外以全新文件持久化 Observation，失败时不覆盖旧文件；
+- [x] 普通全量、vet、受影响 race、依赖审计、规划镜像和 `git diff --check` 通过；
+- [x] 不读取 key、不调用模型、不提交大型实验 artifact。
 
 ## 明确不在本阶段完成
 
@@ -86,3 +86,41 @@ validated CampaignRecovery + committed artifact bytes
 - 第二协议 projector 或跨协议合并 PSS；
 - 新 monitor、缺陷根因归并或历史 candidate/control 评测；
 - 声称 etcd/raft、ConsensusAtlas 或某种搜索方法正确、完备或更优。
+
+## 实现结果
+
+`internal/controlexperiment` 新增的 `CampaignObservation/v1` 只聚合协议无关
+projection。etcd/raft composition root 逐个从 committed reader 取回 artifact，严格拒绝
+未知 JSON 字段和尾随内容，并重验 request/spec/target/record identity、decision projector 与
+Core PSS mapper。之后固定运行 `trace-integrity` 和 `agreement` 两个现有 monitor。
+
+runner 新增必填的 `-campaign-observation-out`，Summary 和 Observation 均必须在可信
+Campaign 根目录之外且路径不同，两个输出都以 fsync + no-replace 持久化。provider
+failure 见证输出 failed Summary 和无 PSS 的 failed Observation，不会把 artifact-less failure
+变成零成本执行。
+
+## 实验结果
+
+真实小型验收使用 seeds 91/92、2 attempts 和 8 decisions/attempt：
+
+| 栏 | 结果 |
+|---|---|
+| terminal/cost | `stopped/attempt-limit`，16 primary decisions，18/18 primary/replay work |
+| Core PSS | 18 samples，15 unique states，self-normalized area 0.5541667 |
+| fault | 2 crashes，0 drop/duplicate/partition |
+| workload | planned 2，offered/completed 0，pending 2 |
+| monitors | agreement 2 次、trace-integrity 2 次，0 triggers |
+
+workload 未送入是该两条轨迹的实际统计，不被修饰为完成；monitor 零触发也只表示
+在已执行证据上未触发。本次结果位于未跟踪的临时目录，仓库不提交大型 artifact。
+Summary 为 4,651 bytes，Observation 为 53,411 bytes，两份完整 artifact 合计 427,638
+bytes；Observation 只保留 15 个唯一 PSS witness 而不复制完整轨迹。
+
+## 验证结果
+
+- `go test -count=1 -timeout 20m ./...`：通过，`cmd/control-experiment` 46.801 秒；
+- `go vet ./...`：通过；
+- 通用 Observation 定向 race：1.236 秒；真实 projector/runner 受影响 race：62.437 秒；
+- exact-once race manifest、no-v1、no-retired-experiment、通用包协议依赖、规划镜像与
+  `git diff --check`：通过；
+- 模型调用数为 0，没有读取 key。

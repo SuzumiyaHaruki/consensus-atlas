@@ -116,6 +116,13 @@ artifact。`ReadAttemptArtifact` 使用同一私有恢复令牌限制 committed 
 digest。etcd/raft runner 只组装 spec/provider/config/Coordinator/Summary，新运行和 resume 使用同一
 executor。Summary 的运行状态不是协议 verdict，跨 attempt 观测留在后续 target-owned projection 层。
 
+M5.20 实现上述 projection 层，仍不增加执行器。etcd/raft composition root 只能通过
+committed-ordinal reader 取 artifact，重验严格 JSON、request/spec/target/record identity、decision
+projection 和 Core PSS mapping，再将协议无关 attempt projection 交给通用
+`CampaignObservation/v1`。Observation 只保存 terminal/cost、唯一 PSS witness/曲线、
+fault/workload 合计和 monitor 触发索引；Report、Bundle 和 Trace 仍只在内容寻址 artifact
+中保存一次。这些栏不合成单一分数，monitor 零触发不表示正确。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

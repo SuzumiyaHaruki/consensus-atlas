@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.33（M5.20 Campaign Observation 设计冻结）
+> 状态：Draft v1.34（M5.20 Campaign Observation 完成）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2263,12 +2263,16 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     etcd/raft 离线 runner，只组装冻结 spec、Campaign 目录和现有 provider；不在 CLI 内新建执行、
     PSS 或 Oracle 逻辑。Summary 的 `running/stopped/failed` 不能被表述为 pass/fail verdict；reader 只能
     按 committed ordinal 读取内容寻址 artifact，不暴露任意路径或 orphan。
-73. [ ] M5.20 从 reader 返回的已校验 artifact 机械投影跨 attempt Campaign Observation。设计已冻结：
+73. [X] M5.20 从 reader 返回的已校验 artifact 机械投影跨 attempt Campaign Observation。设计已冻结：
     target-owned projector 严格复核 artifact/request/spec/target identity，通用层只聚合与 Summary
     attempt 一一绑定的协议无关 projection。第一版分开报告 terminal outcomes/cost、复用
     `protocolstate.Aggregate` 的 Core PSS 并集/发现曲线、fault/workload 统计和 monitor 触发索引；
     不复制大型 bundle/trace，不把各栏拼成自定义综合分数。详见
     `docs/stage-m5.20-campaign-observation.md`。
+74. [ ] M5.21 冻结 Campaign Feedback/Planner 输入边界。Planner 只读协议知识、能力声明、
+    前缀 Observation 和剩余逻辑预算，只能提交可机械编译的下一 attempt intent；不能选择
+    Runtime enabled Action、修改 target/spec/monitor/PSS 身份或将指标声称为 verdict。先用离线确定性
+    planner 验证增量 checkpoint/恢复/账本，之后才显式 opt-in 真实模型。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2318,6 +2322,11 @@ M5.19d 已增加协议无关 `CampaignSummary/v1` 和 committed-ordinal artifact
 显式 flag 恢复 exact config。真实 2-attempt 见证以 seeds 61/62 得到 16 decisions 和 18/18 work；
 独立见证从 seed 71 的 head 恢复完成 seed 72。artifact-less error 在返回前保存 failed Summary，
 私有诊断未落盘。当前 Summary 不是 verdict，也没有跨 attempt 的 PSS/Coverage/Oracle 聚合。
+M5.20 已增加紧凑的 `CampaignObservation/v1`。通用层只聚合与 Summary record 绑定的
+projection；etcd/raft composition 从 committed reader 取回工件并重验 artifact、decision projector
+和 Core PSS mapper，再运行 trace-integrity/agreement。seeds 91/92 的 2x8-decision 验收得到
+18 samples/15 unique Core PSS states、2 crashes、2 个 pending workload 和两个 monitor 各 2 次零触发。
+这些栏保持独立，没有综合分数；零触发不构成正确性证明。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
 但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race

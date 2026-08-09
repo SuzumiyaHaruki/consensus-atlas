@@ -351,11 +351,13 @@ docs/                     当前设计与不可改写的阶段记录
 - 当前只有公开 calibration，没有非公开 candidate/control holdout；
 - 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
 
-下一阶段从已验证 artifact 投影跨 attempt Campaign Observation，分开展示 outcome/work、
-Core PSS 并集、fault/workload 统计和 Oracle 触发索引。wall-clock 只作为运维上限；当前不将
-这些指标拼成一个自定义“完备度分数”。
+M5.20 已将 committed artifact 机械投影为跨 attempt `CampaignObservation/v1`，分开展示
+outcome/work、Core PSS 并集/发现曲线、fault/workload 统计和 monitor 触发索引。
+runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
+自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.20 Campaign Observation](docs/stage-m5.20-campaign-observation.md)、
+[M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
 [M5.19a persistence](docs/stage-m5.19a-campaign-persistence.md)、
 [M5.19b Coordinator](docs/stage-m5.19b-campaign-coordinator.md)、
 [M5.19c real provider](docs/stage-m5.19c-real-campaign-provider.md)、

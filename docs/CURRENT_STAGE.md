@@ -2,7 +2,7 @@
 
 日期：2026-08-09
 
-阶段：M5.19d Campaign Summary/Artifact Reader/离线 Runner 已完成；模型调用为 0
+阶段：M5.20 跨 Attempt Campaign Observation 已完成；模型调用为 0
 
 ## 输入、处理、输出
 
@@ -14,18 +14,28 @@
                          v
 处理
   M5.19c provider -> generic Coordinator/checkpoints
-  -> validated CampaignRecovery
-  -> small CampaignSummary(records/totals/status)
-  -> committed-ordinal artifact reader
-  -> fsync/no-replace summary outside trusted root
+  -> validated CampaignRecovery + committed artifact reader
+  -> target-owned strict artifact/PSS/decision reprojection
+  -> generic Campaign Observation aggregation
+  -> fsync/no-replace Summary + Observation outside trusted root
                          |
                          v
 输出
   runnable/resumable etcd/raft Campaign
   + running/stopped/failed summary and exact WorkLedger
+  + Core PSS union/curve + fault/workload + monitor trigger index
   + content-addressed full artifacts stored once
-  + no cross-attempt observation/final score/model call yet
+  + no composite score/model call
 ```
+
+M5.20 新增的 `CampaignObservation/v1` 是已提交 artifact 的紧凑派生视图。通用层
+只接受与 Summary attempt 一一绑定的协议无关 projection；etcd/raft 组合层严格重验
+artifact/request/spec/target identity、decision projector 和 Core PSS mapper，再运行现有
+trace-integrity/agreement monitor。Observation 不复制 report、bundle 或 trace，也不产生综合分数。
+
+seeds 91/92 的真实 2x8-decision 验收输出 16 primary decisions、18 Core PSS samples、
+15 unique states、2 crashes、2 个 pending workload；agreement 和 trace-integrity 各运行 2 次且
+零触发。workload 未送入和 monitor 零触发都是轨迹事实，不是正确性或完备性结论。
 
 M5.19d 增加的 `CampaignSummary/v1` 只复制小型 terminal records 和 checkpoint digest 索引，并保存
 config/target/spec identity、totals、elapsed、stop reason 和可选 failure marker。`running`、`stopped`、
@@ -518,6 +528,9 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
   最终普通全量测试的 composition package 为 99.492 秒；受影响 pair race 以 426.731 秒
   通过且没有 data-race 报告；
 - `go test -count=1 ./...` 和 `go vet ./...`：通过，composition package 为 94.621 秒；
+- M5.20 `go test -count=1 -timeout 20m ./...` 和 `go vet ./...`：通过，composition package
+  为 46.801 秒；通用 Observation 定向 race 为 1.236 秒，真实 projector/runner 受影响
+  race 为 62.437 秒；
 - 147 个非 artifacts JSON、23 个 schema JSON、4 个 M5.18a build input/audit schema 实例和 146 个
   Markdown 本地链接：通过；
 - Python 历史 Agent 已删除，`unittest discover` 正常发现 0 项；
@@ -551,18 +564,19 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 
 ## 下一步
 
-进入 M5.20：从 committed-ordinal reader 取得已校验 etcd/raft artifact，通过 target-owned projector
-生成跨 attempt Campaign Observation。第一版只分开展示 terminal outcomes/cost、Core PSS 并集与
-发现曲线、fault/workload 统计和 Oracle 触发索引。不增加执行外壳，不让通用 Summary 解析
-etcd/raft，不把多个指标拼成无外部效度证据的“完备度分数”。
+进入 M5.21：先冻结 Campaign Feedback/Planner 输入与权限边界。Planner 只读协议知识、
+能力声明、前缀 Observation 和剩余逻辑预算，只提交可机械编译的下一 attempt
+intent。先以离线确定性 planner 验证闭环/checkpoint/账本，不让 Planner 选 Runtime Action、
+修改可信身份或把 Observation 当 verdict；该闭环成立后再显式 opt-in 真实模型。
 
 ## 阅读顺序
 
-1. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
-2. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-3. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-4. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-5. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-6. [架构](architecture.md)
-7. [总体规划](ConsensusAtlas-总体规划.md)
-8. [完整文档导航](README.md)
+1. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
+2. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+3. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+4. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+5. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+6. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+7. [架构](architecture.md)
+8. [总体规划](ConsensusAtlas-总体规划.md)
+9. [完整文档导航](README.md)
