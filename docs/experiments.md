@@ -68,6 +68,12 @@ M5.18b4R 不改变上述实验。它只把 `cmd/control-experiment` 的完整 ra
 `test-race-core` 是开发期信号，只有全部 shard 和其余 package 都通过的 `test-race-full` 才是完整门禁。
 完整规范见 `stage-m5.18b4r-race-gate-topology.md`。
 
+M5.18b4 frozen request consumer 只消费上述 freeze 中已经绑定的 exact prepared bytes。单臂经过一次
+transport、既有 response audit、strict parse、hard-baseline validation、plan v2、seed-4 instance、
+qualified executor 和 IntentOutcome；没有 retry、reply repair 或 backend/seed fallback。当前只使用
+离线 mock 验证成功和失败边界，没有 CLI 或真实模型调用。完整规范见
+`stage-m5.18b4-request-consumer.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

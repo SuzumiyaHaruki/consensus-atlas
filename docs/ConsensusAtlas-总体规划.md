@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.19（M5.18b4R race gate topology 完成）
+> 状态：Draft v1.20（M5.18b4 frozen request consumer 完成）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2229,6 +2229,10 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     与 `go test -list` 精确对账并恰好归入一个 race shard；每个 shard 使用独立 test binary、独立
     20 分钟 ceiling 和 `-count=1`。`test-race-core` 只提供开发期并发回归信号，不能替代穷尽清单的
     `test-race-full`。分片按共享 fixture 组织，不为拆分 seed 1 而增加原本不存在的 SUT run。
+65. [X] M5.18b4 request consumer 只消费 freeze 已绑定的 prepared request，不重新生成 prompt 或接受
+    新 request bytes。单臂依次执行一次 transport、response audit、strict parse、baseline validation、
+    plan v2、seed-4 instance、已有 qualified executor 和 IntentOutcome；每个失败阶段保留稳定分类和
+    已发生成本，无 retry、回复修复、backend/seed 替换或 hard constraint fallback。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2238,11 +2242,15 @@ fixture 分入三个独立 race test binary。method/execution/agent 分别以 3
 通过，其余 package race 也全部通过；所有调用均使用 `-count=1`，没有 data-race 报告。该阶段没有
 优化 Snapshot 深拷贝、拆分 execution API 或改变 SUT run 数，验证了门禁拓扑调整本身足以消除
 单一进程累计成本造成的超时。
-下一阶段继续 M5.18b4：只实现冻结 request bytes 的单一消费路径，依次进入
-response audit、strict parse、baseline 校验、plan v2、seed-4 execution instance、已有
-qualified executor 和 IntentOutcome。不再改动 Runtime/Action/PSS/Oracle。每个 arm 最多 1 call、
-无重试，任何 transport/parse/compile/invalid execution/intent-not-reached 都分类计费。只有用户
-明确要求运行模型实验时才读取 key 并执行两臂。b4 只报告
+M5.18b4 frozen request consumer 已完成：单臂只能选择 freeze 中的 exact prepared bytes，client
+配置必须与 transport commitment 相等，随后唯一经过一次 invoke、既有 response audit、strict
+parser、单份 baseline 校验、plan v2、seed-4 instance、qualified executor、projection 和
+IntentOutcome。离线成功、hard-baseline 越权、transport failure 和 request tamper 回归通过；没有新增
+CLI、临时 summary schema、执行器或真实模型调用。当前 exact-once 清单为 25 项，受影响 agent shard
+12 项以 361.838 秒通过 race。
+下一阶段继续 M5.18b4：只增加两臂 orchestration/persistence，把共同 freeze、两个 invocation audit、
+可选 execution instance/outcome 和每臂完整 source/follow-up/model 成本写入一份 pair ledger；失败 arm
+原样保留，不替换 response/backend/seed。只有用户明确要求运行模型实验时才读取 key 并执行两臂。b4 只报告
 backend-preference feedback micro-ablation，不报告 LLM-guided consensus testing effectiveness。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
@@ -2483,6 +2491,10 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
     可以用多个独立 test binary 分片，但必须由机器验证全部顶层测试恰好执行一次、不得依赖
     `testing.Short` 静默缩减、不得复用 Go test cache，并为每个分片保留明确 timeout。测试拓扑变化
     不得改变 SUT 执行次数、随机 seed、实验 fixture、冻结 identity 或可信结论。
+95. 冻结请求的 consumer 只能引用 freeze 中的 arm commitment 和 exact prepared bytes；transport
+    配置、follow-up seed 与 execution budget 必须从 freeze 机械取得。response audit、strict parse、
+    baseline validation、compile、execution 和 intent reachability 必须分阶段记账；任何阶段失败都
+    不得触发 retry、人工修复、backend fallback 或替换 seed。
 
 ---
 
