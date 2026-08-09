@@ -15,12 +15,13 @@ import (
 
 const (
 	etcdraftCampaignRunnerStrategy = "campaign-etcdraft-v1"
-	campaignSummaryPendingPrefix   = ".campaign-summary-pending-"
+	campaignOutputPendingPrefix    = ".campaign-output-pending-"
 )
 
 type etcdraftCampaignRunOptions struct {
 	Directory              string
 	SummaryOut             string
+	ObservationOut         string
 	Resume                 bool
 	Attempts               int
 	DecisionsPerAttempt    int
@@ -49,7 +50,7 @@ func runEtcdraftCampaignWithFactory(
 	stdout io.Writer,
 	newProvider etcdraftCampaignProviderFactory,
 ) error {
-	directory, summaryOut, err := prepareEtcdraftCampaignPaths(options)
+	directory, summaryOut, observationOut, err := prepareEtcdraftCampaignPaths(options)
 	if err != nil {
 		return err
 	}
@@ -103,59 +104,87 @@ func runEtcdraftCampaignWithFactory(
 		}
 		return summaryErr
 	}
+	observation, observationErr := newEtcdraftCampaignObservation(&recovered, provider)
 	if err := persistCampaignSummaryNoReplace(summaryOut, summary); err != nil {
 		return err
 	}
+	if observationErr != nil {
+		if stageErr != nil {
+			return fmt.Errorf("%v; ETCDRAFT_CAMPAIGN_OBSERVATION_FAILED: %w", stageErr, observationErr)
+		}
+		return observationErr
+	}
+	if err := persistCampaignObservationNoReplace(observationOut, observation); err != nil {
+		return err
+	}
 	fmt.Fprintf(
-		stdout, "wrote %s\nstatus=%s attempts=%d primary=%d replay=%d digest=%s\n",
-		summaryOut, summary.Status, summary.Sequence,
-		summary.Totals.Primary.WorkUnits, summary.Totals.Replay.WorkUnits, summary.Digest,
+		stdout, "wrote %s\nwrote %s\nstatus=%s attempts=%d primary=%d replay=%d summary=%s observation=%s\n",
+		summaryOut, observationOut, summary.Status, summary.Sequence,
+		summary.Totals.Primary.WorkUnits, summary.Totals.Replay.WorkUnits,
+		summary.Digest, observation.Digest,
 	)
 	return stageErr
 }
 
 func prepareEtcdraftCampaignPaths(
 	options etcdraftCampaignRunOptions,
-) (string, string, error) {
-	if options.Directory == "" || options.SummaryOut == "" {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_PATH_REQUIRED")
+) (string, string, string, error) {
+	if options.Directory == "" || options.SummaryOut == "" || options.ObservationOut == "" {
+		return "", "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_PATH_REQUIRED")
 	}
 	directory, err := filepath.Abs(filepath.Clean(options.Directory))
 	if err != nil || directory == string(filepath.Separator) || directory == "." {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_DIRECTORY_INVALID")
+		return "", "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_DIRECTORY_INVALID")
 	}
-	summaryOut, err := filepath.Abs(filepath.Clean(options.SummaryOut))
-	if err != nil || summaryOut == string(filepath.Separator) || summaryOut == "." {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_PATH_INVALID")
+	summaryOut, err := prepareEtcdraftCampaignOutputPath(directory, options.SummaryOut, "SUMMARY")
+	if err != nil {
+		return "", "", "", err
 	}
-	relative, err := filepath.Rel(directory, summaryOut)
-	if err != nil || relative == "." ||
-		(relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))) {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_INSIDE_CAMPAIGN")
+	observationOut, err := prepareEtcdraftCampaignOutputPath(
+		directory, options.ObservationOut, "OBSERVATION",
+	)
+	if err != nil {
+		return "", "", "", err
 	}
-	if _, err := os.Lstat(summaryOut); err == nil {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_EXISTS")
-	} else if !os.IsNotExist(err) {
-		return "", "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_STAT: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(summaryOut), 0o700); err != nil {
-		return "", "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_PARENT_CREATE: %w", err)
-	}
-	parent, err := os.Lstat(filepath.Dir(summaryOut))
-	if err != nil || !parent.IsDir() || parent.Mode()&os.ModeSymlink != 0 {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_PARENT_INVALID")
+	if summaryOut == observationOut {
+		return "", "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_OUTPUT_PATH_COLLISION")
 	}
 	info, err := os.Lstat(directory)
 	if options.Resume {
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_RESUME_DIRECTORY_INVALID")
+			return "", "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_RESUME_DIRECTORY_INVALID")
 		}
 	} else if err == nil {
-		return "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_NEW_DIRECTORY_REQUIRED")
+		return "", "", "", errors.New("ETCDRAFT_CAMPAIGN_RUNNER_NEW_DIRECTORY_REQUIRED")
 	} else if !os.IsNotExist(err) {
-		return "", "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_DIRECTORY_STAT: %w", err)
+		return "", "", "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_DIRECTORY_STAT: %w", err)
 	}
-	return directory, summaryOut, nil
+	return directory, summaryOut, observationOut, nil
+}
+
+func prepareEtcdraftCampaignOutputPath(directory string, path string, kind string) (string, error) {
+	clean, err := filepath.Abs(filepath.Clean(path))
+	if err != nil || clean == string(filepath.Separator) || clean == "." {
+		return "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_PATH_INVALID", kind)
+	}
+	relative, err := filepath.Rel(directory, clean)
+	if err != nil || relative == "." ||
+		(relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))) {
+		return "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_INSIDE_CAMPAIGN", kind)
+	}
+	if _, err := os.Lstat(clean); err == nil {
+		return "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_EXISTS", kind)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_STAT: %w", kind, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(clean), 0o700); err != nil {
+		return "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_PARENT_CREATE: %w", kind, err)
+	}
+	parent, err := os.Lstat(filepath.Dir(clean))
+	if err != nil || !parent.IsDir() || parent.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_PARENT_INVALID", kind)
+	}
+	return clean, nil
 }
 
 func persistCampaignSummaryNoReplace(
@@ -165,15 +194,29 @@ func persistCampaignSummaryNoReplace(
 	if err := summary.Validate(); err != nil {
 		return err
 	}
-	encoded, err := json.MarshalIndent(summary, "", "  ")
+	return persistCampaignOutputNoReplace(path, summary, "SUMMARY")
+}
+
+func persistCampaignObservationNoReplace(
+	path string,
+	observation controlexperiment.CampaignObservation,
+) error {
+	if err := observation.Validate(); err != nil {
+		return err
+	}
+	return persistCampaignOutputNoReplace(path, observation, "OBSERVATION")
+}
+
+func persistCampaignOutputNoReplace(path string, value any, kind string) error {
+	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
 	encoded = append(encoded, '\n')
 	directory := filepath.Dir(path)
-	temporary, err := os.CreateTemp(directory, campaignSummaryPendingPrefix)
+	temporary, err := os.CreateTemp(directory, campaignOutputPendingPrefix)
 	if err != nil {
-		return fmt.Errorf("ETCDRAFT_CAMPAIGN_SUMMARY_TEMP_CREATE: %w", err)
+		return fmt.Errorf("ETCDRAFT_CAMPAIGN_%s_TEMP_CREATE: %w", kind, err)
 	}
 	temporaryPath := temporary.Name()
 	closed := false
@@ -198,15 +241,15 @@ func persistCampaignSummaryNoReplace(
 	closed = true
 	if err := os.Link(temporaryPath, path); err != nil {
 		if os.IsExist(err) {
-			return errors.New("ETCDRAFT_CAMPAIGN_RUNNER_SUMMARY_EXISTS")
+			return fmt.Errorf("ETCDRAFT_CAMPAIGN_RUNNER_%s_EXISTS", kind)
 		}
-		return fmt.Errorf("ETCDRAFT_CAMPAIGN_SUMMARY_COMMIT: %w", err)
+		return fmt.Errorf("ETCDRAFT_CAMPAIGN_%s_COMMIT: %w", kind, err)
 	}
 	if err := syncCampaignSummaryDirectory(directory); err != nil {
 		return err
 	}
 	if err := os.Remove(temporaryPath); err != nil {
-		return fmt.Errorf("ETCDRAFT_CAMPAIGN_SUMMARY_TEMP_REMOVE: %w", err)
+		return fmt.Errorf("ETCDRAFT_CAMPAIGN_%s_TEMP_REMOVE: %w", kind, err)
 	}
 	if err := syncCampaignSummaryDirectory(directory); err != nil {
 		return err

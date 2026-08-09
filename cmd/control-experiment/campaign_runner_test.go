@@ -18,6 +18,7 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 	root := t.TempDir()
 	newDirectory := filepath.Join(root, "new", "campaign")
 	newSummary := filepath.Join(root, "new", "summary.json")
+	newObservation := filepath.Join(root, "new", "observation.json")
 	args := []string{
 		"-strategy", etcdraftCampaignRunnerStrategy,
 		"-campaign-dir", newDirectory,
@@ -25,6 +26,7 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 		"-campaign-wall-clock-ms", "120000",
 		"-decisions", "8",
 		"-policy-seed", "61",
+		"-campaign-observation-out", newObservation,
 		"-out", newSummary,
 	}
 	var stdout bytes.Buffer
@@ -32,6 +34,7 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 		t.Fatal(err)
 	}
 	created := readEtcdraftCampaignSummary(t, newSummary)
+	observed := readEtcdraftCampaignObservation(t, newObservation)
 	if created.Status != controlexperiment.CampaignSummaryStatusStopped ||
 		created.StopReason != controlexperiment.CampaignStopAttemptLimit ||
 		created.Sequence != 2 || created.Totals.Primary.SchedulerDecisions != 16 ||
@@ -39,9 +42,14 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 		!strings.Contains(stdout.String(), "status=stopped attempts=2") {
 		t.Fatalf("new runner summary drifted: %#v stdout=%q", created, stdout.String())
 	}
+	if observed.SummaryDigest != created.Digest || observed.PSS == nil ||
+		observed.PSS.TotalDecisions != 16 || observed.Terminal.Work != created.Totals {
+		t.Fatalf("new runner observation drifted: %#v", observed)
+	}
 
 	existingOut := filepath.Join(root, "new", "second-summary.json")
 	existingArgs := append([]string(nil), args...)
+	existingArgs[13] = filepath.Join(root, "new", "second-observation.json")
 	existingArgs[len(existingArgs)-1] = existingOut
 	if err := run(ctx, existingArgs, &bytes.Buffer{}); err == nil ||
 		!strings.Contains(err.Error(), "NEW_DIRECTORY_REQUIRED") {
@@ -60,6 +68,7 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 
 	resumeDirectory := filepath.Join(root, "resume", "campaign")
 	resumeSummary := filepath.Join(root, "resume", "summary.json")
+	resumeObservation := filepath.Join(root, "resume", "observation.json")
 	spec, provider, config := etcdraftCampaignRunnerFixture(t, ctx, 8, 71, 2, 120_000)
 	_ = spec
 	recovered, err := controlexperiment.CreateCampaignDirectory(resumeDirectory, config)
@@ -82,6 +91,7 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 		"-campaign-wall-clock-ms", "120000",
 		"-decisions", "8",
 		"-policy-seed", "71",
+		"-campaign-observation-out", resumeObservation,
 		"-out", resumeSummary,
 	}
 	if err := run(ctx, resumeArgs, &bytes.Buffer{}); err != nil {
@@ -92,8 +102,14 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 		resumed.Attempts[0].CheckpointDigest != first.Digest {
 		t.Fatalf("explicit resume did not continue the same head: %#v", resumed)
 	}
+	resumeObserved := readEtcdraftCampaignObservation(t, resumeObservation)
+	if resumeObserved.SummaryDigest != resumed.Digest || resumeObserved.PSS == nil ||
+		resumeObserved.PSS.TotalDecisions != 16 {
+		t.Fatalf("resumed observation drifted: %#v", resumeObserved)
+	}
 	driftArgs := append([]string(nil), resumeArgs...)
 	driftArgs[10] = "9"
+	driftArgs[14] = filepath.Join(root, "resume", "drift-observation.json")
 	driftArgs[len(driftArgs)-1] = filepath.Join(root, "resume", "drift-summary.json")
 	if err := run(ctx, driftArgs, &bytes.Buffer{}); err == nil ||
 		!strings.Contains(err.Error(), "IDENTITY_MISMATCH") {
@@ -101,9 +117,10 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 	}
 
 	failureOptions := etcdraftCampaignRunOptions{
-		Directory:  filepath.Join(root, "failed", "campaign"),
-		SummaryOut: filepath.Join(root, "failed", "summary.json"),
-		Attempts:   1, DecisionsPerAttempt: 8, FirstPolicySeed: 81,
+		Directory:      filepath.Join(root, "failed", "campaign"),
+		SummaryOut:     filepath.Join(root, "failed", "summary.json"),
+		ObservationOut: filepath.Join(root, "failed", "observation.json"),
+		Attempts:       1, DecisionsPerAttempt: 8, FirstPolicySeed: 81,
 		WallClockCeilingMillis: 120_000,
 	}
 	failureFactory := func(
@@ -139,6 +156,11 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 	}
 	if bytes.Contains(encoded, []byte("private fixture provider diagnostic")) {
 		t.Fatal("failed runner summary leaked private provider diagnostic")
+	}
+	failedObservation := readEtcdraftCampaignObservation(t, failureOptions.ObservationOut)
+	if failedObservation.Terminal.Status != controlexperiment.CampaignSummaryStatusFailed ||
+		failedObservation.PSS != nil || len(failedObservation.Attempts) != 0 {
+		t.Fatalf("failed runner observation invented execution evidence: %#v", failedObservation)
 	}
 }
 
@@ -183,4 +205,23 @@ func readEtcdraftCampaignSummary(
 		t.Fatal(err)
 	}
 	return summary
+}
+
+func readEtcdraftCampaignObservation(
+	t *testing.T,
+	path string,
+) controlexperiment.CampaignObservation {
+	t.Helper()
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observation controlexperiment.CampaignObservation
+	if err := json.Unmarshal(encoded, &observation); err != nil {
+		t.Fatal(err)
+	}
+	if err := observation.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return observation
 }

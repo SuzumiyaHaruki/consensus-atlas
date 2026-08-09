@@ -123,14 +123,16 @@ experiment-etcdraft-v2-campaign:
 		-campaign-dir artifacts/experiments/etcdraft-v2-campaign-m5.19d/campaign \
 		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
 		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json
+		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json \
+		-campaign-observation-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/observation.json
 
 experiment-etcdraft-v2-campaign-resume:
 	go run ./cmd/control-experiment -strategy campaign-etcdraft-v1 -campaign-resume \
 		-campaign-dir artifacts/experiments/etcdraft-v2-campaign-m5.19d/campaign \
 		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
 		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json
+		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json \
+		-campaign-observation-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/observation.json
 
 experiment-etcdraft-v2-action-class-random:
 	go run ./cmd/control-experiment -strategy workload-action-class-random \
