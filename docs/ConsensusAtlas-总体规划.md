@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.32（M5.19d Campaign Summary/Runner 完成）
+> 状态：Draft v1.33（M5.20 Campaign Observation 设计冻结）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2263,10 +2263,12 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     etcd/raft 离线 runner，只组装冻结 spec、Campaign 目录和现有 provider；不在 CLI 内新建执行、
     PSS 或 Oracle 逻辑。Summary 的 `running/stopped/failed` 不能被表述为 pass/fail verdict；reader 只能
     按 committed ordinal 读取内容寻址 artifact，不暴露任意路径或 orphan。
-73. [ ] M5.20 从 reader 返回的已校验 artifact 机械投影跨 attempt Campaign Observation。第一版
-    只分开报告 terminal outcomes/cost、Core PSS 并集与发现曲线、fault/workload 统计和 Oracle
-    触发索引；不把 PSS 状态数、义务或 Oracle 结果拼成一个自定义综合分数。投影器是
-    target-owned composition，通用 Summary/Coordinator 不解析 etcd/raft artifact。
+73. [ ] M5.20 从 reader 返回的已校验 artifact 机械投影跨 attempt Campaign Observation。设计已冻结：
+    target-owned projector 严格复核 artifact/request/spec/target identity，通用层只聚合与 Summary
+    attempt 一一绑定的协议无关 projection。第一版分开报告 terminal outcomes/cost、复用
+    `protocolstate.Aggregate` 的 Core PSS 并集/发现曲线、fault/workload 统计和 monitor 触发索引；
+    不复制大型 bundle/trace，不把各栏拼成自定义综合分数。详见
+    `docs/stage-m5.20-campaign-observation.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
