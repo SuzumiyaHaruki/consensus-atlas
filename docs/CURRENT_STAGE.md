@@ -2,30 +2,36 @@
 
 日期：2026-08-09
 
-阶段：M5.19a Campaign crash-safe persistence 已完成；不运行 SUT 或模型
+阶段：M5.19b Deterministic Campaign Coordinator 已完成；不运行 SUT 或模型
 
 ## 输入、处理、输出
 
 ```text
 输入
-  validated CampaignConfig + new directory
-  + terminal attempt record + exact artifact bytes
+  trusted CampaignRecovery + bounded provider
+  + CampaignConfig logical/wall-clock ceilings
                          |
                          v
 处理
-  create/recover full checkpoint chain
-  -> private recovery token + current disk head recheck
-  -> artifact sha256 match -> fsync -> no-replace durable link
-  -> one-record checkpoint -> fsync -> no-replace durable link
-  -> read-back previous digest/totals validation
+  mechanical remaining allowance
+  -> digest-bound request(config/head/ordinal/allowance)
+  -> provider(context with remaining wall deadline)
+  -> terminal result/outcome/work/artifact validation
+  -> M5.19a artifact-first checkpoint commit
+  -> repeat Step until mechanical stop
                          |
                          v
 输出
-  recoverable O(n) Campaign directory + trusted head
-  + explicit orphan/pending report
-  + tamper/gap/symlink/identity/stale-head rejection
-  + no Coordinator loop, SUT run or model call yet
+  recoverable multi-attempt Campaign + exact WorkLedger totals
+  + attempt/logical/wall-clock stop reason
+  + failed attempt evidence and no automatic provider retry
+  + no real SUT provider or model call yet
 ```
+
+M5.19b 新增协议无关 `CampaignAttemptRequest`、remaining allowance、provider contract 和最小
+`CampaignCoordinator`。确定性见证在 attempt 1 后恢复目录，继续完成 attempt 2/3；其中 terminal failed
+attempt 仍保留 artifact 和成本，最终由 attempt limit 机械停止。普通 provider error 会锁死当前
+Coordinator 但尚无跨进程 durable failure marker，因此不能将该目录视为正式完整结果。
 
 M5.19a 将协议无关 Campaign 数据面落为 crash-safe 目录，不是第二套 Runtime。只有创建或完整恢复返回的
 `CampaignRecovery` 才能提交下一 attempt；artifact durable 在前，checkpoint durable 在后。中断留下的

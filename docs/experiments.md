@@ -93,6 +93,11 @@ M5.19a 将上述对象落到 artifact-first、checkpoint-second 的 crash-safe �
 artifact-only 中断、stale head、篡改、缺链和 symlink 边界。该阶段仍没有运行 SUT 或模型，也没有
 新增实验结果；完整规范见 `stage-m5.19a-campaign-persistence.md`。
 
+M5.19b 用协议无关 deterministic provider 验证多 attempt Coordinator：attempt 1 后恢复目录，再继续
+attempt 2/3；terminal failed attempt 保留 artifact/成本，最终由 attempt limit 停止。另有 logical 和
+wall-clock stop、超 allowance 与无重试负例。该阶段没有运行 SUT 或模型，不是方法效果实验；完整规范见
+`stage-m5.19b-campaign-coordinator.md`。
+
 `cmd/experiment` compares schedule-search methods above the same deterministic Runtime and below the same PSS projector. It does not let an explorer mutate protocol semantics, Oracle logic or coverage denominators.
 
 ## Measurement window

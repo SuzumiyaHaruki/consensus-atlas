@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.28（M5.19a Campaign crash-safe persistence 完成）
+> 状态：Draft v1.30（M5.19b Deterministic Campaign Coordinator 完成）
 > 日期：2026-08-09
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2248,8 +2248,14 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 69. [X] M5.19a 实现 crash-safe checkpoint 文件布局。只有 artifact 文件 durable 且 digest 对账后
     才能提交 terminal record；恢复读取完整链并拒绝缺项、篡改、identity 漂移和已停止后续写。
     artifact-only 中断点作为 orphan 明确报告但不计入 Campaign，临时文件也不能影响可信 head。
-70. [ ] 在上述 persistence 通过后增加 deterministic attempt provider 与 remaining-budget allowance，
-    再以同一接口连接现有 deterministic baseline/Agent pair，不新增 Runtime 或目标专用 Campaign。
+70. [X] M5.19b 增加 digest-bound remaining-budget allowance、协议无关 terminal attempt provider 和
+    持有可信恢复会话的最小 Coordinator。provider 不能写 checkpoint/totals/stop reason；普通 error
+    不重试，超 allowance 在 artifact 落盘前拒绝。先用 deterministic provider 验证多 attempt/恢复，
+    再以同一接口连接现有 qualified executor，不新增 Runtime 或目标专用 Campaign。
+71. [ ] M5.19c 将现有 etcd/raft qualified executor 包装为第一个真实 Campaign provider，并冻结
+    experiment spec、seed/policy/workload 与 artifact schema。provider 必须把任何已发生成本的失败返回为
+    terminal result；同时补 durable coordinator failure marker，避免 artifact-less error 跨进程后被
+    当作同一 ordinal 重试。接入不能复制 Runtime、replay、PSS 或 Oracle 路径。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2281,8 +2287,14 @@ checkpoint 均可 canonical seal/revalidate。定向回归覆盖 resume identity
 M5.19a crash-safe persistence 已完成：全新目录以 artifact-first、checkpoint-second 的 fsync/no-replace
 顺序提交；完整恢复重验 config、链和 artifact，并报告不计入账本的 orphan/pending。只有带私有校验
 令牌的恢复状态可以续写，正常连续提交与存储均为 O(n)。普通全量、vet、受影响包 race 与旧路径审计
-通过；没有运行 SUT 或模型。下一阶段实现 remaining-budget allowance 和 deterministic attempt
+通过；没有运行 SUT 或模型。随后 M5.19b 在该层上实现 remaining-budget allowance 和 deterministic
 provider，不再延伸 b4 micro-ablation。只有用户明确执行 opt-in 命令时才会读取 key 并进行真实两臂调用。
+M5.19b deterministic Coordinator 已完成：request 绑定 config/head/ordinal 和剩余 attempts/decisions/
+work/model allowance；provider 只能返回 terminal outcome、WorkLedger 和 opaque artifact。确定性见证在
+attempt 1 后恢复并继续至 attempt 3，保留一次 terminal failed 成本，最终以 15 decisions、18/18 work
+到达 attempt limit；logical 和 wall-clock stop 也独立通过。非法 provider result 不落盘且当前
+Coordinator 不重试。尚未接真实 SUT provider，artifact-less error 也还没有跨进程 durable marker。
+下一阶段 M5.19c 只连接现有 etcd/raft qualified executor 并补上述 marker，不修改 Runtime 或重做实验链。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
 均在 20 分钟 ceiling 超时，分别运行到既有 adjacent trace mutation 和 M5.17c2 method 回归，
 但未报告 data race。按 timebox 停止，不抬高 timeout，也不将未见告警记为通过；当前完整 race
@@ -2542,6 +2554,9 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      完整恢复产生不可由外部伪造的续写状态；普通 checkpoint 值不能单独授权提交。artifact-only
      中断残留可以报告并复用，但在 checkpoint 引用前不得计入可信 totals 或实验结论。durability
      声明必须绑定实际文件系统语义；当前只承诺支持 fsync 和 hard link 的本地 POSIX 文件系统。
+101. Campaign provider 只能消费 digest-bound request 和 remaining allowance，不能自行设置 attempt
+     identity、artifact digest、checkpoint、totals 或 stop reason。terminal failed/invalid 必须保留 artifact
+     与已知成本；普通 error 只能表示无法形成可信 terminal result，不能自动重试或进入正式比较。
 
 ---
 

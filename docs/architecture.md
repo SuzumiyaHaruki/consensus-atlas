@@ -99,7 +99,14 @@ identity；M5.19a 在不改变对象 identity 的前提下增加文件落盘。
 M5.19a 将该链落到全新 Campaign 目录。完整恢复返回带私有校验令牌的 `CampaignRecovery`；只有该对象
 可以核对当前磁盘 head 后续写。artifact 采用 SHA-256 内容寻址，先 file sync 和 no-replace link，
 checkpoint 随后以相同方式提交。恢复重新验证全部 config/checkpoint/artifact，orphan 和 pending
-只作为运行诊断，不进入 head、WorkLedger、PSS 或 verdict。当前明确是 single-writer，尚无 Coordinator。
+只作为运行诊断，不进入 head、WorkLedger、PSS 或 verdict。M5.19a 明确限定 single-writer，尚未包含
+Coordinator；M5.19b 在下一层补齐该循环。
+
+M5.19b 增加唯一的协议无关 Campaign Coordinator。它从可信恢复状态机械计算 remaining allowance，构造
+绑定 config/head/ordinal 的 request，并只接受 provider 返回的 terminal outcome、WorkLedger 和 opaque
+artifact。attempt identity、digest、累计账本和停止原因仍由可信层产生。Coordinator 最终调用 M5.19a
+的 `CommitAttempt`，不直接访问 Adapter 或复制 Runtime。当前 provider 是确定性 fixture；真实 etcd/raft
+composition 和跨进程 durable provider-failure marker 尚未接入。
 
 ## 唯一执行路径
 
