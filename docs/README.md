@@ -67,6 +67,7 @@
 - [M5.12 restricted Planner](stage-m5.12-restricted-planner-boundary.md) 与
   [M5.13 one-call LLM smoke](stage-m5.13-one-call-deepseek-planner.md)，二者在线实现已由 M5.17bR2 删除；
 - [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)；
+- [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)；
 - [M5.14 admission](stage-m5.14-admission-and-pruning.md)；
 - [M5.15 workload](stage-m5.15-semantic-workload.md)；
 - [M5.16 bundle/evaluator](stage-m5.16-execution-bundle.md)；

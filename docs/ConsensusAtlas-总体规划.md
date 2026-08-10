@@ -2278,6 +2278,12 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     M5.20 尚缺每个 attempt 的可信 prior intent/backend 归因；M5.21b 必须由 target-owned
     artifact projector 机械补全该绑定，才能接入增量 checkpoint/恢复/账本。详见
     `docs/stage-m5.21a-campaign-planner-view.md`。
+75. [~] M5.21b prior-choice 可信归因已冻结设计。新增的协议无关
+    `CampaignExecutionChoice` 只能从既有 intent/compiled plan/execution instance 机械构造；
+    etcd/raft target artifact 必须重算该绑定并将 spec+semantic+intent+plan 纳入
+    experiment identity。Observation/Planner 只看 choice/intent/plan digest、backend 与 strategy，
+    不暴露 seed/instance/trace/witness。本阶段 Go 净增上限 700 行，不新增执行器、
+    CLI、Planner 算法或模型调用。详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

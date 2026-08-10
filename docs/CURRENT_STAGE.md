@@ -569,9 +569,12 @@ request 与裁剪后的 prefix feedback 做 digest binding；确定性 fixture �
 并已进入既有 v2 compiler。实际 Go 净增 563 行，全量 test/vet 和定向 race 通过。
 详见 `docs/stage-m5.21a-campaign-planner-view.md`。
 
-下一步是 M5.21b：由 target-owned artifact projector 机械补全 prior intent/compiled backend
-与 committed attempt 的可信归因，不暴露整个目标工件。该绑定完成前不修改
-Coordinator，不宣称已形成自适应 Campaign 闭环，也不接真实模型。
+进入 M5.21b：由 target-owned artifact projector 机械补全 prior intent/compiled backend
+与 committed attempt 的可信归因。设计已冻结：复用既有 intent/plan/instance 链，将
+spec+semantic+intent+plan 纳入 experiment identity；Observation/Planner 不暴露 seed、instance、
+trace 或 witness。Go 净增上限 700 行，不新增执行器、CLI、Planner 算法或模型调用。
+详见 `docs/stage-m5.21b-prior-choice-attribution.md`。该绑定完成前不修改 Coordinator，
+不宣称已形成自适应 Campaign 闭环。
 
 ## 阅读顺序
 
