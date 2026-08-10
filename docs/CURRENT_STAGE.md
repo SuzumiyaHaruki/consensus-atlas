@@ -564,11 +564,14 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 
 ## 下一步
 
-进入 M5.21a：实现已冻结的 Campaign Planner 最小视图、离线确定性 plumbing planner
-与既有 `GuardedTestIntent` compiler 的 fail-closed 组合测试。本阶段不修改 Coordinator、
-Runtime/Adapter 或持久化 schema，Go 净增不得超过 600 行。详见
-`docs/stage-m5.21a-campaign-planner-view.md`。M5.21b 再机械补全 prior intent/backend 与
-committed attempt 的可信归因；该绑定完成前不宣称已形成自适应 Campaign 闭环。
+M5.21a 已完成：Campaign Planner 最小视图将 semantic view、trusted baseline、exact next
+request 与裁剪后的 prefix feedback 做 digest binding；确定性 fixture 只能修改 `Prefer`，
+并已进入既有 v2 compiler。实际 Go 净增 563 行，全量 test/vet 和定向 race 通过。
+详见 `docs/stage-m5.21a-campaign-planner-view.md`。
+
+下一步是 M5.21b：由 target-owned artifact projector 机械补全 prior intent/compiled backend
+与 committed attempt 的可信归因，不暴露整个目标工件。该绑定完成前不修改
+Coordinator，不宣称已形成自适应 Campaign 闭环，也不接真实模型。
 
 ## 阅读顺序
 

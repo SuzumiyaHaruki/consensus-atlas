@@ -85,3 +85,34 @@ Planner 自报历史选择，也不能为此暴露整个目标专用 artifact。
 3. M5.21c：把 plan/request/cost 纳入增量 checkpoint，验证中断恢复后不重算、不漂移；
 4. M5.21d：在同一接口上运行无模型自适应基线；
 5. 只有上述闭环成立后，才显式 opt-in 一次真实模型调用，并将 calls/tokens 计入 allowance。
+
+## 完成结果
+
+M5.21a 已按冻结边界完成：
+
+- 新增 `CampaignPlannerView/v1`，将 semantic view、trusted baseline、exact next request 与裁剪后的
+  prefix feedback 绑定为一个 canonical digest；
+- 构造器拒绝 Campaign/config/target/spec/head/ordinal 漂移，并要求 baseline decisions 不超过下一次
+  request 的 scheduler-decision allowance；
+- 反馈只保留 attempt outcome、PSS 发现计数、fault/workload 聚合和 monitor 计数。JSON 暴露测试确认
+  不包含 artifact/bundle digest、PSS witness/state body、monitor message/step 或 defect identity；
+- `ValidateCampaignPlannerProposal` 在既有 hard-field 校验之上冻结 proposal ID，使 `Prefer` 成为唯一
+  可变字段；
+- zero-model deterministic fixture 在最近一次 execution 没有新增 PSS 状态时轮换 allowed backend；
+  它只作 plumbing 验证，不是搜索效果方法；
+- 既有 M5.18b4 etcd/raft semantic inputs 已证明该 proposal 能进入原有
+  `CompileGuardedTestIntentV2`，没有建立第二个编译器或执行器。
+
+实际 Go 净增 563 行（通用实现/测试 519 行，既有 b4 组合测试增加 44 行），低于 600 行上限。
+没有新增 CLI、顶层测试清单项、持久化 schema、target-specific planner、SUT run 或模型调用。
+
+验证结果：
+
+- `go test ./...`：通过；
+- `go vet ./...`：通过；
+- 新增通用 Planner 测试定向 race：通过，1.105 秒测试时间；
+- 被修改的既有 b4 组合测试定向 race：通过，146.599 秒；
+- `git diff --check`：通过。
+
+本阶段仍没有形成可归因的多 attempt 自适应闭环，也没有证明 Planner 优于 Random/DFS/专家方法。
+M5.21b 的唯一主任务是补齐 prior intent/compiled backend 与 committed attempt 的可信机械投影。

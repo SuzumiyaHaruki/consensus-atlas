@@ -2269,11 +2269,12 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     `protocolstate.Aggregate` 的 Core PSS 并集/发现曲线、fault/workload 统计和 monitor 触发索引；
     不复制大型 bundle/trace，不把各栏拼成自定义综合分数。详见
     `docs/stage-m5.20-campaign-observation.md`。
-74. [~] M5.21 冻结 Campaign Feedback/Planner 输入边界。M5.21a 已冻结设计：复用
+74. [~] M5.21 冻结 Campaign Feedback/Planner 输入边界。M5.21a 已完成：复用
     `AgentSemanticView`、`CampaignObservation`、`CampaignAttemptRequest` 和
     `GuardedTestIntent`，Planner 只能改 `Prefer`，不能选择 Runtime enabled Action、
-    修改 target/spec/monitor/PSS 身份或将指标声称为 verdict。本小阶段不超过 600 行
-    Go 净增，只实现最小视图、确定性 plumbing planner 和既有 compiler 的越权拒绝。
+    修改 target/spec/monitor/PSS 身份或将指标声称为 verdict。实际 Go 净增 563 行，
+    已实现最小视图、确定性 plumbing planner 和既有 compiler 的越权拒绝；全量
+    test/vet 与定向 race 通过，未新增 CLI、执行器、持久化 schema 或模型调用。
     M5.20 尚缺每个 attempt 的可信 prior intent/backend 归因；M5.21b 必须由 target-owned
     artifact projector 机械补全该绑定，才能接入增量 checkpoint/恢复/账本。详见
     `docs/stage-m5.21a-campaign-planner-view.md`。
