@@ -39,6 +39,50 @@ func TestEtcdraftM518b4FreezesPreferenceOnlyRequestsBeforeModelCalls(t *testing.
 		result.Baseline.Must.FaultEnvelope.MaxActivePartitions != 0 {
 		t.Fatalf("hard baseline is biased or overstates the fault surface: %#v", result.Baseline)
 	}
+	config, err := controlexperiment.NewCampaignConfig(
+		"planner-plumbing", etcdraftCampaignTargetID,
+		result.Inputs.Qualification.Qualification.ManifestDigest, strings.Repeat("e", 64),
+		controlexperiment.CampaignLogicalBudget{
+			MaxAttempts: 1, MaxPrimarySchedulerDecisions: 96,
+			MaxPrimaryWorkUnits: 98, MaxReplayWorkUnits: 98,
+		}, 1_000,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := controlexperiment.CreateCampaignDirectory(t.TempDir()+"/campaign", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := controlexperiment.NewCampaignSummary(&recovered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := controlexperiment.NewCampaignObservation(summary, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptRequest, err := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plannerView, err := controlexperiment.NewCampaignPlannerView(
+		"etcdraft-planner-plumbing", result.Inputs.View, observation, attemptRequest, result.Baseline,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plannerProposal, err := controlexperiment.PlanDeterministicCampaignFixture(plannerView)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plannerPlan, err := controlexperiment.CompileGuardedTestIntentV2(
+		result.Inputs.View, result.Inputs.Knowledge, result.Inputs.Catalog,
+		result.Inputs.Qualification.Manifest, result.Inputs.Qualification.Qualification, plannerProposal,
+	)
+	if err != nil || plannerPlan.BackendID != etcdraftBackendActionClass {
+		t.Fatalf("planner proposal did not enter the trusted compiler: %#v/%v", plannerPlan, err)
+	}
 	if bytes.Contains(result.NoFeedback.RequestBytes, []byte(result.Batch.Feedback.Digest)) ||
 		!bytes.Contains(result.WithFeedback.RequestBytes, []byte(result.Batch.Feedback.Digest)) {
 		t.Fatal("feedback exposure does not match the frozen arm")

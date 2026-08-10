@@ -24,10 +24,11 @@ Action 仍由已经 qualification 的执行策略选择，可信编译器、Runt
 `CampaignPlannerView/v1` 由可信端从上述三个已验证对象构造，包含：
 
 1. 完整 `AgentSemanticView`；
-2. 下一次 `CampaignAttemptRequest`，包括 exact identity、previous head、ordinal 和 remaining allowance；
-3. 从前缀 Observation 裁剪出的统计：attempt outcome、每次 PSS samples/states/new states、
+2. trusted baseline `GuardedTestIntent`，其 digest 将本次请求的全部硬约束绑定进视图；
+3. 下一次 `CampaignAttemptRequest`，包括 exact identity、previous head、ordinal 和 remaining allowance；
+4. 从前缀 Observation 裁剪出的统计：attempt outcome、每次 PSS samples/states/new states、
    fault/workload 聚合，以及 monitor 检查/触发计数；
-4. Observation digest，用于证明反馈来自哪个已校验前缀。
+5. Observation digest，用于证明反馈来自哪个已校验前缀。
 
 明确不暴露：artifact/bundle digest、trace、PSS witness/state body、monitor message/step、build、
 candidate/control、root-cause 与 Oracle 私有身份。Planner 不能从该视图授予能力或形成 verdict。
@@ -38,6 +39,7 @@ candidate/control、root-cause 与 Oracle 私有身份。Planner 不能从该视
 - Campaign/config/target/spec identity 完全相等；
 - Observation 是 `running` 前缀，head 等于 request previous digest；
 - `request.ordinal == observation.attempts + 1`；
+- baseline 的 view 与 semantic view 相等，且 decisions 不超过下一 request allowance；
 - attempt 反馈只来自 Observation 的有序投影。
 
 PSS unique/new state 是无固定分母的发现量；monitor trigger 是待可信评估的索引。二者都不是
@@ -48,7 +50,7 @@ PSS unique/new state 是无固定分母的发现量；monitor trigger 是待可�
 M5.21a 使用一个明确标注为 plumbing fixture 的离线确定性 Planner。其输出仍是
 `GuardedTestIntent/v1`，并必须：
 
-- 保持 baseline 的 ID、view、risk、decisions、required capabilities/actions、fault envelope；
+- 保持视图内 baseline 的 ID、view、risk、decisions、required capabilities/actions、fault envelope；
 - 只重排/选择 `Prefer.BackendIDs` 与 `Prefer.Actions`；
 - 经 `ValidatePreferenceOnlyProposal` 后，再经 `CompileGuardedTestIntentV2`；
 - 不选择 policy seed、Runtime Action、节点、消息、timer 或 monitor；
@@ -83,4 +85,3 @@ Planner 自报历史选择，也不能为此暴露整个目标专用 artifact。
 3. M5.21c：把 plan/request/cost 纳入增量 checkpoint，验证中断恢复后不重算、不漂移；
 4. M5.21d：在同一接口上运行无模型自适应基线；
 5. 只有上述闭环成立后，才显式 opt-in 一次真实模型调用，并将 calls/tokens 计入 allowance。
-
