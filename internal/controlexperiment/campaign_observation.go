@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	CampaignObservationVersion     = "consensus-atlas/campaign-observation/v1"
+	CampaignObservationVersion     = "consensus-atlas/campaign-observation/v2"
 	CampaignMonitorRequirement     = "requirement-violation"
 	CampaignMonitorEvidenceInvalid = "evidence-invalid"
 )
@@ -39,6 +39,7 @@ type CampaignAttemptProjection struct {
 	Workload          *WorkloadRunReport
 	CheckedMonitors   []string
 	MonitorFindings   []CampaignMonitorFinding
+	Choice            *CampaignExecutionChoice
 }
 
 type CampaignTerminalObservation struct {
@@ -69,6 +70,7 @@ type CampaignAttemptObservation struct {
 	Workload          *CampaignWorkloadAttemptObservation `json:"workload,omitempty"`
 	CheckedMonitors   []string                            `json:"checked_monitors,omitempty"`
 	MonitorTriggers   int                                 `json:"monitor_triggers,omitempty"`
+	Choice            *CampaignChoiceObservation          `json:"choice,omitempty"`
 }
 
 type CampaignPSSWitness struct {
@@ -221,6 +223,10 @@ func NewCampaignObservation(
 			ArtifactDigest: projection.ArtifactDigest, Outcome: projection.Outcome,
 			ExecutionEvidence: projection.ExecutionEvidence,
 		}
+		if projection.Choice != nil {
+			choice := projectCampaignChoice(*projection.Choice)
+			attempt.Choice = &choice
+		}
 		if projection.ExecutionEvidence {
 			attempt.BundleDigest = projection.BundleDigest
 			attempt.ChargedDecisions = len(projection.CorePSS) - 1
@@ -300,6 +306,9 @@ func validateCampaignAttemptProjection(
 	if projection.Ordinal != source.Ordinal || projection.ArtifactDigest != source.Record.ArtifactDigest ||
 		projection.Outcome != source.Record.Outcome || projection.Work != source.Record.Work {
 		return errors.New("EXPERIMENT_CAMPAIGN_OBSERVATION_PROJECTION_BINDING_MISMATCH")
+	}
+	if projection.Choice != nil && projection.Choice.Validate() != nil {
+		return errors.New("EXPERIMENT_CAMPAIGN_OBSERVATION_CHOICE_INVALID")
 	}
 	if !projection.ExecutionEvidence {
 		if projection.BundleDigest != "" || projection.PSSID != "" || len(projection.CorePSS) != 0 ||
@@ -449,6 +458,9 @@ func validateCampaignObservationAttempts(
 		if attempt.Ordinal != index+1 || !validSHA256(attempt.RecordDigest) ||
 			!validSHA256(attempt.ArtifactDigest) {
 			return errors.New("EXPERIMENT_CAMPAIGN_OBSERVATION_ATTEMPT_INVALID")
+		}
+		if attempt.Choice != nil && attempt.Choice.validate() != nil {
+			return errors.New("EXPERIMENT_CAMPAIGN_OBSERVATION_ATTEMPT_CHOICE_INVALID")
 		}
 		switch attempt.Outcome {
 		case CampaignAttemptCompleted, CampaignAttemptRejected, CampaignAttemptFailed, CampaignAttemptInvalid:
@@ -828,6 +840,10 @@ func cloneCampaignPSSState(state psscore.State) psscore.State {
 func (observation CampaignObservation) seal() (CampaignObservation, error) {
 	observation.Attempts = append([]CampaignAttemptObservation(nil), observation.Attempts...)
 	for index := range observation.Attempts {
+		if observation.Attempts[index].Choice != nil {
+			choice := *observation.Attempts[index].Choice
+			observation.Attempts[index].Choice = &choice
+		}
 		observation.Attempts[index].Faults = cloneFaultUsage(observation.Attempts[index].Faults)
 		if observation.Attempts[index].Workload != nil {
 			workload := *observation.Attempts[index].Workload

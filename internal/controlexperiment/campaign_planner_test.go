@@ -36,7 +36,8 @@ func TestCampaignPlannerViewIsBoundMinimalAndPreferenceOnly(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"artifact_digest", "bundle_digest", "state_set_digest", "first_global_decision",
-		"monitor\":\"agreement\",\"step", "candidate", "root_cause",
+		"execution_instance_digest", "policy_seed", "monitor\":\"agreement\",\"step",
+		"candidate", "root_cause",
 	} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("planner view exposed %q", forbidden)
@@ -156,10 +157,23 @@ func campaignPlannerPrefix(t *testing.T) (CampaignObservation, CampaignAttemptRe
 	}
 	initial := campaignObservationState(t, "passive")
 	changed := campaignObservationState(t, "coordinating")
-	observation, err := NewCampaignObservation(summary, []CampaignAttemptProjection{
+	projections := []CampaignAttemptProjection{
 		campaignObservationProjection(summary.Attempts[0], initial, changed),
 		campaignObservationProjection(summary.Attempts[1], initial, initial),
-	})
+	}
+	for index := range projections {
+		choice, err := (CampaignExecutionChoice{
+			SchemaVersion: CampaignExecutionChoiceVersion,
+			IntentDigest:  strings.Repeat("1", 64), PlanDigest: strings.Repeat("2", 64),
+			ExecutionInstanceDigest: strings.Repeat(string(rune('3'+index)), 64),
+			BackendID:               "backend-a", Strategy: "fixture-strategy", PolicySeed: uint64(index + 1),
+		}).seal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		projections[index].Choice = &choice
+	}
+	observation, err := NewCampaignObservation(summary, projections)
 	if err != nil {
 		t.Fatal(err)
 	}

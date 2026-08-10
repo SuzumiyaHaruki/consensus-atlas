@@ -14,14 +14,15 @@ const (
 // witness, build and defect identities. It is an attempt-indexed summary, not
 // evidence from which a Planner may award a verdict.
 type CampaignPlannerAttemptFeedback struct {
-	Ordinal           int    `json:"ordinal"`
-	Outcome           string `json:"outcome"`
-	ExecutionEvidence bool   `json:"execution_evidence"`
-	ChargedDecisions  int    `json:"charged_decisions,omitempty"`
-	PSSSamples        int    `json:"pss_samples,omitempty"`
-	PSSStates         int    `json:"pss_states,omitempty"`
-	NewPSSStates      int    `json:"new_pss_states,omitempty"`
-	MonitorTriggers   int    `json:"monitor_triggers,omitempty"`
+	Ordinal           int                        `json:"ordinal"`
+	Outcome           string                     `json:"outcome"`
+	ExecutionEvidence bool                       `json:"execution_evidence"`
+	ChargedDecisions  int                        `json:"charged_decisions,omitempty"`
+	PSSSamples        int                        `json:"pss_samples,omitempty"`
+	PSSStates         int                        `json:"pss_states,omitempty"`
+	NewPSSStates      int                        `json:"new_pss_states,omitempty"`
+	MonitorTriggers   int                        `json:"monitor_triggers,omitempty"`
+	Choice            *CampaignChoiceObservation `json:"choice,omitempty"`
 }
 
 type CampaignPlannerPSSFeedback struct {
@@ -127,9 +128,34 @@ func (view CampaignPlannerView) Validate() error {
 	if err := validateCampaignPlannerFeedback(view.Feedback, view.Request.Ordinal-1); err != nil {
 		return err
 	}
+	if err := validateCampaignPlannerChoices(view.SemanticView, view.Baseline, view.Feedback.Attempts); err != nil {
+		return err
+	}
 	sealed, err := view.seal()
 	if err != nil || !validSHA256(view.Digest) || sealed.Digest != view.Digest {
 		return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_VIEW_DIGEST_MISMATCH")
+	}
+	return nil
+}
+
+func validateCampaignPlannerChoices(
+	semantic AgentSemanticView,
+	baseline GuardedTestIntent,
+	attempts []CampaignPlannerAttemptFeedback,
+) error {
+	risk, ok := findProtocolRisk(semantic.KnowledgePack.Risks, baseline.RiskID)
+	if !ok {
+		return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_RISK_UNKNOWN")
+	}
+	allowed := stringSet(risk.AllowedBackendIDs)
+	eligible := make(map[string]bool, len(semantic.EligibleBackends))
+	for _, backend := range semantic.EligibleBackends {
+		eligible[backend.ID] = true
+	}
+	for _, attempt := range attempts {
+		if attempt.Choice == nil || !allowed[attempt.Choice.BackendID] || !eligible[attempt.Choice.BackendID] {
+			return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_CHOICE_BACKEND_INVALID")
+		}
 	}
 	return nil
 }
@@ -217,12 +243,17 @@ func projectCampaignPlannerFeedback(observation CampaignObservation) CampaignPla
 	}
 	feedback.Workload.ResultStatuses = append([]CampaignStatusCount(nil), observation.Workload.ResultStatuses...)
 	for _, attempt := range observation.Attempts {
-		feedback.Attempts = append(feedback.Attempts, CampaignPlannerAttemptFeedback{
+		projected := CampaignPlannerAttemptFeedback{
 			Ordinal: attempt.Ordinal, Outcome: attempt.Outcome,
 			ExecutionEvidence: attempt.ExecutionEvidence, ChargedDecisions: attempt.ChargedDecisions,
 			PSSSamples: attempt.PSSSamples, PSSStates: attempt.PSSStates,
 			NewPSSStates: attempt.NewPSSStates, MonitorTriggers: attempt.MonitorTriggers,
-		})
+		}
+		if attempt.Choice != nil {
+			choice := *attempt.Choice
+			projected.Choice = &choice
+		}
+		feedback.Attempts = append(feedback.Attempts, projected)
 	}
 	if observation.PSS != nil {
 		feedback.PSS = &CampaignPlannerPSSFeedback{
@@ -255,6 +286,9 @@ func validateCampaignPlannerFeedback(feedback CampaignPlannerFeedback, attempts 
 			(attempt.Outcome != CampaignAttemptCompleted && attempt.Outcome != CampaignAttemptRejected &&
 				attempt.Outcome != CampaignAttemptFailed && attempt.Outcome != CampaignAttemptInvalid) {
 			return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_ATTEMPT_INVALID")
+		}
+		if attempt.Choice == nil || attempt.Choice.validate() != nil {
+			return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_ATTEMPT_CHOICE_INVALID")
 		}
 		if !attempt.ExecutionEvidence {
 			if attempt.ChargedDecisions != 0 || attempt.PSSSamples != 0 || attempt.PSSStates != 0 ||
@@ -327,6 +361,12 @@ func (view CampaignPlannerView) seal() (CampaignPlannerView, error) {
 	}
 	view.SemanticView = semantic
 	view.Feedback.Attempts = append([]CampaignPlannerAttemptFeedback(nil), view.Feedback.Attempts...)
+	for index := range view.Feedback.Attempts {
+		if view.Feedback.Attempts[index].Choice != nil {
+			choice := *view.Feedback.Attempts[index].Choice
+			view.Feedback.Attempts[index].Choice = &choice
+		}
+	}
 	view.Feedback.Monitors.Checked = append([]CampaignMonitorCount(nil), view.Feedback.Monitors.Checked...)
 	sort.Slice(view.Feedback.Monitors.Checked, func(i, j int) bool {
 		return view.Feedback.Monitors.Checked[i].Monitor < view.Feedback.Monitors.Checked[j].Monitor
