@@ -1,0 +1,135 @@
+{
+  "schema_version": "consensus-atlas/campaign-summary/v2",
+  "campaign_id": "etcdraft-model-campaign-v1",
+  "config_digest": "b46cf73770e5c9dc0b5014385f52d43ce416d2ea558df745b8e774d1138aa827",
+  "target_id": "etcdraft-v2",
+  "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+  "experiment_spec_digest": "3aa187eb4d3bc36760603c97e342f48ab1f2ea50e6be34c1dd2014cb837a800c",
+  "budget": {
+    "max_attempts": 2,
+    "max_primary_scheduler_decisions": 64,
+    "max_primary_work_units": 68,
+    "max_replay_work_units": 68,
+    "max_model_calls": 2,
+    "max_model_tokens": 16384
+  },
+  "wall_clock_ceiling_ms": 240000,
+  "checkpoint_policy": "checkpoint-after-each-terminal-attempt",
+  "initial_checkpoint_digest": "68ef7cd5dbfe6a21396afb33e37f4e9871ce96caeea5937a37ba3c183b36945f",
+  "head_checkpoint_digest": "6fde0cdc679e8fb59ce33dda45cede97a61722710fbf584c5a7cea24a1d62d83",
+  "sequence": 1,
+  "attempts": [
+    {
+      "ordinal": 1,
+      "previous_checkpoint_digest": "68ef7cd5dbfe6a21396afb33e37f4e9871ce96caeea5937a37ba3c183b36945f",
+      "checkpoint_digest": "6fde0cdc679e8fb59ce33dda45cede97a61722710fbf584c5a7cea24a1d62d83",
+      "record": {
+        "schema_version": "consensus-atlas/campaign-attempt/v1",
+        "ordinal": 1,
+        "id": "etcdraft-model-campaign-v1-attempt-1",
+        "input_digest": "00a29f1c326015accdcf03b9217d8b29d1b9941e1ffd64e3898c53ba317d7a09",
+        "artifact_digest": "f2a65ae924e92c4482c7d861b2db5e1ce24e29a8a1041aa833787c72f5ba0768",
+        "outcome": "completed",
+        "work": {
+          "primary": {
+            "setup_attempts": 1,
+            "runtime_initializations": 1,
+            "prepare_actions": 0,
+            "scheduler_decisions": 32,
+            "work_units": 33
+          },
+          "replay": {
+            "setup_attempts": 1,
+            "runtime_initializations": 1,
+            "prepare_actions": 0,
+            "scheduler_decisions": 32,
+            "work_units": 33
+          },
+          "model": {
+            "calls": 1,
+            "input_tokens": 2212,
+            "output_tokens": 219,
+            "total_tokens": 2431
+          },
+          "resources": {
+            "wall_time": "not-collected",
+            "cpu_time": "not-collected",
+            "peak_rss": "not-collected"
+          }
+        },
+        "digest": "038cb254a3e87801db57fbaac41989aa187710a0d7f85b48661b30e7c9a97430"
+      }
+    }
+  ],
+  "totals": {
+    "primary": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 0,
+      "scheduler_decisions": 32,
+      "work_units": 33
+    },
+    "replay": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 0,
+      "scheduler_decisions": 32,
+      "work_units": 33
+    },
+    "model": {
+      "calls": 2,
+      "input_tokens": 4769,
+      "output_tokens": 442,
+      "total_tokens": 5211
+    },
+    "resources": {
+      "wall_time": "not-collected",
+      "cpu_time": "not-collected",
+      "peak_rss": "not-collected"
+    }
+  },
+  "elapsed_ms": 40288,
+  "stop_reason": "running",
+  "status": "failed",
+  "failure": {
+    "schema_version": "consensus-atlas/campaign-failure/v2",
+    "campaign_id": "etcdraft-model-campaign-v1",
+    "config_digest": "b46cf73770e5c9dc0b5014385f52d43ce416d2ea558df745b8e774d1138aa827",
+    "head_digest": "6fde0cdc679e8fb59ce33dda45cede97a61722710fbf584c5a7cea24a1d62d83",
+    "ordinal": 2,
+    "request_digest": "8528aa37a0efcfde3243a15659e8e262deb8a3d615b2c7df2044961e4a24a54b",
+    "code": "provider-error",
+    "work": {
+      "primary": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "replay": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "model": {
+        "calls": 1,
+        "input_tokens": 2557,
+        "output_tokens": 223,
+        "total_tokens": 2780
+      },
+      "resources": {
+        "wall_time": "not-collected",
+        "cpu_time": "not-collected",
+        "peak_rss": "not-collected"
+      }
+    },
+    "evidence_kind": "campaign-model-call-result",
+    "evidence_digest": "393f789a35f169d623219afa07801da688483085decfa3f822990911ad2d4302",
+    "budget_exceeded": false,
+    "digest": "d46b80181cfa758b2b3dfd075ed89bbb6a7c530f280ca2bacb1604a4f2340414"
+  },
+  "digest": "1cad65b6e9f28fa2217f8d00ff60f9cbff0ce56a67d721f23e9f0c5bb5013b7b"
+}

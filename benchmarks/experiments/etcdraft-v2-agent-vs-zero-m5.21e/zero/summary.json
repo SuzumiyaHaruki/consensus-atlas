@@ -1,0 +1,136 @@
+{
+  "schema_version": "consensus-atlas/campaign-summary/v2",
+  "campaign_id": "etcdraft-offline-campaign-v1",
+  "config_digest": "f038d71be0973a98cf47c0fc550b4bad1e430a62d4c3feb4e0c3e852212259d0",
+  "target_id": "etcdraft-v2",
+  "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+  "experiment_spec_digest": "a43f69241ab7ca4f3c0abae886f82d9b8601baacfc2f387173dfeb4c6740b350",
+  "budget": {
+    "max_attempts": 2,
+    "max_primary_scheduler_decisions": 64,
+    "max_primary_work_units": 68,
+    "max_replay_work_units": 68,
+    "max_model_calls": 0,
+    "max_model_tokens": 0
+  },
+  "wall_clock_ceiling_ms": 180000,
+  "checkpoint_policy": "checkpoint-after-each-terminal-attempt",
+  "initial_checkpoint_digest": "3e3742da89e5cbd6816822a9274bf355e21cee8dcf48be45496327341396ad82",
+  "head_checkpoint_digest": "857fd7d972b7306f68309a7d32cceb600fc2db0beadbe6152d7b9d57d995141a",
+  "sequence": 2,
+  "attempts": [
+    {
+      "ordinal": 1,
+      "previous_checkpoint_digest": "3e3742da89e5cbd6816822a9274bf355e21cee8dcf48be45496327341396ad82",
+      "checkpoint_digest": "fe23c29651cbcdbc3646412088dd58abd9670cad44676100d2ad4ca710526dd6",
+      "record": {
+        "schema_version": "consensus-atlas/campaign-attempt/v1",
+        "ordinal": 1,
+        "id": "etcdraft-offline-campaign-v1-attempt-1",
+        "input_digest": "1a63e16b49eee599bfd1ff3c9c04be67bcaa652cfd443611c811ffcc555698c0",
+        "artifact_digest": "5b94813b9bf9a58cc35465f1f9036b40ad685d1828be0996974baaf005c69b21",
+        "outcome": "completed",
+        "work": {
+          "primary": {
+            "setup_attempts": 1,
+            "runtime_initializations": 1,
+            "prepare_actions": 0,
+            "scheduler_decisions": 32,
+            "work_units": 33
+          },
+          "replay": {
+            "setup_attempts": 1,
+            "runtime_initializations": 1,
+            "prepare_actions": 0,
+            "scheduler_decisions": 32,
+            "work_units": 33
+          },
+          "model": {
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0
+          },
+          "resources": {
+            "wall_time": "not-collected",
+            "cpu_time": "not-collected",
+            "peak_rss": "not-collected"
+          }
+        },
+        "digest": "8102040d471e3dc3a26a3793eadc1f9820090e4096e79e5cc78faa334c753a3d"
+      }
+    },
+    {
+      "ordinal": 2,
+      "previous_checkpoint_digest": "fe23c29651cbcdbc3646412088dd58abd9670cad44676100d2ad4ca710526dd6",
+      "checkpoint_digest": "857fd7d972b7306f68309a7d32cceb600fc2db0beadbe6152d7b9d57d995141a",
+      "record": {
+        "schema_version": "consensus-atlas/campaign-attempt/v1",
+        "ordinal": 2,
+        "id": "etcdraft-offline-campaign-v1-attempt-2",
+        "input_digest": "352055aa206f06387295d0474a6a13a51e63af7dea6206fa6869dbdcbb7326c0",
+        "artifact_digest": "87d9c6fa27b783fde879b7ec13a483803c79e6522b0ed609ac1478fdb01f2e69",
+        "outcome": "completed",
+        "work": {
+          "primary": {
+            "setup_attempts": 1,
+            "runtime_initializations": 1,
+            "prepare_actions": 0,
+            "scheduler_decisions": 32,
+            "work_units": 33
+          },
+          "replay": {
+            "setup_attempts": 1,
+            "runtime_initializations": 1,
+            "prepare_actions": 0,
+            "scheduler_decisions": 32,
+            "work_units": 33
+          },
+          "model": {
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0
+          },
+          "resources": {
+            "wall_time": "not-collected",
+            "cpu_time": "not-collected",
+            "peak_rss": "not-collected"
+          }
+        },
+        "digest": "629d2c55580a70a8a978f92f8138afd6d5e79b5b448e9e8a49d5aeefe23ec08c"
+      }
+    }
+  ],
+  "totals": {
+    "primary": {
+      "setup_attempts": 2,
+      "runtime_initializations": 2,
+      "prepare_actions": 0,
+      "scheduler_decisions": 64,
+      "work_units": 66
+    },
+    "replay": {
+      "setup_attempts": 2,
+      "runtime_initializations": 2,
+      "prepare_actions": 0,
+      "scheduler_decisions": 64,
+      "work_units": 66
+    },
+    "model": {
+      "calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "resources": {
+      "wall_time": "not-collected",
+      "cpu_time": "not-collected",
+      "peak_rss": "not-collected"
+    }
+  },
+  "elapsed_ms": 2486,
+  "stop_reason": "attempt-limit",
+  "status": "stopped",
+  "digest": "24af372b9521d373378347966e22df4054a9a34597c563cb40f80b2626e53507"
+}
