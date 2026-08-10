@@ -20,6 +20,7 @@ const (
 	campaignArtifactsDir     = "artifacts"
 	campaignCheckpointsDir   = "checkpoints"
 	campaignPlansDir         = "plans"
+	campaignModelCallsDir    = "model-calls"
 	campaignArtifactSuffix   = ".artifact"
 	campaignCheckpointSuffix = ".json"
 	campaignPendingPrefix    = ".campaign-pending-"
@@ -34,10 +35,12 @@ type CampaignRecovery struct {
 	OrphanArtifactDigests    []string
 	PendingRelativeFilePaths []string
 	PlannedAttempts          []CampaignPlannedAttempt
+	ModelCalls               []CampaignModelCallRecovery
 	directory                string
 	validatedConfigDigest    string
 	validatedHeadDigest      string
 	validatedFailureDigest   string
+	activeModelDispatches    map[string]bool
 }
 
 func CampaignArtifactDigest(artifact []byte) string {
@@ -81,7 +84,9 @@ func CreateCampaignDirectory(
 	if err := syncCampaignDirectory(parent); err != nil {
 		return CampaignRecovery{}, err
 	}
-	for _, name := range []string{campaignArtifactsDir, campaignCheckpointsDir, campaignPlansDir} {
+	for _, name := range []string{
+		campaignArtifactsDir, campaignCheckpointsDir, campaignPlansDir, campaignModelCallsDir,
+	} {
 		if err := os.Mkdir(filepath.Join(clean, name), 0o700); err != nil {
 			return CampaignRecovery{}, fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_CREATE: %w", err)
 		}
@@ -100,8 +105,108 @@ func CreateCampaignDirectory(
 	return RecoverCampaignDirectory(clean, config)
 }
 
-// PreparePlannedAttempt durably binds the exact next request before target
-// execution. Repeating the same digest is idempotent; replacing it is not.
+func (recovered *CampaignRecovery) PrepareModelCall(
+	intent CampaignModelCallIntent,
+) (CampaignModelCallIntent, error) {
+	if !recovered.validModelCallToken() || recovered.Config.PlannerMode != CampaignPlannerDurableCall {
+		return CampaignModelCallIntent{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RECOVERY_INVALID")
+	}
+	request, err := NewCampaignAttemptRequest(recovered.Config, recovered.Head)
+	if err != nil {
+		return CampaignModelCallIntent{}, err
+	}
+	if err := intent.ValidateRequest(request); err != nil {
+		return CampaignModelCallIntent{}, err
+	}
+	if len(recovered.ModelCalls) == recovered.Head.Sequence+1 {
+		existing := recovered.ModelCalls[len(recovered.ModelCalls)-1].Intent
+		if existing.Digest != intent.Digest {
+			return CampaignModelCallIntent{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_INTENT_CONFLICT")
+		}
+		return existing, nil
+	}
+	if len(recovered.ModelCalls) != recovered.Head.Sequence {
+		return CampaignModelCallIntent{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_SEQUENCE_INVALID")
+	}
+	if err := recovered.writeModelCall(intent.Ordinal, "intent", intent); err != nil {
+		return CampaignModelCallIntent{}, err
+	}
+	recovered.ModelCalls = append(recovered.ModelCalls, CampaignModelCallRecovery{
+		Status: CampaignModelCallPrepared, Intent: intent,
+	})
+	return intent, nil
+}
+
+func (recovered *CampaignRecovery) DispatchModelCall() (CampaignModelCallDispatch, error) {
+	if !recovered.validModelCallToken() || len(recovered.ModelCalls) != recovered.Head.Sequence+1 {
+		return CampaignModelCallDispatch{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RECOVERY_INVALID")
+	}
+	call := &recovered.ModelCalls[len(recovered.ModelCalls)-1]
+	if call.Dispatch != nil {
+		if recovered.activeModelDispatches[call.Dispatch.Digest] {
+			return *call.Dispatch, nil
+		}
+		return CampaignModelCallDispatch{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_AMBIGUOUS")
+	}
+	dispatch, err := NewCampaignModelCallDispatch(call.Intent)
+	if err != nil {
+		return CampaignModelCallDispatch{}, err
+	}
+	if err := recovered.writeModelCall(call.Intent.Ordinal, "dispatch", dispatch); err != nil {
+		return CampaignModelCallDispatch{}, err
+	}
+	call.Dispatch, call.Status = &dispatch, CampaignModelCallAmbiguous
+	if recovered.activeModelDispatches == nil {
+		recovered.activeModelDispatches = make(map[string]bool)
+	}
+	recovered.activeModelDispatches[dispatch.Digest] = true
+	return dispatch, nil
+}
+
+func (recovered *CampaignRecovery) CommitModelCallResult(
+	result CampaignModelCallResult,
+) (CampaignModelCallResult, error) {
+	if !recovered.validModelCallToken() || len(recovered.ModelCalls) != recovered.Head.Sequence+1 {
+		return CampaignModelCallResult{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RECOVERY_INVALID")
+	}
+	call := &recovered.ModelCalls[len(recovered.ModelCalls)-1]
+	if call.Result != nil {
+		if call.Result.Digest != result.Digest {
+			return CampaignModelCallResult{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RESULT_CONFLICT")
+		}
+		return *call.Result, nil
+	}
+	if call.Dispatch == nil || !recovered.activeModelDispatches[call.Dispatch.Digest] {
+		return CampaignModelCallResult{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_AMBIGUOUS")
+	}
+	if err := result.ValidateInputs(call.Intent, *call.Dispatch); err != nil {
+		return CampaignModelCallResult{}, err
+	}
+	if err := recovered.writeModelCall(call.Intent.Ordinal, "result", result); err != nil {
+		return CampaignModelCallResult{}, err
+	}
+	call.Result, call.Status = &result, result.Status
+	delete(recovered.activeModelDispatches, call.Dispatch.Digest)
+	return result, nil
+}
+
+func (recovered *CampaignRecovery) validModelCallToken() bool {
+	return recovered != nil && recovered.directory != "" && recovered.Failure == nil &&
+		recovered.Config.Digest == recovered.validatedConfigDigest &&
+		recovered.Head.Digest == recovered.validatedHeadDigest
+}
+
+func (recovered *CampaignRecovery) writeModelCall(ordinal int, stage string, value any) error {
+	encoded, err := campaignJSONBytes(value)
+	if err != nil {
+		return err
+	}
+	return writeCampaignFileNoReplace(
+		filepath.Join(recovered.directory, campaignModelCallsDir), campaignModelCallFile(ordinal, stage), encoded,
+	)
+}
+
+// PreparePlannedAttempt binds the exact next request before target execution; repeating it is idempotent.
 func (recovered *CampaignRecovery) PreparePlannedAttempt(
 	planned CampaignPlannedAttempt,
 ) (CampaignPlannedAttempt, error) {
@@ -112,6 +217,16 @@ func (recovered *CampaignRecovery) PreparePlannedAttempt(
 	}
 	if recovered.Config.AttemptInputMode != CampaignInputPlanned {
 		return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_MODE_REQUIRED")
+	}
+	if recovered.Config.PlannerMode == CampaignPlannerDurableCall {
+		if len(recovered.ModelCalls) != recovered.Head.Sequence+1 {
+			return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RESULT_REQUIRED")
+		}
+		call := recovered.ModelCalls[len(recovered.ModelCalls)-1]
+		if call.Result == nil || call.Result.Status != CampaignModelCallCompleted ||
+			planned.PlanningWork != call.Result.Work {
+			return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_PLAN_MISMATCH")
+		}
 	}
 	request, err := NewCampaignAttemptRequest(recovered.Config, recovered.Head)
 	if err != nil {
@@ -164,6 +279,12 @@ func (recovered *CampaignRecovery) CommitAttempt(
 	if recovered.Config.AttemptInputMode == CampaignInputPlanned &&
 		len(recovered.PlannedAttempts) != recovered.Head.Sequence+1 {
 		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_REQUIRED")
+	}
+	if recovered.Config.PlannerMode == CampaignPlannerDurableCall {
+		if len(recovered.ModelCalls) != recovered.Head.Sequence+1 ||
+			recovered.ModelCalls[len(recovered.ModelCalls)-1].Status != CampaignModelCallCompleted {
+			return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RESULT_REQUIRED")
+		}
 	}
 	if len(recovered.PlannedAttempts) == recovered.Head.Sequence+1 &&
 		record.InputDigest != recovered.PlannedAttempts[len(recovered.PlannedAttempts)-1].Digest {
@@ -386,6 +507,10 @@ func RecoverCampaignDirectory(
 	if err != nil {
 		return CampaignRecovery{}, err
 	}
+	modelCalls, err := readCampaignModelCalls(clean, stored, checkpoints, plans, &pending)
+	if err != nil {
+		return CampaignRecovery{}, err
+	}
 	referenced := make(map[string]bool, len(checkpoints)-1)
 	for _, checkpoint := range checkpoints[1:] {
 		digest := checkpoint.Record.ArtifactDigest
@@ -415,8 +540,8 @@ func RecoverCampaignDirectory(
 	return CampaignRecovery{
 		Config: stored, Checkpoints: checkpoints, Head: head, Failure: failure,
 		OrphanArtifactDigests: orphans, PendingRelativeFilePaths: pending,
-		PlannedAttempts: plans,
-		directory:       clean, validatedConfigDigest: stored.Digest, validatedHeadDigest: head.Digest,
+		PlannedAttempts: plans, ModelCalls: modelCalls,
+		directory: clean, validatedConfigDigest: stored.Digest, validatedHeadDigest: head.Digest,
 		validatedFailureDigest: validatedFailureDigest,
 	}, nil
 }
@@ -473,7 +598,7 @@ func validateCampaignRoot(root string, pending *[]string) error {
 	if err != nil {
 		return fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_READ: %w", err)
 	}
-	seen := make(map[string]bool, 5)
+	seen := make(map[string]bool, 6)
 	for _, entry := range entries {
 		name := entry.Name()
 		switch name {
@@ -482,7 +607,7 @@ func validateCampaignRoot(root string, pending *[]string) error {
 				return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 			}
 			seen[name] = true
-		case campaignArtifactsDir, campaignCheckpointsDir, campaignPlansDir:
+		case campaignArtifactsDir, campaignCheckpointsDir, campaignPlansDir, campaignModelCallsDir:
 			if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
 				return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 			}
@@ -495,10 +620,129 @@ func validateCampaignRoot(root string, pending *[]string) error {
 		}
 	}
 	if !seen[campaignConfigFile] || !seen[campaignArtifactsDir] || !seen[campaignCheckpointsDir] ||
-		!seen[campaignPlansDir] {
+		!seen[campaignPlansDir] || !seen[campaignModelCallsDir] {
 		return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 	}
 	return nil
+}
+
+func readCampaignModelCalls(
+	root string,
+	config CampaignConfig,
+	checkpoints []CampaignCheckpoint,
+	plans []CampaignPlannedAttempt,
+	pending *[]string,
+) ([]CampaignModelCallRecovery, error) {
+	directory := filepath.Join(root, campaignModelCallsDir)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("EXPERIMENT_CAMPAIGN_MODEL_CALL_READ: %w", err)
+	}
+	if len(entries) == 0 {
+		if config.PlannerMode == CampaignPlannerDurableCall && len(checkpoints) > 1 {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_MISSING")
+		}
+		return nil, nil
+	}
+	if config.PlannerMode != CampaignPlannerDurableCall {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_MODE_INVALID")
+	}
+	byOrdinal := make(map[int]*CampaignModelCallRecovery)
+	for _, entry := range entries {
+		if campaignPendingFile(entry) {
+			*pending = append(*pending, filepath.Join(campaignModelCallsDir, entry.Name()))
+			continue
+		}
+		ordinal, stage, ok := parseCampaignModelCallFile(entry.Name())
+		if !ok || ordinal <= 0 || entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_FILE_INVALID")
+		}
+		call := byOrdinal[ordinal]
+		if call == nil {
+			call = &CampaignModelCallRecovery{}
+			byOrdinal[ordinal] = call
+		}
+		path := filepath.Join(directory, entry.Name())
+		switch stage {
+		case "intent":
+			if call.Intent.Digest != "" || readCampaignJSON(path, &call.Intent) != nil {
+				return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_INTENT_READ_INVALID")
+			}
+		case "dispatch":
+			if call.Dispatch != nil {
+				return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_DISPATCH_DUPLICATE")
+			}
+			call.Dispatch = new(CampaignModelCallDispatch)
+			if err := readCampaignJSON(path, call.Dispatch); err != nil {
+				return nil, err
+			}
+		case "result":
+			if call.Result != nil {
+				return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RESULT_DUPLICATE")
+			}
+			call.Result = new(CampaignModelCallResult)
+			if err := readCampaignJSON(path, call.Result); err != nil {
+				return nil, err
+			}
+		}
+	}
+	headSequence := len(checkpoints) - 1
+	if len(byOrdinal) > headSequence+1 {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_SEQUENCE_INVALID")
+	}
+	calls := make([]CampaignModelCallRecovery, 0, len(byOrdinal))
+	for ordinal := 1; ordinal <= len(byOrdinal); ordinal++ {
+		call := byOrdinal[ordinal]
+		if call == nil || ordinal > len(checkpoints) || call.Intent.Digest == "" {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_SEQUENCE_INVALID")
+		}
+		request, err := NewCampaignAttemptRequest(config, checkpoints[ordinal-1])
+		if err != nil || call.Intent.ValidateRequest(request) != nil {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_INPUT_MISMATCH")
+		}
+		call.Status = CampaignModelCallPrepared
+		if call.Dispatch != nil {
+			if err := call.Dispatch.ValidateInputs(call.Intent); err != nil {
+				return nil, err
+			}
+			call.Status = CampaignModelCallAmbiguous
+		}
+		if call.Result != nil {
+			if call.Dispatch == nil || call.Result.ValidateInputs(call.Intent, *call.Dispatch) != nil {
+				return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_RESULT_INPUT_MISMATCH")
+			}
+			call.Status = call.Result.Status
+		}
+		if ordinal <= headSequence && call.Status != CampaignModelCallCompleted {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_COMMITTED_INCOMPLETE")
+		}
+		if ordinal <= len(plans) && (call.Status != CampaignModelCallCompleted ||
+			plans[ordinal-1].PlanningWork != call.Result.Work) {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_PLAN_MISMATCH")
+		}
+		calls = append(calls, *call)
+	}
+	if len(calls) < headSequence {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_MISSING")
+	}
+	return calls, nil
+}
+
+func campaignModelCallFile(ordinal int, stage string) string {
+	return fmt.Sprintf("%020d.%s.json", ordinal, stage)
+}
+
+func parseCampaignModelCallFile(name string) (int, string, bool) {
+	for _, stage := range []string{"intent", "dispatch", "result"} {
+		suffix := "." + stage + campaignCheckpointSuffix
+		if strings.HasSuffix(name, suffix) {
+			ordinal, ok := parseCampaignCheckpointFile(
+				strings.TrimSuffix(name, suffix) + campaignCheckpointSuffix,
+			)
+			return ordinal, stage, ok
+		}
+	}
+	return 0, "", false
 }
 
 func readCampaignPlans(

@@ -6,24 +6,27 @@ import (
 )
 
 const (
-	CampaignConfigVersion     = "consensus-atlas/campaign-config/v2"
-	CampaignAttemptVersion    = "consensus-atlas/campaign-attempt/v1"
-	CampaignCheckpointVersion = "consensus-atlas/campaign-checkpoint/v1"
-	CampaignFailureVersion    = "consensus-atlas/campaign-failure/v1"
-	CampaignCheckpointPolicy  = "checkpoint-after-each-terminal-attempt"
-	CampaignInputBaseRequest  = "base-request"
-	CampaignInputPlanned      = "planned-attempt"
-	CampaignAttemptCompleted  = "completed"
-	CampaignAttemptRejected   = "rejected"
-	CampaignAttemptFailed     = "failed"
-	CampaignAttemptInvalid    = "invalid"
-	CampaignStopRunning       = "running"
-	CampaignStopAttemptLimit  = "attempt-limit"
-	CampaignStopLogicalBudget = "logical-budget"
-	CampaignStopWallClock     = "wall-clock-ceiling"
-	CampaignFailureProvider   = "provider-error"
-	CampaignFailureClock      = "clock-invalid"
-	CampaignFailureResult     = "provider-result-invalid"
+	CampaignConfigVersion      = "consensus-atlas/campaign-config/v3"
+	CampaignAttemptVersion     = "consensus-atlas/campaign-attempt/v1"
+	CampaignCheckpointVersion  = "consensus-atlas/campaign-checkpoint/v1"
+	CampaignFailureVersion     = "consensus-atlas/campaign-failure/v1"
+	CampaignCheckpointPolicy   = "checkpoint-after-each-terminal-attempt"
+	CampaignInputBaseRequest   = "base-request"
+	CampaignInputPlanned       = "planned-attempt"
+	CampaignPlannerNone        = "none"
+	CampaignPlannerZeroModel   = "zero-model"
+	CampaignPlannerDurableCall = "durable-call"
+	CampaignAttemptCompleted   = "completed"
+	CampaignAttemptRejected    = "rejected"
+	CampaignAttemptFailed      = "failed"
+	CampaignAttemptInvalid     = "invalid"
+	CampaignStopRunning        = "running"
+	CampaignStopAttemptLimit   = "attempt-limit"
+	CampaignStopLogicalBudget  = "logical-budget"
+	CampaignStopWallClock      = "wall-clock-ceiling"
+	CampaignFailureProvider    = "provider-error"
+	CampaignFailureClock       = "clock-invalid"
+	CampaignFailureResult      = "provider-result-invalid"
 )
 
 type CampaignLogicalBudget struct {
@@ -56,6 +59,7 @@ type CampaignConfig struct {
 	WallClockCeilingMillis int64                 `json:"wall_clock_ceiling_ms"`
 	CheckpointPolicy       string                `json:"checkpoint_policy"`
 	AttemptInputMode       string                `json:"attempt_input_mode"`
+	PlannerMode            string                `json:"planner_mode"`
 	Digest                 string                `json:"digest"`
 }
 
@@ -74,6 +78,7 @@ func NewCampaignConfig(
 		WallClockCeilingMillis: wallClockCeilingMillis,
 		CheckpointPolicy:       CampaignCheckpointPolicy,
 		AttemptInputMode:       CampaignInputBaseRequest,
+		PlannerMode:            CampaignPlannerNone,
 	}
 	sealed, err := config.seal()
 	if err != nil {
@@ -86,11 +91,27 @@ func NewCampaignConfig(
 }
 
 func RequirePlannedCampaignAttempts(config CampaignConfig) (CampaignConfig, error) {
+	return requireCampaignPlanner(config, CampaignPlannerZeroModel)
+}
+
+func RequireDurableCampaignPlanner(config CampaignConfig) (CampaignConfig, error) {
+	return requireCampaignPlanner(config, CampaignPlannerDurableCall)
+}
+
+func requireCampaignPlanner(config CampaignConfig, mode string) (CampaignConfig, error) {
 	if err := config.Validate(); err != nil {
 		return CampaignConfig{}, err
 	}
 	config.AttemptInputMode = CampaignInputPlanned
-	return config.seal()
+	config.PlannerMode = mode
+	sealed, err := config.seal()
+	if err != nil {
+		return CampaignConfig{}, err
+	}
+	if err := sealed.Validate(); err != nil {
+		return CampaignConfig{}, err
+	}
+	return sealed, nil
 }
 
 func (config CampaignConfig) Validate() error {
@@ -98,7 +119,8 @@ func (config CampaignConfig) Validate() error {
 		!validMethodToken(config.TargetID) || !validSHA256(config.TargetIdentityDigest) ||
 		!validSHA256(config.ExperimentSpecDigest) || config.WallClockCeilingMillis <= 0 ||
 		config.CheckpointPolicy != CampaignCheckpointPolicy ||
-		(config.AttemptInputMode != CampaignInputBaseRequest && config.AttemptInputMode != CampaignInputPlanned) {
+		(config.AttemptInputMode != CampaignInputBaseRequest && config.AttemptInputMode != CampaignInputPlanned) ||
+		!validCampaignPlannerMode(config) {
 		return errors.New("EXPERIMENT_CAMPAIGN_CONFIG_INVALID")
 	}
 	if err := config.Budget.validate(); err != nil {
@@ -109,6 +131,19 @@ func (config CampaignConfig) Validate() error {
 		return errors.New("EXPERIMENT_CAMPAIGN_CONFIG_DIGEST_MISMATCH")
 	}
 	return nil
+}
+
+func validCampaignPlannerMode(config CampaignConfig) bool {
+	switch config.PlannerMode {
+	case CampaignPlannerNone:
+		return config.AttemptInputMode == CampaignInputBaseRequest
+	case CampaignPlannerZeroModel:
+		return config.AttemptInputMode == CampaignInputPlanned && config.Budget.MaxModelCalls == 0
+	case CampaignPlannerDurableCall:
+		return config.AttemptInputMode == CampaignInputPlanned && config.Budget.MaxModelCalls > 0
+	default:
+		return false
+	}
 }
 
 func (config CampaignConfig) seal() (CampaignConfig, error) {

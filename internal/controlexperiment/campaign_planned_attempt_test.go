@@ -163,6 +163,107 @@ func TestCampaignPlannedAttemptSurvivesInterruptionAndBindsCommit(t *testing.T) 
 	}
 }
 
+func TestCampaignModelCallDurabilityAndAmbiguousRecovery(t *testing.T) {
+	config, directory, recovered, intent := campaignModelCallFixture(t, "completed")
+	_, err := recovered.PrepareModelCall(intent)
+	campaignRequireNoError(t, err)
+	if repeated, err := recovered.PrepareModelCall(intent); err != nil || repeated.Digest != intent.Digest {
+		t.Fatalf("prepared call was not idempotent: %#v/%v", repeated, err)
+	}
+	dispatch, err := recovered.DispatchModelCall()
+	campaignRequireNoError(t, err)
+	result, err := NewCampaignModelCallResult(intent, dispatch, CampaignModelCallResult{
+		Status: CampaignModelCallCompleted, Content: []byte(`{"prefer":{}}`),
+		ResponseDigest: strings.Repeat("a", 64),
+		Response:       &AgentResponseIdentity{ID: "response", Model: "model", FinishReason: "stop"},
+		DurationMillis: 1, Work: ModelWork{Calls: 1, InputTokens: 2, OutputTokens: 1, TotalTokens: 3},
+	})
+	campaignRequireNoError(t, err)
+	_, err = recovered.CommitModelCallResult(result)
+	campaignRequireNoError(t, err)
+	checked, err := RecoverCampaignDirectory(directory, config)
+	if err != nil || len(checked.ModelCalls) != 1 || checked.ModelCalls[0].Status != CampaignModelCallCompleted {
+		t.Fatalf("completed call did not recover: %#v/%v", checked.ModelCalls, err)
+	}
+	resultPath := filepath.Join(directory, campaignModelCallsDir, campaignModelCallFile(1, "result"))
+	original, err := os.ReadFile(resultPath)
+	campaignRequireNoError(t, err)
+	tampered := result
+	tampered.DurationMillis++
+	encoded, err := campaignJSONBytes(tampered)
+	campaignRequireNoError(t, err)
+	campaignRequireNoError(t, os.WriteFile(resultPath, encoded, 0o600))
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
+		t.Fatal("tampered call result recovered")
+	}
+	campaignRequireNoError(t, os.WriteFile(resultPath, original, 0o600))
+	future := filepath.Join(directory, campaignModelCallsDir, campaignModelCallFile(2, "intent"))
+	intentBytes, err := campaignJSONBytes(intent)
+	campaignRequireNoError(t, err)
+	campaignRequireNoError(t, os.WriteFile(future, intentBytes, 0o600))
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
+		t.Fatal("future call recovered")
+	}
+	campaignRequireNoError(t, os.Remove(future))
+	dispatchPath := filepath.Join(directory, campaignModelCallsDir, campaignModelCallFile(1, "dispatch"))
+	dispatchBytes, err := os.ReadFile(dispatchPath)
+	campaignRequireNoError(t, err)
+	campaignRequireNoError(t, os.Remove(dispatchPath))
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
+		t.Fatal("result recovered without dispatch")
+	}
+	campaignRequireNoError(t, os.WriteFile(dispatchPath, dispatchBytes, 0o600))
+
+	ambiguousConfig, ambiguousDirectory, active, ambiguousIntent := campaignModelCallFixture(t, "ambiguous")
+	_, err = active.PrepareModelCall(ambiguousIntent)
+	campaignRequireNoError(t, err)
+	_, err = active.DispatchModelCall()
+	campaignRequireNoError(t, err)
+	ambiguous, err := RecoverCampaignDirectory(ambiguousDirectory, ambiguousConfig)
+	if err != nil || ambiguous.ModelCalls[0].Status != CampaignModelCallAmbiguous {
+		t.Fatalf("dispatch-only call was not ambiguous: %#v/%v", ambiguous.ModelCalls, err)
+	}
+	if _, err := ambiguous.DispatchModelCall(); err == nil ||
+		!strings.Contains(err.Error(), "AMBIGUOUS") {
+		t.Fatalf("ambiguous call was retried: %v", err)
+	}
+	if _, err := ambiguous.CommitModelCallResult(result); err == nil ||
+		!strings.Contains(err.Error(), "AMBIGUOUS") {
+		t.Fatalf("ambiguous call accepted a fabricated result: %v", err)
+	}
+}
+
+func campaignRequireNoError(t *testing.T, err error) {
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func campaignModelCallFixture(
+	t *testing.T,
+	id string,
+) (CampaignConfig, string, CampaignRecovery, CampaignModelCallIntent) {
+	config := campaignTestConfig(t, "model-call-"+id, strings.Repeat("a", 64), CampaignLogicalBudget{
+		MaxAttempts: 1, MaxPrimarySchedulerDecisions: 2, MaxPrimaryWorkUnits: 4, MaxReplayWorkUnits: 4,
+		MaxModelCalls: 1, MaxModelTokens: 100,
+	}, 1_000)
+	config, err := RequireDurableCampaignPlanner(config)
+	campaignRequireNoError(t, err)
+	directory := filepath.Join(t.TempDir(), "campaign")
+	recovered, err := CreateCampaignDirectory(directory, config)
+	campaignRequireNoError(t, err)
+	request, err := NewCampaignAttemptRequest(config, recovered.Head)
+	campaignRequireNoError(t, err)
+	intent, err := NewCampaignModelCallIntent(
+		"model-call-"+id, request, strings.Repeat("b", 64), AgentTransportFreeze{
+			Provider: "provider", Endpoint: "https://example.invalid", Model: "model",
+			Thinking: "disabled", MaxOutputTokens: 32, MaxCallsPerArm: 1,
+		}, []byte(`[{"role":"user"}]`), []byte(`{"model":"model"}`),
+	)
+	campaignRequireNoError(t, err)
+	return config, directory, recovered, intent
+}
+
 func campaignPlannedAttemptFixture(t *testing.T) CampaignPlannedAttempt {
 	t.Helper()
 	semantic := campaignPlannerSemantic(t)
