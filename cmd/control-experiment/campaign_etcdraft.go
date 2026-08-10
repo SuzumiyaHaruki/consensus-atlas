@@ -97,6 +97,8 @@ type etcdraftCampaignProvider struct {
 	inputs               etcdraftIntentInputs
 	intent               controlexperiment.GuardedTestIntent
 	plan                 controlexperiment.CompiledIntentPlanV2
+	plannerIdentity      string
+	planningWork         controlexperiment.ModelWork
 	plannedAttemptDigest string
 	execute              func(
 		context.Context, string, int, uint64, bool,
@@ -138,7 +140,8 @@ func newEtcdraftCampaignProvider(
 	}
 	provider := etcdraftCampaignProvider{
 		spec: spec, targetIdentityDigest: inputs.Qualification.Qualification.ManifestDigest,
-		inputs: inputs, intent: intent, plan: plan, execute: etcdraftExecution,
+		inputs: inputs, intent: intent, plan: plan, plannerIdentity: etcdraftCampaignPlannerRule,
+		execute: etcdraftExecution,
 	}
 	provider.experimentSpecDigest, err = provider.compositionDigest()
 	if err != nil {
@@ -160,11 +163,11 @@ func (provider etcdraftCampaignProvider) compositionDigest() (string, error) {
 		SpecDigest         string `json:"spec_digest"`
 		SemanticViewDigest string `json:"semantic_view_digest"`
 		BaselineDigest     string `json:"baseline_digest"`
-		PlannerRule        string `json:"planner_rule"`
+		PlannerIdentity    string `json:"planner_identity"`
 	}{
 		SchemaVersion: etcdraftCampaignComposition, SpecDigest: provider.spec.Digest,
 		SemanticViewDigest: provider.inputs.View.Digest,
-		BaselineDigest:     baseline.Digest, PlannerRule: etcdraftCampaignPlannerRule,
+		BaselineDigest:     baseline.Digest, PlannerIdentity: provider.plannerIdentity,
 	})
 }
 
@@ -180,7 +183,10 @@ func (provider etcdraftCampaignProvider) validate() error {
 		return err
 	}
 	if provider.targetIdentityDigest != provider.inputs.Qualification.Qualification.ManifestDigest ||
-		provider.plan.Decisions != provider.spec.DecisionsPerAttempt {
+		provider.plan.Decisions != provider.spec.DecisionsPerAttempt || provider.plannerIdentity == "" ||
+		provider.planningWork.Calls < 0 || provider.planningWork.InputTokens < 0 ||
+		provider.planningWork.OutputTokens < 0 ||
+		provider.planningWork.TotalTokens != provider.planningWork.InputTokens+provider.planningWork.OutputTokens {
 		return errors.New("ETCDRAFT_CAMPAIGN_PLAN_BINDING_INVALID")
 	}
 	if err := provider.plan.ValidateInputs(
@@ -352,6 +358,7 @@ func newEtcdraftCampaignArtifact(
 	report *controlexperiment.Report,
 	bundle *controlexperiment.ExecutionBundle,
 ) (etcdraftCampaignArtifact, []byte, error) {
+	work = controlexperiment.AgentInvocationWork(work, provider.planningWork)
 	artifact := etcdraftCampaignArtifact{
 		SchemaVersion: etcdraftCampaignArtifactVersion,
 		RequestDigest: request.Digest, ExperimentSpecDigest: provider.experimentSpecDigest,
@@ -424,10 +431,13 @@ func (artifact etcdraftCampaignArtifact) validate(
 			etcdraftBackendActionClass: controlexperiment.ActionClassPolicyVersion,
 			etcdraftBackendUniform:     controlexperiment.AdmissibleUniformPolicyVersion,
 		}[provider.plan.BackendID]
+		executionWork := artifact.Work
+		executionWork.Model = controlexperiment.ModelWork{}
 		if artifact.Report.ManifestDigest != provider.targetIdentityDigest ||
 			artifact.Bundle.Identity.ManifestDigest != provider.targetIdentityDigest ||
 			artifact.Bundle.Identity.ReportDigest != artifact.Report.Digest ||
-			artifact.Bundle.Work != artifact.Report.Work || artifact.Work != artifact.Report.Work ||
+			artifact.Bundle.Work != artifact.Report.Work || executionWork != artifact.Report.Work ||
+			artifact.Work.Model != provider.planningWork ||
 			artifact.Report.Config.DecisionsPerRun != provider.plan.Decisions ||
 			len(artifact.Report.Config.Runs) != 1 ||
 			expectedPolicy == "" || artifact.Report.Config.Runs[0].Policy.Version != expectedPolicy ||
@@ -437,6 +447,9 @@ func (artifact etcdraftCampaignArtifact) validate(
 	case controlexperiment.CampaignAttemptFailed:
 		if artifact.Failure == nil || artifact.Report != nil || artifact.Bundle != nil {
 			return errors.New("ETCDRAFT_CAMPAIGN_FAILED_ARTIFACT_INVALID")
+		}
+		if artifact.Work.Model != provider.planningWork {
+			return errors.New("ETCDRAFT_CAMPAIGN_FAILED_ARTIFACT_WORK_MISMATCH")
 		}
 	default:
 		return errors.New("ETCDRAFT_CAMPAIGN_ARTIFACT_OUTCOME_INVALID")

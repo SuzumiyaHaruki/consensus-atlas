@@ -55,7 +55,8 @@ func newEtcdraftCampaignObservation(
 			return controlexperiment.CampaignObservation{}, err
 		}
 		bound := provider
-		bound.intent, bound.plan, bound.plannedAttemptDigest = planned.Proposal, planned.Plan, planned.Digest
+		bound.intent, bound.plan, bound.planningWork = planned.Proposal, planned.Plan, planned.PlanningWork
+		bound.plannedAttemptDigest = planned.Digest
 		if err := artifact.validate(request, bound); err != nil {
 			return controlexperiment.CampaignObservation{}, err
 		}

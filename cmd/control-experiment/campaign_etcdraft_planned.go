@@ -32,7 +32,8 @@ func (provider etcdraftPlannedCampaignProvider) Attempt(
 		return controlexperiment.CampaignAttemptResult{}, err
 	}
 	bound := provider.base
-	bound.intent, bound.plan, bound.plannedAttemptDigest = planned.Proposal, planned.Plan, planned.Digest
+	bound.intent, bound.plan, bound.planningWork = planned.Proposal, planned.Plan, planned.PlanningWork
+	bound.plannedAttemptDigest = planned.Digest
 	return bound.Attempt(ctx, request)
 }
 
@@ -46,18 +47,7 @@ func (provider etcdraftPlannedCampaignProvider) prepare(
 		planned := provider.recovered.PlannedAttempts[count-1]
 		return planned, planned.ValidateRequest(request)
 	}
-	observation, err := newEtcdraftCampaignObservation(provider.recovered, provider.base)
-	if err != nil {
-		return controlexperiment.CampaignPlannedAttempt{}, err
-	}
-	baseline, err := provider.base.baseline()
-	if err != nil {
-		return controlexperiment.CampaignPlannedAttempt{}, err
-	}
-	view, err := controlexperiment.NewCampaignPlannerView(
-		fmt.Sprintf("etcdraft-planner-view-%d", request.Ordinal), provider.base.inputs.View,
-		observation, request, baseline,
-	)
+	view, err := provider.plannerView(request)
 	if err != nil {
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
@@ -65,6 +55,35 @@ func (provider etcdraftPlannedCampaignProvider) prepare(
 	if err != nil {
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
+	planned, err := provider.buildPlannedAttempt(view, proposal, controlexperiment.ModelWork{})
+	if err != nil {
+		return controlexperiment.CampaignPlannedAttempt{}, err
+	}
+	return provider.recovered.PreparePlannedAttempt(planned)
+}
+
+func (provider etcdraftPlannedCampaignProvider) plannerView(
+	request controlexperiment.CampaignAttemptRequest,
+) (controlexperiment.CampaignPlannerView, error) {
+	observation, err := newEtcdraftCampaignObservation(provider.recovered, provider.base)
+	if err != nil {
+		return controlexperiment.CampaignPlannerView{}, err
+	}
+	baseline, err := provider.base.baseline()
+	if err != nil {
+		return controlexperiment.CampaignPlannerView{}, err
+	}
+	return controlexperiment.NewCampaignPlannerView(
+		fmt.Sprintf("etcdraft-planner-view-%d", request.Ordinal), provider.base.inputs.View,
+		observation, request, baseline,
+	)
+}
+
+func (provider etcdraftPlannedCampaignProvider) buildPlannedAttempt(
+	view controlexperiment.CampaignPlannerView,
+	proposal controlexperiment.GuardedTestIntent,
+	work controlexperiment.ModelWork,
+) (controlexperiment.CampaignPlannedAttempt, error) {
 	plan, err := controlexperiment.CompileGuardedTestIntentV2(
 		provider.base.inputs.View, provider.base.inputs.Knowledge, provider.base.inputs.Catalog,
 		provider.base.inputs.Qualification.Manifest, provider.base.inputs.Qualification.Qualification, proposal,
@@ -72,13 +91,13 @@ func (provider etcdraftPlannedCampaignProvider) prepare(
 	if err != nil {
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
-	seed, err := provider.base.spec.seed(request.Ordinal)
+	seed, err := provider.base.spec.seed(view.Request.Ordinal)
 	if err != nil {
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
 	bound := provider.base
 	bound.intent, bound.plan = proposal, plan
-	instance, err := bound.executionInstance(request.Ordinal, seed)
+	instance, err := bound.executionInstance(view.Request.Ordinal, seed)
 	if err != nil {
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
@@ -87,11 +106,11 @@ func (provider etcdraftPlannedCampaignProvider) prepare(
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
 	planned, err := controlexperiment.NewCampaignPlannedAttempt(
-		fmt.Sprintf("etcdraft-planned-attempt-%d", request.Ordinal),
-		view, proposal, plan, instance, choice, controlexperiment.ModelWork{},
+		fmt.Sprintf("etcdraft-planned-attempt-%d", view.Request.Ordinal),
+		view, proposal, plan, instance, choice, work,
 	)
 	if err != nil {
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
-	return provider.recovered.PreparePlannedAttempt(planned)
+	return planned, nil
 }
