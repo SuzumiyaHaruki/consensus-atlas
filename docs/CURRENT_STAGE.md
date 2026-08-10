@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d5 Single-call External Connectivity Calibration 已完成
+阶段：M5.21e Matched Agent/Zero-model Execution Pilot 已冻结、尚未执行
 
 ## 输入、处理、输出
 
@@ -31,6 +31,11 @@
   + content-addressed full artifacts stored once
   + no composite score
 ```
+
+M5.21e 已冻结两臂小型对照：zero-model 与 Agent 都使用 official etcd/raft v2、
+2 attempts、32 decisions per attempt 和 seeds 161/162。只匹配执行 ceiling；Agent 最多
+2 calls/16384 tokens 的额外规划成本单独报告。本 pilot 只观察 backend choice、PSS 集合、
+workload、fault、monitor 和 work，不产生综合分数或 Agent 优势结论。
 
 M5.21d5 已完成一次真实外部连通性校准：official etcd/raft v2、1 attempt、8 decisions、
 seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance。实际只调用 1 次，消耗

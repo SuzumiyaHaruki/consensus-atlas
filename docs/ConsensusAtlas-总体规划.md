@@ -2332,6 +2332,12 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     与保存 Summary/Observation 字节一致，没有 retry 或第二次调用。该阶段只证明真实
     transport 与 trusted pipeline 连通，不作 Agent 效果或方法优势结论。
     详见 `docs/stage-m5.21d5-single-call-connectivity.md`。
+81. [ ] M5.21e 执行预注册的 matched Agent/zero-model public pilot。两臂共享 official
+    etcd/raft v2、2 attempts、32-decision ceilings 和 seeds 161/162；只将 primary/replay 执行 ceiling
+    匹配，Agent 额外的最多 2 calls/16384 tokens 必须单独报告。预注册比较 backend choice、
+    PSS intersection/exclusive states、共同 decision prefix、workload、fault、monitor 与 work，不生成
+    综合分数。若两臂行为一致，必须保留为当前 Agent 未产生可观测搜索差异的负结果。
+    详见 `docs/stage-m5.21e-matched-agent-zero-pilot.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2667,6 +2673,10 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      calibration。运行结果无论 stopped 还是 failed 都必须保存 durable result 和实际 work；
      dispatch-only interruption 必须停在 ambiguous，不允许为获得成功样本而 resume 重调。连通成功只证明
      transport/parser/compiler/executor 链路可达，不证明规划质量或测试效果。
+106. Agent/zero-model 初次对照只能称为 matched execution-ceiling pilot，不得称为相同总成本实验。
+     共同 attempts、decision ceilings、seeds 和 executor 与 Agent 独有 model calls/tokens 必须同时报告。
+     PSS 数量、workload completion 或 monitor 触发都只是分量，不允许事后合成一个分数、换 seed
+     或补跑以获得有利结果。
 
 ---
 

@@ -5,10 +5,11 @@
 
 ## 当前主线阅读顺序
 
-1. [当前阶段：M5.21d5 Single-call External Connectivity Calibration](CURRENT_STAGE.md)
-2. [M5.21d5 Single-call External Connectivity Calibration](stage-m5.21d5-single-call-connectivity.md)
-3. [M5.21d4 Pre-plan Terminal Accounting](stage-m5.21d4-pre-plan-terminal-accounting.md)
-4. [M5.21d3 Opt-in Durable-call Runner](stage-m5.21d3-opt-in-durable-runner.md)
+1. [当前阶段：M5.21e Matched Agent/Zero-model Execution Pilot](CURRENT_STAGE.md)
+2. [M5.21e Matched Agent/Zero-model Execution Pilot](stage-m5.21e-matched-agent-zero-pilot.md)
+3. [M5.21d5 Single-call External Connectivity Calibration](stage-m5.21d5-single-call-connectivity.md)
+4. [M5.21d4 Pre-plan Terminal Accounting](stage-m5.21d4-pre-plan-terminal-accounting.md)
+5. [M5.21d3 Opt-in Durable-call Runner](stage-m5.21d3-opt-in-durable-runner.md)
 5. [M5.21d2 etcd/raft Offline Durable Model Planner](stage-m5.21d2-etcdraft-offline-model-planner.md)
 6. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
 7. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
@@ -85,6 +86,7 @@
 - [M5.21d3 opt-in durable-call runner](stage-m5.21d3-opt-in-durable-runner.md)；
 - [M5.21d4 pre-plan terminal accounting](stage-m5.21d4-pre-plan-terminal-accounting.md)；
 - [M5.21d5 single-call external connectivity calibration](stage-m5.21d5-single-call-connectivity.md)；
+- [M5.21e matched Agent/zero-model execution pilot](stage-m5.21e-matched-agent-zero-pilot.md)；
 - [M5.14 admission](stage-m5.14-admission-and-pruning.md)；
 - [M5.15 workload](stage-m5.15-semantic-workload.md)；
 - [M5.16 bundle/evaluator](stage-m5.16-execution-bundle.md)；
