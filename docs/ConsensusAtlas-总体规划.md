@@ -2286,9 +2286,14 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     race 通过；真实 2x8-decision 验收的两个 attempt 已各自将 PSS 增量绑定到
     `admissible-uniform` choice。未新增执行器、CLI、Planner 算法或模型调用。
     详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
-76. [ ] M5.21c 将每次 planner view/proposal/compiled plan/execution instance 与 model work 机械绑定到
+76. [~] M5.21c 将每次 planner view/proposal/compiled plan/execution instance 与 model work 机械绑定到
     exact attempt request 和 durable artifact/checkpoint 恢复链。先使用 zero-model planner 验证中断恢复后
-    不重算、不重复收费、不漂移；之后才允许显式 opt-in 的单次真实模型调用。
+    不重算、不重复收费、不漂移。设计已冻结为 `plans/N.json` no-replace envelope：
+    先落盘 plan 再执行，checkpoint record/artifact 均绑定 envelope digest，恢复最多允许一个
+    `head+1` pending plan。本阶段 Go 净增上限 700 行，不改 Runtime/scheduler/executor，
+    不接真实模型。远程调用在“已收费但响应未落盘”时存在本地无法消除的歧义，
+    后续必须使用 durable call-intent + ambiguous terminal 或服务端幂等键。详见
+    `docs/stage-m5.21c-durable-planned-attempt.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

@@ -575,9 +575,12 @@ artifact v2 重算该绑定，Observation/Planner 只暴露不含 seed/instance 
 验收得到 18 samples/15 unique states，每个 attempt 已绑定 `admissible-uniform` choice。
 详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
 
-下一步是 M5.21c：将每次 planner view/proposal/plan/instance/model-work 绑定到 exact request
-与 durable artifact/checkpoint 恢复链。先以 zero-model planner 验证中断恢复后不重算、不重复
-收费、不漂移；完成前不宣称已形成自适应 Campaign 闭环，不接真实模型。
+进入 M5.21c：以 `plans/N.json` no-replace envelope 将每次 planner
+view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artifact/checkpoint 恢复链。
+恢复最多允许一个 `head+1` pending plan，必须复用而不重算。Go 净增上限 700 行，
+不改 Runtime/scheduler/executor，不接真实模型。远程调用中断的计费歧义必须在后续使用
+durable call-intent/ambiguous terminal 或服务端幂等解决，本阶段不伪称 exactly-once。
+详见 `docs/stage-m5.21c-durable-planned-attempt.md`。
 
 ## 阅读顺序
 
