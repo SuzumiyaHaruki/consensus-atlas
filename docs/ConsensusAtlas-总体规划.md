@@ -2269,10 +2269,14 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     `protocolstate.Aggregate` 的 Core PSS 并集/发现曲线、fault/workload 统计和 monitor 触发索引；
     不复制大型 bundle/trace，不把各栏拼成自定义综合分数。详见
     `docs/stage-m5.20-campaign-observation.md`。
-74. [ ] M5.21 冻结 Campaign Feedback/Planner 输入边界。Planner 只读协议知识、能力声明、
-    前缀 Observation 和剩余逻辑预算，只能提交可机械编译的下一 attempt intent；不能选择
-    Runtime enabled Action、修改 target/spec/monitor/PSS 身份或将指标声称为 verdict。先用离线确定性
-    planner 验证增量 checkpoint/恢复/账本，之后才显式 opt-in 真实模型。
+74. [~] M5.21 冻结 Campaign Feedback/Planner 输入边界。M5.21a 已冻结设计：复用
+    `AgentSemanticView`、`CampaignObservation`、`CampaignAttemptRequest` 和
+    `GuardedTestIntent`，Planner 只能改 `Prefer`，不能选择 Runtime enabled Action、
+    修改 target/spec/monitor/PSS 身份或将指标声称为 verdict。本小阶段不超过 600 行
+    Go 净增，只实现最小视图、确定性 plumbing planner 和既有 compiler 的越权拒绝。
+    M5.20 尚缺每个 attempt 的可信 prior intent/backend 归因；M5.21b 必须由 target-owned
+    artifact projector 机械补全该绑定，才能接入增量 checkpoint/恢复/账本。详见
+    `docs/stage-m5.21a-campaign-planner-view.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

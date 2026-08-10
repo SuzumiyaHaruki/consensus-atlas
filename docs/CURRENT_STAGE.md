@@ -564,10 +564,11 @@ DefectBench、onboarding、旧 Python Agents、migration harness 和对应 CLI �
 
 ## 下一步
 
-进入 M5.21：先冻结 Campaign Feedback/Planner 输入与权限边界。Planner 只读协议知识、
-能力声明、前缀 Observation 和剩余逻辑预算，只提交可机械编译的下一 attempt
-intent。先以离线确定性 planner 验证闭环/checkpoint/账本，不让 Planner 选 Runtime Action、
-修改可信身份或把 Observation 当 verdict；该闭环成立后再显式 opt-in 真实模型。
+进入 M5.21a：实现已冻结的 Campaign Planner 最小视图、离线确定性 plumbing planner
+与既有 `GuardedTestIntent` compiler 的 fail-closed 组合测试。本阶段不修改 Coordinator、
+Runtime/Adapter 或持久化 schema，Go 净增不得超过 600 行。详见
+`docs/stage-m5.21a-campaign-planner-view.md`。M5.21b 再机械补全 prior intent/backend 与
+committed attempt 的可信归因；该绑定完成前不宣称已形成自适应 Campaign 闭环。
 
 ## 阅读顺序
 
