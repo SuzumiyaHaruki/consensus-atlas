@@ -63,6 +63,11 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 		plannerView.Feedback.Attempts[0].Choice.PlanDigest != provider.plan.Digest {
 		t.Fatalf("prefix feedback lost trusted choice attribution: %#v/%v", plannerView.Feedback, err)
 	}
+	prefixProposal, err := controlexperiment.PlanDeterministicCampaignFixture(plannerView)
+	if err != nil || len(prefixProposal.Prefer.BackendIDs) == 0 ||
+		prefixProposal.Prefer.BackendIDs[0] != etcdraftBackendUniform {
+		t.Fatalf("fixture did not consume prior-choice attribution: %#v/%v", prefixProposal, err)
+	}
 
 	resumed, err := controlexperiment.RecoverCampaignDirectory(directory, config)
 	if err != nil || resumed.Failure != nil || resumed.Head.Digest != first.Digest {

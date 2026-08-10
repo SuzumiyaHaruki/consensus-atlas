@@ -203,10 +203,19 @@ func PlanDeterministicCampaignFixture(
 	if len(backends) == 0 {
 		return GuardedTestIntent{}, errors.New("EXPERIMENT_CAMPAIGN_PLANNER_NO_BACKEND")
 	}
-	if attempts := view.Feedback.Attempts; len(attempts) > 0 &&
-		attempts[len(attempts)-1].ExecutionEvidence && attempts[len(attempts)-1].NewPSSStates == 0 &&
-		len(backends) > 1 {
-		backends = append(backends[1:], backends[0])
+	if attempts := view.Feedback.Attempts; len(attempts) > 0 {
+		latest := attempts[len(attempts)-1]
+		selected := 0
+		for index, backend := range backends {
+			if backend == latest.Choice.BackendID {
+				selected = index
+				break
+			}
+		}
+		if latest.ExecutionEvidence && latest.NewPSSStates == 0 && len(backends) > 1 {
+			selected = (selected + 1) % len(backends)
+		}
+		backends = append(backends[selected:], backends[:selected]...)
 	}
 	proposal, err := NewGuardedTestIntent(GuardedTestIntent{
 		ID: baseline.ID, ViewDigest: baseline.ViewDigest, RiskID: baseline.RiskID,
