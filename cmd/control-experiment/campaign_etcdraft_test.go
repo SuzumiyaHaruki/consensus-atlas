@@ -110,3 +110,179 @@ func TestEtcdraftCampaignObservationUsesStrictArtifactJSON(t *testing.T) {
 		t.Fatal("campaign observation accepted trailing JSON")
 	}
 }
+
+func TestEtcdraftM521d2RecoversResultWithoutSecondTransport(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	var content []byte
+	provider, config, recovered, directory := newEtcdraftModelCampaignFixture(t, func(
+		_ context.Context, prepared deepSeekPreparedRequest,
+	) (deepSeekCall, error) {
+		calls++
+		return deepSeekCall{
+			PromptDigest: prepared.PromptDigest, RequestDigest: prepared.RequestDigest,
+			ResponseDigest: controlexperiment.AgentInvocationDigest([]byte("offline-response")),
+			Response: &controlexperiment.AgentResponseIdentity{
+				ID: "offline-call-1", Model: deepSeekV4Flash, FinishReason: "stop",
+			},
+			Content: content, DurationMillis: 1,
+			Work: controlexperiment.ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7},
+		}, nil
+	})
+	request, err := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := provider.planned.plannerView(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := controlexperiment.PlanDeterministicCampaignFixture(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal.Digest = ""
+	content, err = json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := provider.prepareRequest(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := provider.resolveCall(ctx, request, view, prepared)
+	if err != nil || calls != 1 || len(recovered.PlannedAttempts) != 0 {
+		t.Fatalf("result was not isolated before plan: calls=%d result=%#v err=%v", calls, result, err)
+	}
+
+	resumed, err := controlexperiment.RecoverCampaignDirectory(directory, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.planned.recovered = &resumed
+	provider.transport = func(context.Context, deepSeekPreparedRequest) (deepSeekCall, error) {
+		calls++
+		return deepSeekCall{}, errors.New("transport must not run")
+	}
+	coordinator, err := controlexperiment.NewCampaignCoordinator(&resumed, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := coordinator.Step(ctx)
+	if err != nil || calls != 1 || head.Sequence != 1 || len(resumed.PlannedAttempts) != 1 {
+		t.Fatalf("durable result did not resume: calls=%d head=%#v err=%v", calls, head, err)
+	}
+	planned := resumed.PlannedAttempts[0]
+	if planned.PlanningWork != result.Work || head.Totals.Model != result.Work || head.Record == nil ||
+		head.Record.Work.Model != result.Work {
+		t.Fatalf("model work was not charged exactly once: plan=%#v head=%#v", planned.PlanningWork, head)
+	}
+	encoded, err := resumed.ReadAttemptArtifact(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := decodeEtcdraftCampaignArtifact(encoded)
+	if err != nil || artifact.Work.Model != result.Work || artifact.Report == nil || artifact.Bundle == nil ||
+		artifact.Report.Work.Model != (controlexperiment.ModelWork{}) ||
+		artifact.Bundle.Work.Model != (controlexperiment.ModelWork{}) {
+		t.Fatalf("artifact work boundary drifted: artifact=%#v err=%v", artifact, err)
+	}
+}
+
+func TestEtcdraftM521d2DoesNotRetryAmbiguousOrFailedCall(t *testing.T) {
+	t.Run("ambiguous", func(t *testing.T) {
+		calls := 0
+		provider, config, recovered, directory := newEtcdraftModelCampaignFixture(t, func(
+			context.Context, deepSeekPreparedRequest,
+		) (deepSeekCall, error) {
+			calls++
+			return deepSeekCall{}, nil
+		})
+		request, _ := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
+		view, _ := provider.planned.plannerView(request)
+		prepared, _ := provider.prepareRequest(view)
+		intent, err := controlexperiment.NewCampaignModelCallIntent(
+			"etcdraft-model-call-1", request, view.Digest, provider.freeze,
+			prepared.PromptBytes, prepared.RequestBytes,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = recovered.PrepareModelCall(intent); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = recovered.DispatchModelCall(); err != nil {
+			t.Fatal(err)
+		}
+		resumed, err := controlexperiment.RecoverCampaignDirectory(directory, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider.planned.recovered = &resumed
+		if _, err = provider.prepare(context.Background(), request); err == nil ||
+			err.Error() != etcdraftCampaignModelAmbiguous || calls != 0 {
+			t.Fatalf("ambiguous call retried: calls=%d err=%v", calls, err)
+		}
+	})
+
+	t.Run("failed", func(t *testing.T) {
+		calls := 0
+		provider, config, recovered, directory := newEtcdraftModelCampaignFixture(t, func(
+			_ context.Context, prepared deepSeekPreparedRequest,
+		) (deepSeekCall, error) {
+			calls++
+			return deepSeekCall{
+				PromptDigest: prepared.PromptDigest, RequestDigest: prepared.RequestDigest,
+				FailureCode: deepSeekFailureTransport,
+				Work:        controlexperiment.ModelWork{Calls: 1},
+			}, nil
+		})
+		request, _ := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
+		if _, err := provider.prepare(context.Background(), request); err == nil ||
+			err.Error() != etcdraftCampaignModelFailed || calls != 1 {
+			t.Fatalf("terminal failure was not recorded: calls=%d err=%v", calls, err)
+		}
+		resumed, err := controlexperiment.RecoverCampaignDirectory(directory, config)
+		if err != nil || resumed.ModelCalls[0].Status != controlexperiment.CampaignModelCallFailed {
+			t.Fatalf("failed call did not recover: %#v/%v", resumed.ModelCalls, err)
+		}
+		provider.planned.recovered = &resumed
+		if _, err = provider.prepare(context.Background(), request); err == nil ||
+			err.Error() != etcdraftCampaignModelFailed || calls != 1 {
+			t.Fatalf("failed call retried: calls=%d err=%v", calls, err)
+		}
+	})
+}
+
+func newEtcdraftModelCampaignFixture(
+	t *testing.T,
+	transport etcdraftCampaignModelTransport,
+) (etcdraftDurableModelCampaignProvider, controlexperiment.CampaignConfig,
+	controlexperiment.CampaignRecovery, string) {
+	t.Helper()
+	baseSpec, err := newEtcdraftCampaignSpec("etcdraft-model-campaign-m5-21d2", 8, 71)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := newEtcdraftCampaignProvider(context.Background(), baseSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := newEtcdraftDurableModelCampaignProvider(
+		base, nil, defaultDeepSeekIntentClient(), transport,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := provider.campaignConfig("etcdraft-model-campaign-m5-21d2", 1, 100, 120_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(t.TempDir(), "campaign")
+	recovered, err := controlexperiment.CreateCampaignDirectory(directory, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.planned.recovered = &recovered
+	return provider, config, recovered, directory
+}
