@@ -2316,6 +2316,14 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     pre-plan failed result 的成本虽已 durable，但尚未进入 Summary totals；M5.21d4 必须先补可信
     terminal accounting，不能伪造 plan，也不能据 summary 的 0 model work 声称没有调用。
     详见 `docs/stage-m5.21d3-opt-in-durable-runner.md`。
+79. [X] M5.21d4 已关闭 pre-plan terminal accounting gap。`CampaignFailureMarker/v2` 中非空
+    work 只能由 store 中同一 next ordinal 的 durable model-call result 机械投影，恢复会重验
+    result digest、work 与 allowance-overrun 标志。`CampaignSummary/v2` 将 terminal work 加入
+    totals，但不增加 Sequence、Attempts、checkpoint、artifact 或 PSS evidence。离线见证覆盖
+    completed、ambiguous、failed、invalid proposal 和 over-budget；五者恢复都是 0 key reads/
+    0 transport calls。实际 Go 净增 225 行，全量 test/vet、通用 Campaign race（53.313 秒）、
+    runner race（137.293 秒）和审计通过；外部模型调用仍为 0。详见
+    `docs/stage-m5.21d4-pre-plan-terminal-accounting.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d4 Pre-plan Terminal Accounting 已冻结；外部模型调用为 0
+阶段：M5.21d4 Pre-plan Terminal Accounting 已完成；外部模型调用为 0
 
 ## 输入、处理、输出
 
@@ -26,7 +26,7 @@
 输出
   runnable/resumable etcd/raft Campaign
   + request/view/proposal/plan/instance/choice 的可审计链
-  + running/stopped/failed summary and exact WorkLedger
+  + running/stopped/failed summary and evidence-bound exact WorkLedger
   + Core PSS union/curve + fault/workload + monitor trigger index
   + content-addressed full artifacts stored once
   + no composite score/external model call
@@ -42,12 +42,14 @@ M5.21d3 已完成：独立 opt-in runner 按 attempt 依次完成 exact intent d
 transport 和 key clear；只有 intent-only prepared 状态允许读 key。离线 2-attempt 见证得到 2 次
 key read、2 calls/14 tokens；key failure resume 后只调用一次；completed/ambiguous/failed 恢复
 均为 0 key read/0 transport。生产 CLI 已具备显式入口，但本阶段没有读取桌面 key 或发起真实调用。
-pre-plan failed result 的 1 call 已 durable，Campaign Summary ModelWork 仍为 0。
+M5.21d3 当时暴露的 pre-plan accounting gap 已由 M5.21d4 关闭。
 
-M5.21d4 已冻结：failure marker 只能引用 store 中同一 next ordinal 的 durable model-call result，
-Summary failed totals 将机械加上该 terminal work，但 attempt/checkpoint/PSS evidence 均不增加。
-普通 failure 和 dispatch-only ambiguous 仍保持零 terminal work；实际成本越过 allowance 时必须
-显式标记 budget overrun，不能为通过校验而丢弃成本。
+M5.21d4 已完成：failure marker 只能引用 store 中同一 next ordinal 的 durable model-call result，
+Summary failed totals 会机械加上该 terminal work，但 attempt/checkpoint/PSS evidence 均不增加。
+离线恢复已验证 completed、ambiguous、failed、invalid proposal 和 over-budget 五种状态均不读 key、
+不重调。failed result 的 1 call、invalid proposal 的 1 call/7 tokens 和超限响应的 1 call/101 tokens
+都可恢复；ambiguous 保持零 terminal work。实际 Go 净增 225 行，全量 test/vet、两项定向 race 与
+审计通过。下一步真实外部连通性校准仍需用户显式授权。
 
 M5.21d1 在可运行 zero-model 闭环之前新增通用的远程规划调用
 write-ahead 边界。`CampaignConfig/v3` 冻结 `none/zero-model/durable-call`；`model-calls/`

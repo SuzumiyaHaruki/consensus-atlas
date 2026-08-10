@@ -72,3 +72,31 @@ execution evidence、PSS、fault、workload 或 monitor 结果。
 - budget overrun 被记录不代表方法仍满足正式共同预算；
 - 不声称远程服务 exactly-once、Agent 更优、PSS/Coverage 完备或协议正确。
 
+## 完成结果（2026-08-10）
+
+M5.21d4 已完成。`CampaignFailureMarker/v2` 只接受 store 中同一 next ordinal 的 durable
+model-call result 作为非空 work 的证据；恢复会重新核对 result digest 和机械投影的 WorkLedger。
+`CampaignSummary/v2` 将该 terminal work 加到已提交 records 的 totals 上，但 Sequence、Attempts、
+head checkpoint、artifact 和 PSS evidence 均保持不变。普通 failure 与 dispatch-only ambiguous
+仍为零成本。
+
+离线验收覆盖五种恢复状态：
+
+- completed result 正常执行，模型成本只进入一次；
+- dispatch-only ambiguous 不读 key、不重调，terminal work 为 0；
+- failed transport result 记录 1 次调用，即使 token 为 0；
+- completed result 后 proposal 解析失败记录实际 1 call/7 tokens；
+- 1 call/101 tokens 越过 100-token allowance 时保留实际成本并设置 `budget_exceeded=true`。
+
+五种恢复均为 0 key reads/0 transport calls。后四种失败没有生成 attempt、artifact 或 PSS；
+Observation terminal work 与 Summary totals 一致。伪造 result 和重封装后的错误 evidence digest 均在
+恢复时被拒绝。
+
+实际 Go 净增 225 行，低于 350 行上限。`go test ./...`、`go vet ./...`、legacy audits、race-shard
+exact partition 和 `git diff --check` 均通过；通用 Campaign race 为 53.313 秒，相关 runner race 为
+137.293 秒。没有读取真实 key、访问 HTTP/模型、修改 Runtime/scheduler/executor/Adapter 或外部
+raft 工作区。
+
+下一阶段若进入 M5.21d5，应只做一次显式授权的单-attempt 外部连通性校准：使用公开固定输入，先保存
+完整审计工件，再决定是否扩大调用。该校准只能证明真实 transport、parser 和 trusted compiler 链路
+连通，不能作为 Agent 方法优势实验。
