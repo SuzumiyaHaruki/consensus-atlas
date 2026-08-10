@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21e Matched Agent/Zero-model Execution Pilot 已冻结、尚未执行
+阶段：M5.21e Matched Agent/Zero-model Execution Pilot 已完成
 
 ## 输入、处理、输出
 
@@ -32,10 +32,11 @@
   + no composite score
 ```
 
-M5.21e 已冻结两臂小型对照：zero-model 与 Agent 都使用 official etcd/raft v2、
-2 attempts、32 decisions per attempt 和 seeds 161/162。只匹配执行 ceiling；Agent 最多
-2 calls/16384 tokens 的额外规划成本单独报告。本 pilot 只观察 backend choice、PSS 集合、
-workload、fault、monitor 和 work，不产生综合分数或 Agent 优势结论。
+M5.21e 已完成。Zero-model 完成 2 attempts/64 decisions，得到 46 个 PSS states。Agent
+第一次调用的 choice、plan、bundle 和 32-decision PSS curve 与基线完全一致；第二次
+调用将 `prefer.backend_ids` 错写为 `backend_id/strategy`，被 strict parser 拒绝。Agent 因此以
+1 committed attempt 和 `failed/provider-error` 结束，2 calls/5211 tokens 均由 durable result 正确计费。
+本 pilot 保留为负结果：当前 Agent 未改变首个搜索前缀，且多轮输出契约不够稳定。
 
 M5.21d5 已完成一次真实外部连通性校准：official etcd/raft v2、1 attempt、8 decisions、
 seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance。实际只调用 1 次，消耗

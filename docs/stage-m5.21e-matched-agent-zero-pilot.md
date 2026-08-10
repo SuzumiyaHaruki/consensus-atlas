@@ -70,3 +70,31 @@ Campaign、Summary 和 Observation。根 `README.md` 保存预注册边界和实
 - 不新增 pair orchestrator、新执行器、新分数或自动效果结论；
 - 不声称 Agent 优于基线、PSS 预测缺陷、monitor 零触发代表正确，或两个 seeds 具有代表性；
 - 实验后执行 exact-config recovery、JSON/artifact 校验、secret scan 和文档自审查。
+
+## 完成结果（2026-08-10）
+
+M5.21e 已按预注册顺序执行，没有换 seed、补跑或对 failed Agent Campaign 重调。
+
+Zero-model 臂完成 2 attempts/64 decisions，primary/replay 均为 66 work units，得到
+66 PSS samples/46 unique states。两个 attempt 都选择 action-class-random，workload 均 pending；
+Agreement/TraceIntegrity 各检查 2 次，零触发。
+
+Agent 第一次调用消耗 2431 tokens，产生与 zero-model 第一 attempt 完全相同的
+choice、plan、bundle 和 32-decision PSS curve。Agent 第二次调用消耗 2780 tokens，
+返回语法上的 JSON object，但将 `Prefer` 错写为单值 `backend_id` 与额外 `strategy`；
+strict unknown-field parser 以 `EXPERIMENT_GUARDED_INTENT_JSON_INVALID` 拒绝。Campaign 在 1 个
+committed attempt 后终止，为 `failed/provider-error`。
+
+因此 Agent 总成本为 2 calls/5211 tokens + 33/33 primary/replay work。第二次未执行调用的
+1 call/2780 tokens 由 durable result-bound failure marker 进入 Summary；没有伪造 plan、attempt、artifact
+或 PSS evidence。共同 32-decision prefix 上 intersection=23、zero-only=0、agent-only=0，discovery
+curve 逐点相同。全局 zero-only=23 只来自 Agent 未执行的第二 attempt，不是方法优势。
+
+两臂 exact-config recovery 均重建出字节一致的 Summary/Observation；Agent 恢复保持 durably
+failed 且没有 key read/transport。归档前完整 JSON/artifact 通过校验且 secret scan 为空。
+为避免 Git 被重复 trace/PSS 文本膨胀，完整 Campaign 和 Observation 使用可回转的确定性
+gzip，提交工件约 300 KB。本阶段 Go 净增为 0。
+
+结论是一个需要保留的负结果：当前 Agent 在首个前缀没有改变搜索，且第二轮输出
+契约漂移。下一阶段应将精确 preference-only 输出 template/schema 由可信代码机械生成并冻结
+到 prompt，而不是放宽 parser 或重试本 pilot。

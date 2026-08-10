@@ -2332,11 +2332,14 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     与保存 Summary/Observation 字节一致，没有 retry 或第二次调用。该阶段只证明真实
     transport 与 trusted pipeline 连通，不作 Agent 效果或方法优势结论。
     详见 `docs/stage-m5.21d5-single-call-connectivity.md`。
-81. [ ] M5.21e 执行预注册的 matched Agent/zero-model public pilot。两臂共享 official
+81. [X] M5.21e 已执行预注册的 matched Agent/zero-model public pilot。两臂共享 official
     etcd/raft v2、2 attempts、32-decision ceilings 和 seeds 161/162；只将 primary/replay 执行 ceiling
-    匹配，Agent 额外的最多 2 calls/16384 tokens 必须单独报告。预注册比较 backend choice、
-    PSS intersection/exclusive states、共同 decision prefix、workload、fault、monitor 与 work，不生成
-    综合分数。若两臂行为一致，必须保留为当前 Agent 未产生可观测搜索差异的负结果。
+    匹配，Agent 额外 model work 单独报告。Zero-model 完成 2 attempts/64 decisions，得到
+    46 states。Agent 第一前缀的 choice/plan/bundle/PSS curve 与基线完全一致；第二次调用
+    把 `backend_ids` 错写为 `backend_id/strategy`，被 strict parser 拒绝。Agent 以 1 committed
+    attempt、2 calls/5211 tokens 和 durable provider failure 结束，其中未执行的第二次 2780 tokens
+    由 result-bound terminal accounting 准确记录。这个负结果说明当前 Agent 未改变首个搜索前缀，
+    且下一步必须机械提供精确输出 template/schema，不能放宽 parser 或重试本 pilot。
     详见 `docs/stage-m5.21e-matched-agent-zero-pilot.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
