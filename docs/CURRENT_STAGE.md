@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d5 Single-call External Connectivity Calibration 已冻结、尚未执行
+阶段：M5.21d5 Single-call External Connectivity Calibration 已完成
 
 ## 输入、处理、输出
 
@@ -29,13 +29,15 @@
   + running/stopped/failed summary and evidence-bound exact WorkLedger
   + Core PSS union/curve + fault/workload + monitor trigger index
   + content-addressed full artifacts stored once
-  + no composite score/external model call
+  + no composite score
 ```
 
-M5.21d5 已冻结一次真实外部连通性校准：official etcd/raft v2、1 attempt、8 decisions、
-seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance。它只验证新 durable
-Campaign 外壳的 intent-before-key、one-call/no-retry、result-before-plan、trusted compile/execution 与
-terminal accounting，不评价 Agent 优势。本阶段当前外部调用数仍为 0。
+M5.21d5 已完成一次真实外部连通性校准：official etcd/raft v2、1 attempt、8 decisions、
+seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance。实际只调用 1 次，消耗
+2203 input + 214 output = 2417 tokens。proposal 通过可信编译并用 action-class-random
+执行；Campaign 提交 1 个 attempt 后按 attempt limit 停止，primary/replay 均为 8 decisions/
+9 work units，发现 9 个 Core PSS states。轨迹中 workload 仍 pending，monitor 零触发；
+这些只是轨迹事实。exact-config 恢复读取产生字节一致的 Summary/Observation，没有第二次调用。
 
 M5.21d2 已把 M5.21d1 的通用调用状态机接入 etcd/raft composition，但只使用 injected offline
 transport。result-before-plan 恢复从 durable content 继续，transport 调用数保持 1；dispatch-only

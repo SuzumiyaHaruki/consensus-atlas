@@ -63,6 +63,8 @@
 保存 honest action surface、seed-free plan、execution instance 和三轴 IntentOutcome；它不是 Agent 效果结果。
 [M5.18b4 request freeze](../benchmarks/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/freeze.json)
 保存两臂 exact-byte digest、共同 hard baseline、seed/budget 与 1-call/0-retry 边界；模型调用数为 0。
+[M5.21d5 durable Agent Campaign](../benchmarks/experiments/etcdraft-v2-agent-campaign-m5.21d5/README.md)
+保存首次真实 Campaign 单调用、可信编译/执行、持久化恢复和完整成本；它只是连通性校准。
 
 ## 当前实现主题
 

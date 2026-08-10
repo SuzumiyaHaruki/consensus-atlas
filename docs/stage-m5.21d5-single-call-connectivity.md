@@ -58,3 +58,29 @@ M5.21d5 只做一次真实外部连通性校准，回答一个很小的问题：
 - 不声称 Agent 规划质量、方法优势、缺陷检出能力、Coverage/PSS 完备性或协议正确性；
 - 已有 M5.18b1 单次调用只是旧 one-shot 链路的历史校准；本阶段专门验证新的
   durable multi-attempt Campaign 外壳在 attempts=1 时的真实连通性。
+
+## 完成结果（2026-08-10）
+
+M5.21d5 已按冻结输入执行完成，只发生 1 次外部调用：
+
+- model work：2203 input + 214 output = 2417 total tokens；
+- Campaign：`stopped` / `attempt-limit`，1 个 committed completed attempt；
+- primary/replay：8 decisions，9/9 work units；
+- PSS：9 samples / 9 unique states；
+- fault usage：1 crash；
+- workload：1 planned / 0 offered / 1 pending；
+- Agreement 和 TraceIntegrity 各检查 1 次，零触发。
+
+result 为 `completed`，finish reason 为 `stop`。proposal 通过 strict parser 与 hard-baseline
+validation，将 `action-class-random` 放在 preference 首位；trusted compiler 选择
+`workload-action-class-random-b4`，并用 seed 151 执行。8-decision 轨迹未选中 Invoke，因此
+workload pending 是有界调度事实，不是执行错误或正确性结论。
+
+使用 exact config 对 stopped Campaign 做了独立恢复读取，新生成的 Summary/Observation 与
+保存文件字节一致，且目录仍只有 1 个 result。全部 JSON 和 content-addressed
+artifact 均通过语法校验；实验目录未出现 key exact match、`Authorization`、`Bearer` 或
+`key.txt`。本阶段未修改 Go 代码，没有 retry 或第二次外部调用。
+
+工件见
+`benchmarks/experiments/etcdraft-v2-agent-campaign-m5.21d5/`。该结果只证明 durable
+transport/parser/compiler/executor/accounting 链路已连通。

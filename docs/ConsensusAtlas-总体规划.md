@@ -2324,10 +2324,13 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     0 transport calls。实际 Go 净增 225 行，全量 test/vet、通用 Campaign race（53.313 秒）、
     runner race（137.293 秒）和审计通过；外部模型调用仍为 0。详见
     `docs/stage-m5.21d4-pre-plan-terminal-accounting.md`。
-80. [ ] M5.21d5 只执行一次 durable Campaign 外部连通性校准。冻结 official etcd/raft v2、
+80. [X] M5.21d5 已执行一次 durable Campaign 外部连通性校准。冻结 official etcd/raft v2、
     1 attempt、8 decisions、seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance；
-    exact intent durable 后才读 key，最多一次 transport，失败、无效 proposal 或 ambiguous 都不重试。
-    该阶段只验证真实 transport 与已有 trusted pipeline 连通，不作 Agent 效果或方法优势结论。
+    exact intent durable 后才读 key，实际 1 call 消耗 2417 tokens。proposal 通过可信编译，使用
+    action-class-random 提交 1 个 8-decision attempt，primary/replay 均为 9 work units，得到
+    9 个 Core PSS states。workload 未在该有界轨迹内送入，monitor 零触发。exact-config 恢复读取
+    与保存 Summary/Observation 字节一致，没有 retry 或第二次调用。该阶段只证明真实
+    transport 与 trusted pipeline 连通，不作 Agent 效果或方法优势结论。
     详见 `docs/stage-m5.21d5-single-call-connectivity.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、

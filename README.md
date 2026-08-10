@@ -5,9 +5,11 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已冻结 **M5.21d5 Single-call External Connectivity Calibration**。它将使用新的
-durable Campaign runner 做一次固定输入、单 attempt、最多单次外部调用的连通性校准；
-不做方法对比，不把 proposal 成功预设为验收条件。M5.21d4 已完成 terminal accounting：通用
+当前阶段已完成 **M5.21d5 Single-call External Connectivity Calibration**。新的 durable
+Campaign runner 以固定输入完成 1 次外部调用（2417 tokens），proposal 通过可信编译并使用
+action-class-random 提交 1 个 8-decision attempt。Summary/Observation 可从 stopped Campaign 字节一致地
+重建，且没有第二次调用。这只证明连通与可恢复链路，不是 Agent 方法优势证据。
+M5.21d4 已完成 terminal accounting：通用
 Campaign store 使用
 exact call intent、dispatch marker 和 result 三段 no-replace 记录远程规划调用。dispatch-only
 状态在恢复后机械成为 `ambiguous`，不能再调用或补写 result。`CampaignConfig/v3`
