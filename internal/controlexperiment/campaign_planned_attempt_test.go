@@ -127,37 +127,23 @@ func TestCampaignPlannedAttemptSurvivesInterruptionAndBindsCommit(t *testing.T) 
 	}
 	planPath := filepath.Join(directory, campaignPlansDir, campaignCheckpointFile(1))
 	original, err := os.ReadFile(planPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	campaignRequireNoError(t, err)
 	tampered := planned
 	tampered.ID = "tampered-plan"
 	encoded, err := campaignJSONBytes(tampered)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(planPath, encoded, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	campaignRequireNoError(t, err)
+	campaignRequireNoError(t, os.WriteFile(planPath, encoded, 0o600))
 	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
 		t.Fatal("tampered plan recovered")
 	}
-	if err := os.WriteFile(planPath, original, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	campaignRequireNoError(t, os.WriteFile(planPath, original, 0o600))
 	futurePath := filepath.Join(directory, campaignPlansDir, campaignCheckpointFile(2))
-	if err := os.WriteFile(futurePath, original, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	campaignRequireNoError(t, os.WriteFile(futurePath, original, 0o600))
 	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
 		t.Fatal("future plan recovered")
 	}
-	if err := os.Remove(futurePath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(planPath); err != nil {
-		t.Fatal(err)
-	}
+	campaignRequireNoError(t, os.Remove(futurePath))
+	campaignRequireNoError(t, os.Remove(planPath))
 	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
 		t.Fatal("planned campaign recovered without its committed plan")
 	}
@@ -213,6 +199,13 @@ func TestCampaignModelCallDurabilityAndAmbiguousRecovery(t *testing.T) {
 		t.Fatal("result recovered without dispatch")
 	}
 	campaignRequireNoError(t, os.WriteFile(dispatchPath, dispatchBytes, 0o600))
+	missingRoot := t.TempDir()
+	campaignRequireNoError(t, os.Mkdir(filepath.Join(missingRoot, campaignModelCallsDir), 0o700))
+	if _, err := readCampaignModelCalls(
+		missingRoot, config, []CampaignCheckpoint{{}, {}}, nil, new([]string),
+	); err == nil {
+		t.Fatal("committed call chain recovered without call files")
+	}
 
 	ambiguousConfig, ambiguousDirectory, active, ambiguousIntent := campaignModelCallFixture(t, "ambiguous")
 	_, err = active.PrepareModelCall(ambiguousIntent)
