@@ -2324,6 +2324,11 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     0 transport calls。实际 Go 净增 225 行，全量 test/vet、通用 Campaign race（53.313 秒）、
     runner race（137.293 秒）和审计通过；外部模型调用仍为 0。详见
     `docs/stage-m5.21d4-pre-plan-terminal-accounting.md`。
+80. [ ] M5.21d5 只执行一次 durable Campaign 外部连通性校准。冻结 official etcd/raft v2、
+    1 attempt、8 decisions、seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance；
+    exact intent durable 后才读 key，最多一次 transport，失败、无效 proposal 或 ambiguous 都不重试。
+    该阶段只验证真实 transport 与已有 trusted pipeline 连通，不作 Agent 效果或方法优势结论。
+    详见 `docs/stage-m5.21d5-single-call-connectivity.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2655,6 +2660,10 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      work 和 allowance-overrun 标志；failed Summary totals 等于 committed record totals 加 terminal
      work，但 Sequence/Attempts/head checkpoint 不增加。普通失败和 dispatch-only ambiguous 保持空 work，
      不得产生 plan、artifact、PSS 或 execution evidence。
+105. 真实 Agent Campaign 首次连通必须是公开固定输入、单 attempt、单 call、0 retry 的
+     calibration。运行结果无论 stopped 还是 failed 都必须保存 durable result 和实际 work；
+     dispatch-only interruption 必须停在 ambiguous，不允许为获得成功样本而 resume 重调。连通成功只证明
+     transport/parser/compiler/executor 链路可达，不证明规划质量或测试效果。
 
 ---
 

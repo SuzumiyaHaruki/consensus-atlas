@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d4 Pre-plan Terminal Accounting 已完成；外部模型调用为 0
+阶段：M5.21d5 Single-call External Connectivity Calibration 已冻结、尚未执行
 
 ## 输入、处理、输出
 
@@ -31,6 +31,11 @@
   + content-addressed full artifacts stored once
   + no composite score/external model call
 ```
+
+M5.21d5 已冻结一次真实外部连通性校准：official etcd/raft v2、1 attempt、8 decisions、
+seed 151、180000 ms wall ceiling 和 1 call/8192 tokens allowance。它只验证新 durable
+Campaign 外壳的 intent-before-key、one-call/no-retry、result-before-plan、trusted compile/execution 与
+terminal accounting，不评价 Agent 优势。本阶段当前外部调用数仍为 0。
 
 M5.21d2 已把 M5.21d1 的通用调用状态机接入 etcd/raft composition，但只使用 injected offline
 transport。result-before-plan 恢复从 durable content 继续，transport 调用数保持 1；dispatch-only
