@@ -9,7 +9,8 @@ const (
 	CampaignConfigVersion      = "consensus-atlas/campaign-config/v3"
 	CampaignAttemptVersion     = "consensus-atlas/campaign-attempt/v1"
 	CampaignCheckpointVersion  = "consensus-atlas/campaign-checkpoint/v1"
-	CampaignFailureVersion     = "consensus-atlas/campaign-failure/v1"
+	CampaignFailureVersion     = "consensus-atlas/campaign-failure/v2"
+	CampaignFailureModelResult = "campaign-model-call-result"
 	CampaignCheckpointPolicy   = "checkpoint-after-each-terminal-attempt"
 	CampaignInputBaseRequest   = "base-request"
 	CampaignInputPlanned       = "planned-attempt"
@@ -228,14 +229,18 @@ func (record CampaignAttemptRecord) seal() (CampaignAttemptRecord, error) {
 // It deliberately excludes the provider's diagnostic text: the marker only
 // prevents the exact next request from being retried after process recovery.
 type CampaignFailureMarker struct {
-	SchemaVersion string `json:"schema_version"`
-	CampaignID    string `json:"campaign_id"`
-	ConfigDigest  string `json:"config_digest"`
-	HeadDigest    string `json:"head_digest"`
-	Ordinal       int    `json:"ordinal"`
-	RequestDigest string `json:"request_digest"`
-	Code          string `json:"code"`
-	Digest        string `json:"digest"`
+	SchemaVersion  string     `json:"schema_version"`
+	CampaignID     string     `json:"campaign_id"`
+	ConfigDigest   string     `json:"config_digest"`
+	HeadDigest     string     `json:"head_digest"`
+	Ordinal        int        `json:"ordinal"`
+	RequestDigest  string     `json:"request_digest"`
+	Code           string     `json:"code"`
+	Work           WorkLedger `json:"work"`
+	EvidenceKind   string     `json:"evidence_kind,omitempty"`
+	EvidenceDigest string     `json:"evidence_digest,omitempty"`
+	BudgetExceeded bool       `json:"budget_exceeded"`
+	Digest         string     `json:"digest"`
 }
 
 func NewCampaignFailureMarker(
@@ -243,6 +248,18 @@ func NewCampaignFailureMarker(
 	head CampaignCheckpoint,
 	request CampaignAttemptRequest,
 	code string,
+) (CampaignFailureMarker, error) {
+	return newCampaignFailureMarker(config, head, request, code, emptyWork(), "", "")
+}
+
+func newCampaignFailureMarker(
+	config CampaignConfig,
+	head CampaignCheckpoint,
+	request CampaignAttemptRequest,
+	code string,
+	work WorkLedger,
+	evidenceKind string,
+	evidenceDigest string,
 ) (CampaignFailureMarker, error) {
 	marker := CampaignFailureMarker{
 		SchemaVersion: CampaignFailureVersion,
@@ -252,6 +269,8 @@ func NewCampaignFailureMarker(
 		Ordinal:       request.Ordinal,
 		RequestDigest: request.Digest,
 		Code:          code,
+		Work:          work, EvidenceKind: evidenceKind, EvidenceDigest: evidenceDigest,
+		BudgetExceeded: !campaignWorkWithinAllowance(work, request.Allowance),
 	}
 	sealed, err := marker.seal()
 	if err != nil {
@@ -282,6 +301,9 @@ func (marker CampaignFailureMarker) ValidateInputs(
 		marker.RequestDigest != request.Digest {
 		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_IDENTITY_MISMATCH")
 	}
+	if marker.BudgetExceeded != !campaignWorkWithinAllowance(marker.Work, request.Allowance) {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_BUDGET_MISMATCH")
+	}
 	return nil
 }
 
@@ -291,6 +313,15 @@ func (marker CampaignFailureMarker) Validate() error {
 		!validSHA256(marker.HeadDigest) || marker.Ordinal <= 0 ||
 		!validSHA256(marker.RequestDigest) || !validMethodToken(marker.Code) {
 		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_INVALID")
+	}
+	if err := validateMethodWork(marker.Work); err != nil {
+		return err
+	}
+	accounted := marker.Work != emptyWork()
+	if accounted && (marker.EvidenceKind != CampaignFailureModelResult ||
+		!validSHA256(marker.EvidenceDigest)) || !accounted &&
+		(marker.EvidenceKind != "" || marker.EvidenceDigest != "" || marker.BudgetExceeded) {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_EVIDENCE_INVALID")
 	}
 	sealed, err := marker.seal()
 	if err != nil || !validSHA256(marker.Digest) || sealed.Digest != marker.Digest {

@@ -218,3 +218,25 @@ type CampaignModelCallRecovery struct {
 	Dispatch *CampaignModelCallDispatch
 	Result   *CampaignModelCallResult
 }
+
+// CampaignModelCallProviderFailure carries only an already-durable result;
+// the store remains responsible for binding its accounting evidence.
+type CampaignModelCallProviderFailure struct {
+	cause  error
+	result CampaignModelCallResult
+}
+
+func NewCampaignModelCallProviderFailure(
+	cause error,
+	result CampaignModelCallResult,
+) error {
+	if cause == nil || !validSHA256(result.Digest) ||
+		(result.Status != CampaignModelCallCompleted && result.Status != CampaignModelCallFailed) ||
+		!validCampaignPlanningWork(result.Work) || result.Work.Calls != 1 {
+		return errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_PROVIDER_FAILURE_INVALID")
+	}
+	return &CampaignModelCallProviderFailure{cause: cause, result: result}
+}
+
+func (failure *CampaignModelCallProviderFailure) Error() string { return failure.cause.Error() }
+func (failure *CampaignModelCallProviderFailure) Unwrap() error { return failure.cause }

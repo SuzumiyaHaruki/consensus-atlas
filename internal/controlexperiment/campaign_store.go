@@ -313,13 +313,44 @@ func (recovered *CampaignRecovery) FailAttempt(
 	request CampaignAttemptRequest,
 	code string,
 ) (CampaignFailureMarker, error) {
+	return recovered.failAttempt(request, code, nil)
+}
+
+func (recovered *CampaignRecovery) FailAttemptWithModelCall(
+	request CampaignAttemptRequest,
+	code string,
+	result CampaignModelCallResult,
+) (CampaignFailureMarker, error) {
+	return recovered.failAttempt(request, code, &result)
+}
+
+func (recovered *CampaignRecovery) failAttempt(
+	request CampaignAttemptRequest,
+	code string,
+	result *CampaignModelCallResult,
+) (CampaignFailureMarker, error) {
 	if recovered == nil || recovered.directory == "" || recovered.Failure != nil ||
 		recovered.validatedFailureDigest != "" ||
 		recovered.Config.Digest != recovered.validatedConfigDigest ||
 		recovered.Head.Digest != recovered.validatedHeadDigest {
 		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
 	}
-	marker, err := NewCampaignFailureMarker(recovered.Config, recovered.Head, request, code)
+	work, evidenceKind, evidenceDigest := emptyWork(), "", ""
+	if result != nil {
+		if len(recovered.ModelCalls) != recovered.Head.Sequence+1 {
+			return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_FAILURE_MODEL_RESULT_MISSING")
+		}
+		call := recovered.ModelCalls[len(recovered.ModelCalls)-1]
+		if call.Result == nil || call.Result.Digest != result.Digest || call.Dispatch == nil ||
+			result.ValidateInputs(call.Intent, *call.Dispatch) != nil {
+			return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_FAILURE_MODEL_RESULT_MISMATCH")
+		}
+		work = AgentInvocationWork(emptyWork(), result.Work)
+		evidenceKind, evidenceDigest = CampaignFailureModelResult, result.Digest
+	}
+	marker, err := newCampaignFailureMarker(
+		recovered.Config, recovered.Head, request, code, work, evidenceKind, evidenceDigest,
+	)
 	if err != nil {
 		return CampaignFailureMarker{}, err
 	}
@@ -533,6 +564,9 @@ func RecoverCampaignDirectory(
 	if err != nil {
 		return CampaignRecovery{}, err
 	}
+	if err := validateCampaignFailureEvidence(failure, head, modelCalls); err != nil {
+		return CampaignRecovery{}, err
+	}
 	validatedFailureDigest := ""
 	if failure != nil {
 		validatedFailureDigest = failure.Digest
@@ -544,6 +578,25 @@ func RecoverCampaignDirectory(
 		directory: clean, validatedConfigDigest: stored.Digest, validatedHeadDigest: head.Digest,
 		validatedFailureDigest: validatedFailureDigest,
 	}, nil
+}
+
+func validateCampaignFailureEvidence(
+	failure *CampaignFailureMarker,
+	head CampaignCheckpoint,
+	calls []CampaignModelCallRecovery,
+) error {
+	if failure == nil || failure.EvidenceKind == "" {
+		return nil
+	}
+	if failure.EvidenceKind != CampaignFailureModelResult || len(calls) != head.Sequence+1 {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_EVIDENCE_MISSING")
+	}
+	call := calls[len(calls)-1]
+	if call.Result == nil || call.Result.Digest != failure.EvidenceDigest ||
+		AgentInvocationWork(emptyWork(), call.Result.Work) != failure.Work {
+		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_EVIDENCE_MISMATCH")
+	}
+	return nil
 }
 
 func readCampaignFailure(

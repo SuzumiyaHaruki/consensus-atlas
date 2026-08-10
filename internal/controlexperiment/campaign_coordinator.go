@@ -214,6 +214,10 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 	result, providerErr := coordinator.provider.Attempt(attemptContext, request)
 	cancel()
 	if providerErr != nil {
+		var modelFailure *CampaignModelCallProviderFailure
+		if errors.As(providerErr, &modelFailure) {
+			return coordinator.failModelCallAttempt(request, providerErr, modelFailure.result)
+		}
 		return coordinator.failAttempt(
 			request, CampaignFailureProvider,
 			fmt.Errorf("EXPERIMENT_CAMPAIGN_PROVIDER_FAILED: %w", providerErr),
@@ -262,6 +266,20 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 		return CampaignCheckpoint{}, err
 	}
 	return head, nil
+}
+
+func (coordinator *CampaignCoordinator) failModelCallAttempt(
+	request CampaignAttemptRequest,
+	cause error,
+	result CampaignModelCallResult,
+) (CampaignCheckpoint, error) {
+	coordinator.failed = true
+	if _, err := coordinator.recovered.FailAttemptWithModelCall(
+		request, CampaignFailureProvider, result,
+	); err != nil {
+		return CampaignCheckpoint{}, fmt.Errorf("%v; EXPERIMENT_CAMPAIGN_FAILURE_MARKER_FAILED: %w", cause, err)
+	}
+	return CampaignCheckpoint{}, cause
 }
 
 func (coordinator *CampaignCoordinator) failAttempt(

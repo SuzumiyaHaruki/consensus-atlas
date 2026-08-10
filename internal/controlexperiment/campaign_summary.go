@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	CampaignSummaryVersion       = "consensus-atlas/campaign-summary/v1"
+	CampaignSummaryVersion       = "consensus-atlas/campaign-summary/v2"
 	CampaignSummaryStatusRunning = "running"
 	CampaignSummaryStatusStopped = "stopped"
 	CampaignSummaryStatusFailed  = "failed"
@@ -65,6 +65,10 @@ func NewCampaignSummary(recovered *CampaignRecovery) (CampaignSummary, error) {
 	} else if recovered.Head.StopReason != CampaignStopRunning {
 		status = CampaignSummaryStatusStopped
 	}
+	totals := recovered.Head.Totals
+	if recovered.Failure != nil {
+		totals = addWorkLedgers(totals, recovered.Failure.Work)
+	}
 	summary := CampaignSummary{
 		SchemaVersion: CampaignSummaryVersion,
 		CampaignID:    config.ID, ConfigDigest: config.Digest,
@@ -74,7 +78,7 @@ func NewCampaignSummary(recovered *CampaignRecovery) (CampaignSummary, error) {
 		CheckpointPolicy:        config.CheckpointPolicy,
 		InitialCheckpointDigest: recovered.Checkpoints[0].Digest,
 		HeadCheckpointDigest:    recovered.Head.Digest, Sequence: recovered.Head.Sequence,
-		Attempts: attempts, Totals: recovered.Head.Totals,
+		Attempts: attempts, Totals: totals,
 		ElapsedMillis: recovered.Head.ElapsedMillis, StopReason: recovered.Head.StopReason,
 		Status: status, Failure: cloneCampaignFailure(recovered.Failure),
 	}
@@ -126,26 +130,29 @@ func (summary CampaignSummary) Validate() error {
 		totals = addWorkLedgers(totals, attempt.Record.Work)
 		previous = attempt.CheckpointDigest
 	}
-	if previous != summary.HeadCheckpointDigest || totals != summary.Totals {
+	if previous != summary.HeadCheckpointDigest {
 		return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_TOTAL_MISMATCH")
 	}
-	if campaignBudgetExceeded(summary.Budget, summary.Sequence, summary.Totals) {
-		return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_BUDGET_EXCEEDED")
-	}
-	wantStop := campaignStopReason(
-		CampaignConfig{Budget: summary.Budget, WallClockCeilingMillis: summary.WallClockCeilingMillis},
-		summary.Sequence, summary.Totals, summary.ElapsedMillis,
-	)
-	if wantStop != summary.StopReason {
-		return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_STOP_MISMATCH")
+	if summary.Failure == nil && totals != summary.Totals {
+		return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_TOTAL_MISMATCH")
 	}
 	switch summary.Status {
 	case CampaignSummaryStatusRunning:
-		if summary.StopReason != CampaignStopRunning || summary.Failure != nil {
+		wantStop := campaignStopReason(
+			CampaignConfig{Budget: summary.Budget, WallClockCeilingMillis: summary.WallClockCeilingMillis},
+			summary.Sequence, summary.Totals, summary.ElapsedMillis,
+		)
+		if summary.StopReason != CampaignStopRunning || summary.Failure != nil ||
+			campaignBudgetExceeded(summary.Budget, summary.Sequence, summary.Totals) || wantStop != summary.StopReason {
 			return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_STATUS_INVALID")
 		}
 	case CampaignSummaryStatusStopped:
-		if summary.StopReason == CampaignStopRunning || summary.Failure != nil {
+		wantStop := campaignStopReason(
+			CampaignConfig{Budget: summary.Budget, WallClockCeilingMillis: summary.WallClockCeilingMillis},
+			summary.Sequence, summary.Totals, summary.ElapsedMillis,
+		)
+		if summary.StopReason == CampaignStopRunning || summary.Failure != nil ||
+			campaignBudgetExceeded(summary.Budget, summary.Sequence, summary.Totals) || wantStop != summary.StopReason {
 			return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_STATUS_INVALID")
 		}
 	case CampaignSummaryStatusFailed:
@@ -160,6 +167,11 @@ func (summary CampaignSummary) Validate() error {
 			summary.Failure.HeadDigest != summary.HeadCheckpointDigest ||
 			summary.Failure.Ordinal != summary.Sequence+1 {
 			return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_FAILURE_MISMATCH")
+		}
+		totals = addWorkLedgers(totals, summary.Failure.Work)
+		if totals != summary.Totals || summary.Failure.BudgetExceeded !=
+			campaignBudgetExceeded(summary.Budget, summary.Sequence, summary.Totals) {
+			return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_FAILURE_WORK_MISMATCH")
 		}
 	default:
 		return errors.New("EXPERIMENT_CAMPAIGN_SUMMARY_STATUS_INVALID")
