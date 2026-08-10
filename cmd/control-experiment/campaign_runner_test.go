@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,6 +163,19 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 	if failedObservation.Terminal.Status != controlexperiment.CampaignSummaryStatusFailed ||
 		failedObservation.PSS != nil || len(failedObservation.Attempts) != 0 {
 		t.Fatalf("failed runner observation invented execution evidence: %#v", failedObservation)
+	}
+}
+
+func TestEtcdraftM521d3CampaignCLIFlagsFailClosed(t *testing.T) {
+	if err := run(context.Background(), []string{
+		"-strategy", etcdraftCampaignModelRunnerStrategy,
+	}, io.Discard); err == nil || !strings.Contains(err.Error(), "requires only") {
+		t.Fatalf("Agent Campaign accepted missing explicit flags: %v", err)
+	}
+	if err := run(context.Background(), []string{
+		"-strategy", etcdraftCampaignRunnerStrategy, "-campaign-model-tokens-per-attempt", "100",
+	}, io.Discard); err == nil || !strings.Contains(err.Error(), "requires only") {
+		t.Fatalf("zero-model Campaign accepted model budget: %v", err)
 	}
 }
 
