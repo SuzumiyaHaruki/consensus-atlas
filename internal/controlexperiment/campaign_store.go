@@ -19,6 +19,7 @@ const (
 	campaignFailureFile      = "failure.json"
 	campaignArtifactsDir     = "artifacts"
 	campaignCheckpointsDir   = "checkpoints"
+	campaignPlansDir         = "plans"
 	campaignArtifactSuffix   = ".artifact"
 	campaignCheckpointSuffix = ".json"
 	campaignPendingPrefix    = ".campaign-pending-"
@@ -32,6 +33,7 @@ type CampaignRecovery struct {
 	Failure                  *CampaignFailureMarker
 	OrphanArtifactDigests    []string
 	PendingRelativeFilePaths []string
+	PlannedAttempts          []CampaignPlannedAttempt
 	directory                string
 	validatedConfigDigest    string
 	validatedHeadDigest      string
@@ -79,7 +81,7 @@ func CreateCampaignDirectory(
 	if err := syncCampaignDirectory(parent); err != nil {
 		return CampaignRecovery{}, err
 	}
-	for _, name := range []string{campaignArtifactsDir, campaignCheckpointsDir} {
+	for _, name := range []string{campaignArtifactsDir, campaignCheckpointsDir, campaignPlansDir} {
 		if err := os.Mkdir(filepath.Join(clean, name), 0o700); err != nil {
 			return CampaignRecovery{}, fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_CREATE: %w", err)
 		}
@@ -98,6 +100,53 @@ func CreateCampaignDirectory(
 	return RecoverCampaignDirectory(clean, config)
 }
 
+// PreparePlannedAttempt durably binds the exact next request before target
+// execution. Repeating the same digest is idempotent; replacing it is not.
+func (recovered *CampaignRecovery) PreparePlannedAttempt(
+	planned CampaignPlannedAttempt,
+) (CampaignPlannedAttempt, error) {
+	if recovered == nil || recovered.directory == "" || recovered.Failure != nil ||
+		recovered.Config.Digest != recovered.validatedConfigDigest ||
+		recovered.Head.Digest != recovered.validatedHeadDigest {
+		return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
+	}
+	request, err := NewCampaignAttemptRequest(recovered.Config, recovered.Head)
+	if err != nil {
+		return CampaignPlannedAttempt{}, err
+	}
+	if err := planned.ValidateRequest(request); err != nil {
+		return CampaignPlannedAttempt{}, err
+	}
+	if len(recovered.PlannedAttempts) == recovered.Head.Sequence+1 {
+		existing := recovered.PlannedAttempts[len(recovered.PlannedAttempts)-1]
+		if existing.Digest != planned.Digest {
+			return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_CONFLICT")
+		}
+		return existing, nil
+	}
+	if len(recovered.PlannedAttempts) != recovered.Head.Sequence {
+		return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_SEQUENCE_INVALID")
+	}
+	encoded, err := campaignJSONBytes(planned)
+	if err != nil {
+		return CampaignPlannedAttempt{}, err
+	}
+	directory := filepath.Join(recovered.directory, campaignPlansDir)
+	name := campaignCheckpointFile(request.Ordinal)
+	if err := writeCampaignFileNoReplace(directory, name, encoded); err != nil {
+		return CampaignPlannedAttempt{}, err
+	}
+	var checked CampaignPlannedAttempt
+	if err := readCampaignJSON(filepath.Join(directory, name), &checked); err != nil {
+		return CampaignPlannedAttempt{}, err
+	}
+	if checked.Digest != planned.Digest || checked.ValidateRequest(request) != nil {
+		return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_COMMIT_MISMATCH")
+	}
+	recovered.PlannedAttempts = append(recovered.PlannedAttempts, checked)
+	return checked, nil
+}
+
 func (recovered *CampaignRecovery) CommitAttempt(
 	record CampaignAttemptRecord,
 	artifact []byte,
@@ -108,6 +157,10 @@ func (recovered *CampaignRecovery) CommitAttempt(
 		recovered.Config.Digest != recovered.validatedConfigDigest ||
 		recovered.Head.Digest != recovered.validatedHeadDigest {
 		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
+	}
+	if len(recovered.PlannedAttempts) == recovered.Head.Sequence+1 &&
+		record.InputDigest != recovered.PlannedAttempts[len(recovered.PlannedAttempts)-1].Digest {
+		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_RECORD_MISMATCH")
 	}
 	next, err := commitCampaignAttempt(
 		recovered.directory, recovered.Config, recovered.Head, record, artifact, elapsedMillis,
@@ -322,6 +375,10 @@ func RecoverCampaignDirectory(
 	if err != nil {
 		return CampaignRecovery{}, err
 	}
+	plans, err := readCampaignPlans(clean, stored, checkpoints, &pending)
+	if err != nil {
+		return CampaignRecovery{}, err
+	}
 	referenced := make(map[string]bool, len(checkpoints)-1)
 	for _, checkpoint := range checkpoints[1:] {
 		digest := checkpoint.Record.ArtifactDigest
@@ -351,7 +408,8 @@ func RecoverCampaignDirectory(
 	return CampaignRecovery{
 		Config: stored, Checkpoints: checkpoints, Head: head, Failure: failure,
 		OrphanArtifactDigests: orphans, PendingRelativeFilePaths: pending,
-		directory: clean, validatedConfigDigest: stored.Digest, validatedHeadDigest: head.Digest,
+		PlannedAttempts: plans,
+		directory:       clean, validatedConfigDigest: stored.Digest, validatedHeadDigest: head.Digest,
 		validatedFailureDigest: validatedFailureDigest,
 	}, nil
 }
@@ -408,7 +466,7 @@ func validateCampaignRoot(root string, pending *[]string) error {
 	if err != nil {
 		return fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_READ: %w", err)
 	}
-	seen := make(map[string]bool, 4)
+	seen := make(map[string]bool, 5)
 	for _, entry := range entries {
 		name := entry.Name()
 		switch name {
@@ -417,7 +475,7 @@ func validateCampaignRoot(root string, pending *[]string) error {
 				return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 			}
 			seen[name] = true
-		case campaignArtifactsDir, campaignCheckpointsDir:
+		case campaignArtifactsDir, campaignCheckpointsDir, campaignPlansDir:
 			if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
 				return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 			}
@@ -429,10 +487,61 @@ func validateCampaignRoot(root string, pending *[]string) error {
 			*pending = append(*pending, name)
 		}
 	}
-	if !seen[campaignConfigFile] || !seen[campaignArtifactsDir] || !seen[campaignCheckpointsDir] {
+	if !seen[campaignConfigFile] || !seen[campaignArtifactsDir] || !seen[campaignCheckpointsDir] ||
+		!seen[campaignPlansDir] {
 		return errors.New("EXPERIMENT_CAMPAIGN_STORE_LAYOUT_INVALID")
 	}
 	return nil
+}
+
+func readCampaignPlans(
+	root string,
+	config CampaignConfig,
+	checkpoints []CampaignCheckpoint,
+	pending *[]string,
+) ([]CampaignPlannedAttempt, error) {
+	directory := filepath.Join(root, campaignPlansDir)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("EXPERIMENT_CAMPAIGN_STORE_PLAN_READ: %w", err)
+	}
+	plans := make([]CampaignPlannedAttempt, 0, len(entries))
+	for _, entry := range entries {
+		if campaignPendingFile(entry) {
+			*pending = append(*pending, filepath.Join(campaignPlansDir, entry.Name()))
+			continue
+		}
+		ordinal, ok := parseCampaignCheckpointFile(entry.Name())
+		if !ok || ordinal <= 0 || entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_FILE_INVALID")
+		}
+		var planned CampaignPlannedAttempt
+		if err := readCampaignJSON(filepath.Join(directory, entry.Name()), &planned); err != nil {
+			return nil, err
+		}
+		if planned.View.Request.Ordinal != ordinal {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_NAME_MISMATCH")
+		}
+		plans = append(plans, planned)
+	}
+	sort.Slice(plans, func(i, j int) bool { return plans[i].View.Request.Ordinal < plans[j].View.Request.Ordinal })
+	headSequence := len(checkpoints) - 1
+	if len(plans) > headSequence+1 || (len(plans) > 0 && len(plans) < headSequence) {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_SEQUENCE_INVALID")
+	}
+	for index := range plans {
+		if plans[index].View.Request.Ordinal != index+1 || index >= len(checkpoints) {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_SEQUENCE_INVALID")
+		}
+		request, err := NewCampaignAttemptRequest(config, checkpoints[index])
+		if err != nil || plans[index].ValidateRequest(request) != nil {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_INPUT_MISMATCH")
+		}
+		if index < headSequence && checkpoints[index+1].Record.InputDigest != plans[index].Digest {
+			return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_RECORD_MISMATCH")
+		}
+	}
+	return plans, nil
 }
 
 func readCampaignCheckpoints(

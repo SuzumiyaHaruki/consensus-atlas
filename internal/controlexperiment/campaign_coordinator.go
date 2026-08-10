@@ -116,10 +116,11 @@ func campaignRemainingAllowance(
 }
 
 type CampaignAttemptResult struct {
-	Outcome  string
-	Failure  *MethodFailure
-	Work     WorkLedger
-	Artifact []byte
+	InputDigest string
+	Outcome     string
+	Failure     *MethodFailure
+	Work        WorkLedger
+	Artifact    []byte
 }
 
 type CampaignAttemptProvider interface {
@@ -237,10 +238,19 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 			request, CampaignFailureResult, errors.New("EXPERIMENT_CAMPAIGN_ALLOWANCE_EXCEEDED"),
 		)
 	}
+	inputDigest := request.Digest
+	if result.InputDigest != "" {
+		if !validSHA256(result.InputDigest) {
+			return coordinator.failAttempt(
+				request, CampaignFailureResult, errors.New("EXPERIMENT_CAMPAIGN_ATTEMPT_INPUT_INVALID"),
+			)
+		}
+		inputDigest = result.InputDigest
+	}
 	record, err := NewCampaignAttemptRecord(CampaignAttemptRecord{
 		Ordinal:     request.Ordinal,
 		ID:          fmt.Sprintf("%s-attempt-%d", request.CampaignID, request.Ordinal),
-		InputDigest: request.Digest, ArtifactDigest: CampaignArtifactDigest(result.Artifact),
+		InputDigest: inputDigest, ArtifactDigest: CampaignArtifactDigest(result.Artifact),
 		Outcome: result.Outcome, Failure: result.Failure, Work: result.Work,
 	})
 	if err != nil {
