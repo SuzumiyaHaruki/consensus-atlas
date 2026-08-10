@@ -5,7 +5,7 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21d3 Opt-in Durable-call Runner**。通用 Campaign store 现在使用
+当前阶段已冻结 **M5.21d4 Pre-plan Terminal Accounting**。通用 Campaign store 现在使用
 exact call intent、dispatch marker 和 result 三段 no-replace 记录远程规划调用。dispatch-only
 状态在恢复后机械成为 `ambiguous`，不能再调用或补写 result。`CampaignConfig/v3`
 显式冻结 `none/zero-model/durable-call` planner mode。d2 已用注入的离线 transport 把该状态机
@@ -14,6 +14,8 @@ exact call intent、dispatch marker 和 result 三段 no-replace 记录远程规
 `exact intent durable -> key read -> one Step -> key clear`。测试只使用注入的离线 key reader/transport；
 没有读取桌面密钥或调用真实模型，外部 model calls/tokens 仍为 0。pre-plan failed call 已持久化，
 但尚未进入 Summary totals，这是下一阶段必须先修复的记账边界。
+M5.21d4 将只允许 failure marker 引用 store 已验证的同 ordinal model-call result，并将 terminal
+work 纳入 failed Summary totals，同时保持 attempt/checkpoint/PSS evidence 不增加。
 
 M5.21c 已完成 Durable Planned Attempt。用户给定 attempts、decisions、first seed
 和 wall-clock ceiling 后，etcd/raft runner 在每个 attempt 前从已提交 Observation 构造最小
@@ -367,7 +369,7 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21d3 opt-in durable runner](docs/stage-m5.21d3-opt-in-durable-runner.md)、[M5.21d2 offline durable planner](docs/stage-m5.21d2-etcdraft-offline-model-planner.md)、[M5.21d1 durable model call](docs/stage-m5.21d1-durable-model-call.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21d4 terminal accounting](docs/stage-m5.21d4-pre-plan-terminal-accounting.md)、[M5.21d3 opt-in durable runner](docs/stage-m5.21d3-opt-in-durable-runner.md)、[M5.21d2 offline durable planner](docs/stage-m5.21d2-etcdraft-offline-model-planner.md)、[M5.21d1 durable model call](docs/stage-m5.21d1-durable-model-call.md)、
 [M5.21c durable planned attempt](docs/stage-m5.21c-durable-planned-attempt.md)、
 [M5.21b choice attribution](docs/stage-m5.21b-prior-choice-attribution.md)、
 [M5.21a Planner View](docs/stage-m5.21a-campaign-planner-view.md)、[M5.20 Campaign Observation](docs/stage-m5.20-campaign-observation.md)、

@@ -2642,6 +2642,11 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      completed result、durable plan、ambiguous 和 failed 恢复均不得读 key 或调用 transport。pre-plan
      failure 的模型成本以 durable result 为准；在引入可信 terminal accounting 前，不得伪造 plan 将其
      填入 checkpoint totals，也不得把 summary 中的零 model work 解释为没有发生调用。
+104. Pre-plan terminal accounting 只能引用同一 next ordinal 已持久化并由 store 重验的 model-call
+     result，不能接受 provider 自报 WorkLedger。failure marker 保存 result evidence digest、机械附加的
+     work 和 allowance-overrun 标志；failed Summary totals 等于 committed record totals 加 terminal
+     work，但 Sequence/Attempts/head checkpoint 不增加。普通失败和 dispatch-only ambiguous 保持空 work，
+     不得产生 plan、artifact、PSS 或 execution evidence。
 
 ---
 
