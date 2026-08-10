@@ -7,16 +7,16 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
 const (
 	etcdraftCampaignSpecVersion     = "consensus-atlas/etcdraft-campaign-spec/v1"
-	etcdraftCampaignArtifactVersion = "consensus-atlas/etcdraft-campaign-artifact/v1"
+	etcdraftCampaignArtifactVersion = "consensus-atlas/etcdraft-campaign-artifact/v2"
+	etcdraftCampaignComposition     = "consensus-atlas/etcdraft-campaign-composition/v1"
 	etcdraftCampaignTargetID        = "etcdraft-v2"
-	etcdraftCampaignStrategy        = "workload-admissible-uniform"
+	etcdraftCampaignStrategy        = "workload-admissible-uniform-b4"
 	etcdraftCampaignSeedRule        = "first-seed-plus-ordinal-minus-one"
 )
 
@@ -92,6 +92,10 @@ func (spec etcdraftCampaignSpec) seal() (etcdraftCampaignSpec, error) {
 type etcdraftCampaignProvider struct {
 	spec                 etcdraftCampaignSpec
 	targetIdentityDigest string
+	experimentSpecDigest string
+	inputs               etcdraftIntentInputs
+	intent               controlexperiment.GuardedTestIntent
+	plan                 controlexperiment.CompiledIntentPlanV2
 	execute              func(
 		context.Context, string, int, uint64, bool,
 	) (controlexperiment.Report, controlexperiment.ExecutionBundle, error)
@@ -104,21 +108,80 @@ func newEtcdraftCampaignProvider(
 	if err := spec.validate(); err != nil {
 		return etcdraftCampaignProvider{}, err
 	}
-	adapter, err := etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+	inputs, err := newEtcdraftB4IntentInputs(ctx)
 	if err != nil {
 		return etcdraftCampaignProvider{}, err
 	}
-	manifest, err := adapter.Manifest(ctx)
+	intent, err := controlexperiment.NewGuardedTestIntent(controlexperiment.GuardedTestIntent{
+		ID: "etcdraft-campaign-intent-m5-21b", ViewDigest: inputs.View.Digest,
+		RiskID: etcdraftIntentRiskLeaderChange,
+		Must: controlexperiment.IntentMust{
+			Decisions: spec.DecisionsPerAttempt,
+			FaultEnvelope: controlexperiment.FaultEnvelope{
+				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
+				MaxMessageDuplicates: 1,
+			},
+		},
+		Prefer: controlexperiment.IntentPrefer{BackendIDs: []string{etcdraftBackendUniform}},
+	})
 	if err != nil {
 		return etcdraftCampaignProvider{}, err
 	}
-	digest, err := manifest.Digest()
+	plan, err := controlexperiment.CompileGuardedTestIntentV2(
+		inputs.View, inputs.Knowledge, inputs.Catalog, inputs.Qualification.Manifest,
+		inputs.Qualification.Qualification, intent,
+	)
 	if err != nil {
 		return etcdraftCampaignProvider{}, err
 	}
-	return etcdraftCampaignProvider{
-		spec: spec, targetIdentityDigest: digest, execute: etcdraftExecution,
-	}, nil
+	provider := etcdraftCampaignProvider{
+		spec: spec, targetIdentityDigest: inputs.Qualification.Qualification.ManifestDigest,
+		inputs: inputs, intent: intent, plan: plan, execute: etcdraftExecution,
+	}
+	provider.experimentSpecDigest, err = provider.compositionDigest()
+	if err != nil {
+		return etcdraftCampaignProvider{}, err
+	}
+	if err := provider.validate(); err != nil {
+		return etcdraftCampaignProvider{}, err
+	}
+	return provider, nil
+}
+
+func (provider etcdraftCampaignProvider) compositionDigest() (string, error) {
+	return control.CanonicalDigest(struct {
+		SchemaVersion      string `json:"schema_version"`
+		SpecDigest         string `json:"spec_digest"`
+		SemanticViewDigest string `json:"semantic_view_digest"`
+		IntentDigest       string `json:"intent_digest"`
+		PlanDigest         string `json:"plan_digest"`
+	}{
+		SchemaVersion: etcdraftCampaignComposition, SpecDigest: provider.spec.Digest,
+		SemanticViewDigest: provider.inputs.View.Digest,
+		IntentDigest:       provider.intent.Digest, PlanDigest: provider.plan.Digest,
+	})
+}
+
+func (provider etcdraftCampaignProvider) validate() error {
+	if err := provider.spec.validate(); err != nil {
+		return err
+	}
+	if provider.targetIdentityDigest != provider.inputs.Qualification.Qualification.ManifestDigest ||
+		provider.plan.BackendID != etcdraftBackendUniform || provider.plan.Strategy != provider.spec.Strategy ||
+		provider.plan.Decisions != provider.spec.DecisionsPerAttempt {
+		return errors.New("ETCDRAFT_CAMPAIGN_PLAN_BINDING_INVALID")
+	}
+	if err := provider.plan.ValidateInputs(
+		provider.inputs.View, provider.inputs.Knowledge, provider.inputs.Catalog,
+		provider.inputs.Qualification.Manifest, provider.inputs.Qualification.Qualification, provider.intent,
+	); err != nil {
+		return err
+	}
+	digest, err := provider.compositionDigest()
+	if err != nil || digest != provider.experimentSpecDigest {
+		return errors.New("ETCDRAFT_CAMPAIGN_COMPOSITION_DIGEST_MISMATCH")
+	}
+	return nil
 }
 
 func (provider etcdraftCampaignProvider) campaignConfig(
@@ -126,7 +189,7 @@ func (provider etcdraftCampaignProvider) campaignConfig(
 	attempts int,
 	wallClockCeilingMillis int64,
 ) (controlexperiment.CampaignConfig, error) {
-	if err := provider.spec.validate(); err != nil || attempts <= 0 ||
+	if err := provider.validate(); err != nil || attempts <= 0 ||
 		provider.targetIdentityDigest == "" {
 		return controlexperiment.CampaignConfig{}, errors.New("ETCDRAFT_CAMPAIGN_COMPOSITION_INVALID")
 	}
@@ -139,7 +202,7 @@ func (provider etcdraftCampaignProvider) campaignConfig(
 		return controlexperiment.CampaignConfig{}, errors.New("ETCDRAFT_CAMPAIGN_BUDGET_OVERFLOW")
 	}
 	return controlexperiment.NewCampaignConfig(
-		id, etcdraftCampaignTargetID, provider.targetIdentityDigest, provider.spec.Digest,
+		id, etcdraftCampaignTargetID, provider.targetIdentityDigest, provider.experimentSpecDigest,
 		controlexperiment.CampaignLogicalBudget{
 			MaxAttempts: attempts, MaxPrimarySchedulerDecisions: decisions,
 			MaxPrimaryWorkUnits: work, MaxReplayWorkUnits: work,
@@ -159,7 +222,7 @@ func (provider etcdraftCampaignProvider) Attempt(
 	ctx context.Context,
 	request controlexperiment.CampaignAttemptRequest,
 ) (controlexperiment.CampaignAttemptResult, error) {
-	if err := provider.spec.validate(); err != nil {
+	if err := provider.validate(); err != nil {
 		return controlexperiment.CampaignAttemptResult{}, err
 	}
 	if provider.execute == nil {
@@ -170,7 +233,7 @@ func (provider etcdraftCampaignProvider) Attempt(
 	}
 	if request.TargetID != etcdraftCampaignTargetID ||
 		request.TargetIdentityDigest != provider.targetIdentityDigest ||
-		request.ExperimentSpecDigest != provider.spec.Digest {
+		request.ExperimentSpecDigest != provider.experimentSpecDigest {
 		return controlexperiment.CampaignAttemptResult{}, errors.New("ETCDRAFT_CAMPAIGN_REQUEST_IDENTITY_MISMATCH")
 	}
 	seed, err := provider.spec.seed(request.Ordinal)
@@ -183,9 +246,17 @@ func (provider etcdraftCampaignProvider) Attempt(
 		request.Allowance.ReplayWorkUnits < requiredWork {
 		return controlexperiment.CampaignAttemptResult{}, errors.New("ETCDRAFT_CAMPAIGN_ALLOWANCE_TOO_SMALL")
 	}
+	instance, err := provider.executionInstance(request.Ordinal, seed)
+	if err != nil {
+		return controlexperiment.CampaignAttemptResult{}, err
+	}
+	choice, err := controlexperiment.NewCampaignExecutionChoice(provider.intent, provider.plan, instance)
+	if err != nil {
+		return controlexperiment.CampaignAttemptResult{}, err
+	}
 
 	report, bundle, executionErr := provider.execute(
-		ctx, provider.spec.Strategy, provider.spec.DecisionsPerAttempt, seed, true,
+		ctx, provider.plan.Strategy, provider.plan.Decisions, seed, true,
 	)
 	if executionErr != nil {
 		var failure *controlexperiment.ExecutionFailure
@@ -196,13 +267,13 @@ func (provider etcdraftCampaignProvider) Attempt(
 			Phase: failure.Phase, Code: failure.Code, Decision: failure.Decision,
 		}
 		artifact, encoded, err := newEtcdraftCampaignArtifact(
-			request, provider.spec, seed, controlexperiment.CampaignAttemptFailed,
+			request, provider, choice, controlexperiment.CampaignAttemptFailed,
 			typed, failure.Work, nil, nil,
 		)
 		if err != nil {
 			return controlexperiment.CampaignAttemptResult{}, err
 		}
-		if err := artifact.validate(request, provider.spec, provider.targetIdentityDigest); err != nil {
+		if err := artifact.validate(request, provider); err != nil {
 			return controlexperiment.CampaignAttemptResult{}, err
 		}
 		return controlexperiment.CampaignAttemptResult{
@@ -211,13 +282,13 @@ func (provider etcdraftCampaignProvider) Attempt(
 		}, nil
 	}
 	artifact, encoded, err := newEtcdraftCampaignArtifact(
-		request, provider.spec, seed, controlexperiment.CampaignAttemptCompleted,
+		request, provider, choice, controlexperiment.CampaignAttemptCompleted,
 		nil, report.Work, &report, &bundle,
 	)
 	if err != nil {
 		return controlexperiment.CampaignAttemptResult{}, err
 	}
-	if err := artifact.validate(request, provider.spec, provider.targetIdentityDigest); err != nil {
+	if err := artifact.validate(request, provider); err != nil {
 		return controlexperiment.CampaignAttemptResult{}, err
 	}
 	return controlexperiment.CampaignAttemptResult{
@@ -225,24 +296,38 @@ func (provider etcdraftCampaignProvider) Attempt(
 	}, nil
 }
 
+func (provider etcdraftCampaignProvider) executionInstance(
+	ordinal int,
+	seed uint64,
+) (controlexperiment.IntentExecutionInstance, error) {
+	return controlexperiment.NewIntentExecutionInstance(
+		fmt.Sprintf("etcdraft-campaign-attempt-%d", ordinal), provider.plan, seed,
+		controlexperiment.MethodBudget{
+			MaxExecutionAttempts: 1,
+			MaxPrimaryWorkUnits:  provider.spec.DecisionsPerAttempt + 2,
+			MaxReplayWorkUnits:   provider.spec.DecisionsPerAttempt + 2,
+		},
+	)
+}
+
 type etcdraftCampaignArtifact struct {
-	SchemaVersion        string                             `json:"schema_version"`
-	RequestDigest        string                             `json:"request_digest"`
-	ExperimentSpecDigest string                             `json:"experiment_spec_digest"`
-	TargetIdentityDigest string                             `json:"target_identity_digest"`
-	Ordinal              int                                `json:"ordinal"`
-	PolicySeed           uint64                             `json:"policy_seed"`
-	Outcome              string                             `json:"outcome"`
-	Failure              *controlexperiment.MethodFailure   `json:"failure,omitempty"`
-	Work                 controlexperiment.WorkLedger       `json:"work"`
-	Report               *controlexperiment.Report          `json:"report,omitempty"`
-	Bundle               *controlexperiment.ExecutionBundle `json:"bundle,omitempty"`
+	SchemaVersion        string                                    `json:"schema_version"`
+	RequestDigest        string                                    `json:"request_digest"`
+	ExperimentSpecDigest string                                    `json:"experiment_spec_digest"`
+	TargetIdentityDigest string                                    `json:"target_identity_digest"`
+	Ordinal              int                                       `json:"ordinal"`
+	Choice               controlexperiment.CampaignExecutionChoice `json:"choice"`
+	Outcome              string                                    `json:"outcome"`
+	Failure              *controlexperiment.MethodFailure          `json:"failure,omitempty"`
+	Work                 controlexperiment.WorkLedger              `json:"work"`
+	Report               *controlexperiment.Report                 `json:"report,omitempty"`
+	Bundle               *controlexperiment.ExecutionBundle        `json:"bundle,omitempty"`
 }
 
 func newEtcdraftCampaignArtifact(
 	request controlexperiment.CampaignAttemptRequest,
-	spec etcdraftCampaignSpec,
-	seed uint64,
+	provider etcdraftCampaignProvider,
+	choice controlexperiment.CampaignExecutionChoice,
 	outcome string,
 	failure *controlexperiment.MethodFailure,
 	work controlexperiment.WorkLedger,
@@ -251,9 +336,9 @@ func newEtcdraftCampaignArtifact(
 ) (etcdraftCampaignArtifact, []byte, error) {
 	artifact := etcdraftCampaignArtifact{
 		SchemaVersion: etcdraftCampaignArtifactVersion,
-		RequestDigest: request.Digest, ExperimentSpecDigest: spec.Digest,
+		RequestDigest: request.Digest, ExperimentSpecDigest: provider.experimentSpecDigest,
 		TargetIdentityDigest: request.TargetIdentityDigest,
-		Ordinal:              request.Ordinal, PolicySeed: seed, Outcome: outcome,
+		Ordinal:              request.Ordinal, Choice: choice, Outcome: outcome,
 		Failure: failure, Work: work, Report: report, Bundle: bundle,
 	}
 	encoded, err := json.MarshalIndent(artifact, "", "  ")
@@ -265,21 +350,30 @@ func newEtcdraftCampaignArtifact(
 
 func (artifact etcdraftCampaignArtifact) validate(
 	request controlexperiment.CampaignAttemptRequest,
-	spec etcdraftCampaignSpec,
-	targetIdentityDigest string,
+	provider etcdraftCampaignProvider,
 ) error {
 	if err := request.Validate(); err != nil {
 		return err
 	}
-	seed, err := spec.seed(request.Ordinal)
+	if err := provider.validate(); err != nil {
+		return err
+	}
+	seed, err := provider.spec.seed(request.Ordinal)
 	if err != nil {
 		return err
 	}
+	instance, err := provider.executionInstance(request.Ordinal, seed)
+	if err != nil {
+		return err
+	}
+	if err := artifact.Choice.ValidateInputs(provider.intent, provider.plan, instance); err != nil {
+		return err
+	}
 	if artifact.SchemaVersion != etcdraftCampaignArtifactVersion ||
-		artifact.RequestDigest != request.Digest || artifact.ExperimentSpecDigest != spec.Digest ||
-		artifact.TargetIdentityDigest != targetIdentityDigest ||
+		artifact.RequestDigest != request.Digest || artifact.ExperimentSpecDigest != provider.experimentSpecDigest ||
+		artifact.TargetIdentityDigest != provider.targetIdentityDigest ||
 		artifact.TargetIdentityDigest != request.TargetIdentityDigest ||
-		artifact.Ordinal != request.Ordinal || artifact.PolicySeed != seed {
+		artifact.Ordinal != request.Ordinal {
 		return errors.New("ETCDRAFT_CAMPAIGN_ARTIFACT_IDENTITY_MISMATCH")
 	}
 	if _, err := controlexperiment.NewCampaignAttemptRecord(controlexperiment.CampaignAttemptRecord{
@@ -301,14 +395,20 @@ func (artifact etcdraftCampaignArtifact) validate(
 		if err := artifact.Bundle.Validate(); err != nil {
 			return err
 		}
-		if artifact.Report.ManifestDigest != targetIdentityDigest ||
-			artifact.Bundle.Identity.ManifestDigest != targetIdentityDigest ||
+		if _, err := controlexperiment.NewIntentOutcome(
+			fmt.Sprintf("etcdraft-campaign-outcome-%d", artifact.Ordinal),
+			provider.plan, instance, *artifact.Report, *artifact.Bundle,
+		); err != nil {
+			return err
+		}
+		if artifact.Report.ManifestDigest != provider.targetIdentityDigest ||
+			artifact.Bundle.Identity.ManifestDigest != provider.targetIdentityDigest ||
 			artifact.Bundle.Identity.ReportDigest != artifact.Report.Digest ||
 			artifact.Bundle.Work != artifact.Report.Work || artifact.Work != artifact.Report.Work ||
-			artifact.Report.Config.DecisionsPerRun != spec.DecisionsPerAttempt ||
+			artifact.Report.Config.DecisionsPerRun != provider.plan.Decisions ||
 			len(artifact.Report.Config.Runs) != 1 ||
 			artifact.Report.Config.Runs[0].Policy.Version != controlexperiment.AdmissibleUniformPolicyVersion ||
-			artifact.Report.Config.Runs[0].Policy.SeedHex != randomPolicySeed(seed, 1) {
+			artifact.Report.Config.Runs[0].Policy.SeedHex != randomPolicySeed(instance.PolicySeed, 1) {
 			return errors.New("ETCDRAFT_CAMPAIGN_COMPLETED_ARTIFACT_MISMATCH")
 		}
 	case controlexperiment.CampaignAttemptFailed:
@@ -317,6 +417,10 @@ func (artifact etcdraftCampaignArtifact) validate(
 		}
 	default:
 		return errors.New("ETCDRAFT_CAMPAIGN_ARTIFACT_OUTCOME_INVALID")
+	}
+	if artifact.Work.Primary.WorkUnits > instance.Budget.MaxPrimaryWorkUnits ||
+		artifact.Work.Replay.WorkUnits > instance.Budget.MaxReplayWorkUnits {
+		return errors.New("ETCDRAFT_CAMPAIGN_ARTIFACT_INSTANCE_BUDGET_EXCEEDED")
 	}
 	return nil
 }

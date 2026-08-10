@@ -38,6 +38,31 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 	if err != nil || first.Sequence != 1 || first.StopReason != controlexperiment.CampaignStopRunning {
 		t.Fatalf("first real attempt did not commit: head=%#v err=%v", first, err)
 	}
+	prefixObservation, err := newEtcdraftCampaignObservation(&recovered, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextRequest, err := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := provider.intent
+	baseline.Prefer = controlexperiment.IntentPrefer{}
+	baseline.Digest = ""
+	baseline, err = controlexperiment.NewGuardedTestIntent(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plannerView, err := controlexperiment.NewCampaignPlannerView(
+		"etcdraft-campaign-prefix-m5-21b", provider.inputs.View,
+		prefixObservation, nextRequest, baseline,
+	)
+	if err != nil || len(plannerView.Feedback.Attempts) != 1 ||
+		plannerView.Feedback.Attempts[0].Choice == nil ||
+		plannerView.Feedback.Attempts[0].Choice.BackendID != etcdraftBackendUniform ||
+		plannerView.Feedback.Attempts[0].Choice.PlanDigest != provider.plan.Digest {
+		t.Fatalf("prefix feedback lost trusted choice attribution: %#v/%v", plannerView.Feedback, err)
+	}
 
 	resumed, err := controlexperiment.RecoverCampaignDirectory(directory, config)
 	if err != nil || resumed.Failure != nil || resumed.Head.Digest != first.Digest {
@@ -83,13 +108,31 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 		if err := json.Unmarshal(encoded, &artifact); err != nil {
 			t.Fatal(err)
 		}
-		if err := artifact.validate(request, spec, provider.targetIdentityDigest); err != nil {
+		if err := artifact.validate(request, provider); err != nil {
 			t.Fatalf("attempt %d artifact did not revalidate: %v", ordinal, err)
+		}
+		if ordinal == 1 {
+			otherInstance, err := provider.executionInstance(ordinal, artifact.Choice.PolicySeed+1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tampered := artifact
+			tampered.Choice, err = controlexperiment.NewCampaignExecutionChoice(
+				provider.intent, provider.plan, otherInstance,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tampered.validate(request, provider); err == nil {
+				t.Fatal("artifact accepted a different execution instance")
+			}
 		}
 		if artifact.Report == nil || artifact.Bundle == nil ||
 			!artifact.Report.Runs[0].Replay.Stable ||
 			len(artifact.Bundle.CorePSS) != artifact.Report.Runs[0].ChargedDecisions+1 ||
-			artifact.PolicySeed != 40+uint64(ordinal) {
+			artifact.Choice.PolicySeed != 40+uint64(ordinal) ||
+			artifact.Choice.BackendID != etcdraftBackendUniform ||
+			artifact.Choice.PlanDigest != provider.plan.Digest {
 			t.Fatalf("attempt %d lost qualified evidence: %#v", ordinal, artifact)
 		}
 		primaryDecisions += artifact.Work.Primary.SchedulerDecisions
@@ -112,6 +155,9 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 		observation.PSS.UniqueStates <= 0 || observation.Faults.ObservedAttempts != 2 ||
 		observation.Workload.ObservedAttempts != 2 || observation.Workload.Planned != 2 ||
 		observation.Workload.Pending != observation.Workload.Planned-observation.Workload.Completed ||
+		observation.Attempts[0].Choice == nil || observation.Attempts[1].Choice == nil ||
+		observation.Attempts[0].Choice.BackendID != etcdraftBackendUniform ||
+		observation.Attempts[1].Choice.PlanDigest != provider.plan.Digest ||
 		len(observation.Monitors.Checked) != 2 || observation.Monitors.Checked[0].Count != 2 ||
 		observation.Monitors.Checked[1].Count != 2 || len(observation.Monitors.Triggers) != 0 {
 		t.Fatalf("campaign observation drifted: %#v", observation)
@@ -121,8 +167,10 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bytes.Contains(observationJSON, []byte(`"report"`)) ||
-		bytes.Contains(observationJSON, []byte(`"final_snapshot"`)) {
-		t.Fatal("campaign observation copied a report or bundle")
+		bytes.Contains(observationJSON, []byte(`"final_snapshot"`)) ||
+		bytes.Contains(observationJSON, []byte(`"policy_seed"`)) ||
+		bytes.Contains(observationJSON, []byte(`"execution_instance_digest"`)) {
+		t.Fatal("campaign observation exposed target evidence or coordinator-owned seed")
 	}
 
 	request, err := controlexperiment.NewCampaignAttemptRequest(config, checked.Checkpoints[0])
@@ -149,7 +197,7 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 	if err := json.Unmarshal(failed.Artifact, &failedArtifact); err != nil {
 		t.Fatal(err)
 	}
-	if err := failedArtifact.validate(request, spec, provider.targetIdentityDigest); err != nil ||
+	if err := failedArtifact.validate(request, provider); err != nil ||
 		failedArtifact.Report != nil || failedArtifact.Bundle != nil {
 		t.Fatalf("failed terminal artifact did not revalidate: %#v/%v", failedArtifact, err)
 	}

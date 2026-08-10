@@ -21,7 +21,7 @@ func newEtcdraftCampaignObservation(
 ) (controlexperiment.CampaignObservation, error) {
 	if recovered == nil || provider.targetIdentityDigest == "" ||
 		provider.targetIdentityDigest != recovered.Config.TargetIdentityDigest ||
-		provider.spec.Digest != recovered.Config.ExperimentSpecDigest {
+		provider.experimentSpecDigest != recovered.Config.ExperimentSpecDigest {
 		return controlexperiment.CampaignObservation{}, errors.New("ETCDRAFT_CAMPAIGN_OBSERVATION_COMPOSITION_INVALID")
 	}
 	if err := provider.spec.validate(); err != nil {
@@ -47,7 +47,7 @@ func newEtcdraftCampaignObservation(
 		if err != nil {
 			return controlexperiment.CampaignObservation{}, err
 		}
-		if err := artifact.validate(request, provider.spec, provider.targetIdentityDigest); err != nil {
+		if err := artifact.validate(request, provider); err != nil {
 			return controlexperiment.CampaignObservation{}, err
 		}
 		if artifact.Outcome != attempt.Record.Outcome || artifact.Work != attempt.Record.Work ||
@@ -56,7 +56,7 @@ func newEtcdraftCampaignObservation(
 		}
 		projection := controlexperiment.CampaignAttemptProjection{
 			Ordinal: attempt.Ordinal, ArtifactDigest: attempt.Record.ArtifactDigest,
-			Outcome: artifact.Outcome, Work: artifact.Work,
+			Outcome: artifact.Outcome, Work: artifact.Work, Choice: &artifact.Choice,
 		}
 		if artifact.Bundle != nil {
 			if err := artifact.Bundle.ValidateProjection(etcdraftv2.DecisionProjector{}); err != nil {
