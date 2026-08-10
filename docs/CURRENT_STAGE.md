@@ -593,21 +593,23 @@ view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artif
 未改 Runtime/scheduler/executor，未接真实模型。
 详见 `docs/stage-m5.21c-durable-planned-attempt.md`。
 
-下一阶段 M5.21d 只处理真实远程调用的可恢复边界：调用前落盘 exact request 和 call intent，
-对“可能已收费但未有 durable response”使用 ambiguous terminal 并拒绝自动重试。在该边界
-验证前不设置非零 model allowance。
+下一阶段 M5.21d 只处理真实远程调用的可恢复边界。d1 设计已冻结：调用前依次落盘
+exact call intent 和 dispatch marker；恢复只看到 dispatch 时归类为 ambiguous terminal，拒绝重试或
+补写 result。d1 先实现通用 store，d2 才接 etcd/raft 离线 transport。在 d2 验证前不设置
+非零 model allowance。详见 `docs/stage-m5.21d1-durable-model-call.md`。
 
 ## 阅读顺序
 
-1. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
-2. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
-3. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
-4. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
-5. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
-6. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-7. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-8. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-9. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-10. [架构](architecture.md)
-11. [总体规划](ConsensusAtlas-总体规划.md)
-12. [完整文档导航](README.md)
+1. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
+2. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
+3. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
+4. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
+5. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
+6. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+7. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+8. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+9. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+10. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+11. [架构](architecture.md)
+12. [总体规划](ConsensusAtlas-总体规划.md)
+13. [完整文档导航](README.md)
