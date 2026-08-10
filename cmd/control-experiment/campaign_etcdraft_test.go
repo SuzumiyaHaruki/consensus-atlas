@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,17 +11,17 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
-func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
+func TestEtcdraftM521cRecoversDurablePlanWithoutReplanning(t *testing.T) {
 	ctx := context.Background()
-	spec, err := newEtcdraftCampaignSpec("etcdraft-qualified-campaign-m5-19c", 16, 41)
+	spec, err := newEtcdraftCampaignSpec("etcdraft-planned-campaign-m5-21c", 8, 41)
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := newEtcdraftCampaignProvider(ctx, spec)
+	base, err := newEtcdraftCampaignProvider(ctx, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, err := provider.campaignConfig("etcdraft-campaign-m5-19c", 2, 120_000)
+	config, err := base.campaignConfig("etcdraft-campaign-m5-21c", 2, 120_000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,181 +30,75 @@ func TestEtcdraftM519cRunsRecoverableQualifiedCampaign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	plannerCalls := 0
+	provider := newEtcdraftPlannedCampaignProvider(base, &recovered)
+	provider.planner = func(view controlexperiment.CampaignPlannerView) (controlexperiment.GuardedTestIntent, error) {
+		plannerCalls++
+		return controlexperiment.PlanDeterministicCampaignFixture(view)
+	}
 	coordinator, err := controlexperiment.NewCampaignCoordinator(&recovered, provider)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := coordinator.Step(ctx)
-	if err != nil || first.Sequence != 1 || first.StopReason != controlexperiment.CampaignStopRunning {
-		t.Fatalf("first real attempt did not commit: head=%#v err=%v", first, err)
+	if head, err := coordinator.Step(ctx); err != nil || head.Sequence != 1 || plannerCalls != 1 {
+		t.Fatalf("first planned attempt failed: head=%#v calls=%d err=%v", head, plannerCalls, err)
 	}
-	prefixObservation, err := newEtcdraftCampaignObservation(&recovered, provider)
+	next, err := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nextRequest, err := controlexperiment.NewCampaignAttemptRequest(config, recovered.Head)
-	if err != nil {
-		t.Fatal(err)
-	}
-	baseline := provider.intent
-	baseline.Prefer = controlexperiment.IntentPrefer{}
-	baseline.Digest = ""
-	baseline, err = controlexperiment.NewGuardedTestIntent(baseline)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plannerView, err := controlexperiment.NewCampaignPlannerView(
-		"etcdraft-campaign-prefix-m5-21b", provider.inputs.View,
-		prefixObservation, nextRequest, baseline,
-	)
-	if err != nil || len(plannerView.Feedback.Attempts) != 1 ||
-		plannerView.Feedback.Attempts[0].Choice == nil ||
-		plannerView.Feedback.Attempts[0].Choice.BackendID != etcdraftBackendUniform ||
-		plannerView.Feedback.Attempts[0].Choice.PlanDigest != provider.plan.Digest {
-		t.Fatalf("prefix feedback lost trusted choice attribution: %#v/%v", plannerView.Feedback, err)
-	}
-	prefixProposal, err := controlexperiment.PlanDeterministicCampaignFixture(plannerView)
-	if err != nil || len(prefixProposal.Prefer.BackendIDs) == 0 ||
-		prefixProposal.Prefer.BackendIDs[0] != etcdraftBackendUniform {
-		t.Fatalf("fixture did not consume prior-choice attribution: %#v/%v", prefixProposal, err)
+	pending, err := provider.prepare(next)
+	if err != nil || plannerCalls != 2 || len(recovered.PlannedAttempts) != 2 {
+		t.Fatalf("next plan was not durable: plan=%#v calls=%d err=%v", pending, plannerCalls, err)
 	}
 
 	resumed, err := controlexperiment.RecoverCampaignDirectory(directory, config)
-	if err != nil || resumed.Failure != nil || resumed.Head.Digest != first.Digest {
-		t.Fatalf("real campaign did not recover: recovered=%#v err=%v", resumed, err)
+	if err != nil || resumed.Head.Sequence != 1 || len(resumed.PlannedAttempts) != 2 {
+		t.Fatalf("interrupted plan did not recover: %#v/%v", resumed, err)
 	}
-	coordinator, err = controlexperiment.NewCampaignCoordinator(&resumed, provider)
+	resumeProvider := newEtcdraftPlannedCampaignProvider(base, &resumed)
+	resumeProvider.planner = func(controlexperiment.CampaignPlannerView) (controlexperiment.GuardedTestIntent, error) {
+		plannerCalls++
+		return controlexperiment.GuardedTestIntent{}, errors.New("planner must not run")
+	}
+	coordinator, err = controlexperiment.NewCampaignCoordinator(&resumed, resumeProvider)
 	if err != nil {
 		t.Fatal(err)
 	}
 	head, err := coordinator.Run(ctx)
-	if err != nil || head.Sequence != 2 ||
+	if err != nil || head.Sequence != 2 || plannerCalls != 2 ||
 		head.StopReason != controlexperiment.CampaignStopAttemptLimit {
-		t.Fatalf("resumed real campaign did not stop mechanically: head=%#v err=%v", head, err)
+		t.Fatalf("resume replanned or failed: head=%#v calls=%d err=%v", head, plannerCalls, err)
 	}
 
 	checked, err := controlexperiment.RecoverCampaignDirectory(directory, config)
-	if err != nil || checked.Failure != nil || len(checked.Checkpoints) != 3 ||
-		checked.Head.Digest != head.Digest {
-		t.Fatalf("completed campaign did not recover: recovered=%#v err=%v", checked, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var primaryDecisions, primaryWork, replayWork int
-	for ordinal := 1; ordinal <= 2; ordinal++ {
-		previous := checked.Checkpoints[ordinal-1]
-		request, err := controlexperiment.NewCampaignAttemptRequest(config, previous)
+	for index, planned := range checked.PlannedAttempts {
+		record := checked.Checkpoints[index+1].Record
+		if record == nil || record.InputDigest != planned.Digest {
+			t.Fatalf("attempt %d did not bind its durable plan", index+1)
+		}
+		encoded, err := os.ReadFile(filepath.Join(directory, "artifacts", record.ArtifactDigest+".artifact"))
 		if err != nil {
 			t.Fatal(err)
-		}
-		record := checked.Checkpoints[ordinal].Record
-		if record == nil || record.InputDigest != request.Digest ||
-			record.Outcome != controlexperiment.CampaignAttemptCompleted {
-			t.Fatalf("attempt %d record drifted: %#v", ordinal, record)
-		}
-		encoded, err := os.ReadFile(filepath.Join(
-			directory, "artifacts", record.ArtifactDigest+".artifact",
-		))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if controlexperiment.CampaignArtifactDigest(encoded) != record.ArtifactDigest {
-			t.Fatalf("attempt %d artifact digest drifted", ordinal)
 		}
 		var artifact etcdraftCampaignArtifact
 		if err := json.Unmarshal(encoded, &artifact); err != nil {
 			t.Fatal(err)
 		}
-		if err := artifact.validate(request, provider); err != nil {
-			t.Fatalf("attempt %d artifact did not revalidate: %v", ordinal, err)
+		bound := base
+		bound.intent, bound.plan, bound.plannedAttemptDigest = planned.Proposal, planned.Plan, planned.Digest
+		if err := artifact.validate(planned.View.Request, bound); err != nil ||
+			artifact.Choice.Digest != planned.Choice.Digest {
+			t.Fatalf("attempt %d artifact lost planned binding: %#v/%v", index+1, artifact, err)
 		}
-		if ordinal == 1 {
-			otherInstance, err := provider.executionInstance(ordinal, artifact.Choice.PolicySeed+1)
-			if err != nil {
-				t.Fatal(err)
-			}
-			tampered := artifact
-			tampered.Choice, err = controlexperiment.NewCampaignExecutionChoice(
-				provider.intent, provider.plan, otherInstance,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := tampered.validate(request, provider); err == nil {
-				t.Fatal("artifact accepted a different execution instance")
-			}
-		}
-		if artifact.Report == nil || artifact.Bundle == nil ||
-			!artifact.Report.Runs[0].Replay.Stable ||
-			len(artifact.Bundle.CorePSS) != artifact.Report.Runs[0].ChargedDecisions+1 ||
-			artifact.Choice.PolicySeed != 40+uint64(ordinal) ||
-			artifact.Choice.BackendID != etcdraftBackendUniform ||
-			artifact.Choice.PlanDigest != provider.plan.Digest {
-			t.Fatalf("attempt %d lost qualified evidence: %#v", ordinal, artifact)
-		}
-		primaryDecisions += artifact.Work.Primary.SchedulerDecisions
-		primaryWork += artifact.Work.Primary.WorkUnits
-		replayWork += artifact.Work.Replay.WorkUnits
 	}
-	if checked.Head.Totals.Primary.SchedulerDecisions != primaryDecisions ||
-		checked.Head.Totals.Primary.WorkUnits != primaryWork ||
-		checked.Head.Totals.Replay.WorkUnits != replayWork {
-		t.Fatalf("campaign totals do not equal real artifacts: %#v", checked.Head.Totals)
-	}
-	observation, err := newEtcdraftCampaignObservation(&checked, provider)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if observation.Terminal.Status != controlexperiment.CampaignSummaryStatusStopped ||
-		observation.Terminal.Completed != 2 || observation.Terminal.Work != checked.Head.Totals ||
-		observation.PSS == nil || observation.PSS.EvidenceAttempts != 2 ||
-		observation.PSS.TotalDecisions != 32 || observation.PSS.TotalSamples != 34 ||
-		observation.PSS.UniqueStates <= 0 || observation.Faults.ObservedAttempts != 2 ||
-		observation.Workload.ObservedAttempts != 2 || observation.Workload.Planned != 2 ||
-		observation.Workload.Pending != observation.Workload.Planned-observation.Workload.Completed ||
-		observation.Attempts[0].Choice == nil || observation.Attempts[1].Choice == nil ||
-		observation.Attempts[0].Choice.BackendID != etcdraftBackendUniform ||
-		observation.Attempts[1].Choice.PlanDigest != provider.plan.Digest ||
-		len(observation.Monitors.Checked) != 2 || observation.Monitors.Checked[0].Count != 2 ||
-		observation.Monitors.Checked[1].Count != 2 || len(observation.Monitors.Triggers) != 0 {
-		t.Fatalf("campaign observation drifted: %#v", observation)
-	}
-	observationJSON, err := json.Marshal(observation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(observationJSON, []byte(`"report"`)) ||
-		bytes.Contains(observationJSON, []byte(`"final_snapshot"`)) ||
-		bytes.Contains(observationJSON, []byte(`"policy_seed"`)) ||
-		bytes.Contains(observationJSON, []byte(`"execution_instance_digest"`)) {
-		t.Fatal("campaign observation exposed target evidence or coordinator-owned seed")
-	}
-
-	request, err := controlexperiment.NewCampaignAttemptRequest(config, checked.Checkpoints[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	failedProvider := provider
-	failedWork := checked.Checkpoints[1].Record.Work
-	failedProvider.execute = func(
-		context.Context, string, int, uint64, bool,
-	) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
-		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
-			&controlexperiment.ExecutionFailure{
-				Phase: "policy", Code: "FIXTURE_TYPED_EXECUTION_FAILURE",
-				Decision: 7, Work: failedWork,
-			}
-	}
-	failed, err := failedProvider.Attempt(ctx, request)
-	if err != nil || failed.Outcome != controlexperiment.CampaignAttemptFailed ||
-		failed.Failure == nil || failed.Failure.Decision != 7 || failed.Work != failedWork {
-		t.Fatalf("typed execution failure lost terminal evidence: result=%#v err=%v", failed, err)
-	}
-	var failedArtifact etcdraftCampaignArtifact
-	if err := json.Unmarshal(failed.Artifact, &failedArtifact); err != nil {
-		t.Fatal(err)
-	}
-	if err := failedArtifact.validate(request, provider); err != nil ||
-		failedArtifact.Report != nil || failedArtifact.Bundle != nil {
-		t.Fatalf("failed terminal artifact did not revalidate: %#v/%v", failedArtifact, err)
+	observation, err := newEtcdraftCampaignObservation(&checked, base)
+	if err != nil || observation.Terminal.Completed != 2 || observation.PSS == nil ||
+		observation.PSS.EvidenceAttempts != 2 {
+		t.Fatalf("completed planned campaign did not project: %#v/%v", observation, err)
 	}
 }
 

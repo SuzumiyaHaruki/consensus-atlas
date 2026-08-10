@@ -90,7 +90,8 @@ func runEtcdraftCampaignWithFactory(
 	if recovered.Failure != nil {
 		stageErr = errors.New("ETCDRAFT_CAMPAIGN_DURABLY_FAILED")
 	} else {
-		coordinator, coordinatorErr := controlexperiment.NewCampaignCoordinator(&recovered, provider)
+		plannedProvider := newEtcdraftPlannedCampaignProvider(provider, &recovered)
+		coordinator, coordinatorErr := controlexperiment.NewCampaignCoordinator(&recovered, plannedProvider)
 		if coordinatorErr != nil {
 			stageErr = coordinatorErr
 		} else {

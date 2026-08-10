@@ -47,10 +47,20 @@ func newEtcdraftCampaignObservation(
 		if err != nil {
 			return controlexperiment.CampaignObservation{}, err
 		}
-		if err := artifact.validate(request, provider); err != nil {
+		if index >= len(recovered.PlannedAttempts) {
+			return controlexperiment.CampaignObservation{}, errors.New("ETCDRAFT_CAMPAIGN_OBSERVATION_PLAN_MISSING")
+		}
+		planned := recovered.PlannedAttempts[index]
+		if err := planned.ValidateRequest(request); err != nil {
+			return controlexperiment.CampaignObservation{}, err
+		}
+		bound := provider
+		bound.intent, bound.plan, bound.plannedAttemptDigest = planned.Proposal, planned.Plan, planned.Digest
+		if err := artifact.validate(request, bound); err != nil {
 			return controlexperiment.CampaignObservation{}, err
 		}
 		if artifact.Outcome != attempt.Record.Outcome || artifact.Work != attempt.Record.Work ||
+			attempt.Record.InputDigest != planned.Digest ||
 			!sameCampaignMethodFailure(artifact.Failure, attempt.Record.Failure) {
 			return controlexperiment.CampaignObservation{}, errors.New("ETCDRAFT_CAMPAIGN_OBSERVATION_RECORD_MISMATCH")
 		}

@@ -75,7 +75,8 @@ func TestEtcdraftM519dRunnerCreatesResumesAndPersistsFailureSummary(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	coordinator, err := controlexperiment.NewCampaignCoordinator(&recovered, provider)
+	plannedProvider := newEtcdraftPlannedCampaignProvider(provider, &recovered)
+	coordinator, err := controlexperiment.NewCampaignCoordinator(&recovered, plannedProvider)
 	if err != nil {
 		t.Fatal(err)
 	}
