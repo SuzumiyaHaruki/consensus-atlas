@@ -138,6 +138,12 @@ exact public bytes，`dispatch.json` 必须先于 transport，`result.json` 只�
 `ambiguous` 并终止，不能调用 transport 或伪造 result。d1 只实现该通用 store，没有
 把 HTTP client 接入 Campaign。
 
+M5.21d2 只在 etcd/raft composition root 将该边界接到 injected offline transport。target-owned
+provider 冻结 exact DeepSeek request bytes，durable result 后才运行 strict parser、preference-only
+validator 和既有 compiler；completed result 恢复不重调，dispatch-only/failed 均终止。target
+report/bundle 保持纯执行 WorkLedger，model work 只附加到 Campaign artifact/record/checkpoint。
+该路径尚未进入 CLI，也不读取 key 或访问 HTTP。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

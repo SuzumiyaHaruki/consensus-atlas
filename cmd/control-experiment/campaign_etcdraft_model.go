@@ -39,7 +39,8 @@ func newEtcdraftDurableModelCampaignProvider(
 		Thinking: "disabled", Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
 		MaxCallsPerArm: 1, MaxRetries: 0,
 	}
-	if transport == nil {
+	if transport == nil || client.Endpoint != deepSeekChatEndpoint || client.Model != deepSeekV4Flash ||
+		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > 4096 {
 		return etcdraftDurableModelCampaignProvider{}, errors.New("ETCDRAFT_CAMPAIGN_MODEL_PROVIDER_INVALID")
 	}
 	identity, err := control.CanonicalDigest(struct {

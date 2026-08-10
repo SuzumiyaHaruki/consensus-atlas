@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d2 Offline Durable Model Planner 已冻结；模型调用为 0
+阶段：M5.21d2 Offline Durable Model Planner 已完成；外部模型调用为 0
 
 ## 输入、处理、输出
 
@@ -15,7 +15,9 @@
                          v
 处理
   prefix Observation -> minimal Planner View
-  -> zero-model preference proposal -> trusted compiler/instance/choice
+  -> zero-model proposal（当前 CLI）
+     | offline exact request -> durable result（d2 恢复见证）
+  -> preference-only validation -> trusted compiler/instance/choice
   -> durable plans/N.json -> existing qualified executor
   -> artifact/checkpoint -> strict reprojection -> next Observation
   -> fsync/no-replace Summary + Observation outside trusted root
@@ -27,16 +29,22 @@
   + running/stopped/failed summary and exact WorkLedger
   + Core PSS union/curve + fault/workload + monitor trigger index
   + content-addressed full artifacts stored once
-  + no composite score/model call
+  + no composite score/external model call
 ```
 
-M5.21d1 尚未改变上述可运行 zero-model 闭环，而是在其前新增通用的远程规划调用
+M5.21d2 已把 M5.21d1 的通用调用状态机接入 etcd/raft composition，但只使用 injected offline
+transport。result-before-plan 恢复从 durable content 继续，transport 调用数保持 1；dispatch-only
+恢复调用数为 0，failed result 恢复调用数保持 1。成功结果的 model work 在 planned attempt、
+artifact、record 和 checkpoint totals 中一致，report/bundle 仍为零 model work。CLI 仍是
+zero-model，没有读取 key 或访问 HTTP。
+
+M5.21d1 在可运行 zero-model 闭环之前新增通用的远程规划调用
 write-ahead 边界。`CampaignConfig/v3` 冻结 `none/zero-model/durable-call`；`model-calls/`
 使用 exact intent、dispatch marker 和 result 三段 no-replace 记录。恢复仅看到 dispatch 时必须进入
 `ambiguous`，不得重试或补写 result。这一步没有新增 HTTP client，尚未接入
 etcd/raft provider。
 
-M5.21c 为 `CampaignConfig/v2` 增加显式 planned-attempt input mode。每次执行前必须先持久化
+M5.21c 为当前 `CampaignConfig/v3` 增加显式 planned-attempt input mode。每次执行前必须先持久化
 exact Planner View、preference-only proposal、trusted compiled plan、execution instance、choice 与
 planning work。进程在 plan durable 后中断时，恢复只复用该 envelope，不再调用 Planner；
 target execution 仍保留既有 at-least-once 窗口。
@@ -601,10 +609,11 @@ view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artif
 
 M5.21d1 已完成：调用前依次落盘 exact call intent 和 dispatch marker；恢复只看到
 dispatch 时归类为 ambiguous terminal，拒绝重试或补写 result。实际 Go 净增 593 行，
-全量 test/vet 和通用 Campaign race 通过。M5.21d2 已冻结，将接 etcd/raft 离线 mock transport，
-验证 result-before-plan 恢复、ambiguous/failed 不重试和模型工作恰好计费一次；CLI、key 和真实
-HTTP transport 均不进入本阶段。
-详见 `docs/stage-m5.21d1-durable-model-call.md`。
+全量 test/vet 和通用 Campaign race 通过。M5.21d2 现已完成 etcd/raft offline composition，
+三个恢复见证和模型工作单次计费通过；Go 净增 444 行。下一步先设计显式 opt-in durable-call
+runner 并继续用离线 transport 验证，真实模型调用仍需用户另行明确授权。
+详见 `docs/stage-m5.21d1-durable-model-call.md` 和
+`docs/stage-m5.21d2-etcdraft-offline-model-planner.md`。
 
 ## 阅读顺序
 

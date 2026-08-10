@@ -2297,13 +2297,17 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     “已收费但响应未落盘”时存在本地无法消除的歧义，
     后续必须使用 durable call-intent + ambiguous terminal 或服务端幂等键。详见
     `docs/stage-m5.21c-durable-planned-attempt.md`。
-77. [~] M5.21d 在首次真实远程 Planner 前增加 durable call-intent 和 ambiguous terminal。
+77. [X] M5.21d 在首次真实远程 Planner 前增加 durable call-intent 和 ambiguous terminal。
     只有在调用前落盘 exact request/idempotency identity，并在无法证明未收费时拒绝自动重试，
     才允许设置非零 model allowance。d1 已完成通用 intent/dispatch/result 三文件状态机：
     `CampaignConfig/v3` 冻结 planner mode，dispatch-only 恢复必须成为不可重试的 ambiguous terminal，
     且仅原进程私有活跃令牌能提交 result。实际 Go 净增 593 行，全量 test/vet 与通用
-    Campaign race 通过；未读取 key 或调用模型。d2 再接 etcd/raft 离线 transport。
-    该阶段仍不改 Runtime 或 target executor。详见 `docs/stage-m5.21d1-durable-model-call.md`。
+    Campaign race 通过；未读取 key 或调用模型。d2 已在 etcd/raft composition 接入 injected
+    offline transport：result-before-plan 恢复不重调，dispatch-only/failed 均不重试，模型成本只在
+    Campaign artifact/record/totals 附加一次，report/bundle 身份不变。d2 实际 Go 净增 444 行，
+    全量 test/vet、定向 race 与 exact-partition audit 通过。该阶段未改 Runtime、target executor 或
+    CLI，也未读取 key/访问 HTTP。详见 `docs/stage-m5.21d1-durable-model-call.md` 和
+    `docs/stage-m5.21d2-etcdraft-offline-model-planner.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
