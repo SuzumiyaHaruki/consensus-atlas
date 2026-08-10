@@ -122,7 +122,8 @@ func TestEtcdraftM521d3TerminalRecoveryNeverReadsKey(t *testing.T) {
 				if checked.Head.Sequence != 1 || checked.Head.Totals.Model.Calls != 1 {
 					t.Fatalf("completed result did not execute: %#v", checked.Head)
 				}
-			} else if checked.Failure == nil || len(recovered.ModelCalls) != 1 ||
+			} else if summary := readEtcdraftCampaignSummary(t, options.SummaryOut); checked.Failure == nil ||
+				summary.Totals.Model != (controlexperiment.ModelWork{}) || len(recovered.ModelCalls) != 1 ||
 				state == "failed" && recovered.ModelCalls[0].Result.Work.Calls != 1 {
 				t.Fatalf("terminal state was not durable: %#v", checked)
 			}
