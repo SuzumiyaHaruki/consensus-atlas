@@ -129,20 +129,30 @@ func (provider etcdraftDurableModelCampaignProvider) prepare(
 	}
 	result, err := provider.resolveCall(ctx, request, view, prepared)
 	if err != nil {
+		if result.Digest != "" {
+			err = controlexperiment.NewCampaignModelCallProviderFailure(err, result)
+		}
 		return controlexperiment.CampaignPlannedAttempt{}, err
 	}
 	proposal, err := controlexperiment.ParseGuardedTestIntentProposal(result.Content)
 	if err != nil {
-		return controlexperiment.CampaignPlannedAttempt{}, err
+		return controlexperiment.CampaignPlannedAttempt{},
+			controlexperiment.NewCampaignModelCallProviderFailure(err, result)
 	}
 	if err := controlexperiment.ValidateCampaignPlannerProposal(view, proposal); err != nil {
-		return controlexperiment.CampaignPlannedAttempt{}, err
+		return controlexperiment.CampaignPlannedAttempt{},
+			controlexperiment.NewCampaignModelCallProviderFailure(err, result)
 	}
 	planned, err := provider.planned.buildPlannedAttempt(view, proposal, result.Work)
 	if err != nil {
-		return controlexperiment.CampaignPlannedAttempt{}, err
+		return controlexperiment.CampaignPlannedAttempt{},
+			controlexperiment.NewCampaignModelCallProviderFailure(err, result)
 	}
-	return recovered.PreparePlannedAttempt(planned)
+	planned, err = recovered.PreparePlannedAttempt(planned)
+	if err != nil {
+		err = controlexperiment.NewCampaignModelCallProviderFailure(err, result)
+	}
+	return planned, err
 }
 
 // freezeNextCall persists the exact next intent without granting transport authority.

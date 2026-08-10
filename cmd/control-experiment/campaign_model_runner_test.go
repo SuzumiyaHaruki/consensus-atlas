@@ -93,12 +93,12 @@ func TestEtcdraftM521d3PreparedIntentResumesAfterKeyFailure(t *testing.T) {
 	}
 }
 
-func TestEtcdraftM521d3TerminalRecoveryNeverReadsKey(t *testing.T) {
-	for _, state := range []string{"completed", "ambiguous", "failed"} {
+func TestEtcdraftM521d4TerminalRecoveryAccountsDurableResults(t *testing.T) {
+	for _, state := range []string{"completed", "ambiguous", "failed", "invalid-proposal", "over-budget"} {
 		t.Run(state, func(t *testing.T) {
 			root := t.TempDir()
 			options := modelRunnerOptions(root, 1, true, state)
-			provider, config, recovered := seedModelRunnerState(t, options, state)
+			provider, config, _ := seedModelRunnerState(t, options, state)
 			_ = provider
 			keyReads, calls := 0, 0
 			err := runEtcdraftModelCampaign(
@@ -122,10 +122,28 @@ func TestEtcdraftM521d3TerminalRecoveryNeverReadsKey(t *testing.T) {
 				if checked.Head.Sequence != 1 || checked.Head.Totals.Model.Calls != 1 {
 					t.Fatalf("completed result did not execute: %#v", checked.Head)
 				}
-			} else if summary := readEtcdraftCampaignSummary(t, options.SummaryOut); checked.Failure == nil ||
-				summary.Totals.Model != (controlexperiment.ModelWork{}) || len(recovered.ModelCalls) != 1 ||
-				state == "failed" && recovered.ModelCalls[0].Result.Work.Calls != 1 {
-				t.Fatalf("terminal state was not durable: %#v", checked)
+			} else {
+				summary := readEtcdraftCampaignSummary(t, options.SummaryOut)
+				observation := readEtcdraftCampaignObservation(t, options.ObservationOut)
+				want := controlexperiment.ModelWork{}
+				switch state {
+				case "failed":
+					want = controlexperiment.ModelWork{Calls: 1}
+				case "invalid-proposal":
+					want = controlexperiment.ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7}
+				case "over-budget":
+					want = controlexperiment.ModelWork{Calls: 1, InputTokens: 101, TotalTokens: 101}
+				}
+				if checked.Failure == nil || summary.Sequence != 0 || len(summary.Attempts) != 0 ||
+					summary.Totals.Model != want || observation.Terminal.Work != summary.Totals ||
+					len(observation.Attempts) != 0 || observation.PSS != nil ||
+					checked.Failure.BudgetExceeded != (state == "over-budget") {
+					t.Fatalf("terminal state accounting drifted: recovery=%#v summary=%#v", checked, summary)
+				}
+				if state == "ambiguous" && checked.Failure.EvidenceKind != "" ||
+					state != "ambiguous" && checked.Failure.EvidenceKind != controlexperiment.CampaignFailureModelResult {
+					t.Fatalf("terminal evidence classification drifted: %#v", checked.Failure)
+				}
 			}
 		})
 	}
@@ -149,7 +167,14 @@ func seedModelRunnerState(
 				return deepSeekCall{PromptDigest: prepared.PromptDigest, RequestDigest: prepared.RequestDigest,
 					FailureCode: deepSeekFailureTransport, Work: controlexperiment.ModelWork{Calls: 1}}, nil
 			}
-			return modelRunnerSuccessCall(prepared, content, 1), nil
+			call := modelRunnerSuccessCall(prepared, content, 1)
+			if state == "invalid-proposal" {
+				call.Content = []byte(`{}`)
+			}
+			if state == "over-budget" {
+				call.Work = controlexperiment.ModelWork{Calls: 1, InputTokens: 101, TotalTokens: 101}
+			}
+			return call, nil
 		},
 	)
 	if err != nil {
