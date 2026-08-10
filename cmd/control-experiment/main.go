@@ -41,6 +41,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	campaignObservationOut := flags.String("campaign-observation-out", "", "Campaign Observation output path")
 	campaignAttempts := flags.Int("campaign-attempts", 0, "attempt limit for an explicit Campaign strategy")
 	campaignWallClock := flags.Int64("campaign-wall-clock-ms", 0, "wall-clock ceiling for an explicit Campaign strategy")
+	campaignModelTokens := flags.Int("campaign-model-tokens-per-attempt", 0, "model-token allowance per Agent Campaign attempt")
 	campaignResume := flags.Bool("campaign-resume", false, "resume an existing exact Campaign config")
 	strategy := flags.String("strategy", "workload", "qualified strategy, including explicit opt-in Agent strategies")
 	decisions := flags.Int("decisions", 96, "charged decisions per run")
@@ -48,11 +49,28 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if *strategy == etcdraftCampaignModelRunnerStrategy {
+		if *out == "" || *campaignObservationOut == "" || *campaignDirectory == "" ||
+			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *campaignModelTokens <= 0 ||
+			*agentKeyFile == "" || *bundleOut != "" || *sourceBundleOut != "" ||
+			*methodOut != "" || *methodArtifacts != "" || *bundleEvidenceVersion != 0 ||
+			*methodSpecDigest != "" || *agentArtifacts != "" {
+			return errors.New("Agent Campaign strategy requires only -agent-key-file, -out, Campaign, decision, and seed flags")
+		}
+		return runEtcdraftModelCampaignOptIn(ctx, etcdraftCampaignRunOptions{
+			Directory: *campaignDirectory, SummaryOut: *out,
+			ObservationOut: *campaignObservationOut, Resume: *campaignResume,
+			Attempts: *campaignAttempts, DecisionsPerAttempt: *decisions,
+			FirstPolicySeed: *policySeed, WallClockCeilingMillis: *campaignWallClock,
+			ModelTokensPerAttempt: *campaignModelTokens,
+		}, *agentKeyFile, stdout)
+	}
 	if *strategy == etcdraftCampaignRunnerStrategy {
 		if *out == "" || *campaignObservationOut == "" || *campaignDirectory == "" || *campaignAttempts <= 0 ||
 			*campaignWallClock <= 0 || *bundleOut != "" || *sourceBundleOut != "" ||
 			*methodOut != "" || *methodArtifacts != "" || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *agentKeyFile != "" || *agentArtifacts != "" {
+			*methodSpecDigest != "" || *agentKeyFile != "" || *agentArtifacts != "" ||
+			*campaignModelTokens != 0 {
 			return errors.New("Campaign strategy requires only -out, Campaign, decision, and seed flags")
 		}
 		return runEtcdraftCampaign(ctx, etcdraftCampaignRunOptions{
@@ -63,7 +81,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		}, stdout)
 	}
 	if *campaignDirectory != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-		*campaignWallClock != 0 || *campaignResume {
+		*campaignWallClock != 0 || *campaignModelTokens != 0 || *campaignResume {
 		return errors.New("Campaign flags require an explicit Campaign strategy")
 	}
 	if *strategy == "workload-guarded-agent-one-shot" {

@@ -27,6 +27,7 @@ type etcdraftCampaignRunOptions struct {
 	DecisionsPerAttempt    int
 	FirstPolicySeed        uint64
 	WallClockCeilingMillis int64
+	ModelTokensPerAttempt  int
 }
 
 type etcdraftCampaignProviderFactory func(
@@ -56,7 +57,7 @@ func runEtcdraftCampaignWithFactory(
 	}
 	if stdout == nil || newProvider == nil || options.Attempts <= 0 ||
 		options.DecisionsPerAttempt <= 0 || options.FirstPolicySeed == 0 ||
-		options.WallClockCeilingMillis <= 0 {
+		options.WallClockCeilingMillis <= 0 || options.ModelTokensPerAttempt != 0 {
 		return errors.New("ETCDRAFT_CAMPAIGN_RUNNER_OPTIONS_INVALID")
 	}
 	spec, err := newEtcdraftCampaignSpec(
@@ -98,14 +99,27 @@ func runEtcdraftCampaignWithFactory(
 			_, stageErr = coordinator.Run(ctx)
 		}
 	}
-	summary, summaryErr := controlexperiment.NewCampaignSummary(&recovered)
+	return finishEtcdraftCampaignRun(
+		&recovered, provider, summaryOut, observationOut, stdout, stageErr,
+	)
+}
+
+func finishEtcdraftCampaignRun(
+	recovered *controlexperiment.CampaignRecovery,
+	provider etcdraftCampaignProvider,
+	summaryOut string,
+	observationOut string,
+	stdout io.Writer,
+	stageErr error,
+) error {
+	summary, summaryErr := controlexperiment.NewCampaignSummary(recovered)
 	if summaryErr != nil {
 		if stageErr != nil {
 			return fmt.Errorf("%v; ETCDRAFT_CAMPAIGN_SUMMARY_FAILED: %w", stageErr, summaryErr)
 		}
 		return summaryErr
 	}
-	observation, observationErr := newEtcdraftCampaignObservation(&recovered, provider)
+	observation, observationErr := newEtcdraftCampaignObservation(recovered, provider)
 	if err := persistCampaignSummaryNoReplace(summaryOut, summary); err != nil {
 		return err
 	}
@@ -119,9 +133,10 @@ func runEtcdraftCampaignWithFactory(
 		return err
 	}
 	fmt.Fprintf(
-		stdout, "wrote %s\nwrote %s\nstatus=%s attempts=%d primary=%d replay=%d summary=%s observation=%s\n",
+		stdout, "wrote %s\nwrote %s\nstatus=%s attempts=%d primary=%d replay=%d model_calls=%d model_tokens=%d summary=%s observation=%s\n",
 		summaryOut, observationOut, summary.Status, summary.Sequence,
 		summary.Totals.Primary.WorkUnits, summary.Totals.Replay.WorkUnits,
+		summary.Totals.Model.Calls, summary.Totals.Model.TotalTokens,
 		summary.Digest, observation.Digest,
 	)
 	return stageErr
