@@ -2621,6 +2621,10 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 101. Campaign provider 只能消费 digest-bound request 和 remaining allowance，不能自行设置 attempt
      identity、artifact digest、checkpoint、totals 或 stop reason。terminal failed/invalid 必须保留 artifact
      与已知成本；普通 error 只能表示无法形成可信 terminal result，不能自动重试或进入正式比较。
+102. Agent Campaign 调用必须先 durable result、再解析和编译计划。completed result 恢复只能复用
+     已保存回复，dispatch-only 必须以 ambiguous 终止，failed result 也不得重试。模型工作只在 Campaign
+     artifact/record/totals 外层附加一次，不能污染 target report/bundle；planner identity 必须进入
+     experiment composition digest，防止 zero-model 与 durable-call provider 在恢复时互换。
 
 ---
 

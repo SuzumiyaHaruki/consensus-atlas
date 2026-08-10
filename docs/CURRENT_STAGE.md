@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d1 Durable Model Call Lifecycle 已完成；模型调用为 0
+阶段：M5.21d2 Offline Durable Model Planner 已冻结；模型调用为 0
 
 ## 输入、处理、输出
 
@@ -601,22 +601,24 @@ view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artif
 
 M5.21d1 已完成：调用前依次落盘 exact call intent 和 dispatch marker；恢复只看到
 dispatch 时归类为 ambiguous terminal，拒绝重试或补写 result。实际 Go 净增 593 行，
-全量 test/vet 和通用 Campaign race 通过。M5.21d2 将接 etcd/raft 离线 mock transport，
-在 d2 验证前不设置真实运行的非零 model allowance。
+全量 test/vet 和通用 Campaign race 通过。M5.21d2 已冻结，将接 etcd/raft 离线 mock transport，
+验证 result-before-plan 恢复、ambiguous/failed 不重试和模型工作恰好计费一次；CLI、key 和真实
+HTTP transport 均不进入本阶段。
 详见 `docs/stage-m5.21d1-durable-model-call.md`。
 
 ## 阅读顺序
 
-1. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
-2. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
-3. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
-4. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
-5. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
-6. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
-7. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-8. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-9. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-10. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-11. [架构](architecture.md)
-12. [总体规划](ConsensusAtlas-总体规划.md)
-13. [完整文档导航](README.md)
+1. [M5.21d2 etcd/raft Offline Durable Model Planner](stage-m5.21d2-etcdraft-offline-model-planner.md)
+2. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
+3. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
+4. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
+5. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
+6. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
+7. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+8. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+9. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+10. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+11. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+12. [架构](architecture.md)
+13. [总体规划](ConsensusAtlas-总体规划.md)
+14. [完整文档导航](README.md)
