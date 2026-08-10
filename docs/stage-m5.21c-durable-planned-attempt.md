@@ -84,3 +84,28 @@ terminal checkpoint 前中断，规划不会重算，但 target execution 仍可
 - 不证明 SUT execution exactly-once；
 - 不接真实模型。
 
+## 完成结果（2026-08-10）
+
+M5.21c 已完成。`CampaignConfig/v2` 显式冻结 `base-request` 或 `planned-attempt`
+input mode，因此删除全部 plan 文件也不能把 planned Campaign 降级为旧路径。计划
+no-replace/幂等复用、冲突替换、摘要篡改、future ordinal、缺失 committed plan 和
+checkpoint 换绑均有 fail-closed 回归。
+
+etcd/raft runner 现在于每个 attempt 前从已提交 Observation 生成 Planner View，运行
+deterministic fixture，用可信 compiler 生成 plan/instance/choice，先持久化 envelope 再调用原
+qualified executor。专用恢复测试在第二个 plan 落盘后重建 Recovery，并将 planner 替换为
+“被调用即报错”的函数；Campaign 仍能完成，证明 pending plan 没有被重算。
+
+真实 `3 attempts x 8 decisions` 离线验收（first seed 101）结果：
+
+- 3/3 completed，24 primary decisions，27/27 primary/replay work，model calls/tokens 均为 0；
+- 27 个 Core PSS samples，17 个唯一状态，self-normalized area `0.6323529411764706`；
+- action-class backend 被选择 3 次，seeds 为 101/102/103；每次都发现新状态，因此
+  deterministic fixture 没有触发“零新状态后轮换 backend”规则；
+- 观察到 3 次 crash，workload 均仍 pending；agreement/trace-integrity 各运行 3 次且零触发；
+- 三个 plan digest 与三个 checkpoint `InputDigest` 逐项相等。
+
+Go 净增 519 行，低于 700 行上限。`go test -count=1 ./...`、`go vet ./...`、
+`internal/controlexperiment` race 与 `git diff --check` 通过。`cmd/control-experiment` race 在
+通用包通过后长时间无输出，按既定规则终止并记为超时，不冒充通过或 data-race 失败。
+下一阶段是在任何真实远程 Planner 前先冻结 durable call-intent/ambiguous terminal 语义。

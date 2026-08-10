@@ -1,8 +1,8 @@
 # 当前阶段
 
-日期：2026-08-09
+日期：2026-08-10
 
-阶段：M5.20 跨 Attempt Campaign Observation 已完成；模型调用为 0
+阶段：M5.21c Durable Planned Attempt 已完成；模型调用为 0
 
 ## 输入、处理、输出
 
@@ -10,23 +10,35 @@
 输入
   attempts + decisions + first seed + wall ceiling
   + new directory | explicit exact-config resume
+  + 协议知识/qualification/semantic view + hard baseline
                          |
                          v
 处理
-  M5.19c provider -> generic Coordinator/checkpoints
-  -> validated CampaignRecovery + committed artifact reader
-  -> target-owned strict artifact/PSS/decision reprojection
-  -> generic Campaign Observation aggregation
+  prefix Observation -> minimal Planner View
+  -> zero-model preference proposal -> trusted compiler/instance/choice
+  -> durable plans/N.json -> existing qualified executor
+  -> artifact/checkpoint -> strict reprojection -> next Observation
   -> fsync/no-replace Summary + Observation outside trusted root
                          |
                          v
 输出
   runnable/resumable etcd/raft Campaign
+  + request/view/proposal/plan/instance/choice 的可审计链
   + running/stopped/failed summary and exact WorkLedger
   + Core PSS union/curve + fault/workload + monitor trigger index
   + content-addressed full artifacts stored once
   + no composite score/model call
 ```
+
+M5.21c 为 `CampaignConfig/v2` 增加显式 planned-attempt input mode。每次执行前必须先持久化
+exact Planner View、preference-only proposal、trusted compiled plan、execution instance、choice 与
+planning work。进程在 plan durable 后中断时，恢复只复用该 envelope，不再调用 Planner；
+target execution 仍保留既有 at-least-once 窗口。
+
+first seed 101 的真实 3x8-decision 验收完成 3 个 attempts，累计 24 decisions、27/27
+primary/replay work、27 个 PSS samples 和 17 个唯一状态。三个 checkpoint 都与各自
+planned-attempt digest 相等。计划替换、篡改、future ordinal 和已提交计划缺失均被拒绝。
+这只证明 zero-model 规划/恢复/执行/观测链连通，不证明 Planner 优于基线，也不证明 PSS 完备。
 
 M5.20 引入、M5.21b 升级的 `CampaignObservation/v2` 是已提交 artifact 的紧凑派生视图。通用层
 只接受与 Summary attempt 一一绑定的协议无关 projection；etcd/raft 组合层严格重验
@@ -575,23 +587,27 @@ artifact v2 重算该绑定，Observation/Planner 只暴露不含 seed/instance 
 验收得到 18 samples/15 unique states，每个 attempt 已绑定 `admissible-uniform` choice。
 详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
 
-进入 M5.21c：以 `plans/N.json` no-replace envelope 将每次 planner
+M5.21c 已完成：`plans/N.json` no-replace envelope 将每次 planner
 view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artifact/checkpoint 恢复链。
-恢复最多允许一个 `head+1` pending plan，必须复用而不重算。Go 净增上限 700 行，
-不改 Runtime/scheduler/executor，不接真实模型。远程调用中断的计费歧义必须在后续使用
-durable call-intent/ambiguous terminal 或服务端幂等解决，本阶段不伪称 exactly-once。
+恢复最多允许一个 `head+1` pending plan，必须复用而不重算。实际 Go 净增 519 行，
+未改 Runtime/scheduler/executor，未接真实模型。
 详见 `docs/stage-m5.21c-durable-planned-attempt.md`。
+
+下一阶段 M5.21d 只处理真实远程调用的可恢复边界：调用前落盘 exact request 和 call intent，
+对“可能已收费但未有 durable response”使用 ambiguous terminal 并拒绝自动重试。在该边界
+验证前不设置非零 model allowance。
 
 ## 阅读顺序
 
-1. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
-2. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
-3. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
-4. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
-5. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-6. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-7. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-8. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-9. [架构](architecture.md)
-10. [总体规划](ConsensusAtlas-总体规划.md)
-11. [完整文档导航](README.md)
+1. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
+2. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
+3. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
+4. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
+5. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+6. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+7. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+8. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+9. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+10. [架构](architecture.md)
+11. [总体规划](ConsensusAtlas-总体规划.md)
+12. [完整文档导航](README.md)

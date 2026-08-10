@@ -124,6 +124,13 @@ fault/workload 合计和 monitor 触发索引；Report、Bundle 和 Trace 仍只
 中保存一次。v2 额外投影已重验的 choice/intent/plan/backend，不暴露 seed 或
 instance。这些栏不合成单一分数，monitor 零触发不表示正确。
 
+M5.21c 在 Campaign provider 与 executor 之间增加协议无关 `CampaignPlannedAttempt/v1`
+持久化边界，但不把 Planner 放入通用 Coordinator。`CampaignConfig/v2` 冻结 attempt input mode；
+planned mode 下，store 只允许一个 exact `head+1` envelope，并要求 artifact/checkpoint 绑定其
+digest。etcd/raft composition 负责从已验证 Observation 构造 Planner View、调用 preference-only
+planner、运行可信 compiler，然后将冻结 plan 交给原 qualified executor。通用 store 不解释
+etcd/raft、PSS 或策略语义。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

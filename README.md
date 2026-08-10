@@ -5,19 +5,18 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.19d Campaign Summary/Runner**：用户现可给定 attempts、decisions、first seed
-和 wall-clock ceiling，启动新 etcd/raft Campaign 或显式恢复 exact config。协议无关
-`CampaignSummary/v1` 只保存 terminal records/checkpoint 索引、totals 和 `running/stopped/failed`
-状态，不复制大型 report/bundle；reader 只能按 committed ordinal 读取并重验 artifact。真实
-runner 见证以 seeds 61/62 完成 2 attempts，得到 16 primary decisions 和 18/18
-primary/replay work。M5.19c 的 provider 仍直接调用现有 qualified executor；普通 provider error 及
-非法 result 会写入 digest-bound `failure.json`，已发生可证成本的 `ExecutionFailure` 则转为
-带 artifact/WorkLedger 的 terminal failed attempt。M5.19a 的协议无关 Campaign 目录以
-artifact-first、checkpoint-second 的 fsync/no-replace 顺序提交，恢复会重验完整链、artifact 引用和
-config/target/spec identity，并把中断残留作为不计入账本的 orphan/pending 报告。M5.19 基础已经冻结
-target/spec identity、
-逻辑预算、运维 wall-clock ceiling、四类 terminal attempt 和 O(n) previous-digest checkpoint 链。
-当前已有离线 runner 和成本/结果索引，但尚没有跨 attempt PSS/Coverage/Oracle 观测报告。
+当前阶段已完成 **M5.21c Durable Planned Attempt**。用户给定 attempts、decisions、first seed
+和 wall-clock ceiling 后，etcd/raft runner 在每个 attempt 前从已提交 Observation 构造最小
+Planner View，用 zero-model deterministic planner 只修改 `Prefer`，再经可信 compiler 生成
+plan/instance/choice。完整 planned envelope 以 fsync/no-replace 先于 target execution 落盘；
+恢复时复用 exact `head+1` plan，不重算 Planner。checkpoint、artifact 和 Observation 均机械绑定
+planned-attempt digest。`CampaignConfig/v2` 显式区分 base-request/planned-attempt，因此计划缺失、
+替换、篡改或 future ordinal 不能降级为旧路径。
+
+first seed 101 的真实 3x8-decision 见证完成 3 attempts：24 primary decisions、27/27
+primary/replay work、27 个 Core PSS samples、17 个唯一状态，model calls/tokens 为 0。这只证明
+zero-model 规划/恢复/执行/观测链连通，不证明方法优势或覆盖完备。真实远程 Planner 仍需先增加
+durable call-intent 和 ambiguous terminal，以处理“已收费但响应未落盘”的恢复歧义。
 此前 M5.18b4 pair orchestration/persistence 已接到
 freeze-before-key、failure-before-return-persistence 的正式 CLI 和 Make 入口。已有 pair 复用 frozen request consumer，
 以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
@@ -83,7 +82,8 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - 外部 Conformance Suite、版本化 Qualification 和 digest-bound Experiment admission；
 - 固定 Core PSS IR、可信在线采样和跨 run 状态发现；
 - opaque workload、Semantic Mapping guard、FaultEnvelope 和完整成本账本；
-- 可恢复多-attempt Campaign、内容寻址 artifact、小型 Summary/reader 和 etcd/raft 离线 runner；
+- 可恢复多-attempt Campaign、durable planned-attempt、内容寻址 artifact、小型 Summary/reader
+  和 etcd/raft 离线 runner；
 - qualified fixed workload、action-class random 与 trace mutation policy；策略不能提交 enabled set；
 - 自包含 ExecutionBundle：完整 trace、preparation state transition、Evidence、最终 Snapshot、Core PSS、
   client history、decision history、Qualification 和 work ledger；
@@ -357,7 +357,8 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21b choice attribution](docs/stage-m5.21b-prior-choice-attribution.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21c durable planned attempt](docs/stage-m5.21c-durable-planned-attempt.md)、
+[M5.21b choice attribution](docs/stage-m5.21b-prior-choice-attribution.md)、
 [M5.21a Planner View](docs/stage-m5.21a-campaign-planner-view.md)、[M5.20 Campaign Observation](docs/stage-m5.20-campaign-observation.md)、
 [M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
 [M5.19a persistence](docs/stage-m5.19a-campaign-persistence.md)、
