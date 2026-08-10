@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d2 Offline Durable Model Planner 已完成；外部模型调用为 0
+阶段：M5.21d3 Opt-in Durable-call Runner 已冻结；外部模型调用为 0
 
 ## 输入、处理、输出
 
@@ -37,6 +37,11 @@ transport。result-before-plan 恢复从 durable content 继续，transport 调�
 恢复调用数为 0，failed result 恢复调用数保持 1。成功结果的 model work 在 planned attempt、
 artifact、record 和 checkpoint totals 中一致，report/bundle 仍为零 model work。CLI 仍是
 zero-model，没有读取 key 或访问 HTTP。
+
+M5.21d3 已冻结：runner 将按 attempt 依次完成 exact intent durable、key read、至多一次 transport
+和 key clear；只有 intent-only prepared 状态允许读 key。测试继续注入离线 key/transport，生产
+CLI 即使增加显式 opt-in strategy，本阶段也不会读取桌面 key 或发起真实调用。pre-plan failed
+result 的成本仍只在 model-call result 中，尚不进入 Campaign summary totals。
 
 M5.21d1 在可运行 zero-model 闭环之前新增通用的远程规划调用
 write-ahead 边界。`CampaignConfig/v3` 冻结 `none/zero-model/durable-call`；`model-calls/`
@@ -617,17 +622,18 @@ runner 并继续用离线 transport 验证，真实模型调用仍需用户另�
 
 ## 阅读顺序
 
-1. [M5.21d2 etcd/raft Offline Durable Model Planner](stage-m5.21d2-etcdraft-offline-model-planner.md)
-2. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
-3. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
-4. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
-5. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
-6. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
-7. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
-8. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-9. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-10. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-11. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-12. [架构](architecture.md)
-13. [总体规划](ConsensusAtlas-总体规划.md)
-14. [完整文档导航](README.md)
+1. [M5.21d3 Opt-in Durable-call Runner](stage-m5.21d3-opt-in-durable-runner.md)
+2. [M5.21d2 etcd/raft Offline Durable Model Planner](stage-m5.21d2-etcdraft-offline-model-planner.md)
+3. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
+4. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
+5. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
+6. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
+7. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
+8. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+9. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+10. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+11. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+12. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+13. [架构](architecture.md)
+14. [总体规划](ConsensusAtlas-总体规划.md)
+15. [完整文档导航](README.md)

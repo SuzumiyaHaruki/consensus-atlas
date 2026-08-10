@@ -2629,6 +2629,11 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      已保存回复，dispatch-only 必须以 ambiguous 终止，failed result 也不得重试。模型工作只在 Campaign
      artifact/record/totals 外层附加一次，不能污染 target report/bundle；planner identity 必须进入
      experiment composition digest，防止 zero-model 与 durable-call provider 在恢复时互换。
+103. Durable-call runner 必须按 attempt 执行 `exact intent durable -> key read -> one Step -> key clear`，
+     不能在 Campaign 开始时读取一次 key 后跨 attempt 复用。只有 intent-only prepared 状态允许读 key；
+     completed result、durable plan、ambiguous 和 failed 恢复均不得读 key 或调用 transport。pre-plan
+     failure 的模型成本以 durable result 为准；在引入可信 terminal accounting 前，不得伪造 plan 将其
+     填入 checkpoint totals，也不得把 summary 中的零 model work 解释为没有发生调用。
 
 ---
 
