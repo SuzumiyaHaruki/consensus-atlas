@@ -145,6 +145,32 @@ func (provider etcdraftDurableModelCampaignProvider) prepare(
 	return recovered.PreparePlannedAttempt(planned)
 }
 
+// freezeNextCall persists the exact next intent without granting transport authority.
+func (provider etcdraftDurableModelCampaignProvider) freezeNextCall(
+	request controlexperiment.CampaignAttemptRequest,
+) (bool, error) {
+	recovered := provider.planned.recovered
+	if recovered == nil {
+		return false, errors.New("ETCDRAFT_CAMPAIGN_MODEL_RECOVERY_REQUIRED")
+	}
+	if count := len(recovered.PlannedAttempts); count == recovered.Head.Sequence+1 {
+		return false, recovered.PlannedAttempts[count-1].ValidateRequest(request)
+	}
+	view, err := provider.planned.plannerView(request)
+	if err != nil {
+		return false, err
+	}
+	prepared, err := provider.prepareRequest(view)
+	if err != nil {
+		return false, err
+	}
+	call, err := provider.prepareCall(request, view, prepared)
+	if err != nil {
+		return false, err
+	}
+	return call.Status == controlexperiment.CampaignModelCallPrepared, nil
+}
+
 func (provider etcdraftDurableModelCampaignProvider) prepareRequest(
 	view controlexperiment.CampaignPlannerView,
 ) (deepSeekPreparedRequest, error) {
@@ -167,17 +193,10 @@ func (provider etcdraftDurableModelCampaignProvider) resolveCall(
 	view controlexperiment.CampaignPlannerView,
 	prepared deepSeekPreparedRequest,
 ) (controlexperiment.CampaignModelCallResult, error) {
-	intent, err := controlexperiment.NewCampaignModelCallIntent(
-		fmt.Sprintf("etcdraft-model-call-%d", request.Ordinal), request, view.Digest,
-		provider.freeze, prepared.PromptBytes, prepared.RequestBytes,
-	)
+	call, err := provider.prepareCall(request, view, prepared)
 	if err != nil {
 		return controlexperiment.CampaignModelCallResult{}, err
 	}
-	if _, err := provider.planned.recovered.PrepareModelCall(intent); err != nil {
-		return controlexperiment.CampaignModelCallResult{}, err
-	}
-	call := &provider.planned.recovered.ModelCalls[len(provider.planned.recovered.ModelCalls)-1]
 	if call.Result != nil {
 		if call.Result.Status == controlexperiment.CampaignModelCallFailed {
 			return *call.Result, errors.New(etcdraftCampaignModelFailed)
@@ -192,7 +211,7 @@ func (provider etcdraftDurableModelCampaignProvider) resolveCall(
 		return controlexperiment.CampaignModelCallResult{}, err
 	}
 	raw, transportErr := provider.transport(ctx, prepared)
-	result, err := newEtcdraftCampaignModelResult(intent, dispatch, prepared, raw, transportErr)
+	result, err := newEtcdraftCampaignModelResult(call.Intent, dispatch, prepared, raw, transportErr)
 	if err != nil {
 		return controlexperiment.CampaignModelCallResult{}, err
 	}
@@ -204,6 +223,24 @@ func (provider etcdraftDurableModelCampaignProvider) resolveCall(
 		return result, errors.New(etcdraftCampaignModelFailed)
 	}
 	return result, nil
+}
+
+func (provider etcdraftDurableModelCampaignProvider) prepareCall(
+	request controlexperiment.CampaignAttemptRequest,
+	view controlexperiment.CampaignPlannerView,
+	prepared deepSeekPreparedRequest,
+) (controlexperiment.CampaignModelCallRecovery, error) {
+	intent, err := controlexperiment.NewCampaignModelCallIntent(
+		fmt.Sprintf("etcdraft-model-call-%d", request.Ordinal), request, view.Digest,
+		provider.freeze, prepared.PromptBytes, prepared.RequestBytes,
+	)
+	if err != nil {
+		return controlexperiment.CampaignModelCallRecovery{}, err
+	}
+	if _, err := provider.planned.recovered.PrepareModelCall(intent); err != nil {
+		return controlexperiment.CampaignModelCallRecovery{}, err
+	}
+	return provider.planned.recovered.ModelCalls[len(provider.planned.recovered.ModelCalls)-1], nil
 }
 
 func newEtcdraftCampaignModelResult(
