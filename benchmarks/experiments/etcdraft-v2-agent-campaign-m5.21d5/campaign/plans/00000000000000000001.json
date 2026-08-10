@@ -1,0 +1,312 @@
+{
+  "schema_version": "consensus-atlas/campaign-planned-attempt/v1",
+  "id": "etcdraft-planned-attempt-1",
+  "request_digest": "6875ea6a126a0b854e83caa5c680ba6e658e46bb10f746e7d1b3c07076d7da8c",
+  "planner_view": {
+    "schema_version": "consensus-atlas/campaign-planner-view/v1",
+    "id": "etcdraft-planner-view-1",
+    "semantic_view": {
+      "schema_version": "consensus-atlas/agent-semantic-view/v1",
+      "id": "etcdraft-feedback-ablation-view-m5-18b4-pre",
+      "knowledge_pack": {
+        "schema_version": "consensus-atlas/protocol-knowledge-pack/v1",
+        "id": "etcdraft-public-knowledge-m5-18b0",
+        "family": "raft",
+        "protocol": "etcdraft",
+        "knowledge": [
+          {
+            "id": "natural-election",
+            "text": "Leadership changes arise from released periodic pulses and message delivery, not a forced leader-change command."
+          },
+          {
+            "id": "quorum-log-agreement",
+            "text": "Committed commands at the same log position must agree across participants."
+          },
+          {
+            "id": "runtime-owned-messages",
+            "text": "Released peer messages remain Runtime-owned across controlled node lifecycle transitions until delivery or drop."
+          }
+        ],
+        "risks": [
+          {
+            "id": "leader-change-with-inflight-proposal",
+            "summary": "Exercise an opaque proposal while natural temporal progress, peer delivery, and crash/restart may change the coordinating participant.",
+            "required_capabilities": [
+              "crash-restart-incarnation",
+              "natural-temporal-progress",
+              "opaque-invoke-boundary",
+              "runtime-owned-message",
+              "strict-decision-replay"
+            ],
+            "required_actions": [
+              "crash",
+              "deliver-message",
+              "fire-temporal-event",
+              "invoke",
+              "restart"
+            ],
+            "allowed_backend_ids": [
+              "action-class-random",
+              "admissible-uniform"
+            ]
+          }
+        ],
+        "digest": "1921bdc375f9618436d7ae31d426ba2087dc715443ec0f822628ce0e51199980"
+      },
+      "catalog_digest": "2effd56ba9bc3687ac040be714da3c75b43b1e430fc90e40ab4d22a0d594f861",
+      "profile_id": "portable-cft-control-v2",
+      "profile_digest": "8ceb2e870d0b5bc67fbdf5019f93f103a358c4f850bd3f6cebb2af3aa2a5f3c8",
+      "adapter_id": "official-etcdraft-v2alpha1",
+      "validated_capabilities": [
+        "audited-entropy-replay",
+        "crash-restart-incarnation",
+        "natural-temporal-progress",
+        "opaque-invoke-boundary",
+        "pure-enabled-check",
+        "runtime-owned-message",
+        "strict-decision-replay",
+        "strict-yield-evidence"
+      ],
+      "available_actions": [
+        "complete-effect",
+        "crash",
+        "deliver-message",
+        "drop-message",
+        "duplicate-message",
+        "fire-temporal-event",
+        "heal",
+        "invoke",
+        "partition",
+        "restart"
+      ],
+      "eligible_backends": [
+        {
+          "id": "action-class-random",
+          "supported_actions": [
+            "complete-effect",
+            "crash",
+            "deliver-message",
+            "drop-message",
+            "duplicate-message",
+            "fire-temporal-event",
+            "invoke",
+            "restart"
+          ],
+          "min_decisions": 1,
+          "max_decisions": 96,
+          "max_fault_envelope": {
+            "max_crashes": 1,
+            "max_concurrent_crashes": 1,
+            "max_message_drops": 2,
+            "max_message_duplicates": 1,
+            "max_partitions": 0,
+            "max_active_partitions": 0
+          }
+        },
+        {
+          "id": "admissible-uniform",
+          "supported_actions": [
+            "complete-effect",
+            "crash",
+            "deliver-message",
+            "drop-message",
+            "duplicate-message",
+            "fire-temporal-event",
+            "invoke",
+            "restart"
+          ],
+          "min_decisions": 1,
+          "max_decisions": 96,
+          "max_fault_envelope": {
+            "max_crashes": 1,
+            "max_concurrent_crashes": 1,
+            "max_message_drops": 2,
+            "max_message_duplicates": 1,
+            "max_partitions": 0,
+            "max_active_partitions": 0
+          }
+        },
+        {
+          "id": "fixed-progress",
+          "supported_actions": [
+            "complete-effect",
+            "deliver-message",
+            "fire-temporal-event",
+            "invoke"
+          ],
+          "min_decisions": 1,
+          "max_decisions": 96,
+          "max_fault_envelope": {
+            "max_crashes": 0,
+            "max_concurrent_crashes": 0,
+            "max_message_drops": 0,
+            "max_message_duplicates": 0,
+            "max_partitions": 0,
+            "max_active_partitions": 0
+          }
+        }
+      ],
+      "digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036"
+    },
+    "request": {
+      "schema_version": "consensus-atlas/campaign-attempt-request/v1",
+      "campaign_id": "etcdraft-model-campaign-v1",
+      "config_digest": "848435e0999c6eede1b44543d60c6b9876751b26e766da801c7788224c7d727a",
+      "target_id": "etcdraft-v2",
+      "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "experiment_spec_digest": "5fb743563d60b0550b55058dfc8a32cad2fcf7dfb148151c99736ea44823c28f",
+      "ordinal": 1,
+      "previous_checkpoint_digest": "09de415989a44077ba31469c3ba3e323533a4dc395c4eb457940a7f9af3dc9a1",
+      "allowance": {
+        "remaining_attempts": 1,
+        "primary_scheduler_decisions": 8,
+        "primary_work_units": 10,
+        "replay_work_units": 10,
+        "model_calls": 1,
+        "model_tokens": 8192
+      },
+      "digest": "6875ea6a126a0b854e83caa5c680ba6e658e46bb10f746e7d1b3c07076d7da8c"
+    },
+    "baseline": {
+      "schema_version": "consensus-atlas/guarded-test-intent/v1",
+      "id": "etcdraft-campaign-intent-m5-21b",
+      "view_digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036",
+      "risk_id": "leader-change-with-inflight-proposal",
+      "must": {
+        "decisions": 8,
+        "fault_envelope": {
+          "max_crashes": 1,
+          "max_concurrent_crashes": 1,
+          "max_message_drops": 2,
+          "max_message_duplicates": 1,
+          "max_partitions": 0,
+          "max_active_partitions": 0
+        }
+      },
+      "prefer": {},
+      "digest": "7a84f39e1cde692f309395e943d3aaa855ad24ba1c18a7f06a9bbf0e25143cb7"
+    },
+    "observation_digest": "5c29d8744efb90279bf7bd3351dc036fc8ef2efa743f3aa8bbb0928d1a732129",
+    "evidence_semantics": "discovery-counts-have-no-completeness-denominator;monitor-triggers-are-not-verdicts",
+    "feedback": {
+      "attempts": null,
+      "faults": {
+        "observed_attempts": 0,
+        "usage": {
+          "crashes": 0,
+          "message_drops": 0,
+          "message_duplicates": 0,
+          "partitions": 0
+        }
+      },
+      "workload": {
+        "observed_attempts": 0,
+        "planned": 0,
+        "offered": 0,
+        "completed": 0,
+        "pending": 0,
+        "result_statuses": null
+      },
+      "monitors": {
+        "observed_attempts": 0,
+        "checked": null,
+        "requirement_violations": 0,
+        "evidence_invalid": 0
+      }
+    },
+    "digest": "4868111e052525d91365e5869db622a1ffaa93346a1452e346feecb1f43e8e5c"
+  },
+  "proposal": {
+    "schema_version": "consensus-atlas/guarded-test-intent/v1",
+    "id": "etcdraft-campaign-intent-m5-21b",
+    "view_digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036",
+    "risk_id": "leader-change-with-inflight-proposal",
+    "must": {
+      "decisions": 8,
+      "fault_envelope": {
+        "max_crashes": 1,
+        "max_concurrent_crashes": 1,
+        "max_message_drops": 2,
+        "max_message_duplicates": 1,
+        "max_partitions": 0,
+        "max_active_partitions": 0
+      }
+    },
+    "prefer": {
+      "backend_ids": [
+        "action-class-random",
+        "admissible-uniform"
+      ]
+    },
+    "digest": "698fa8968129748760df83a81ef960d3a534b78066e0a3c7cbc741054d0b0f89"
+  },
+  "plan": {
+    "schema_version": "consensus-atlas/compiled-test-intent-plan/v2",
+    "id": "etcdraft-campaign-intent-m5-21b-compiled",
+    "view_digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036",
+    "intent_digest": "698fa8968129748760df83a81ef960d3a534b78066e0a3c7cbc741054d0b0f89",
+    "catalog_digest": "2effd56ba9bc3687ac040be714da3c75b43b1e430fc90e40ab4d22a0d594f861",
+    "risk_id": "leader-change-with-inflight-proposal",
+    "backend_id": "action-class-random",
+    "strategy": "workload-action-class-random-b4",
+    "decisions": 8,
+    "fault_envelope": {
+      "max_crashes": 1,
+      "max_concurrent_crashes": 1,
+      "max_message_drops": 2,
+      "max_message_duplicates": 1,
+      "max_partitions": 0,
+      "max_active_partitions": 0
+    },
+    "required_capabilities": [
+      "crash-restart-incarnation",
+      "natural-temporal-progress",
+      "opaque-invoke-boundary",
+      "runtime-owned-message",
+      "strict-decision-replay"
+    ],
+    "required_actions": [
+      "crash",
+      "deliver-message",
+      "fire-temporal-event",
+      "invoke",
+      "restart"
+    ],
+    "fallback_used": false,
+    "compiler_work": {
+      "candidates_evaluated": 2,
+      "preference_checks": 2,
+      "work_units": 4
+    },
+    "digest": "8f68821d7adc90a642e6e633ba6e209752907ce1e9f675192ea78c19e00ddb8f"
+  },
+  "instance": {
+    "schema_version": "consensus-atlas/intent-execution-instance/v1",
+    "id": "etcdraft-campaign-attempt-1",
+    "plan_digest": "8f68821d7adc90a642e6e633ba6e209752907ce1e9f675192ea78c19e00ddb8f",
+    "policy_seed": 151,
+    "budget": {
+      "max_execution_attempts": 1,
+      "max_primary_work_units": 10,
+      "max_replay_work_units": 10
+    },
+    "digest": "edc1d6784cd839a77ca6f236bccc5eaf34f31e275323d7276ea6e3c29ee997f2"
+  },
+  "choice": {
+    "schema_version": "consensus-atlas/campaign-execution-choice/v1",
+    "intent_digest": "698fa8968129748760df83a81ef960d3a534b78066e0a3c7cbc741054d0b0f89",
+    "plan_digest": "8f68821d7adc90a642e6e633ba6e209752907ce1e9f675192ea78c19e00ddb8f",
+    "execution_instance_digest": "edc1d6784cd839a77ca6f236bccc5eaf34f31e275323d7276ea6e3c29ee997f2",
+    "backend_id": "action-class-random",
+    "strategy": "workload-action-class-random-b4",
+    "policy_seed": 151,
+    "digest": "4fccbb0d9a308ec585f11a502d65e1a87b2fe253d54ddd0389382954dd13f75b"
+  },
+  "planning_work": {
+    "calls": 1,
+    "input_tokens": 2203,
+    "output_tokens": 214,
+    "total_tokens": 2417
+  },
+  "digest": "b277d083da2ed8d7b5f996a2934c5a2b86d7d54177b53e67d81fd7f9c4359648"
+}

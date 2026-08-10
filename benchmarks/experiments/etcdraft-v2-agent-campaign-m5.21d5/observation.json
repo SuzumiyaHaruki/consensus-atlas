@@ -1,0 +1,1205 @@
+{
+  "schema_version": "consensus-atlas/campaign-observation/v2",
+  "campaign_id": "etcdraft-model-campaign-v1",
+  "config_digest": "848435e0999c6eede1b44543d60c6b9876751b26e766da801c7788224c7d727a",
+  "target_id": "etcdraft-v2",
+  "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+  "experiment_spec_digest": "5fb743563d60b0550b55058dfc8a32cad2fcf7dfb148151c99736ea44823c28f",
+  "summary_digest": "71c7fb352bb44e12a5a1ae635d5b8a74723dd4eac93d707f00af6a4ef326f5d2",
+  "head_checkpoint_digest": "8b12601dddb596a6c1f49fcebc77e214c279ff3f1a00a0201f9735266ed99604",
+  "terminal": {
+    "status": "stopped",
+    "stop_reason": "attempt-limit",
+    "attempts": 1,
+    "completed": 1,
+    "rejected": 0,
+    "failed": 0,
+    "invalid": 0,
+    "work": {
+      "primary": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 0,
+        "scheduler_decisions": 8,
+        "work_units": 9
+      },
+      "replay": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 0,
+        "scheduler_decisions": 8,
+        "work_units": 9
+      },
+      "model": {
+        "calls": 1,
+        "input_tokens": 2203,
+        "output_tokens": 214,
+        "total_tokens": 2417
+      },
+      "resources": {
+        "wall_time": "not-collected",
+        "cpu_time": "not-collected",
+        "peak_rss": "not-collected"
+      }
+    },
+    "elapsed_ms": 2761
+  },
+  "attempts": [
+    {
+      "ordinal": 1,
+      "record_digest": "4ddd49ea81f71d35237856066a2e7786178121328575ab3c3389a1b9727c386f",
+      "artifact_digest": "4d59cecaec2961637acbc5d93f82a3803db9cf5d0d6d1047db99a907995b28ce",
+      "outcome": "completed",
+      "execution_evidence": true,
+      "bundle_digest": "0cbfc8d8b289e7f251816ae6940a9ba7a87f3a71cc0b518240c372ad80ea6d58",
+      "charged_decisions": 8,
+      "pss_samples": 9,
+      "pss_states": 9,
+      "new_pss_states": 9,
+      "faults": {
+        "crashes": 1,
+        "message_drops": 0,
+        "message_duplicates": 0,
+        "partitions": 0
+      },
+      "workload": {
+        "planned": 1,
+        "offered": 0,
+        "completed": 0,
+        "pending": 1,
+        "result_statuses": null
+      },
+      "checked_monitors": [
+        "agreement",
+        "trace-integrity"
+      ],
+      "choice": {
+        "choice_digest": "4fccbb0d9a308ec585f11a502d65e1a87b2fe253d54ddd0389382954dd13f75b",
+        "intent_digest": "698fa8968129748760df83a81ef960d3a534b78066e0a3c7cbc741054d0b0f89",
+        "plan_digest": "8f68821d7adc90a642e6e633ba6e209752907ce1e9f675192ea78c19e00ddb8f",
+        "backend_id": "action-class-random",
+        "strategy": "workload-action-class-random-b4"
+      }
+    }
+  ],
+  "pss": {
+    "pss_id": "official-etcdraft-v2/core-pss-v1",
+    "evidence_attempts": 1,
+    "total_decisions": 8,
+    "total_samples": 9,
+    "initial_state_key": "00657865df9895f50fe03cc2a2163ee8414a0f6ae2e7fc3dcafa358e937287f1",
+    "unique_states": 9,
+    "state_set_digest": "9c8e9e0b5f76afac5af33a8465cb778ef35cb0a1617811681996cca45b2b2719",
+    "prefix_area": 44,
+    "self_normalized_area": 0.6111111111111112,
+    "curve": [
+      {
+        "decisions": 1,
+        "attempt": 1,
+        "attempt_decision": 1,
+        "unique_states": 2,
+        "new_state": true
+      },
+      {
+        "decisions": 2,
+        "attempt": 1,
+        "attempt_decision": 2,
+        "unique_states": 3,
+        "new_state": true
+      },
+      {
+        "decisions": 3,
+        "attempt": 1,
+        "attempt_decision": 3,
+        "unique_states": 4,
+        "new_state": true
+      },
+      {
+        "decisions": 4,
+        "attempt": 1,
+        "attempt_decision": 4,
+        "unique_states": 5,
+        "new_state": true
+      },
+      {
+        "decisions": 5,
+        "attempt": 1,
+        "attempt_decision": 5,
+        "unique_states": 6,
+        "new_state": true
+      },
+      {
+        "decisions": 6,
+        "attempt": 1,
+        "attempt_decision": 6,
+        "unique_states": 7,
+        "new_state": true
+      },
+      {
+        "decisions": 7,
+        "attempt": 1,
+        "attempt_decision": 7,
+        "unique_states": 8,
+        "new_state": true
+      },
+      {
+        "decisions": 8,
+        "attempt": 1,
+        "attempt_decision": 8,
+        "unique_states": 9,
+        "new_state": true
+      }
+    ],
+    "states": [
+      {
+        "key": "00657865df9895f50fe03cc2a2163ee8414a0f6ae2e7fc3dcafa358e937287f1",
+        "first_attempt": 1,
+        "first_attempt_decision": 0,
+        "first_global_decision": 0,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "durable"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n2",
+                "durability": "durable"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n3",
+                "durability": "durable"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "decided"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "00657865df9895f50fe03cc2a2163ee8414a0f6ae2e7fc3dcafa358e937287f1"
+        }
+      },
+      {
+        "key": "a45acd3ed021e9e355d2647f36dbafb0291647d4e69aac2be7e3e36344121ffe",
+        "first_attempt": 1,
+        "first_attempt_decision": 1,
+        "first_global_decision": 1,
+        "trace_step": 1,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "applied"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n2",
+                "durability": "durable"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n3",
+                "durability": "durable"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "decided"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "a45acd3ed021e9e355d2647f36dbafb0291647d4e69aac2be7e3e36344121ffe"
+        }
+      },
+      {
+        "key": "b86b2ec8fe39d063dce7353e0b51e8718911ec075e0a9d0b4eb2566650c07fc9",
+        "first_attempt": 1,
+        "first_attempt_decision": 2,
+        "first_global_decision": 2,
+        "trace_step": 2,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "stopped",
+                "incarnation_rank": 0
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "applied"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n2",
+                "durability": "durable"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "decided"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "e2",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "inactive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e2"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e2"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "precedes",
+                "from": "e1",
+                "to": "e2"
+              }
+            ]
+          },
+          "digest": "b86b2ec8fe39d063dce7353e0b51e8718911ec075e0a9d0b4eb2566650c07fc9"
+        }
+      },
+      {
+        "key": "7ccce6f20241d89458586816660215a3ba193232bf339d5a9ad1abb53c4d7ca6",
+        "first_attempt": 1,
+        "first_attempt_decision": 3,
+        "first_global_decision": 3,
+        "trace_step": 3,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "stopped",
+                "incarnation_rank": 0
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "durable"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "applied"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "e2",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "inactive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "applies",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e2"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e2"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "precedes",
+                "from": "e1",
+                "to": "e2"
+              }
+            ]
+          },
+          "digest": "7ccce6f20241d89458586816660215a3ba193232bf339d5a9ad1abb53c4d7ca6"
+        }
+      },
+      {
+        "key": "fc4263fe0f036cd2d3392d27a2a5ebd29f66149f2cad2c3331d5257a48f40f7f",
+        "first_attempt": 1,
+        "first_attempt_decision": 4,
+        "first_global_decision": 4,
+        "trace_step": 4,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 1
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "durable"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n3",
+                "durability": "durable"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "applied"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "applies",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "fc4263fe0f036cd2d3392d27a2a5ebd29f66149f2cad2c3331d5257a48f40f7f"
+        }
+      },
+      {
+        "key": "43583cba05a8088f6858e60af916be4124574a4bf5e63fdcae3375f5d25449d5",
+        "first_attempt": 1,
+        "first_attempt_decision": 5,
+        "first_global_decision": 5,
+        "trace_step": 5,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 1
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "durable"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n3",
+                "durability": "applied"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "applied"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "applies",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "43583cba05a8088f6858e60af916be4124574a4bf5e63fdcae3375f5d25449d5"
+        }
+      },
+      {
+        "key": "9386fb65f2e073cb646f2c696d54e9449d0a14d1341f05a10625dfc69eabf8cf",
+        "first_attempt": 1,
+        "first_attempt_decision": 6,
+        "first_global_decision": 6,
+        "trace_step": 6,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 1
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n1",
+                "durability": "applied"
+              },
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n3",
+                "durability": "applied"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "applied"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "applies",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "9386fb65f2e073cb646f2c696d54e9449d0a14d1341f05a10625dfc69eabf8cf"
+        }
+      },
+      {
+        "key": "490b5188cd90dcf692c3189bf6e638a05e3b1177163fa8cab4e72628bb925be9",
+        "first_attempt": 1,
+        "first_attempt_decision": 7,
+        "first_global_decision": 7,
+        "trace_step": 7,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 1
+              }
+            ],
+            "pending": [
+              {
+                "kind": "host-effect",
+                "state": "enabled",
+                "owner": "n3",
+                "durability": "applied"
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "applied"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "applies",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "applies",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "490b5188cd90dcf692c3189bf6e638a05e3b1177163fa8cab4e72628bb925be9"
+        }
+      },
+      {
+        "key": "03911f2ccf976a620d6ca85b1331b7ce041cea405b7fd65ba58dd85f3e315cab",
+        "first_attempt": 1,
+        "first_attempt_decision": 8,
+        "first_global_decision": 8,
+        "trace_step": 8,
+        "state": {
+          "schema_version": "consensus-atlas/core-pss/v1",
+          "mapping_id": "official-etcdraft-v2/core-pss-v1",
+          "control": {
+            "participants": [
+              {
+                "id": "n1",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n2",
+                "lifecycle": "running",
+                "incarnation_rank": 0
+              },
+              {
+                "id": "n3",
+                "lifecycle": "running",
+                "incarnation_rank": 1
+              }
+            ],
+            "pending": [
+              {
+                "kind": "temporal",
+                "state": "enabled",
+                "owner": "n1",
+                "temporal_kind": "periodic-pulse",
+                "earliest_temporal": true
+              },
+              {
+                "kind": "temporal",
+                "state": "enabled",
+                "owner": "n2",
+                "temporal_kind": "periodic-pulse",
+                "earliest_temporal": true
+              },
+              {
+                "kind": "temporal",
+                "state": "enabled",
+                "owner": "n3",
+                "temporal_kind": "periodic-pulse",
+                "earliest_temporal": true
+              }
+            ]
+          },
+          "semantic": {
+            "entities": [
+              {
+                "id": "d1",
+                "kind": "decision-unit",
+                "stage": "applied"
+              },
+              {
+                "id": "e1",
+                "kind": "epoch",
+                "stage": "unknown"
+              },
+              {
+                "id": "n1",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n2",
+                "kind": "participant",
+                "mode": "passive"
+              },
+              {
+                "id": "n3",
+                "kind": "participant",
+                "mode": "passive"
+              }
+            ],
+            "relations": [
+              {
+                "kind": "applies",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "applies",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "applies",
+                "from": "n3",
+                "to": "d1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n1",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n2",
+                "to": "e1"
+              },
+              {
+                "kind": "belongs-to",
+                "from": "n3",
+                "to": "e1"
+              },
+              {
+                "kind": "decides",
+                "from": "n1",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n2",
+                "to": "d1"
+              },
+              {
+                "kind": "decides",
+                "from": "n3",
+                "to": "d1"
+              }
+            ]
+          },
+          "digest": "03911f2ccf976a620d6ca85b1331b7ce041cea405b7fd65ba58dd85f3e315cab"
+        }
+      }
+    ]
+  },
+  "faults": {
+    "observed_attempts": 1,
+    "usage": {
+      "crashes": 1,
+      "message_drops": 0,
+      "message_duplicates": 0,
+      "partitions": 0
+    }
+  },
+  "workload": {
+    "observed_attempts": 1,
+    "planned": 1,
+    "offered": 0,
+    "completed": 0,
+    "pending": 1,
+    "result_statuses": null
+  },
+  "monitors": {
+    "observed_attempts": 1,
+    "checked": [
+      {
+        "monitor": "agreement",
+        "count": 1
+      },
+      {
+        "monitor": "trace-integrity",
+        "count": 1
+      }
+    ],
+    "triggers": null
+  },
+  "digest": "0cbe407c67f8641f38988c594f143d5f8b9f04519ee53af3e2214f387725c553"
+}
