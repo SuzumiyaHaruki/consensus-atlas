@@ -226,6 +226,59 @@ func TestCampaignModelCallDurabilityAndAmbiguousRecovery(t *testing.T) {
 	}
 }
 
+func TestCampaignFailureAccountsMatchingDurableModelResult(t *testing.T) {
+	config, directory, recovered, intent := campaignModelCallFixture(t, "failure-work")
+	_, err := recovered.PrepareModelCall(intent)
+	campaignRequireNoError(t, err)
+	dispatch, err := recovered.DispatchModelCall()
+	campaignRequireNoError(t, err)
+	result, err := NewCampaignModelCallResult(intent, dispatch, CampaignModelCallResult{
+		Status: CampaignModelCallCompleted, Content: []byte(`{"prefer":{}}`),
+		ResponseDigest: strings.Repeat("a", 64),
+		Response:       &AgentResponseIdentity{ID: "response", Model: "model", FinishReason: "stop"},
+		DurationMillis: 1, Work: ModelWork{Calls: 1, InputTokens: 2, OutputTokens: 1, TotalTokens: 3},
+	})
+	campaignRequireNoError(t, err)
+	_, err = recovered.CommitModelCallResult(result)
+	campaignRequireNoError(t, err)
+	request, err := NewCampaignAttemptRequest(config, recovered.Head)
+	campaignRequireNoError(t, err)
+	fabricated := result
+	fabricated.DurationMillis++
+	fabricated, err = fabricated.seal()
+	campaignRequireNoError(t, err)
+	if _, err := recovered.FailAttemptWithModelCall(request, CampaignFailureProvider, fabricated); err == nil ||
+		!strings.Contains(err.Error(), "MODEL_RESULT_MISMATCH") {
+		t.Fatalf("fabricated accounting evidence was accepted: %v", err)
+	}
+	marker, err := recovered.FailAttemptWithModelCall(request, CampaignFailureProvider, result)
+	campaignRequireNoError(t, err)
+	want := AgentInvocationWork(emptyWork(), result.Work)
+	if marker.Work != want || marker.EvidenceKind != CampaignFailureModelResult ||
+		marker.EvidenceDigest != result.Digest || marker.BudgetExceeded {
+		t.Fatalf("failure work was not evidence-bound: %#v", marker)
+	}
+	checked, err := RecoverCampaignDirectory(directory, config)
+	campaignRequireNoError(t, err)
+	summary, err := NewCampaignSummary(&checked)
+	campaignRequireNoError(t, err)
+	if summary.Sequence != 0 || len(summary.Attempts) != 0 || summary.Totals != want {
+		t.Fatalf("terminal work invented an attempt or disappeared: %#v", summary)
+	}
+	failurePath := filepath.Join(directory, campaignFailureFile)
+	tampered := marker
+	tampered.EvidenceDigest = strings.Repeat("f", 64)
+	tampered, err = tampered.seal()
+	campaignRequireNoError(t, err)
+	encoded, err := campaignJSONBytes(tampered)
+	campaignRequireNoError(t, err)
+	campaignRequireNoError(t, os.WriteFile(failurePath, encoded, 0o600))
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil ||
+		!strings.Contains(err.Error(), "EVIDENCE_MISMATCH") {
+		t.Fatalf("tampered accounting evidence recovered: %v", err)
+	}
+}
+
 func campaignRequireNoError(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)

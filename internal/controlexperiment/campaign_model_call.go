@@ -232,7 +232,8 @@ func NewCampaignModelCallProviderFailure(
 ) error {
 	if cause == nil || !validSHA256(result.Digest) ||
 		(result.Status != CampaignModelCallCompleted && result.Status != CampaignModelCallFailed) ||
-		!validCampaignPlanningWork(result.Work) || result.Work.Calls != 1 {
+		result.Work.Calls != 1 || result.Work.InputTokens < 0 || result.Work.OutputTokens < 0 ||
+		result.Work.TotalTokens != result.Work.InputTokens+result.Work.OutputTokens {
 		return errors.New("EXPERIMENT_CAMPAIGN_MODEL_CALL_PROVIDER_FAILURE_INVALID")
 	}
 	return &CampaignModelCallProviderFailure{cause: cause, result: result}
