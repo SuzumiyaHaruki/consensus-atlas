@@ -213,7 +213,7 @@ func (provider etcdraftCampaignProvider) campaignConfig(
 	if !ok {
 		return controlexperiment.CampaignConfig{}, errors.New("ETCDRAFT_CAMPAIGN_BUDGET_OVERFLOW")
 	}
-	return controlexperiment.NewCampaignConfig(
+	config, err := controlexperiment.NewCampaignConfig(
 		id, etcdraftCampaignTargetID, provider.targetIdentityDigest, provider.experimentSpecDigest,
 		controlexperiment.CampaignLogicalBudget{
 			MaxAttempts: attempts, MaxPrimarySchedulerDecisions: decisions,
@@ -221,6 +221,10 @@ func (provider etcdraftCampaignProvider) campaignConfig(
 		},
 		wallClockCeilingMillis,
 	)
+	if err != nil {
+		return controlexperiment.CampaignConfig{}, err
+	}
+	return controlexperiment.RequirePlannedCampaignAttempts(config)
 }
 
 func checkedCampaignMultiply(left int, right int) (int, bool) {

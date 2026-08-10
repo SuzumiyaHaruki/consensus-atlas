@@ -110,6 +110,9 @@ func (recovered *CampaignRecovery) PreparePlannedAttempt(
 		recovered.Head.Digest != recovered.validatedHeadDigest {
 		return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
 	}
+	if recovered.Config.AttemptInputMode != CampaignInputPlanned {
+		return CampaignPlannedAttempt{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_MODE_REQUIRED")
+	}
 	request, err := NewCampaignAttemptRequest(recovered.Config, recovered.Head)
 	if err != nil {
 		return CampaignPlannedAttempt{}, err
@@ -157,6 +160,10 @@ func (recovered *CampaignRecovery) CommitAttempt(
 		recovered.Config.Digest != recovered.validatedConfigDigest ||
 		recovered.Head.Digest != recovered.validatedHeadDigest {
 		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
+	}
+	if recovered.Config.AttemptInputMode == CampaignInputPlanned &&
+		len(recovered.PlannedAttempts) != recovered.Head.Sequence+1 {
+		return CampaignCheckpoint{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_REQUIRED")
 	}
 	if len(recovered.PlannedAttempts) == recovered.Head.Sequence+1 &&
 		record.InputDigest != recovered.PlannedAttempts[len(recovered.PlannedAttempts)-1].Digest {
@@ -526,7 +533,9 @@ func readCampaignPlans(
 	}
 	sort.Slice(plans, func(i, j int) bool { return plans[i].View.Request.Ordinal < plans[j].View.Request.Ordinal })
 	headSequence := len(checkpoints) - 1
-	if len(plans) > headSequence+1 || (len(plans) > 0 && len(plans) < headSequence) {
+	if len(plans) > headSequence+1 ||
+		(config.AttemptInputMode == CampaignInputPlanned && len(plans) < headSequence) ||
+		(config.AttemptInputMode != CampaignInputPlanned && len(plans) > 0) {
 		return nil, errors.New("EXPERIMENT_CAMPAIGN_STORE_PLAN_SEQUENCE_INVALID")
 	}
 	for index := range plans {

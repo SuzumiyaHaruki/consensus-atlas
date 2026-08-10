@@ -1,6 +1,7 @@
 package controlexperiment
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,10 @@ func TestCampaignPlannedAttemptSurvivesInterruptionAndBindsCommit(t *testing.T) 
 	config := campaignTestConfig(t, "planned-store", strings.Repeat("a", 64), CampaignLogicalBudget{
 		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 4, MaxPrimaryWorkUnits: 8, MaxReplayWorkUnits: 8,
 	}, 1_000)
+	config, err := RequirePlannedCampaignAttempts(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 	directory := filepath.Join(t.TempDir(), "campaign")
 	recovered, err := CreateCampaignDirectory(directory, config)
 	if err != nil {
@@ -83,6 +88,17 @@ func TestCampaignPlannedAttemptSurvivesInterruptionAndBindsCommit(t *testing.T) 
 	if _, err := interrupted.PreparePlannedAttempt(planned); err != nil {
 		t.Fatalf("same plan was not idempotent: %v", err)
 	}
+	conflict, err := NewCampaignPlannedAttempt(
+		"conflicting-plan", planned.View, planned.Proposal, planned.Plan,
+		planned.Instance, planned.Choice, planned.PlanningWork,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := interrupted.PreparePlannedAttempt(conflict); err == nil ||
+		!strings.Contains(err.Error(), "PLAN_CONFLICT") {
+		t.Fatalf("durable plan was replaceable: %v", err)
+	}
 	artifact := []byte("planned artifact")
 	record, err := NewCampaignAttemptRecord(CampaignAttemptRecord{
 		Ordinal: 1, ID: "planned-store-attempt", InputDigest: planned.Digest,
@@ -108,6 +124,42 @@ func TestCampaignPlannedAttemptSurvivesInterruptionAndBindsCommit(t *testing.T) 
 	checked, err := RecoverCampaignDirectory(directory, config)
 	if err != nil || checked.Head.Sequence != 1 || checked.Head.Record.InputDigest != planned.Digest {
 		t.Fatalf("planned commit binding did not recover: %#v/%v", checked, err)
+	}
+	planPath := filepath.Join(directory, campaignPlansDir, campaignCheckpointFile(1))
+	original, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := planned
+	tampered.ID = "tampered-plan"
+	encoded, err := campaignJSONBytes(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
+		t.Fatal("tampered plan recovered")
+	}
+	if err := os.WriteFile(planPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	futurePath := filepath.Join(directory, campaignPlansDir, campaignCheckpointFile(2))
+	if err := os.WriteFile(futurePath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
+		t.Fatal("future plan recovered")
+	}
+	if err := os.Remove(futurePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(planPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil {
+		t.Fatal("planned campaign recovered without its committed plan")
 	}
 }
 

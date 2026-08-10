@@ -6,11 +6,13 @@ import (
 )
 
 const (
-	CampaignConfigVersion     = "consensus-atlas/campaign-config/v1"
+	CampaignConfigVersion     = "consensus-atlas/campaign-config/v2"
 	CampaignAttemptVersion    = "consensus-atlas/campaign-attempt/v1"
 	CampaignCheckpointVersion = "consensus-atlas/campaign-checkpoint/v1"
 	CampaignFailureVersion    = "consensus-atlas/campaign-failure/v1"
 	CampaignCheckpointPolicy  = "checkpoint-after-each-terminal-attempt"
+	CampaignInputBaseRequest  = "base-request"
+	CampaignInputPlanned      = "planned-attempt"
 	CampaignAttemptCompleted  = "completed"
 	CampaignAttemptRejected   = "rejected"
 	CampaignAttemptFailed     = "failed"
@@ -53,6 +55,7 @@ type CampaignConfig struct {
 	Budget                 CampaignLogicalBudget `json:"budget"`
 	WallClockCeilingMillis int64                 `json:"wall_clock_ceiling_ms"`
 	CheckpointPolicy       string                `json:"checkpoint_policy"`
+	AttemptInputMode       string                `json:"attempt_input_mode"`
 	Digest                 string                `json:"digest"`
 }
 
@@ -70,6 +73,7 @@ func NewCampaignConfig(
 		ExperimentSpecDigest: experimentSpecDigest, Budget: budget,
 		WallClockCeilingMillis: wallClockCeilingMillis,
 		CheckpointPolicy:       CampaignCheckpointPolicy,
+		AttemptInputMode:       CampaignInputBaseRequest,
 	}
 	sealed, err := config.seal()
 	if err != nil {
@@ -81,11 +85,20 @@ func NewCampaignConfig(
 	return sealed, nil
 }
 
+func RequirePlannedCampaignAttempts(config CampaignConfig) (CampaignConfig, error) {
+	if err := config.Validate(); err != nil {
+		return CampaignConfig{}, err
+	}
+	config.AttemptInputMode = CampaignInputPlanned
+	return config.seal()
+}
+
 func (config CampaignConfig) Validate() error {
 	if config.SchemaVersion != CampaignConfigVersion || !validMethodToken(config.ID) ||
 		!validMethodToken(config.TargetID) || !validSHA256(config.TargetIdentityDigest) ||
 		!validSHA256(config.ExperimentSpecDigest) || config.WallClockCeilingMillis <= 0 ||
-		config.CheckpointPolicy != CampaignCheckpointPolicy {
+		config.CheckpointPolicy != CampaignCheckpointPolicy ||
+		(config.AttemptInputMode != CampaignInputBaseRequest && config.AttemptInputMode != CampaignInputPlanned) {
 		return errors.New("EXPERIMENT_CAMPAIGN_CONFIG_INVALID")
 	}
 	if err := config.Budget.validate(); err != nil {
