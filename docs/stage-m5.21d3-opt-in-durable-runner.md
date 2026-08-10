@@ -66,3 +66,29 @@ work 解释为没有发生调用。后续只有在引入可信的 pre-plan termi
 - 不声称 Agent 方法优于 zero-model/random；
 - 不声称 PSS/Coverage 完备或协议正确。
 
+## 完成结果（2026-08-10）
+
+M5.21d3 已完成。新 strategy `campaign-etcdraft-agent-v1` 必须显式提供 key file、Campaign
+参数和每 attempt model-token allowance。生产组合只引用既有固定 DeepSeek client；CLI 不允许
+自定义 endpoint/model/retry。实现按 attempt 执行 freeze、key read、单次 Step 和 key clear。
+
+离线验收结果：
+
+- 2 attempts 中 key reader 和 transport 各调用 2 次；每次 key reader 执行时，对应 intent 已存在、
+  dispatch 尚不存在，而且 invoker 分别只看到 `key-1`/`key-2`；
+- 两次成功调用累计 2 calls/14 tokens，进入 plan/artifact/record/checkpoint summary；
+- 首次 key reader 失败时 transport 为 0、Campaign 保持 running 和 intent-only prepared；显式
+  resume 后只读 key/调用 transport 1 次并完成；
+- completed result、dispatch-only ambiguous、failed result 三种恢复的 key reads 和 transport
+  calls 均为 0；completed 继续执行，后两者形成 durable Campaign failure；
+- failed result 的 1 call 已保存在 model-call result，但 Campaign Summary ModelWork 仍为 0，
+  机械暴露了冻结时声明的 pre-plan accounting gap。
+
+实际 Go 净增 443 行，低于 450 行上限。`go test -count=1 ./...`、`go vet ./...`、
+M5.21d3 定向 race（160.600 秒）、legacy audits、race-shard exact partition 和
+`git diff --check` 均通过。没有读取真实 key、访问 HTTP/模型、修改 Runtime/scheduler/executor/
+Adapter 或外部 raft 工作区。
+
+下一阶段应为 M5.21d4：为已发生且有 durable result 的 pre-plan terminal failure 增加可信、
+可恢复、可聚合的成本记录，同时保持“不伪造 plan/artifact”。完成该边界后，再由用户明确授权
+单 attempt 真实模型连通性实验。

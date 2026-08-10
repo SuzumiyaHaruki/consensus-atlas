@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21d3 Opt-in Durable-call Runner 已冻结；外部模型调用为 0
+阶段：M5.21d3 Opt-in Durable-call Runner 已完成；外部模型调用为 0
 
 ## 输入、处理、输出
 
@@ -15,8 +15,8 @@
                          v
 处理
   prefix Observation -> minimal Planner View
-  -> zero-model proposal（当前 CLI）
-     | offline exact request -> durable result（d2 恢复见证）
+  -> zero-model proposal
+     | Agent Campaign: intent durable -> per-attempt key -> durable result
   -> preference-only validation -> trusted compiler/instance/choice
   -> durable plans/N.json -> existing qualified executor
   -> artifact/checkpoint -> strict reprojection -> next Observation
@@ -38,10 +38,11 @@ transport。result-before-plan 恢复从 durable content 继续，transport 调�
 artifact、record 和 checkpoint totals 中一致，report/bundle 仍为零 model work。CLI 仍是
 zero-model，没有读取 key 或访问 HTTP。
 
-M5.21d3 已冻结：runner 将按 attempt 依次完成 exact intent durable、key read、至多一次 transport
-和 key clear；只有 intent-only prepared 状态允许读 key。测试继续注入离线 key/transport，生产
-CLI 即使增加显式 opt-in strategy，本阶段也不会读取桌面 key 或发起真实调用。pre-plan failed
-result 的成本仍只在 model-call result 中，尚不进入 Campaign summary totals。
+M5.21d3 已完成：独立 opt-in runner 按 attempt 依次完成 exact intent durable、key read、至多一次
+transport 和 key clear；只有 intent-only prepared 状态允许读 key。离线 2-attempt 见证得到 2 次
+key read、2 calls/14 tokens；key failure resume 后只调用一次；completed/ambiguous/failed 恢复
+均为 0 key read/0 transport。生产 CLI 已具备显式入口，但本阶段没有读取桌面 key 或发起真实调用。
+pre-plan failed result 的 1 call 已 durable，Campaign Summary ModelWork 仍为 0。
 
 M5.21d1 在可运行 zero-model 闭环之前新增通用的远程规划调用
 write-ahead 边界。`CampaignConfig/v3` 冻结 `none/zero-model/durable-call`；`model-calls/`
@@ -614,11 +615,13 @@ view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artif
 
 M5.21d1 已完成：调用前依次落盘 exact call intent 和 dispatch marker；恢复只看到
 dispatch 时归类为 ambiguous terminal，拒绝重试或补写 result。实际 Go 净增 593 行，
-全量 test/vet 和通用 Campaign race 通过。M5.21d2 现已完成 etcd/raft offline composition，
-三个恢复见证和模型工作单次计费通过；Go 净增 444 行。下一步先设计显式 opt-in durable-call
-runner 并继续用离线 transport 验证，真实模型调用仍需用户另行明确授权。
+全量 test/vet 和通用 Campaign race 通过。M5.21d2 已完成 etcd/raft offline composition，
+三个恢复见证和模型工作单次计费通过；Go 净增 444 行。M5.21d3 又完成 per-attempt
+freeze-before-key runner，Go 净增 443 行。下一步先补 pre-plan terminal accounting，再考虑由用户
+明确授权的单 attempt 真实模型连通性实验。
 详见 `docs/stage-m5.21d1-durable-model-call.md` 和
-`docs/stage-m5.21d2-etcdraft-offline-model-planner.md`。
+`docs/stage-m5.21d2-etcdraft-offline-model-planner.md`、
+`docs/stage-m5.21d3-opt-in-durable-runner.md`。
 
 ## 阅读顺序
 

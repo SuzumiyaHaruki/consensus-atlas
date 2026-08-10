@@ -2308,6 +2308,14 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     全量 test/vet、定向 race 与 exact-partition audit 通过。该阶段未改 Runtime、target executor 或
     CLI，也未读取 key/访问 HTTP。详见 `docs/stage-m5.21d1-durable-model-call.md` 和
     `docs/stage-m5.21d2-etcdraft-offline-model-planner.md`。
+78. [X] M5.21d3 已增加显式 opt-in durable-call runner。每个 attempt 先 no-replace 冻结 exact
+    intent，只有 prepared 状态才读 key，单次 Coordinator Step 后立即清空；completed result、
+    durable plan、ambiguous 和 failed 恢复均不读 key、不重调。离线 2-attempt 见证得到 2 key reads、
+    2 calls/14 tokens；key failure 保留 prepared intent，resume 后唯一调用；三类 terminal 恢复的
+    key/transport 都为 0。实际 Go 净增 443 行，全量 test/vet、160.600 秒定向 race 和审计通过。
+    pre-plan failed result 的成本虽已 durable，但尚未进入 Summary totals；M5.21d4 必须先补可信
+    terminal accounting，不能伪造 plan，也不能据 summary 的 0 model work 声称没有调用。
+    详见 `docs/stage-m5.21d3-opt-in-durable-runner.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。

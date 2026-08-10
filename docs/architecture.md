@@ -142,7 +142,12 @@ M5.21d2 只在 etcd/raft composition root 将该边界接到 injected offline tr
 provider 冻结 exact DeepSeek request bytes，durable result 后才运行 strict parser、preference-only
 validator 和既有 compiler；completed result 恢复不重调，dispatch-only/failed 均终止。target
 report/bundle 保持纯执行 WorkLedger，model work 只附加到 Campaign artifact/record/checkpoint。
-该路径尚未进入 CLI，也不读取 key 或访问 HTTP。
+M5.21d2 本身未进入 CLI，也不读取 key 或访问 HTTP。
+
+M5.21d3 增加独立 opt-in CLI composition，但不增加 transport 实现：它复用既有固定 client，按
+attempt 强制 `intent durable -> key read -> one Coordinator Step -> key clear`。只有 prepared
+call 允许读 key；completed result、pending plan、ambiguous 和 failed 恢复均无 transport 权限。
+pre-plan failure 的 Work 目前以 durable call result 为准，尚未进入 checkpoint/Summary totals。
 
 ## 唯一执行路径
 
