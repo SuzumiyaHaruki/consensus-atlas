@@ -1,5 +1,8 @@
 # M5.20：跨 Attempt Campaign Observation
 
+> 历史说明：本阶段当时产出 v1；M5.21b 已将当前实现升级为
+> `CampaignObservation/v2`，增加不含 seed/instance 的 prior-choice 安全归因。
+
 日期：2026-08-09
 
 状态：完成

@@ -78,3 +78,48 @@ allowed、eligible 交集。零 attempt 的初始视图仍合法。
 
 这些属于 M5.21c 及其后的闭环工作。
 
+## 完成结果
+
+M5.21b 已按冻结设计完成：
+
+- `CampaignExecutionChoice/v1` 机械绑定 intent、compiled plan 与 execution instance；
+- `etcdraft-campaign-artifact/v2` 在执行前保存完整 choice，验证时从 trusted provider inputs 重算；
+- Campaign `experiment_spec_digest` 现绑定 target spec、semantic view、intent 和 plan；
+- completed artifact 复用 `IntentOutcome` 输入验证，同时继续核对实际 uniform policy version/seed；
+- `CampaignObservation/v2` 和 `CampaignPlannerView` 只暴露 choice/intent/plan digest、backend、strategy；
+- 非空 Planner prefix 缺 choice 或出现 risk allowed/eligible 之外的 backend 时 fail closed；
+- deterministic plumbing fixture 现在真正消费 prior choice：有新 PSS state 时保持上一 backend，
+  无新增时轮换到下一个 allowed backend。它仍不是效果基线。
+
+实际 Go 变化为增加 477 行、删除 69 行，净增 408 行，低于 700 行上限。没有新增执行器、CLI、
+checkpoint 类型、Planner 方法或模型调用。
+
+## 实际验收
+
+独立临时 runner 使用 seeds 91/92 完成 2x8-decision etcd/raft Campaign：
+
+- 16 primary decisions，18/18 primary/replay work；
+- 18 Core PSS samples，15 unique states；两个 attempt 分别新增 7、8 个状态；
+- 两个 attempt 均机械归因到 `admissible-uniform` / `workload-admissible-uniform-b4`，共享同一
+  intent/plan digest，choice digest 因 execution instance 不同而不同；
+- 2 crashes，2 个 workload pending，0 monitor trigger；
+- Summary digest：`7c88af392a7900069d09d256590ce3866154cf498f2add580e5dce154a76480f`；
+- Observation digest：`a684dbfb29655be044b5228adfcf95b306c989ef21159f142ff82fbc571f2162`。
+
+该临时完整 artifact 未加入 Git；上述数字是功能验收，不是方法效果或正确性结论。Observation 文本
+扫描确认不含 `policy_seed`、`execution_instance_digest`、`final_snapshot` 或 root-cause 字段。
+
+验证结果：
+
+- `go test ./...`：通过，最慢的 `cmd/control-experiment` 为 106.264 秒；
+- `go vet ./...`：通过；
+- choice/planner 通用定向 race：通过，1.261 秒测试时间；
+- 真实 2-attempt etcd/raft Campaign 定向 race：通过，32.048 秒；
+- `git diff --check`：通过。
+
+## 仍未完成
+
+Choice 目前由固定 Campaign provider 在一次 Campaign 开始时编译，Coordinator 尚未在每个 attempt
+前调用 Planner。M5.21c 必须把 planner-view/proposal/plan/instance/model-work 的 digest 与 cost
+纳入 exact request 和 durable attempt artifact/checkpoint 恢复验证；在此之前仍不能宣称形成自适应
+多 attempt 闭环。

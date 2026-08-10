@@ -28,7 +28,7 @@
   + no composite score/model call
 ```
 
-M5.20 新增的 `CampaignObservation/v1` 是已提交 artifact 的紧凑派生视图。通用层
+M5.20 引入、M5.21b 升级的 `CampaignObservation/v2` 是已提交 artifact 的紧凑派生视图。通用层
 只接受与 Summary attempt 一一绑定的协议无关 projection；etcd/raft 组合层严格重验
 artifact/request/spec/target identity、decision projector 和 Core PSS mapper，再运行现有
 trace-integrity/agreement monitor。Observation 不复制 report、bundle 或 trace，也不产生综合分数。
@@ -569,21 +569,26 @@ request 与裁剪后的 prefix feedback 做 digest binding；确定性 fixture �
 并已进入既有 v2 compiler。实际 Go 净增 563 行，全量 test/vet 和定向 race 通过。
 详见 `docs/stage-m5.21a-campaign-planner-view.md`。
 
-进入 M5.21b：由 target-owned artifact projector 机械补全 prior intent/compiled backend
-与 committed attempt 的可信归因。设计已冻结：复用既有 intent/plan/instance 链，将
-spec+semantic+intent+plan 纳入 experiment identity；Observation/Planner 不暴露 seed、instance、
-trace 或 witness。Go 净增上限 700 行，不新增执行器、CLI、Planner 算法或模型调用。
-详见 `docs/stage-m5.21b-prior-choice-attribution.md`。该绑定完成前不修改 Coordinator，
-不宣称已形成自适应 Campaign 闭环。
+M5.21b 已完成：`CampaignExecutionChoice` 机械绑定 intent/plan/instance，etcd/raft
+artifact v2 重算该绑定，Observation/Planner 只暴露不含 seed/instance 的安全归因。
+实际 Go 净增 408 行，全量 test/vet 和定向 race 通过。真实 2x8-decision
+验收得到 18 samples/15 unique states，每个 attempt 已绑定 `admissible-uniform` choice。
+详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
+
+下一步是 M5.21c：将每次 planner view/proposal/plan/instance/model-work 绑定到 exact request
+与 durable artifact/checkpoint 恢复链。先以 zero-model planner 验证中断恢复后不重算、不重复
+收费、不漂移；完成前不宣称已形成自适应 Campaign 闭环，不接真实模型。
 
 ## 阅读顺序
 
-1. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
-2. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
-3. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
-4. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
-5. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
-6. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
-7. [架构](architecture.md)
-8. [总体规划](ConsensusAtlas-总体规划.md)
-9. [完整文档导航](README.md)
+1. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)
+2. [M5.21a Campaign Planner 最小视图](stage-m5.21a-campaign-planner-view.md)
+3. [M5.20 Campaign Observation](stage-m5.20-campaign-observation.md)
+4. [M5.19d Campaign Summary/Runner](stage-m5.19d-campaign-summary-runner.md)
+5. [M5.19c 首个真实 Campaign Provider](stage-m5.19c-real-campaign-provider.md)
+6. [M5.19b Deterministic Campaign Coordinator](stage-m5.19b-campaign-coordinator.md)
+7. [M5.19a Campaign crash-safe persistence](stage-m5.19a-campaign-persistence.md)
+8. [M5.19 Campaign config/checkpoint 基础](stage-m5.19-campaign-foundation.md)
+9. [架构](architecture.md)
+10. [总体规划](ConsensusAtlas-总体规划.md)
+11. [完整文档导航](README.md)

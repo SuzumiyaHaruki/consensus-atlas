@@ -2278,12 +2278,17 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     M5.20 尚缺每个 attempt 的可信 prior intent/backend 归因；M5.21b 必须由 target-owned
     artifact projector 机械补全该绑定，才能接入增量 checkpoint/恢复/账本。详见
     `docs/stage-m5.21a-campaign-planner-view.md`。
-75. [~] M5.21b prior-choice 可信归因已冻结设计。新增的协议无关
+75. [X] M5.21b prior-choice 可信归因已完成。新增的协议无关
     `CampaignExecutionChoice` 只能从既有 intent/compiled plan/execution instance 机械构造；
     etcd/raft target artifact 必须重算该绑定并将 spec+semantic+intent+plan 纳入
     experiment identity。Observation/Planner 只看 choice/intent/plan digest、backend 与 strategy，
-    不暴露 seed/instance/trace/witness。本阶段 Go 净增上限 700 行，不新增执行器、
-    CLI、Planner 算法或模型调用。详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
+    不暴露 seed/instance/trace/witness。实际 Go 净增 408 行，全量 test/vet 与定向
+    race 通过；真实 2x8-decision 验收的两个 attempt 已各自将 PSS 增量绑定到
+    `admissible-uniform` choice。未新增执行器、CLI、Planner 算法或模型调用。
+    详见 `docs/stage-m5.21b-prior-choice-attribution.md`。
+76. [ ] M5.21c 将每次 planner view/proposal/compiled plan/execution instance 与 model work 机械绑定到
+    exact attempt request 和 durable artifact/checkpoint 恢复链。先使用 zero-model planner 验证中断恢复后
+    不重算、不重复收费、不漂移；之后才允许显式 opt-in 的单次真实模型调用。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2333,9 +2338,10 @@ M5.19d 已增加协议无关 `CampaignSummary/v1` 和 committed-ordinal artifact
 显式 flag 恢复 exact config。真实 2-attempt 见证以 seeds 61/62 得到 16 decisions 和 18/18 work；
 独立见证从 seed 71 的 head 恢复完成 seed 72。artifact-less error 在返回前保存 failed Summary，
 私有诊断未落盘。当前 Summary 不是 verdict，也没有跨 attempt 的 PSS/Coverage/Oracle 聚合。
-M5.20 已增加紧凑的 `CampaignObservation/v1`。通用层只聚合与 Summary record 绑定的
+M5.20 引入的 `CampaignObservation/v1` 已由 M5.21b 升级为 `CampaignObservation/v2`。通用层只聚合与 Summary record 绑定的
 projection；etcd/raft composition 从 committed reader 取回工件并重验 artifact、decision projector
-和 Core PSS mapper，再运行 trace-integrity/agreement。seeds 91/92 的 2x8-decision 验收得到
+和 Core PSS mapper，再运行 trace-integrity/agreement。v2 另将每个 attempt 的 PSS 增量归因到
+已重验的 choice/intent/plan/backend，不暴露 seed 或 instance。seeds 91/92 的 2x8-decision 验收得到
 18 samples/15 unique Core PSS states、2 crashes、2 个 pending workload 和两个 monitor 各 2 次零触发。
 这些栏保持独立，没有综合分数；零触发不构成正确性证明。
 M5.18b4-pre 曾以 590.400 秒通过 full race；加入 request-freeze 回归后，本阶段两次 full race
