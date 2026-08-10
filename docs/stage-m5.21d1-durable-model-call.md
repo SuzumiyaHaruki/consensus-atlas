@@ -29,8 +29,8 @@ Campaign root 新增 `model-calls/`，每个 ordinal 最多三个 no-replace 文
 
 - `N.intent.json`：exact Campaign request/view digest、provider/endpoint/model/参数、prompt/request
   bytes/digest/length、local call key 和 canonical digest；
-- `N.dispatch.json`：intent digest、call key 和 canonical digest；
-- `N.result.json`：intent/dispatch digest、稳定 status/failure class、成功时的 accepted proposal
+- `N.dispatch.json`：intent digest 和 canonical digest（call key 已被 intent digest 间接绑定）；
+- `N.result.json`：dispatch digest、稳定 status/failure class、成功时的 accepted proposal
   bytes/digest、provider response identity/digest、duration 和 `ModelWork`。
 
 intent 中的 bytes 是已冻结的公开 Planner 输入，不含 key/Authorization header。result 不保存
@@ -86,3 +86,25 @@ d2 首先使用离线 mock transport 测试成功恢复、transport terminal fai
 - 不声称 transport error 意味着服务端未收费；
 - 不声称 local call key 是服务端幂等键；
 - 不读取 key，不调用模型，不评价 Agent 效果。
+
+## 完成结果（2026-08-10）
+
+M5.21d1 已完成。`CampaignConfig/v3` 将 planner mode 纳入 config digest；M5.21c
+etcd/raft runner 机械迁移为 `zero-model`，现有实验仍保持 model allowance 为 0。
+`durable-call` 必须同时使用 planned-attempt 输入和非零 model allowance，不能通过修改
+mode 绕过恢复检查。
+
+通用 store 现在可以持久化 exact intent、dispatch 和 completed/failed result。离线见证覆盖：
+
+- 重复准备相同 intent 幂等，替换 digest 由 no-replace/conflict 边界拒绝；
+- completed result 完整恢复，result 内容篡改、future ordinal、result 缺 dispatch 均拒绝；
+- committed call chain 缺失所有 call files 时拒绝恢复；
+- dispatch-only 恢复稳定投影为 `ambiguous`；重建后再 dispatch 和补写任意 result 都失败；
+- 只有原进程中由 `DispatchModelCall` 产生的私有活跃令牌可以提交 result。
+
+最终 Go 净增 593 行，低于 600 行上限。`go test -count=1 ./...`、`go vet ./...`、
+`go test -race -count=1 ./internal/controlexperiment` 和 `git diff --check` 通过。没有新增
+HTTP client/CLI/Runtime/scheduler/executor，没有读取 key 或调用模型。
+
+下一阶段 M5.21d2 才会让 etcd/raft planned provider 使用这个状态机和离线 mock
+transport，并验证 durable result 后恢复解析不再发起调用。

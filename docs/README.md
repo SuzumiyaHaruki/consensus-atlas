@@ -5,7 +5,7 @@
 
 ## 当前主线阅读顺序
 
-1. [当前阶段：M5.21c Durable Planned Attempt](CURRENT_STAGE.md)
+1. [当前阶段：M5.21d1 Durable Model Call Lifecycle](CURRENT_STAGE.md)
 2. [M5.21d1 Durable Model Call Lifecycle](stage-m5.21d1-durable-model-call.md)
 3. [M5.21c Durable Planned Attempt](stage-m5.21c-durable-planned-attempt.md)
 4. [M5.21b prior-choice 可信归因](stage-m5.21b-prior-choice-attribution.md)

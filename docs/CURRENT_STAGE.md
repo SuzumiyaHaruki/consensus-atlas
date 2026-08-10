@@ -2,7 +2,7 @@
 
 日期：2026-08-10
 
-阶段：M5.21c Durable Planned Attempt 已完成；模型调用为 0
+阶段：M5.21d1 Durable Model Call Lifecycle 已完成；模型调用为 0
 
 ## 输入、处理、输出
 
@@ -29,6 +29,12 @@
   + content-addressed full artifacts stored once
   + no composite score/model call
 ```
+
+M5.21d1 尚未改变上述可运行 zero-model 闭环，而是在其前新增通用的远程规划调用
+write-ahead 边界。`CampaignConfig/v3` 冻结 `none/zero-model/durable-call`；`model-calls/`
+使用 exact intent、dispatch marker 和 result 三段 no-replace 记录。恢复仅看到 dispatch 时必须进入
+`ambiguous`，不得重试或补写 result。这一步没有新增 HTTP client，尚未接入
+etcd/raft provider。
 
 M5.21c 为 `CampaignConfig/v2` 增加显式 planned-attempt input mode。每次执行前必须先持久化
 exact Planner View、preference-only proposal、trusted compiled plan、execution instance、choice 与
@@ -593,10 +599,11 @@ view/proposal/plan/instance/model-work 绑定到 exact request 与 durable artif
 未改 Runtime/scheduler/executor，未接真实模型。
 详见 `docs/stage-m5.21c-durable-planned-attempt.md`。
 
-下一阶段 M5.21d 只处理真实远程调用的可恢复边界。d1 设计已冻结：调用前依次落盘
-exact call intent 和 dispatch marker；恢复只看到 dispatch 时归类为 ambiguous terminal，拒绝重试或
-补写 result。d1 先实现通用 store，d2 才接 etcd/raft 离线 transport。在 d2 验证前不设置
-非零 model allowance。详见 `docs/stage-m5.21d1-durable-model-call.md`。
+M5.21d1 已完成：调用前依次落盘 exact call intent 和 dispatch marker；恢复只看到
+dispatch 时归类为 ambiguous terminal，拒绝重试或补写 result。实际 Go 净增 593 行，
+全量 test/vet 和通用 Campaign race 通过。M5.21d2 将接 etcd/raft 离线 mock transport，
+在 d2 验证前不设置真实运行的非零 model allowance。
+详见 `docs/stage-m5.21d1-durable-model-call.md`。
 
 ## 阅读顺序
 

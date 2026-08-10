@@ -5,12 +5,18 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21c Durable Planned Attempt**。用户给定 attempts、decisions、first seed
+当前阶段已完成 **M5.21d1 Durable Model Call Lifecycle**。通用 Campaign store 现在使用
+exact call intent、dispatch marker 和 result 三段 no-replace 记录远程规划调用。dispatch-only
+状态在恢复后机械成为 `ambiguous`，不能再调用或补写 result。`CampaignConfig/v3`
+显式冻结 `none/zero-model/durable-call` planner mode。d1 尚未把 HTTP transport 接入任何
+target provider，未读取 key，model calls/tokens 仍为 0。
+
+M5.21c 已完成 Durable Planned Attempt。用户给定 attempts、decisions、first seed
 和 wall-clock ceiling 后，etcd/raft runner 在每个 attempt 前从已提交 Observation 构造最小
 Planner View，用 zero-model deterministic planner 只修改 `Prefer`，再经可信 compiler 生成
 plan/instance/choice。完整 planned envelope 以 fsync/no-replace 先于 target execution 落盘；
 恢复时复用 exact `head+1` plan，不重算 Planner。checkpoint、artifact 和 Observation 均机械绑定
-planned-attempt digest。`CampaignConfig/v2` 显式区分 base-request/planned-attempt，因此计划缺失、
+planned-attempt digest。当前 `CampaignConfig/v3` 仍显式区分 base-request/planned-attempt，因此计划缺失、
 替换、篡改或 future ordinal 不能降级为旧路径。
 
 first seed 101 的真实 3x8-decision 见证完成 3 attempts：24 primary decisions、27/27
@@ -357,7 +363,8 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21c durable planned attempt](docs/stage-m5.21c-durable-planned-attempt.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21d1 durable model call](docs/stage-m5.21d1-durable-model-call.md)、
+[M5.21c durable planned attempt](docs/stage-m5.21c-durable-planned-attempt.md)、
 [M5.21b choice attribution](docs/stage-m5.21b-prior-choice-attribution.md)、
 [M5.21a Planner View](docs/stage-m5.21a-campaign-planner-view.md)、[M5.20 Campaign Observation](docs/stage-m5.20-campaign-observation.md)、
 [M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
