@@ -2,23 +2,47 @@
 
 日期：2026-08-11
 
-阶段：M5.21r 第二 strict CFT target 候选门已完成
+阶段：M5.21tA 边际 Binding 成本审计已完成
 
 ## 输入、处理、输出
 
-M5.21r 没有把部分资格的 HashiCorp Raft 强行包装成 strict。机械盘点确认其官方 v1.7.3
-仍缺 clock/RNG injection、strict yield/replay；efficient/epaxos 只有 message framing witness，
-完整构造、时间、restart 和 stable yield 未解决。两者分别为 rejected-for-strict/deferred。
+输入是 M5.21t 的 raft-rs 1,218 行 Binding，以及 Runtime、fixture、etcd/raft、HashiCorp Raft 中的
+命令编解码实现。M5.21tA 逐项区分协议语义与重复 wire boilerplate，只把被三个共识 Adapter 和 fixture
+共同消费的 command envelope、Invoke/result/mode 包装及校验提取到 `internal/control`。
 
-新建的隔离 Rust probe 固定 crates.io `raft=0.7.0` 和完整 Cargo.lock。在不调用 Campaign、
-墙钟或线程的 harness 中，两组 fresh 三节点 `RawNode<MemStorage>` 都通过 5 次 n1 logical tick、
-显式 message Step 和 Ready/advance 自然选出 n1、提交 index 1；28 条记录和 trace digest
-`425332...e635` 相同。
+输出是一份无新 capability 的机械成本账本：审计生产面 4,013→3,932，净减少 81 行；raft-rs
+target-owned Binding 1,218→1,185，workload 相对 981 行基线的边际成本由 +237 降至 +204。proposal、
+持久化、ClientResult、进程桥接和 PSS/Oracle 仍保留在目标专用边界。
 
-因此 raft-rs 只获得“进入 bounded Binding spike”的资格，尚未取得 ConsensusAtlas Adapter、
-Control Runtime strict Replay、durable restart、PSS/RiskWitness/workload 或 Qualification。
-model calls=0；ConsensusAtlas SUT executions=0；`formal_ready=false`。详见
-`docs/stage-m5.21r-second-target-candidate-gate.md`。
+raft-rs 回归仍为 decisions=28、Invoke=1、ClientResult=1，trace digest 保持
+`0dabc820...a56164`，worker digest 未变化；全仓 test/vet 和受影响包 race 均通过。本阶段
+model calls=0、新增 benchmark/campaign trial=0（仅执行回归测试），`formal_ready=false`。下一步是
+M5.21u 非 Raft
+construction/yield 可行性 probe，而不是继续扩张 raft-rs。详见
+`docs/stage-m5.21ta-marginal-binding-cost-audit.md`。
+
+## 上一阶段：M5.21t raft-rs opaque workload 纵向切片
+
+M5.21t 在自然选出的 n1 Leader 上完成一个 opaque Invoke→commit→ClientResult，并由 fresh worker
+严格 Replay；当时 target-owned Binding 为 1,218 行。详见
+`docs/stage-m5.21t-raft-rs-opaque-workload.md`。
+
+## 上一阶段：M5.21sR raft-rs Binding 收缩复核
+
+M5.21sR 将 pre-workload 生产 Binding 从 1,027 行收缩到 981 行，并补齐未知命令拒绝和异常退出
+conformance。详见 `docs/stage-m5.21sr-raft-rs-binding-contraction.md`。
+
+## 上一阶段：M5.21s raft-rs 最小 Binding spike
+
+M5.21s 首次用 target-owned worker/Go Adapter 将 raft-rs 的 Temporal、Ready effect 和 Message 接入
+共享 Runtime，生产 Binding 为 1,027 行并通过 fresh-process Replay。详见
+`docs/stage-m5.21s-raft-rs-binding-spike.md`。
+
+## 上一阶段：M5.21r 第二 strict CFT target 候选门
+
+M5.21r 没有把部分资格的 HashiCorp Raft 强行包装成 strict。raft-rs 0.7.0 的隔离 probe 以两组
+fresh 三节点 `RawNode<MemStorage>` 得到相同 28-record trace，因而获准进入 bounded Binding spike；
+这在当时仍不是 Adapter/Runtime 数据面。详见 `docs/stage-m5.21r-second-target-candidate-gate.md`。
 
 ## 上一阶段：M5.21q Risk Frontier 精确执行权限校准
 

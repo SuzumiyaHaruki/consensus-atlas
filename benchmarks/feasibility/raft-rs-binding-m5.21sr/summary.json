@@ -1,0 +1,71 @@
+{
+  "schema_version": "consensus-atlas/raft-rs-binding-contraction-report/v1",
+  "stage": "M5.21sR",
+  "date": "2026-08-11",
+  "target": "crates.io/raft@0.7.0",
+  "classification": "binding-contraction-pass-with-soft-limit-exception-not-qualified",
+  "build": {
+    "worker_binary_sha256": "2964c1bc1d600cd69e6b3db01ecbe17ac897a00df5cb074b637ee4efdf89f67a",
+    "go": "go1.25.8 linux/amd64",
+    "rustc": "1.88.0 (6b00bc388 2025-06-23)",
+    "cargo": "1.88.0 (873a06493 2025-05-10)"
+  },
+  "execution": {
+    "node_count": 3,
+    "leader": "n1",
+    "decisions": 17,
+    "trace_digest": "f768ab1042bc710fe61502f7a301260c38ac195ead97be30fe31dc20037ddfc8",
+    "fresh_worker_processes": 2,
+    "fresh_process_strict_replay": true,
+    "unsupported_operation_rejected": true,
+    "abnormal_worker_exit_reported": true
+  },
+  "control_boundary": {
+    "raft_rs_algorithm_source_changes": 0,
+    "shared_core_production_added_lines": 0,
+    "shared_core_production_deleted_lines": 0,
+    "worker_owns_scheduler": false
+  },
+  "binding_composition_physical_lines": {
+    "target_native_worker": 315,
+    "cross_language_protocol_and_client": 182,
+    "target_normalization_and_bookkeeping": 484,
+    "conformance_test": 168,
+    "dependency_manifest": 14,
+    "dependency_lock": 425,
+    "production_total_excluding_dependency_files": 981,
+    "pre_contraction_production_total": 1027,
+    "removed_physical_lines": 46,
+    "reduction_percent": 4.48,
+    "production_soft_limit": 900,
+    "mandatory_stop_line": 1200,
+    "limit_status": "soft-limit-exception-reviewed-stop-line-not-reached"
+  },
+  "contraction": {
+    "removed": [
+      "historical-emission-cache",
+      "independent-bootstrap-flag",
+      "duplicate-ready-node-and-pulse-snapshot-records",
+      "redundant-worker-digest-in-trace-bound-evidence",
+      "display-only-ready-counters",
+      "redundant-node-set-sort"
+    ],
+    "not_used_to_meet_limit": [
+      "source-minification",
+      "unconsumed-shared-package-relabeling",
+      "eligibility-check-removal",
+      "evidence-or-build-identity-removal"
+    ]
+  },
+  "not_demonstrated": [
+    "crash-restart-durable-image",
+    "audited-sut-entropy-replay",
+    "workload-router",
+    "core-pss-mapping",
+    "risk-witness",
+    "oracle-or-coverage",
+    "agent-or-campaign",
+    "qualification",
+    "cross-protocol-portability"
+  ]
+}

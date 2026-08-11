@@ -1,7 +1,6 @@
 package etcdraftv2
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -21,7 +20,6 @@ const (
 	messageSchema  = "consensus-atlas/etcdraft-v2-message/v1"
 	callbackSchema = "consensus-atlas/etcdraft-v2-callback/v1"
 	observationV1  = "consensus-atlas/etcdraft-v2-observation/v1"
-	commandSchema  = "consensus-atlas/adapter-command/v1"
 
 	effectReadyPersist = "raft-ready-persist"
 	effectReadyAdvance = "raft-ready-advance"
@@ -109,24 +107,6 @@ func (config Config) nodeIDs() []control.NodeID {
 		result[index] = node.Node
 	}
 	return result
-}
-
-type commandEnvelope struct {
-	LogicalTime uint64                `json:"logical_time"`
-	Parameters  json.RawMessage       `json:"parameters,omitempty"`
-	Item        *control.ProducedItem `json:"item,omitempty"`
-}
-
-type resultParameters struct {
-	Result string `json:"result"`
-}
-
-type modeParameters struct {
-	Mode string `json:"mode"`
-}
-
-type invokeParameters struct {
-	Input control.PayloadEnvelope `json:"input"`
 }
 
 type readyRequest struct {

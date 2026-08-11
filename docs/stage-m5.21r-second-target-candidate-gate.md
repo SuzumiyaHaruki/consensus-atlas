@@ -9,7 +9,7 @@ Adapter。它先冻结第二目标的候选门，结果如下：
 
 | 候选 | 已有证据 | 本阶段判断 |
 |---|---|---|
-| HashiCorp Raft v1.7.3 | message/lifecycle/invoke 3/8；官方路径使用墙钟、全局随机和 goroutine | 不作为 strict 迁移目标 |
+| HashiCorp Raft v1.7.3 | message/lifecycle/invoke 3/8；官方路径使用墙钟、全局随机和 goroutine | 官方未修改构建不作为 native-strict 迁移目标；保留 native-partial 与后续 instrumentation case-study 价值 |
 | efficient/epaxos | codec-aware message framing probe；完整构造器、yield/time/restart 未解决 | deferred，仍保留非 Raft 泛化价值 |
 | TiKV raft-rs 0.7.0 | 同步 `RawNode`，显式 `tick/step/ready`，可固定单值 election range | 通过 core candidate probe，进入 bounded Binding spike |
 
@@ -87,6 +87,10 @@ M5.21s 只允许实现 raft-rs 的最小 target-owned Execution Binding spike：
 3. 不实现 PSS、RiskWitness、workload、Agent 或正式 Qualification；
 4. 不增加协议 Action、Runtime type switch 或第二套 scheduler；
 5. target-owned 新生产代码软上限 900 行，超过 1,200 行或需要修改 raft-rs 算法源码则停止复核。
+
+验收还必须记录：公共 `internal/control*`/`internal/controlexperiment` 的生产 Core Churn、
+target-native/跨语言 bridge/可共享 boilerplate/conformance 四类 Binding Composition，并要求
+strict Replay 使用 fresh worker process。单进程 probe equality 不能替代这一门禁。
 
 只有该切片通过，才逐步增加 durable restart、workload 和语义映射；不得一次性复制 etcd/raft
 Adapter 的全部功能。

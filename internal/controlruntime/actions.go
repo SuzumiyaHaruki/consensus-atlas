@@ -13,24 +13,6 @@ import (
 
 var ErrInvokeNotEligible = errors.New("OFFER_INVOKE_NOT_ELIGIBLE")
 
-type resultParameters struct {
-	Result string `json:"result"`
-}
-
-type modeParameters struct {
-	Mode string `json:"mode"`
-}
-
-type invokeParameters struct {
-	Input control.PayloadEnvelope `json:"input"`
-}
-
-type commandEnvelope struct {
-	LogicalTime uint64                `json:"logical_time"`
-	Parameters  json.RawMessage       `json:"parameters,omitempty"`
-	Item        *control.ProducedItem `json:"item,omitempty"`
-}
-
 func (runtime *Runtime) OfferInvoke(
 	ctx context.Context,
 	node control.NodeID,
@@ -49,7 +31,7 @@ func (runtime *Runtime) OfferInvoke(
 	if state.Lifecycle != control.NodeRunning {
 		return "", fmt.Errorf("OFFER_NODE_NOT_RUNNING: %s", node)
 	}
-	action, err := runtime.makeAction(control.ActionInvoke, state.Ref, "", invokeParameters{Input: input})
+	action, err := runtime.makeAction(control.ActionInvoke, state.Ref, "", control.AdapterInvokeParameters{Input: input})
 	if err != nil {
 		return "", err
 	}
@@ -129,18 +111,18 @@ func (runtime *Runtime) EnabledActions(ctx context.Context) ([]control.Action, e
 		case control.ItemEffect:
 			if runtime.supportsAction(control.ActionCompleteEffect) {
 				for _, result := range entry.item.Effect.AllowedResults {
-					actions = append(actions, runtime.mustAction(control.ActionCompleteEffect, entry.item.Owner, entry.item.ID, resultParameters{Result: result}))
+					actions = append(actions, runtime.mustAction(control.ActionCompleteEffect, entry.item.Owner, entry.item.ID, control.AdapterResultParameters{Result: result}))
 				}
 			}
 			if runtime.supportsAction(control.ActionFailEffect) {
 				for _, result := range entry.item.Effect.AllowedFailures {
-					actions = append(actions, runtime.mustAction(control.ActionFailEffect, entry.item.Owner, entry.item.ID, resultParameters{Result: result}))
+					actions = append(actions, runtime.mustAction(control.ActionFailEffect, entry.item.Owner, entry.item.ID, control.AdapterResultParameters{Result: result}))
 				}
 			}
 		case control.ItemCallback:
 			if runtime.supportsAction(control.ActionCompleteCallback) {
 				for _, result := range entry.item.Callback.AllowedResults {
-					actions = append(actions, runtime.mustAction(control.ActionCompleteCallback, entry.item.Owner, entry.item.ID, resultParameters{Result: result}))
+					actions = append(actions, runtime.mustAction(control.ActionCompleteCallback, entry.item.Owner, entry.item.ID, control.AdapterResultParameters{Result: result}))
 				}
 			}
 		}
@@ -151,7 +133,7 @@ func (runtime *Runtime) EnabledActions(ctx context.Context) ([]control.Action, e
 		case control.NodeRunning:
 			if runtime.supportsAction(control.ActionCrash) {
 				for _, mode := range runtime.manifest.Capabilities.CrashModes {
-					actions = append(actions, runtime.mustAction(control.ActionCrash, node.Ref, "", modeParameters{Mode: mode}))
+					actions = append(actions, runtime.mustAction(control.ActionCrash, node.Ref, "", control.AdapterModeParameters{Mode: mode}))
 				}
 			}
 		case control.NodeStopped:
@@ -276,13 +258,7 @@ func (runtime *Runtime) buildCommand(action control.Action) (control.AdapterComm
 			}
 		}
 	}
-	envelopeBytes, err := json.Marshal(commandEnvelope{
-		LogicalTime: logicalTime, Parameters: action.Parameters, Item: item,
-	})
-	if err != nil {
-		return control.AdapterCommand{}, err
-	}
-	payload, err := control.NewPayload("consensus-atlas/adapter-command/v1", "json", envelopeBytes)
+	payload, err := control.NewAdapterCommandPayload(logicalTime, action.Parameters, item)
 	if err != nil {
 		return control.AdapterCommand{}, err
 	}

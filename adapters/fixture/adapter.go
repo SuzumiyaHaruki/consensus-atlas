@@ -41,16 +41,6 @@ type nodeState struct {
 	RandomOffset int             `json:"random_offset"`
 }
 
-type commandEnvelope struct {
-	LogicalTime uint64                `json:"logical_time"`
-	Parameters  json.RawMessage       `json:"parameters,omitempty"`
-	Item        *control.ProducedItem `json:"item,omitempty"`
-}
-
-type invokeParameters struct {
-	Input control.PayloadEnvelope `json:"input"`
-}
-
 type Adapter struct {
 	nodes       map[control.NodeID]nodeState
 	entropy     *controlentropy.Provider
@@ -209,7 +199,7 @@ func (adapter *Adapter) RunUntilYield(_ context.Context) (control.Yield, error) 
 	}
 	command := *adapter.pending
 	adapter.pending = nil
-	envelope, err := decodeCommand(command)
+	envelope, err := control.DecodeAdapterCommand(command)
 	if err != nil {
 		return control.Yield{}, err
 	}
@@ -331,7 +321,7 @@ func (adapter *Adapter) SnapshotEntropy(context.Context) (control.EntropyAuditEn
 }
 
 func (adapter *Adapter) invoke(owner control.NodeRef, raw json.RawMessage) ([]control.ProducedItem, error) {
-	var parameters invokeParameters
+	var parameters control.AdapterInvokeParameters
 	if err := json.Unmarshal(raw, &parameters); err != nil {
 		return nil, err
 	}
@@ -566,15 +556,4 @@ func (adapter *Adapter) domain(owner control.NodeRef) controlentropy.Domain {
 		Namespace: "protocol-free-fixture/v1", Node: owner.Node,
 		Incarnation: owner.Incarnation, ID: "election-timeout",
 	}
-}
-
-func decodeCommand(command control.AdapterCommand) (commandEnvelope, error) {
-	if err := command.Payload.Validate(); err != nil {
-		return commandEnvelope{}, err
-	}
-	var envelope commandEnvelope
-	if err := json.Unmarshal(command.Payload.Bytes, &envelope); err != nil {
-		return commandEnvelope{}, err
-	}
-	return envelope, nil
 }

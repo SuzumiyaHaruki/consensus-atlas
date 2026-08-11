@@ -353,9 +353,23 @@ internal/control*  -X-> adapters or consensus packages
 
 ## 当前未完成
 
-M5.21r 将第二 strict target 的下一候选冻结为 raft-rs 0.7.0，但只通过独立 deterministic-core
-probe。该 probe 尚不属于 Adapter/Runtime 数据面。M5.21s 只能增加 target-owned Rust worker 与
-Go Binding 的最小纵向切片；如果必须为其修改公共 Action/Runtime/PSS 或复制 scheduler，则候选门失败。
+M5.21s 已把 raft-rs 0.7.0 deterministic core probe 推进为最小 Adapter/Runtime 数据面：
+target-owned Rust worker 与 Go Binding 在公共 Action/Runtime/PSS 生产 Core Churn=0 的前提下完成
+三节点自然选主和 fresh-worker-process strict Replay。它只覆盖 Temporal、Ready effect 与 Message，
+仍不是第二 target Qualification，也不包含 workload、durable restart 或语义映射。
+HashiCorp 的准确分类是“官方未修改构建 native-partial”，不是接口不兼容或永久不可 instrument。
+instrumented build 若以后加入，必须用独立 BuildID/patch digest 和官方构建分开评价。
+
+M5.21t 已在 raft-rs Binding 上完成最小 opaque Invoke→Ready/message→commit→ClientResult，并由
+fresh worker 严格 Replay；公共 Action/Runtime/PSS 继续保持 0 churn。生产 Binding 从 981 行增长到
+1,218 行，其中 workload slice 增加 237 行，超过原 minimal-binding 1,200 行观察线 18 行。
+
+M5.21tA 只提取 Runtime→Adapter command wire contract。`internal/control` 现在唯一拥有 envelope、
+Invoke/result/mode 外层参数以及 schema/encoding/digest 解码；Runtime 是 producer，fixture、etcd/raft、
+HashiCorp Raft 与 raft-rs 是实际 decoder。审计生产面净减少 81 行，raft-rs target-owned Binding 降为
+1,185 行，原 trace bytes/digest 不变。proposal、Ready/持久化、ClientResult、process bridge 和
+PSS/Oracle 仍为 target-owned；当前没有第二个 process bridge 消费者，因此不建立通用 worker kit。
+下一步先做非 Raft construction/yield probe；probe 不得修改 Action/Runtime/Core PSS 来迁就目标。
 
 M5.21q 已增加一条 no-model Risk Frontier authority gate：通用组合层只通过 strict prefix Replay
 重建下一步 enabled/admissible ActionRef，并将 exact ActionID choice 编译回既有 Policy。target

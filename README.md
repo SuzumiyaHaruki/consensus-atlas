@@ -5,14 +5,14 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21r 第二 strict CFT target 候选门**。HashiCorp Raft 因官方墙钟、
-全局随机和 goroutine 控制缺口，不再作为 strict 迁移目标；efficient/epaxos 保持 deferred；
-raft-rs 0.7.0 通过 bounded deterministic-core probe，获准进入下一轮 Binding spike。
+当前阶段已完成 **M5.21tA 边际 Binding 成本审计**。唯一满足多消费者门的重复面是
+Runtime→Adapter command wire contract；提取后审计生产面净减少 81 行，raft-rs target-owned Binding
+由 1,218 行降到 1,185 行。proposal、持久化、ClientResult、进程桥接与 PSS/Oracle 没有被伪装成
+共享代码。
 
-probe 用官方同步 `RawNode<MemStorage>` 创建两组 fresh 三节点 cluster，只通过 5 次逻辑 Tick、
-显式消息 Step 和 Ready/advance，自然选出 n1 并提交 index 1。两次 28-record trace digest 相同。
-该结果不是 Adapter Qualification，也没有改变公共 Action/Runtime/PSS；第二 strict target 和
-formal holdout 仍未完成，所以 `formal_ready=false`。
+M5.21t 的 28-decision opaque input→commit→result 轨迹与 digest 保持不变。下一步固定为非 Raft
+construction/yield 可行性 probe，先验证控制抽象能否跨协议，不继续给 raft-rs 叠加功能。raft-rs 仍
+不是 Adapter Qualification，第二 strict target 和 formal holdout 未完成，故 `formal_ready=false`。
 完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环
@@ -98,6 +98,8 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - 精确 source prefix、相邻 Action swap、显式 priority suffix 与不可执行变体记账的 trace mutation；
 - 官方 `go.etcd.io/raft/v3 v3.6.0` 的完整 strict 路径；
 - HashiCorp Raft v1.7.3 的部分资格，用于证明统一 Action 不等于统一控制强度。
+- raft-rs 0.7.0 的跨语言 Binding，已验证自然时间、Ready、消息及 opaque input→commit→result 严格重放；
+- Runtime→Adapter command wire contract 的多消费者共享实现，避免各 Adapter 复制 envelope/参数校验。
 
 ## M5.16 公开校准结果
 
@@ -305,6 +307,7 @@ FaultEnvelope/ExecutionBundle 和 progressive audit 边界。
 adapters/                 目标专用薄接入与 Semantic/Decision Mapping
   etcdraftv2/             官方 etcd/raft strict Adapter
   hashicorpraftv2/        第二实现的部分资格 Adapter
+  raftrsv2/               raft-rs 最小 worker Binding；尚未 Qualification
   fixture/                协议无关契约 fixture
 internal/
   control/                Action、Item、Manifest 与 opaque envelope
@@ -344,7 +347,11 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21r second-target candidate gate](docs/stage-m5.21r-second-target-candidate-gate.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21tA Binding cost audit](docs/stage-m5.21ta-marginal-binding-cost-audit.md)、
+[M5.21t opaque workload](docs/stage-m5.21t-raft-rs-opaque-workload.md)、
+[M5.21sR Binding contraction](docs/stage-m5.21sr-raft-rs-binding-contraction.md)、
+[M5.21s raft-rs Binding spike](docs/stage-m5.21s-raft-rs-binding-spike.md)、
+[M5.21r second-target candidate gate](docs/stage-m5.21r-second-target-candidate-gate.md)、
 [M5.21q Risk Frontier authority](docs/stage-m5.21q-risk-frontier-authority.md)、
 [M5.21p RiskWitness reachability](docs/stage-m5.21p-risk-witness-reachability.md)、
 [M5.21o formal multi-pair CLI](docs/stage-m5.21o-formal-multi-pair-cli.md)、

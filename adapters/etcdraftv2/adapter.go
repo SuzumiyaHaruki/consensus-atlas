@@ -177,7 +177,7 @@ func (adapter *Adapter) Check(_ context.Context, command control.AdapterCommand)
 	if adapter.nodes == nil || adapter.pending != nil {
 		return control.CommandEligibility{ReasonCode: "ETCDRAFT_V2_NOT_STABLE"}, nil
 	}
-	envelope, err := decodeCommand(command)
+	envelope, err := control.DecodeAdapterCommand(command)
 	if err != nil {
 		return control.CommandEligibility{}, err
 	}
@@ -192,7 +192,7 @@ func (adapter *Adapter) Check(_ context.Context, command control.AdapterCommand)
 		if node == nil || node.raw == nil || command.Node != adapter.owner(node) || node.outstanding != nil {
 			return control.CommandEligibility{ReasonCode: "ETCDRAFT_V2_INVOKE_INELIGIBLE"}, nil
 		}
-		var parameters invokeParameters
+		var parameters control.AdapterInvokeParameters
 		if err := json.Unmarshal(envelope.Parameters, &parameters); err != nil {
 			return control.CommandEligibility{}, err
 		}
@@ -211,7 +211,7 @@ func (adapter *Adapter) Check(_ context.Context, command control.AdapterCommand)
 		if err := json.Unmarshal(envelope.Item.Effect.Request.Bytes, &request); err != nil {
 			return control.CommandEligibility{}, err
 		}
-		var result resultParameters
+		var result control.AdapterResultParameters
 		if err := json.Unmarshal(envelope.Parameters, &result); err != nil {
 			return control.CommandEligibility{}, err
 		}
@@ -254,7 +254,7 @@ func (adapter *Adapter) Check(_ context.Context, command control.AdapterCommand)
 		return control.CommandEligibility{Eligible: true}, nil
 	case control.ActionCrash:
 		node := adapter.nodes[command.Node.Node]
-		var parameters modeParameters
+		var parameters control.AdapterModeParameters
 		if err := json.Unmarshal(envelope.Parameters, &parameters); err != nil {
 			return control.CommandEligibility{}, err
 		}
@@ -316,7 +316,7 @@ func (adapter *Adapter) RunUntilYield(_ context.Context) (control.Yield, error) 
 	}
 	command := *adapter.pending
 	adapter.pending = nil
-	envelope, err := decodeCommand(command)
+	envelope, err := control.DecodeAdapterCommand(command)
 	if err != nil {
 		return control.Yield{}, err
 	}
@@ -327,7 +327,7 @@ func (adapter *Adapter) RunUntilYield(_ context.Context) (control.Yield, error) 
 	case control.ActionDropMessage:
 	case control.ActionInvoke:
 		node := adapter.nodes[command.Node.Node]
-		var parameters invokeParameters
+		var parameters control.AdapterInvokeParameters
 		if err := json.Unmarshal(envelope.Parameters, &parameters); err != nil {
 			return control.Yield{}, err
 		}
@@ -959,18 +959,4 @@ func (adapter *Adapter) entropyDomain(node *nodeState) controlentropy.Domain {
 		Namespace: "etcdraft-v3.6.0", Node: node.config.Node,
 		Incarnation: node.incarnation, ID: "native-election-timeout",
 	}
-}
-
-func decodeCommand(command control.AdapterCommand) (commandEnvelope, error) {
-	if command.Payload.SchemaVersion != commandSchema {
-		return commandEnvelope{}, fmt.Errorf("ETCDRAFT_V2_COMMAND_SCHEMA_MISMATCH: %s", command.Payload.SchemaVersion)
-	}
-	if err := command.Payload.Validate(); err != nil {
-		return commandEnvelope{}, err
-	}
-	var envelope commandEnvelope
-	if err := json.Unmarshal(command.Payload.Bytes, &envelope); err != nil {
-		return commandEnvelope{}, err
-	}
-	return envelope, nil
 }

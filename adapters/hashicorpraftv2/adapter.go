@@ -28,7 +28,6 @@ const (
 	runtimeRPCSchema = "consensus-atlas/hashicorp-raft-runtime-rpc/v1"
 	inputSchema      = "consensus-atlas/hashicorp-raft-input/v1"
 	evidenceSchema   = "consensus-atlas/hashicorp-raft-evidence/v1"
-	commandSchema    = "consensus-atlas/adapter-command/v1"
 )
 
 type Adapter struct {
@@ -213,7 +212,7 @@ func (a *Adapter) Check(_ context.Context, command control.AdapterCommand) (cont
 	if a.nodes == nil || a.pending != nil {
 		return control.CommandEligibility{ReasonCode: "HASHICORP_RAFT_NOT_STABLE"}, nil
 	}
-	envelope, err := decodeRuntimeCommand(command)
+	envelope, err := control.DecodeAdapterCommand(command)
 	if err != nil {
 		return control.CommandEligibility{}, err
 	}
@@ -245,7 +244,7 @@ func (a *Adapter) Check(_ context.Context, command control.AdapterCommand) (cont
 		return control.CommandEligibility{Eligible: true}, nil
 	case control.ActionCrash:
 		node := a.nodes[command.Node.Node]
-		var parameters modeParameters
+		var parameters control.AdapterModeParameters
 		if err := json.Unmarshal(envelope.Parameters, &parameters); err != nil {
 			return control.CommandEligibility{}, err
 		}
@@ -295,7 +294,7 @@ func (a *Adapter) RunUntilYield(ctx context.Context) (control.Yield, error) {
 	}
 	command := *a.pending
 	a.pending = nil
-	envelope, err := decodeRuntimeCommand(command)
+	envelope, err := control.DecodeAdapterCommand(command)
 	if err != nil {
 		return control.Yield{}, err
 	}
@@ -471,33 +470,8 @@ func InputPayload(value []byte) (control.PayloadEnvelope, error) {
 	return control.NewPayload(inputSchema, "bytes", value)
 }
 
-type runtimeCommand struct {
-	Parameters json.RawMessage       `json:"parameters"`
-	Item       *control.ProducedItem `json:"item"`
-}
-
-type invokeInput struct {
-	Input control.PayloadEnvelope `json:"input"`
-}
-
-type modeParameters struct {
-	Mode string `json:"mode"`
-}
-
-func decodeRuntimeCommand(command control.AdapterCommand) (runtimeCommand, error) {
-	if command.Payload.SchemaVersion != commandSchema {
-		return runtimeCommand{}, errors.New("HASHICORP_RAFT_COMMAND_SCHEMA_MISMATCH")
-	}
-	if err := command.Payload.Validate(); err != nil {
-		return runtimeCommand{}, err
-	}
-	var envelope runtimeCommand
-	err := json.Unmarshal(command.Payload.Bytes, &envelope)
-	return envelope, err
-}
-
 func decodeInvokeInput(parameters json.RawMessage) (control.PayloadEnvelope, error) {
-	var input invokeInput
+	var input control.AdapterInvokeParameters
 	if err := json.Unmarshal(parameters, &input); err != nil {
 		return control.PayloadEnvelope{}, err
 	}

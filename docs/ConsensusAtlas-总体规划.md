@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.41（M5.21r Second Strict Target Candidate Gate 完成）
+> 状态：Draft v1.46（M5.21tA 边际 Binding 成本审计完成，进入非 Raft 可行性 probe）
 > 日期：2026-08-11
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2870,6 +2870,33 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      harness 未调用墙钟/线程/显式 campaign 也不能外推成 SUT source audit。部分资格目标不得通过外围
      包装升级为 strict；若新目标需要协议 Action、Runtime type switch、第二 scheduler 或修改算法源码，
      必须停止并重新选择目标。
+123. “实现 `control.Adapter`”只表示 interface compatibility，不表示 strict controllability。
+     官方未修改的 HashiCorp v1.7.3 保持 native-partial；未来 instrumented build 必须只修改环境边界，
+     以独立 BuildID/patch digest 与官方构建分开报告，不得改协议转换规则。M5.21s raft-rs Binding
+     必须保持公共 control/runtime/experiment 生产 Core Churn=0，fresh worker-process Replay 稳定，
+     并把新增 LOC 分成 target-native、language bridge、boilerplate 与 conformance。两个 strict Raft
+     只验证跨实现 Binding，不得作为跨协议普适性证明。
+124. M5.21s 已证明 raft-rs 0.7.0 的最小 `Temporal → Ready effect → Message` 路径可在共享 Runtime
+     上 fresh-worker-process strict Replay，公共 control/runtime/experiment 生产 Core Churn 为 0；但
+     1,027 行 target-owned 生产 Binding 超过 900 行软目标。下一阶段必须先做 M5.21sR contraction，
+     不得同时扩展 workload、durable restart、PSS、RiskWitness、Agent 或 Qualification。当前 Ready
+     只被建模为合并的 persisted/applied/advanced effect，不能冒充双阶段持久化或 power-loss 证据。
+125. M5.21sR 将 target-owned 生产 Binding 从 1,027 行收缩到 981 行，并增加 unsupported-operation
+     rejection 与 abnormal-worker-exit conformance；公共 Core Churn 仍为 0。900 行只是软目标，禁止
+     通过排版压缩、删除可信检查或把单一消费者代码重分类为共享包来达标。981 行是当前暂定基线，
+     不是理论最小值。M5.21t 只允许增加 opaque Propose→commit→ClientResult 纵向切片，不得同时加入
+     restart、PSS、RiskWitness、Agent、新 Action 或 Qualification。
+126. M5.21t 已以 28 个 Runtime decision 完成唯一 opaque Invoke→commit→ClientResult，并在 fresh
+     worker 中严格 Replay；共享 Core Churn 与 raft-rs 算法修改仍为 0。但该切片增加 237 行生产代码，
+     target-owned 总量达到 1,218 行，超过原 minimal-binding 1,200 行观察线。下一阶段必须先做
+     M5.21tA 边际接入成本审计，不写新 capability；只有两个真实消费者共同需要的代码才可提取为共享
+     helper，禁止通过搬文件、改 LOC 口径或弱化身份/eligibility/Evidence 来宣称 Adapter 变薄。
+127. M5.21tA 只提取被 Runtime、fixture 与三个共识 Adapter 实际消费的 command wire contract；审计
+     生产面净减少 81 行，raft-rs target-owned Binding 从 1,218 降至 1,185，原 28-decision trace
+     digest 不变。proposal、持久化/应用、ClientResult、单消费者 process bridge 与 PSS/Oracle 不得因
+     字段相似而进入共享 Core。下一步固定为非 Raft construction/yield probe：只验证原始公开接口能否
+     暴露确定性多节点构造、消息与自然时间边界，不先写完整 Adapter；probe 期间若必须修改公共
+     Action、Runtime 或 Core PSS，必须记录为抽象缺口并停止自动扩张。
 
 ---
 

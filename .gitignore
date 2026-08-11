@@ -1,5 +1,6 @@
 /artifacts/
 /probes/raftrs/target/
+/adapters/raftrsv2/worker/target/
 /agents/__pycache__/
 *.pyc
 key.txt
