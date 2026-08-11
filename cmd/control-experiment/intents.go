@@ -8,11 +8,12 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
 
 const (
-	etcdraftIntentRiskLeaderChange = "leader-change-with-inflight-proposal"
+	etcdraftIntentRiskLeaderChange = raftfamily.LeaderChangeWithInflightProposalRiskID
 	etcdraftBackendFixed           = "fixed-progress"
 	etcdraftBackendActionClass     = "action-class-random"
 	etcdraftBackendUniform         = "admissible-uniform"

@@ -1,0 +1,17 @@
+{
+  "schema_version": "consensus-atlas/formal-contract-stage-summary/v1",
+  "id": "formal-benchmark-contract-m5-21l",
+  "contract_digest": "8f1b06906d526c08b636d03632325e7c3c21393a4c2f088fb6ba21fe205ac69f",
+  "opaque_view_digest": "cbb9398737597389281d3049fb83e008dd0fcb62b71acda237874c2354abf9ad",
+  "pairs": 3,
+  "trials": 6,
+  "distinct_root_causes": 3,
+  "dataset_classification": "public-synthetic-contract-fixture-only",
+  "composition_resolved": true,
+  "fresh_evaluator_wired": false,
+  "exposure_audit_implemented": false,
+  "formal_ready": false,
+  "new_model_calls": 0,
+  "new_sut_executions": 0,
+  "digest": "44945d0126e0cc72e9bbd775d66fb1b8354532a23ad386193cd8ba980dc8b764"
+}

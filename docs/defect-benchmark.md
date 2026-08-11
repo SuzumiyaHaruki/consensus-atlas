@@ -93,124 +93,59 @@ kill 结果：
 该测试刻意证明“覆盖分相同而外部结果不同”，从代码层切断 Coverage/PSS 与 kill 的
 循环定义。
 
-## Candidate 资格与受控构建
+## 当前可编译评测面
 
-公开 Candidate Catalog 只声明 provenance/source/root-cause 元数据与六类 typed
-requirements，不包含 curator 填写的资格状态。可信 CapabilitySnapshot 将 controllable
-inputs、observable events、Driver capabilities、trusted monitors、execution outcomes、Family 和
-Profile bounds 分开；尤其不能从 Coverage obligation 的 event kind 推导 controllable
-input。`internal/defectbench` 只做逐类集合包含判断，QualificationReport 是唯一包含
-`qualified/deferred` 的工件。
+M5.16R 删除了旧 Candidate Catalog、preflight、blind audit、blind replay 和 submission CLI 的
+可编译实现；对应 schema、阶段文档和实验工件仅作为历史归档。当前 `internal/defectbench` 只保留
+`BundleBenchmark` 与 bundle evaluator，`cmd/defect-eval` 只组合 etcd/raft projector：
 
-`internal/sutbuild` 对本地官方 Go module 做 path/version、目标 source digest、完整 module
-tree digest、唯一转换、转换结果 digest 和 command allowlist 检查。模块通过稳定的仓库相对
-staging identity 和 readonly local replacement 构建，不改 module cache，也不把随机临时路径
-写入 binary build info。digest-bound opaque SUT identity 由 `ldflags` 写入 Campaign Manifest；
-build audit 保存 source/module tree、binary、command 和 toolchain identity。
+- 合法 classification 只有 `public-calibration-only`；
+- manifest 数据模型能容纳多组 variant，但 CLI 的 legacy/fresh 路径都只接受恰好一组
+  control/calibration candidate；
+- fresh 路径验证 MethodSpec、BuildAudit、binary digest，亲自执行冻结 binary 后重算 bundle 和 monitor；
+- 公开 single-pair CLI 保持原语义；formal mode 已能从 private path manifest 执行多 pair
+  evaluator-owned fresh evaluation。
 
-## etcd/raft calibration 与第一个历史回归样本
+因此本页开头的私有评测图仍是目标可信边界，不是当前功能声明。若未来恢复正式链，必须在 v2 数据面
+上重新实现最小合约，不能把已删除的 M4 工具或归档 schema 直接当作可用实现。
 
-`benchmarks/pilots/etcdraft-calibration-v1/` 保存首个真实 etcd/raft 构建/执行管线校准；
-`etcdraft-calibration-v2/` 是 M4.8.1 的 artifact-bound trusted-rerun 版本。
-公开 command-data calibration 仍只证明管线连接：正确 control 与 calibration 均执行 41 decisions、
-127 primary/127 replay work，并得到相同 21/55、38.67 Coverage；evaluator 从保存 trace
-重算 Agreement，得到 control-pass/killed、一个 calibration root cause、零误报和零 invalid。
+M5.21l 已在当前 v2 数据面新建最小 `FormalBenchmarkContract/v1`，没有恢复旧 runner。
+private contract 用显式 pair 绑定 candidate/control、root cause、build evidence 和 composition identity；
+`FormalOpaqueView/v1` 只公开 opaque trial 与共同方法/预算。通用 resolver 能按 ID 选取
+projector/monitor；M5.21n 已将它接入 private fresh evaluator，但当前仍没有可消费该链的
+multi-pair CLI 或真实 private dataset。
 
-`benchmarks/pilots/etcdraft-readindex-v1/` 是第一个公开历史回归复现。M4.9 后，四个
-官方候选中仅 `63903dd` 通过六类 typed requirement 的机械资格；未修改 v3.6.0 candidate
-在冻结的延迟 ReadIndex response 计划下被 `linearizable-read` 检出，而精确修复 control
-通过。二者均为 1 run/1 decision、218 primary/218 replay work、26/55（45.67）Coverage，
-最终为 1/1 root cause killed、0 false positive、0 invalid。evaluator 曾因 Coverage 浮点
-累计顺序造成 report digest 差异而拒绝重跑；排序修复、重建二进制和再次重跑后才写入最终
-报告。这一复现不构成 Agent、Coverage 或 PSS 的效果结论，也不能当作盲测方法比较。
+M5.21m 增加 `FormalExposureAudit/v1`：它重算 contract 的 exact opaque view，为每份公开 JSON
+byte snapshot 保存 SHA，并递归检查 key/value string 是否等于已枚举 private atom。报告不回显
+命中值或本地路径。它只防直接复制，不防协议推断或编码泄露，也不替代 runner 隔离。
 
-`benchmarks/pilots/etcdraft-ready-must-sync-v1/` 是第二条独立 monitor/evaluator 链，但它
-属于公开历史语义重构，而不是完整历史 checkout 复现。candidate 在当前 v3.6 module 上精确
-反向转换 `Ready.MustSync` 条件，control 是未修改官方 v3.6.0；opt-in Runtime Profile 绑定
-`conditional-ready-sync` 与 `ready-must-sync-observation`。两者均执行 1 run/1 decision；
-candidate 为 105 primary/105 replay work，control 为 100/100，Coverage 同为 2/3（75.00）。
-evaluator 重跑并从 trace 重算 `ready-must-sync`，得到 1/1 semantic root cause killed、
-0 false positive、0 invalid。该样本验证新的 Ready/持久化策略评测链，不能替代多样本
-holdout 方法比较。
+M5.21n 增加 `FormalFreshEvaluation/v1`。入口必须同时接收 sealed contract、passed exposure audit、
+MethodSpec、精确 trial→fresh evidence map 和已注册 composition；随后逐 pair 复用既有 fresh evaluator
+的 build/method/bundle/projection/budget 校验，并以 TraceIntegrity 加 contract-selected monitors 判定。
+private ledger 显式保存 pair/root mapping，机械汇总 control false positive、candidate/root-cause kill 和
+invalid trial，并绑定 contract/exposure/method digest。公开 synthetic fixture 的六个 trial 全都引用同一
+correct bundle，因此只验证 plumbing，不是 holdout 或检出证据。
 
-## CLI 流程
+M5.21o 增加 `FormalFreshInputs/v1` 与 `cmd/defect-eval` formal mode。path manifest 是 private
+curator input，路径不写入 evaluation ledger。CLI 要求 contract/exposure/inputs/method/artifact/out
+全部显式提供，不允许混入 public-pair flags；它会在第一次 SUT execution 前验证全部
+trial/audit/binary，并拒绝覆盖旧 artifact/output。实际执行和 MethodSpec timeout 复用原有
+fresh subprocess runner。当前 registry 只支持 official etcd/raft projector 与 Agreement monitor。
 
-由 benchmark curator 在隔离环境中从私有 Manifest 生成 Agent-facing 视图：
+## 公开样本的定位
 
-```bash
-go run ./cmd/defect-eval \
-  -manifest /private/benchmark-v2.json \
-  -blind-out /runner/blind-v1.json
-```
+仓库共有七组公开 candidate/control pair。三组能由当前 `BundleBenchmark` 验证，但都指向同一个公开
+command-data calibration 根因；另外四组使用已退役格式，其中包括公开 ReadIndex 历史回归和
+Ready.MustSync 语义重构。全部工件都可用于复验 monitor、构建和 evaluator 链，不能改标成非公开
+holdout，也不能评价 Random、DFS、专家或 Agent。
 
-在把 `blind-v1.json`、Planner request/transcript 或 submission 交给 runner 前，curator 必须在
-私有环境运行 exposure audit。它将 blind manifest 自动作为第一个公开工件，`-public` 可重复传入
-未来会对 Agent/runner 可见的 JSON 快照：
+`benchmarks/experiments/formal-holdout-readiness-m5.21k/report.json` 对七份 manifest 的文件 SHA、当前
+manifest digest、公开 root-cause/control 计数和 HashiCorp Raft qualification 做机械绑定。当前仓库虽有
+7 个公开 pair、3 个公开 root-cause label，但正式 eligible root cause/control 都是 0；HashiCorp Raft
+required strict 能力为 3/8，故 readiness 为 `false`。对应 Go 回归还验证 formal classification 会被
+当前合约拒绝、多 pair 会被 CLI 拒绝、退役 blind 命令没有 Go 源码。
 
-```bash
-go run ./cmd/blind-audit \
-  -manifest /private/benchmark-v2.json \
-  -blind /runner/blind-v1.json \
-  -public /runner/planner-request.json \
-  -public /runner/planner-transcript.json \
-  -out /private/exposure-audit-v1.json
-```
-
-审计重算 Blind Manifest，并检查 public JSON string atom 是否等于 private variant ID、root cause、
-category、source/SUT/build digest 或 private kill monitor（包括 JSON object key）。报告只保存工件 digest 和稳定 finding code，
-不回显匹配值。它不能替代 runner 隔离或防止模型根据公开协议知识推断语义。
-
-使用 Blind Planner 的 runner 对每个 opaque trial 产生公开 blind transcript、私有 Campaign v2
-report 和私有 `TrustedReplayBundle`。受控 build 应构建 `./cmd/blind-replay`；submission v2 的
-`plans` 指向该 bundle，`binary` 指向相同 candidate/control 的 blind-replay binary。可信环境
-完成评价：
-
-```bash
-go run ./cmd/defect-eval \
-  -manifest /private/benchmark-v2.json \
-  -submission /runner/submission-v2.json \
-  -out /private/evaluation-v1.json
-```
-
-输出同时包含 defect variant、独立 root cause、controls/false positives、invalid
-trials、完整 primary/replay work，以及每个 kill 的 plan/run/monitor/trace digest。
-归档 v1 Manifest 没有 `pss_id`；只为复验旧工件时，才可显式追加
-`-legacy-pss-id <frozen-id>`。新的正式 Manifest 不允许该外部补充。
-
-在产生 Blind view 前，curator 对私有 Manifest v2 运行 readiness gate：
-
-```bash
-go run ./cmd/benchmark-preflight \
-  -manifest /private/benchmark-v2.json \
-  -out /private/readiness-v1.json
-```
-
-默认要求至少三个不同 root-cause label、三个 control、全部 historical provenance 和全部
-variant 的 build-audit/binary binding。报告只输出计数和稳定 finding code，不能证明 root-cause
-label 的真实因果独立性；该判断仍必须在冻结样本时由 curator 审查。
-
-## 当前限制与下一阶段
-
-当前完成了协议无关评价基础、公开 calibration、一个历史回归复现和一个历史语义重构样本，
-但仍不是正式方法比较：
-
-- 一个 curator-frozen historical trace、一个 semantic reconstruction 与 matching controls
-  不能评价 Random、DFS、专家或 Agent；
-- evaluator 当前注册 `agreement`、`linearizable-read` 与 `ready-must-sync`；新的 family
-  monitor 仍必须由可信代码实现并显式注册；
-- typed monitor observation 的解码/一致性失败属于 `invalid`，不是 allowed monitor 的
-  protocol finding，不能产生 defect-kill credit；
-- 当前 runner 不提供通用 syscall/network
-  sandbox，正式 holdout 只能运行 curator 固定来源和 digest 的 binary；
-- `first_kill_primary_work` 以 Campaign plan 为粒度，因为现有 Explorer 完成该 plan
-  的 primary runs 后才统一执行 Oracle；新报告用
-  `detection_granularity=plan-end` 机械声明这一边界，不把 trace 中更早出现的表现误报为
-  当时已经在线检出；
-- CPU、wall-clock、RSS 和 token 仍是下一版实验报告字段。
-
-M4.11 另提供 `benchmarks/pilots/etcdraft-ready-must-sync-v1/reproduce-fresh-clone.sh`：在
-冻结的 Go/toolchain 和预热 readonly module cache 上重建二进制，并逐字节验证 qualification、
-campaign 与 evaluator 工件；它不覆盖任何已存在的 pilot binary。
-
-下一阶段继续扩充彼此独立的历史样本与 controls，并在 Agent 未见版本/trigger 的条件下运行
-方法对比；只有该比较出现具体漏检模式后，才决定是否增加复合时序义务或 Scenario/Critic Agent。
+该结果只覆盖当前仓库，不断言仓库外不存在私有样本；root-cause label 的因果独立性仍需在冻结前
+由 curator 审查。当前工程链已到真实输入边界：下一步应在仓库外准备至少 3 组人工复核的
+private matching pair 和真实 BuildAudit/binary，再运行 formal CLI。如果没有这些数据，必须报告
+benchmark-input gap，不应继续增加 evaluator schema 或用 synthetic pair 填充。

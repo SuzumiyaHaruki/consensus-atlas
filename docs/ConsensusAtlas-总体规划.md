@@ -2373,6 +2373,61 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     均为 0。结果只说明当前两尝试中 Agent 无 behavior delta、简单 adaptive 轮换产生 discovery 增量，
     不构成总体方法优势。下一步不扩大 LLM pilot，先实现最小可信 RiskWitness 并重判现有证据。
     详见 `docs/stage-m5.21i-ordered-method-corpus.md`。
+86. [X] M5.21j 实现最小可信 RiskWitness。协议无关 `RiskWitnessSpec/v1`/`Result/v1` 机械验证
+    family/risk/milestone identity、冻结 DAG、target/execution/projector binding、step order 和 digest；
+    Raft Family Pack 固定 `workload invoked at coordinator < coordinator changed while inflight < old
+    coordinator restarted after change`，etcd/raft composition 只从真实 Invoke、role/term/incarnation、
+    client return step 和 node transition 投影。M5.21f/h 三份归档 bundle 均为 workload offered=0，故
+    0/3 witness reached、三份第一缺口均为 workload invoke；新增 model calls/SUT executions 都为 0。
+    该结果只区分 execution validity 与 risk reachability，不参与 Oracle 或方法优势判定。下一步先做
+    holdout readiness audit，并保留第二 strict CFT 实现迁移门，不立即扩大 semantic planner。
+    详见 `docs/stage-m5.21j-risk-witness.md`。
+87. [X] M5.21k 完成 current-repository Formal Holdout Readiness Gap。回归机械扫描七份公开
+    evaluator manifest：当前可验证 3 pair/1 个不同根因，旧格式归档 4 pair/3 个根因，
+    但 formal private pair/root cause/control 均为 0。当前 contract 拒绝 formal classification，fresh CLI
+    只接受一组 pair，M4 blind/preflight 路径没有可编译源码；HashiCorp Raft strict qualification
+    为 required 3/8。结果 `ready=false`，公开样本不进入正式分母。本阶段没有模型调用、新 SUT
+    execution 或生产组件；下一步只实现最小 `FormalBenchmarkContract/v1`。
+    详见 `docs/stage-m5.21k-holdout-readiness-gap.md`。
+88. [X] M5.21l 实现最小 `FormalBenchmarkContract/v1` foundation。private contract 用显式
+    `FormalPair{Control,Candidate}` 机械要求至少 3 pair/3 个不同 root labels，并绑定 Profile、
+    MethodSpec、bundle schema、共同预算、build evidence 和 composition identity。`FormalOpaqueView/v1`
+    只公开 commitment、Family/Profile/Method identity、预算和 opaque trial ID；pair/kind/root/build/
+    projector/monitor/nonce 均不公开。通用 resolver 按 exact ID 选择 `DecisionProjector` 与
+    `BundleMonitor`，不导入 target package。公开 synthetic fixture 只证明 contract plumbing；exposure audit、
+    formal fresh evaluator、真实 private pair 与第二 strict CFT 仍缺失，因此 `formal_ready=false`。
+    本阶段 model calls/SUT executions 均为 0。详见 `docs/stage-m5.21l-formal-benchmark-contract.md`。
+89. [X] M5.21m 实现 `FormalExposureAudit/v1`。curator-side 通用代码重算 exact opaque
+    projection，对每份即将越过边界的 JSON bytes 计算 SHA-256，并递归检查 object key/string
+    value 是否直接复制 nonce、pair/root、variant/build 或 projector/monitor atom。报告只保存
+    artifact index/digest 与稳定 no-echo finding；clean synthetic request 通过，direct leak、malformed
+    JSON、wrong opaque view 和 report tamper 被拒绝。它只防 exact atom 直接复制，不证明无法语义
+    推断或替代 runner 隔离。formal fresh evaluator 仍未接线，`formal_ready=false`；model calls/
+    SUT executions 均为 0。详见 `docs/stage-m5.21m-formal-exposure-audit.md`。
+90. [X] M5.21n 实现 `FormalFreshEvaluation/v1`。private entry 必须接收 sealed contract、
+    passed exposure audit、MethodSpec、精确 trial→fresh evidence map 和注册的 projector/monitor；
+    通用代码按 explicit pair 映射评价 3+ matching pairs，并复用既有 build/method/bundle/
+    projection/budget/Replay 校验。公开 evaluator wrapper 继续固定 Agreement，formal composition
+    则按 exact registry identity 选择 trusted monitors 且始终先运行 TraceIntegrity。private ledger
+    绑定 contract/exposure/method digest，保存 pair/root/result 和 FP/kill/invalid 机械汇总。
+    public synthetic 集成将同一 correct bundle 复用为 3 pair/6 trial，结果是 3 control-pass、
+    3 candidate-survived、0 FP/invalid；它只验证 plumbing，不是 binary provenance、holdout 或
+    方法效果。多 pair CLI、真实 private pair 与第二 strict CFT 仍缺失，故
+    `formal_ready=false`；model calls/新增独立 SUT executions 均为 0。下一阶段只增加
+    strict CLI artifact I/O 并调用该唯一 evaluator，不新建 Runtime 或报告 schema。
+    详见 `docs/stage-m5.21n-formal-fresh-evaluator.md`。
+91. [X] M5.21o 将 formal multi-pair 评测接入现有 `cmd/defect-eval`。private
+    `FormalFreshInputs/v1` 只包含 opaque trial ID 及 BuildAudit/binary path，路径不进入评测账本。
+    formal flags 与 public pair flags 完全互斥；CLI 在任何 SUT execution 前完成 contract/
+    exposure/method/composition admission、exact 2N trial set 和全部 audit/binary digest 检查，再复用
+    既有 `runFreshBundle` 和 M5.21n evaluator。artifact directory 与 final output 必须为新路径。
+    public synthetic 集成新运行 1 次 32-decision official etcd/raft correct execution，再用 injected
+    runner 复用为 3 pair/6 trial：3 control-pass、3 candidate-survived、0 FP/invalid。篡改最后
+    binary 在 runner calls=0 时被拒绝，但该 fixture 不是真实 binary provenance 或 holdout。
+    model calls=0；真实 private pair 和第二 strict CFT 仍缺失，故 `formal_ready=false`。
+    下一步停止增加 evaluator schema，在仓库外准备至少 3 组人工复核的 private
+    matching pair/BuildAudit/binary curator pack；如数据不存在就明确报告 input gap。
+    详见 `docs/stage-m5.21o-formal-multi-pair-cli.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2736,6 +2791,26 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      corpus，多个 corpus 可以引用同一 bundle；去重只减少物理 SUT 执行，不改变每个方法的 attempts、
      primary/replay logical work 或独有 model work。Agent 与 zero-model 若映射到同一 corpus，就没有
      behavior delta；Agent 的额外 token 不能被 PSS metadata 差异或共享执行掩盖。
+112. RiskWitness 是 frozen risk 到可信 trace 的有序可达性见证，不是 Oracle、Coverage 分母或综合评分。
+     family 只拥有 milestone ID 与固定偏序，target projector 只拥有 opaque evidence 到 milestone 的映射，
+     通用层重算 reached/missing/order/digest；Agent 不得提交 milestone、step、reached 或当轮新增 risk。
+     在将 witness feedback 交给 Agent 前，必须先完成 holdout readiness 与第二 strict CFT 实现迁移门；
+     semantic objective 以后只有在可信编译后改变 effective-execution identity 才算实际规划权限。
+113. 公开 calibration、历史回归和语义重构无论数量都不得转换为 formal holdout credit。
+     正式 readiness 必须分别验证 private dataset、opaque exposure boundary、multi-pair fresh evaluator
+     和第二 strict CFT target；任一项缺失都不得声称 ready。M4 已删除的 blind/preflight/
+     submission 实现不是当前功能，未来只能在 v2 数据面上建立最小
+     `FormalBenchmarkContract/v1`，不恢复旧 runner、第二 Runtime 或大型候选目录。
+114. Formal contract 必须用显式 pair 表达 matching control，不允许 evaluator 依赖位置、文件名或
+     Agent 自报重建配对。Agent-facing view 只允许公开 trial ID 和冻结共同方法/预算 identity；
+     projector、monitor、root cause、kind、pair 和 build identity 保持 private。composition 通用层只按
+     ID 解析 `DecisionProjector`/`BundleMonitor`，不导入 target Adapter。contract/view 存在本身不等于
+     holdout ready；exposure audit、fresh multi-pair evaluation、private dataset 和第二 strict target 仍是独立门禁。
+115. Exposure audit 必须比较 exact supplied bytes 与 sealed contract 枚举的 private atom，同时重算
+     opaque projection。持久化报告只包含 artifact index/digest 和稳定 code，不得回显 matched value、
+     命中数量或 curator 本地路径。它只是 direct-atom leakage 的必要门禁，不得声称防止
+     协议推断、编码/改写泄露，也不得替代进程、网络和文件系统隔离。审计通过不产生
+     defect credit，只允许工件进入后续 formal evaluator 阶段。
 
 ---
 

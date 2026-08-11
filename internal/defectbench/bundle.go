@@ -310,6 +310,19 @@ func evaluateFreshBundleVariant(
 	evidence FreshBundleEvidence,
 	projector semantic.DecisionProjector,
 ) BundleTrialResult {
+	return evaluateFreshBundleVariantWithMonitors(
+		manifest, variant, spec, evidence, projector, []oracle.BundleMonitor{oracle.BundleAgreement{}},
+	)
+}
+
+func evaluateFreshBundleVariantWithMonitors(
+	manifest BundleBenchmark,
+	variant BundleVariant,
+	spec controlexperiment.MethodSpec,
+	evidence FreshBundleEvidence,
+	projector semantic.DecisionProjector,
+	monitors []oracle.BundleMonitor,
+) BundleTrialResult {
 	invalid := func(reason string) BundleTrialResult {
 		return BundleTrialResult{
 			TrialID: variant.TrialID, VariantID: variant.VariantID, Kind: variant.Kind,
@@ -336,7 +349,7 @@ func evaluateFreshBundleVariant(
 	if err != nil || projection != spec.ConfigProjectionDigest {
 		return invalid("BUNDLE_BENCHMARK_METHOD_CONFIG_MISMATCH")
 	}
-	result := evaluateBundleVariant(manifest, variant, evidence.Bundle, projector)
+	result := evaluateBundleVariantWithMonitors(manifest, variant, evidence.Bundle, projector, monitors)
 	result.BuildAuditDigest = evidence.BuildAuditDigest
 	result.BinaryDigest = evidence.BinaryDigest
 	result.MethodConfigProjectionDigest = projection
@@ -349,6 +362,18 @@ func evaluateBundleVariant(
 	variant BundleVariant,
 	bundle controlexperiment.ExecutionBundle,
 	projector semantic.DecisionProjector,
+) BundleTrialResult {
+	return evaluateBundleVariantWithMonitors(
+		manifest, variant, bundle, projector, []oracle.BundleMonitor{oracle.BundleAgreement{}},
+	)
+}
+
+func evaluateBundleVariantWithMonitors(
+	manifest BundleBenchmark,
+	variant BundleVariant,
+	bundle controlexperiment.ExecutionBundle,
+	projector semantic.DecisionProjector,
+	monitors []oracle.BundleMonitor,
 ) BundleTrialResult {
 	result := BundleTrialResult{
 		TrialID: variant.TrialID, VariantID: variant.VariantID, Kind: variant.Kind,
@@ -380,27 +405,27 @@ func evaluateBundleVariant(
 		result.Oracle = integrity
 		return invalid("BUNDLE_BENCHMARK_TRACE_INTEGRITY_FAILED")
 	}
-	result.Oracle = oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
-	var agreement *oracle.Violation
-	for index := range result.Oracle.Violations {
-		if result.Oracle.Violations[index].Monitor == "agreement" {
-			agreement = &result.Oracle.Violations[index]
-			break
-		}
+	checks := make([]oracle.BundleMonitor, 0, len(monitors)+1)
+	checks = append(checks, oracle.BundleTraceIntegrity{})
+	checks = append(checks, monitors...)
+	result.Oracle = oracle.CheckBundle(bundle, checks...)
+	var finding *oracle.Violation
+	if len(result.Oracle.Violations) != 0 {
+		finding = &result.Oracle.Violations[0]
 	}
-	if agreement != nil {
+	if finding != nil {
 		result.Finding = &BundleFinding{
-			Monitor: agreement.Monitor, Step: agreement.Step, Message: agreement.Message,
+			Monitor: finding.Monitor, Step: finding.Step, Message: finding.Message,
 			TraceDigest: bundle.Trace.Digest,
 		}
 	}
 	if variant.Kind == BundleKindControl {
-		if agreement == nil {
+		if finding == nil {
 			result.Status = BundleStatusControlPass
 		} else {
 			result.Status = BundleStatusFalsePositive
 		}
-	} else if agreement == nil {
+	} else if finding == nil {
 		result.Status = BundleStatusSurvived
 	} else {
 		result.Status = BundleStatusKilled

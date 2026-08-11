@@ -2,9 +2,140 @@
 
 日期：2026-08-11
 
-阶段：M5.21i Ordered Method Corpus 聚合已完成
+阶段：M5.21o Formal multi-pair CLI 已完成
 
 ## 输入、处理、输出
+
+M5.21o 将 formal evaluator 接入现有 `cmd/defect-eval`。curator 输入 private contract、passed
+exposure audit、MethodSpec 和 `FormalFreshInputs/v1` path manifest；CLI 先机械校验模式互斥、
+exact composition、全部 trial 集合及 audit/binary digest，再使用既有 fresh subprocess runner。
+
+公开 synthetic 回归只运行一次 32-decision official etcd/raft correct execution，再通过 injected
+runner 复用为 3 pair/6 trial，得到 3 control-pass、3 candidate-survived、0 false positive/
+invalid。六份输入均在 runner 前预检；篡改最后 binary 时 runner calls=0；旧输出路径
+不会被覆盖。该结果只验证 CLI plumbing，不是真实 private provenance/holdout。真实
+private pair 和第二 strict CFT 仍缺失，故 `formal_ready=false`；model calls=0、新增
+in-process SUT integration execution=1。详见 `docs/stage-m5.21o-formal-multi-pair-cli.md`。
+
+```text
+contract + exposure + method + private trial path manifest
+                         |
+                         v
+ admission + all-input preflight -> existing fresh runner
+                         |
+                         v
+ per-trial artifacts + private multi-pair evaluation ledger
+```
+
+## 上一阶段：M5.21n Formal fresh evaluator
+
+M5.21n 增加协议无关 `FormalFreshEvaluation/v1`。private evaluator 输入 sealed contract、passed
+exposure audit、MethodSpec、opaque trial→fresh evidence map 及注册的 projector/monitor；通用代码解析
+exact composition，并复用既有 build/method/bundle/projection/budget/Replay 校验和 Oracle。
+
+公开 synthetic 集成复用同一份 M5.18a correct bundle 构造 3 pair/6 trial，得到 3 control-pass、
+3 candidate-survived、0 false positive/invalid。缺失 evidence、失败 exposure audit 和 exposure-digest
+绑定篡改均被拒绝。它只证明 multi-pair evaluator plumbing，不是实际 binary provenance 或 holdout
+效果。CLI multi-pair、真实 private pair 与第二 strict CFT 仍缺失，故 `formal_ready=false`；本阶段
+model calls/新增独立 SUT executions 均为 0。详见 `docs/stage-m5.21n-formal-fresh-evaluator.md`。
+
+```text
+contract + passed exposure + method + trial->fresh evidence
+                         |
+                         v
+ exact composition + existing trusted fresh checks/monitors
+                         |
+                         v
+ private pair ledger + FP/kill/root/invalid summary + digests
+```
+
+## 上一阶段：M5.21m FormalExposureAudit
+
+M5.21m 增加协议无关 `FormalExposureAudit/v1`。curator 输入 sealed private contract、supplied
+opaque view 和将越过边界的 exact JSON bytes；通用代码重算 opaque projection、为每份工件
+计算 SHA-256，并递归比较 JSON key/value string 与 contract 枚举的 private atom。报告只保存
+artifact index/digest 和稳定 finding code，不回显匹配值。
+
+公开 synthetic fixture 中 clean request 通过；直接复制 private root/build/monitor 到 JSON value 或 key
+会被拒绝；malformed JSON、多 JSON value、错误 opaque view 和 audit 篡改也均被拒绝。该审计
+只防 exact atom 直接复制，不能证明模型无法推断语义，也不替代运行隔离。formal fresh evaluator、
+真实 private dataset 和第二 strict CFT 仍缺失，因此 `formal_ready=false`。本阶段 model calls/
+SUT executions 均为 0。详见 `docs/stage-m5.21m-formal-exposure-audit.md`。
+
+```text
+private contract + supplied opaque view + public JSON bytes
+                         |
+                         v
+ exact projection + raw digest + recursive key/value scan
+                         |
+                         v
+       no-echo findings + passed + audit digest
+```
+
+## 上一阶段：M5.21l FormalBenchmarkContract
+
+M5.21l 实现协议无关 `FormalBenchmarkContract/v1`：private contract 必须显式包含至少
+3 组 matching candidate/control 和 3 个不同 root-cause label，并绑定 MethodSpec、Profile、
+bundle schema、共同预算、build evidence 与 trusted composition identity。`FormalOpaqueView/v1`
+只公开 benchmark commitment、Family/Profile/Method identity、预算和排序后的 opaque trial ID；
+pair、kind、root cause、build、projector/monitor 和 nonce 均不公开。
+
+通用 `ResolveFormalComposition` 只按 exact ID 解析 `DecisionProjector`/`BundleMonitor`，没有导入
+Raft Adapter。公开 synthetic fixture 验证 3 pair/6 trial/3 root label 与投影篡改拒绝，但它
+不是 private holdout。exposure audit、formal fresh evaluator、真实 private pair 和第二 strict CFT
+仍未完成，因此 `formal_ready=false`。本阶段模型调用和新 SUT execution 均为 0。
+详见 `docs/stage-m5.21l-formal-benchmark-contract.md`。
+
+```text
+private matching pairs + identities + shared budget
+                         |
+                         v
+        canonical contract + composition gate
+                         |
+                         v
+ public commitment + opaque trial IDs + shared method/budget
+```
+
+## 上一阶段：M5.21k Holdout Readiness Gap
+
+M5.21k 没有调用模型或执行新 SUT，而是机械扫描当前仓库的七份公开 evaluator manifest、当前
+`BundleBenchmark`/`cmd/defect-eval` 边界和 HashiCorp Raft strict QualificationBundle。结果为：当前可验证
+公开 pair 3 组但只有 1 个不同根因；旧格式公开归档 4 组、3 个根因；正式 private pair/root cause/control
+均为 0。当前 classification 不接受 formal holdout、fresh CLI 只接受一组 pair、M4 blind 工具已无可编译
+源码。HashiCorp Raft required strict 能力仅 3/8，故总 readiness 为 `false`。
+
+报告由 Go 集成回归逐字段复算，范围仅为 `current-repository`；它不声称仓库外不存在私有数据，也不把
+公开历史样本改标成 holdout。下一步只实现最小 `FormalBenchmarkContract/v1` 的 private/opaque 暴露边界、
+多 pair 输入和 target-neutral composition，不同时增加 Agent、DSL 或执行器。详见
+`docs/stage-m5.21k-holdout-readiness-gap.md`。
+
+```text
+输入
+  public evaluator manifests + current evaluator behavior
+  + second strict CFT qualification
+                         |
+                         v
+处理
+  strict decode/digest/count + rejection probes + qualification gap
+                         |
+                         v
+输出
+  current-repository readiness report
+  + 8 stable findings + ready=false
+```
+
+## 上一阶段：M5.21j RiskWitness
+
+M5.21j 已增加最小 `RiskWitnessSpec/v1` 与 `RiskWitnessResult/v1`：Raft Family Pack 固定
+`workload-invoked-at-coordinator < coordinator-changed-while-inflight <
+old-coordinator-restarted-after-change`；etcd/raft composition 只从真实 Invoke、角色/term/incarnation、
+client return step 与 node transition 投影 milestone；通用代码重算 reached/missing/order 和 digest。
+
+本阶段只读取 M5.21f/M5.21h 的三份归档 bundle，没有调用模型或运行新 SUT。三份 workload 均为
+`planned=1、offered=0、completed=0、pending=1`，所以 witness 全部为 `not-reached`，第一缺口均是
+`workload-invoked-at-coordinator`。这只说明有效可重放执行没有到达目标风险，不是方法优劣、协议故障、
+Coverage 分数或 Oracle verdict。下一步先做 holdout readiness audit，并保留第二 strict CFT 实现迁移门；
+暂不扩大 semantic planner 或 Agent 数量。详见 `docs/stage-m5.21j-risk-witness.md`。
 
 ```text
 输入
@@ -20,6 +151,7 @@
   -> preference-only validation -> trusted compiler/instance/choice
   -> durable plans/N.json -> existing qualified executor
   -> artifact/checkpoint -> strict reprojection -> next Observation
+                         -> target milestone projection -> RiskWitness
   -> fsync/no-replace Summary + Observation outside trusted root
                          |
                          v

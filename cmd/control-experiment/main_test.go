@@ -560,6 +560,7 @@ func TestEtcdraftM518aBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "OPERATION_HISTORY_RETURN_MISMATCH") {
 		t.Fatalf("tampered operation history error = %v", err)
 	}
+	checkM521nFormalFreshEvaluation(t, spec, report, bundle)
 
 	invalidSpec := spec
 	invalidSpec.Strategy = "workload;unexpected"

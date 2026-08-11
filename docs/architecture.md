@@ -166,6 +166,44 @@ M5.21i 不增加运行时组件。实验检查器从每个保存的 bundle 重�
 first-attempt witnesses。相同 effective identity 的物理 bundle 可以跨 method view 复用，但每个方法的
 logical attempts/work 仍完整计费；Agent model work 保持独立。该聚合只提供 discovery 诊断。
 
+M5.21j 在执行闭环之外增加只读 RiskWitness projection，不增加调度器或执行器：Raft Family Pack
+拥有冻结 milestone DAG，etcd/raft composition 拥有 opaque evidence 到 milestone 的映射，
+`internal/semantic` 只验证 spec/target/execution/projector identity、step order 与 digest，并机械计算
+`reached/not-reached`。RiskWitness 不进入 Oracle、Coverage 分母或 PSS key；Agent 当前也看不到或提交
+milestone evidence。第二 strict CFT 实现必须复用该通用结果结构，只替换 family spec/target projector。
+
+M5.21k 对正式评测面做只读 gap audit，没有增加架构组件。当前 `internal/defectbench` 只接受
+`public-calibration-only`，`cmd/defect-eval` composition 只处理一组 pair 并直接选择 etcd/raft projector；
+M4 private/blind/preflight 命令只剩历史文档/schema，没有可编译源码。七组仓库公开 pair 不能进入
+formal eligible 分母，HashiCorp Raft strict qualification 为 required 3/8。因此下一项架构工作是一个
+小型、协议无关 `FormalBenchmarkContract/v1`：分离 private manifest 与 opaque view，容纳多 pair，
+通过注册的 projector/monitor composition 评价；不得恢复旧 runner 或复制 Control Runtime。
+
+M5.21l 实现上述 contract foundation，但不改动执行路径。private contract 用显式
+`FormalPair{Control,Candidate}` 表达至少 3 pair/3 root labels，并冻结 build evidence 和
+`FormalCompositionSpec`。opaque view 只包含公开 Family/Profile/Method identity、共同预算、contract
+commitment 和 trial ID。`ResolveFormalComposition` 依赖通用 `semantic.DecisionProjector`/
+`oracle.BundleMonitor`，不依赖 target package。当前尚无 exposure audit 与 formal evaluator 调用者，
+因此 contract 不得被解读为 runnable holdout surface。
+
+M5.21m 在 contract 与 runner 之间增加只读 `FormalExposureAudit/v1`，仍不进入执行路径。
+它重算 exact opaque projection，并扫描将越过 curator 边界的 JSON byte snapshots；报告只绑定
+raw artifact digest 和 no-echo finding code。此门禁只检测已枚举 private atom 的直接复制，
+不为模型推断、编码泄露或 runner 隔离提供充分保证。它不导入 target package，也不读取
+private 文件路径或将路径写入报告。
+
+M5.21n 将 formal contract 接入唯一 fresh evaluator core，但仍不增加执行路径。private entry 要求
+passed exposure audit 和精确 evidence set，按 explicit pair 映射 trial，并通过 registry 解析 selected
+projector/monitors；每个 trial 复用既有 build/method/bundle/projection/budget 校验，始终先执行
+TraceIntegrity。`FormalFreshEvaluation/v1` 绑定 contract/exposure/method digest 并保留 private
+pair/root ledger。现有公开 evaluator wrapper 继续固定 Agreement，因此历史 CLI 语义没有变化。
+
+M5.21o 在 `cmd/defect-eval` composition root 增加 formal mode，不进入通用包。private
+`FormalFreshInputs/v1` 只映射 opaque trial ID 到 BuildAudit/binary path；CLI 在执行前完成
+mode separation、formal admission、exact input set 和全部 binary digest 校验，之后仍调用原有
+`runFreshBundle`。当前 composition root 只注册 etcd/raft projector 与 Agreement；第二 target
+应在这里增加注册项，不得修改 formal evaluator。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，
@@ -308,7 +346,7 @@ internal/control*  -X-> adapters or consensus packages
 
 ## 当前未完成
 
-- 非公开 holdout 与正式方法比较；
+- 真实非公开 holdout curator pack 与正式方法比较；
 - PSS-guided 的可执行性结构约束（只在评测缺口证明必要时增加）；
 - Guarded TestIntent batch feedback 与 one-shot/feedback/确定性 baseline 消融；
 - 修正后的非锚定 prompt 真实调用；

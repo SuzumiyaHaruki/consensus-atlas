@@ -19,8 +19,44 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
 )
+
+const formalFreshInputsSchemaVersion = "consensus-atlas/formal-fresh-inputs/v1"
+
+type formalFreshTrialInput struct {
+	TrialID        string `json:"trial_id"`
+	BuildAuditPath string `json:"build_audit_path"`
+	BinaryPath     string `json:"binary_path"`
+}
+
+// formalFreshInputs is private curator-side I/O. Paths never enter the
+// evaluation ledger or any Agent-facing artifact.
+type formalFreshInputs struct {
+	SchemaVersion string                  `json:"schema_version"`
+	Trials        []formalFreshTrialInput `json:"trials"`
+}
+
+type freshTrialSource struct {
+	trialID    string
+	auditPath  string
+	binaryPath string
+}
+
+type loadedFreshTrial struct {
+	trialID      string
+	audit        sutbuild.Audit
+	auditDigest  string
+	binary       []byte
+	binaryDigest string
+}
+
+type freshBundleRunner func(
+	trialID string,
+	binary []byte,
+	spec controlexperiment.MethodSpec,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -41,11 +77,28 @@ func run(args []string) error {
 	candidateAuditPath := flags.String("candidate-build-audit", "", "candidate build audit for fresh execution")
 	candidateBinaryPath := flags.String("candidate-binary", "", "candidate binary for fresh execution")
 	freshArtifacts := flags.String("fresh-artifacts", "", "directory for evaluator-owned reports and bundles")
+	formalContractPath := flags.String("formal-contract", "", "private FormalBenchmarkContract")
+	formalExposurePath := flags.String("formal-exposure-audit", "", "passed private FormalExposureAudit")
+	formalInputsPath := flags.String("formal-inputs", "", "private multi-trial audit/binary path manifest")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	formalMode := *formalContractPath != "" || *formalExposurePath != "" || *formalInputsPath != ""
+	if formalMode {
+		if *formalContractPath == "" || *formalExposurePath == "" || *formalInputsPath == "" ||
+			*methodSpecPath == "" || *freshArtifacts == "" || *outPath == "" ||
+			*manifestPath != "" || *controlPath != "" || *candidatePath != "" ||
+			*controlAuditPath != "" || *controlBinaryPath != "" ||
+			*candidateAuditPath != "" || *candidateBinaryPath != "" {
+			return errors.New("formal evaluation requires contract, exposure audit, inputs, method spec, fresh artifacts, out, and no public-pair flags")
+		}
+		return runFormalFreshEvaluation(
+			*formalContractPath, *formalExposurePath, *formalInputsPath,
+			*methodSpecPath, *freshArtifacts, *outPath, runFreshBundle,
+		)
+	}
 	if *manifestPath == "" || *outPath == "" {
-		return errors.New("-manifest and -out are required")
+		return errors.New("public evaluation requires -manifest and -out")
 	}
 	var manifest defectbench.BundleBenchmark
 	if err := readStrictJSON(*manifestPath, &manifest); err != nil {
@@ -119,47 +172,17 @@ func runFreshEvaluation(
 	if err != nil {
 		return err
 	}
-	type input struct {
-		trialID    string
-		auditPath  string
-		binaryPath string
-	}
-	inputs := []input{
+	sources := []freshTrialSource{
 		{trialID: controlTrial, auditPath: controlAuditPath, binaryPath: controlBinaryPath},
 		{trialID: candidateTrial, auditPath: candidateAuditPath, binaryPath: candidateBinaryPath},
 	}
-	evidence := make(map[string]defectbench.FreshBundleEvidence, len(inputs))
-	for _, current := range inputs {
-		var audit sutbuild.Audit
-		auditBytes, err := readStrictJSONBytes(current.auditPath, &audit)
-		if err != nil {
-			return err
-		}
-		if err := audit.Validate(); err != nil {
-			return fmt.Errorf("validate %s build audit: %w", current.trialID, err)
-		}
-		binary, err := os.ReadFile(current.binaryPath)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", current.binaryPath, err)
-		}
-		binaryDigest := digestBytes(binary)
-		if binaryDigest != audit.BinaryDigest {
-			return fmt.Errorf("binary %s does not match its build audit", current.binaryPath)
-		}
-		report, bundle, err := runFreshBundle(current.trialID, binary, spec)
-		if err != nil {
-			return err
-		}
-		if err := writeJSON(filepath.Join(artifactDir, current.trialID, "report.json"), report); err != nil {
-			return err
-		}
-		if err := writeJSON(filepath.Join(artifactDir, current.trialID, "bundle.json"), bundle); err != nil {
-			return err
-		}
-		evidence[current.trialID] = defectbench.FreshBundleEvidence{
-			Report: report, Bundle: bundle, BuildAudit: audit,
-			BuildAuditDigest: digestBytes(auditBytes), BinaryDigest: binaryDigest,
-		}
+	loaded, err := loadFreshTrials(sources)
+	if err != nil {
+		return err
+	}
+	evidence, err := executeFreshTrials(loaded, spec, artifactDir, runFreshBundle)
+	if err != nil {
+		return err
 	}
 	report, err := defectbench.EvaluateFreshBundles(
 		manifest, spec, evidence, etcdraftv2.DecisionProjector{},
@@ -174,6 +197,204 @@ func runFreshEvaluation(
 		outPath, spec.Digest, report.Summary.Controls, report.Summary.FalsePositives,
 		report.Summary.Candidates, report.Summary.KilledCandidates,
 		report.Summary.InvalidTrials, report.Digest)
+	return nil
+}
+
+func runFormalFreshEvaluation(
+	contractPath string,
+	exposurePath string,
+	inputsPath string,
+	methodSpecPath string,
+	artifactDir string,
+	outPath string,
+	runner freshBundleRunner,
+) error {
+	if runner == nil {
+		return errors.New("FORMAL_CLI_RUNNER_REQUIRED")
+	}
+	var contract defectbench.FormalBenchmarkContract
+	if err := readStrictJSON(contractPath, &contract); err != nil {
+		return err
+	}
+	var exposure defectbench.FormalExposureAudit
+	if err := readStrictJSON(exposurePath, &exposure); err != nil {
+		return err
+	}
+	var spec controlexperiment.MethodSpec
+	if err := readStrictJSON(methodSpecPath, &spec); err != nil {
+		return err
+	}
+	if contract.Composition.ProjectorID != etcdraftv2.DecisionProjectionID {
+		return errors.New("FORMAL_CLI_PROJECTOR_UNSUPPORTED")
+	}
+	registeredMonitors := []oracle.BundleMonitor{oracle.BundleAgreement{}}
+	if err := defectbench.ValidateFormalFreshEvaluationAdmission(
+		contract, exposure, spec, etcdraftv2.DecisionProjector{}, registeredMonitors...,
+	); err != nil {
+		return err
+	}
+
+	var inputs formalFreshInputs
+	if err := readStrictJSON(inputsPath, &inputs); err != nil {
+		return err
+	}
+	sources, variants, err := validateFormalFreshInputs(inputsPath, inputs, contract)
+	if err != nil {
+		return err
+	}
+	loaded, err := loadFreshTrials(sources)
+	if err != nil {
+		return err
+	}
+	for _, current := range loaded {
+		variant := variants[current.trialID]
+		if current.audit.TrialID != current.trialID || current.audit.SUTBuildIdentity != variant.ExpectedBuildID ||
+			current.auditDigest != variant.ExpectedBuildAuditDigest ||
+			current.binaryDigest != variant.ExpectedBinaryDigest {
+			return fmt.Errorf("FORMAL_CLI_BUILD_EVIDENCE_MISMATCH: %s", current.trialID)
+		}
+	}
+	if err := requireNewFormalOutputs(artifactDir, outPath); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return err
+	}
+	evidence, err := executeFreshTrials(loaded, spec, artifactDir, runner)
+	if err != nil {
+		return err
+	}
+	report, err := defectbench.EvaluateFormalFreshBundles(
+		contract, exposure, spec, evidence, etcdraftv2.DecisionProjector{}, registeredMonitors...,
+	)
+	if err != nil {
+		return err
+	}
+	if err := writeJSONExclusive(outPath, report); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s\nmethod=%s pairs=%d controls=%d false-positive=%d candidates=%d killed=%d invalid=%d digest=%s\n",
+		outPath, spec.Digest, len(report.Pairs), report.Summary.Controls, report.Summary.FalsePositives,
+		report.Summary.Candidates, report.Summary.KilledCandidates,
+		report.Summary.InvalidTrials, report.Digest)
+	return nil
+}
+
+func validateFormalFreshInputs(
+	inputsPath string,
+	inputs formalFreshInputs,
+	contract defectbench.FormalBenchmarkContract,
+) ([]freshTrialSource, map[string]defectbench.FormalVariant, error) {
+	if inputs.SchemaVersion != formalFreshInputsSchemaVersion || len(inputs.Trials) != len(contract.Pairs)*2 {
+		return nil, nil, errors.New("FORMAL_CLI_INPUT_SET_INVALID")
+	}
+	variants := make(map[string]defectbench.FormalVariant, len(inputs.Trials))
+	for _, pair := range contract.Pairs {
+		variants[pair.Control.TrialID] = pair.Control
+		variants[pair.Candidate.TrialID] = pair.Candidate
+	}
+	base, err := filepath.Abs(filepath.Dir(inputsPath))
+	if err != nil {
+		return nil, nil, err
+	}
+	seen := make(map[string]bool, len(inputs.Trials))
+	sources := make([]freshTrialSource, 0, len(inputs.Trials))
+	for _, input := range inputs.Trials {
+		if _, ok := variants[input.TrialID]; !ok || seen[input.TrialID] ||
+			strings.TrimSpace(input.BuildAuditPath) == "" || strings.TrimSpace(input.BinaryPath) == "" {
+			return nil, nil, errors.New("FORMAL_CLI_INPUT_SET_INVALID")
+		}
+		seen[input.TrialID] = true
+		sources = append(sources, freshTrialSource{
+			trialID: input.TrialID, auditPath: resolveFormalInputPath(base, input.BuildAuditPath),
+			binaryPath: resolveFormalInputPath(base, input.BinaryPath),
+		})
+	}
+	return sources, variants, nil
+}
+
+func resolveFormalInputPath(base, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(base, filepath.Clean(path))
+}
+
+func loadFreshTrials(sources []freshTrialSource) ([]loadedFreshTrial, error) {
+	loaded := make([]loadedFreshTrial, 0, len(sources))
+	for _, source := range sources {
+		var audit sutbuild.Audit
+		auditBytes, err := readStrictJSONBytes(source.auditPath, &audit)
+		if err != nil {
+			return nil, err
+		}
+		if err := audit.Validate(); err != nil {
+			return nil, fmt.Errorf("validate %s build audit: %w", source.trialID, err)
+		}
+		binary, err := os.ReadFile(source.binaryPath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", source.binaryPath, err)
+		}
+		binaryDigest := digestBytes(binary)
+		if binaryDigest != audit.BinaryDigest {
+			return nil, fmt.Errorf("binary %s does not match its build audit", source.binaryPath)
+		}
+		loaded = append(loaded, loadedFreshTrial{
+			trialID: source.trialID, audit: audit, auditDigest: digestBytes(auditBytes),
+			binary: binary, binaryDigest: binaryDigest,
+		})
+	}
+	return loaded, nil
+}
+
+func executeFreshTrials(
+	inputs []loadedFreshTrial,
+	spec controlexperiment.MethodSpec,
+	artifactDir string,
+	runner freshBundleRunner,
+) (map[string]defectbench.FreshBundleEvidence, error) {
+	evidence := make(map[string]defectbench.FreshBundleEvidence, len(inputs))
+	for _, current := range inputs {
+		report, bundle, err := runner(current.trialID, current.binary, spec)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeJSON(filepath.Join(artifactDir, current.trialID, "report.json"), report); err != nil {
+			return nil, err
+		}
+		if err := writeJSON(filepath.Join(artifactDir, current.trialID, "bundle.json"), bundle); err != nil {
+			return nil, err
+		}
+		evidence[current.trialID] = defectbench.FreshBundleEvidence{
+			Report: report, Bundle: bundle, BuildAudit: current.audit,
+			BuildAuditDigest: current.auditDigest, BinaryDigest: current.binaryDigest,
+		}
+	}
+	return evidence, nil
+}
+
+func requireNewFormalOutputs(artifactDir, outPath string) error {
+	artifactAbsolute, err := filepath.Abs(artifactDir)
+	if err != nil {
+		return err
+	}
+	outputAbsolute, err := filepath.Abs(outPath)
+	if err != nil {
+		return err
+	}
+	separator := string(os.PathSeparator)
+	if outputAbsolute == artifactAbsolute ||
+		strings.HasPrefix(outputAbsolute, artifactAbsolute+separator) ||
+		strings.HasPrefix(artifactAbsolute, outputAbsolute+separator) {
+		return errors.New("FORMAL_CLI_OUTPUT_PATHS_OVERLAP")
+	}
+	for _, path := range []string{artifactDir, outPath} {
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("FORMAL_CLI_OUTPUT_EXISTS: %s", path)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -287,6 +508,25 @@ func writeJSON(path string, value any) error {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+func writeJSONExclusive(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 func digestBytes(data []byte) string {

@@ -1,0 +1,21 @@
+{
+  "schema_version": "consensus-atlas/formal-fresh-stage-summary/v1",
+  "id": "formal-fresh-evaluator-m5-21n",
+  "contract_digest": "f5cda374bb6a31886e2ae1fdc94a77c405d4ef471bcbebbc25603ee9ab118092",
+  "exposure_audit_digest": "1a411e005180c71a6de6e650b16898b827eb2609b4c086cd873a9b20915839ec",
+  "evaluation_digest": "58db6d7ec164bf4b2dd3049e0766491cca8d40159b50d3518caf572beab07c3d",
+  "pairs": 3,
+  "trials": 6,
+  "controls": 3,
+  "candidates": 3,
+  "survived_candidates": 3,
+  "false_positives": 0,
+  "invalid_trials": 0,
+  "fresh_evaluator_wired": true,
+  "cli_multi_pair_wired": false,
+  "dataset_classification": "public-synthetic-same-correct-bundle-fixture-only",
+  "formal_ready": false,
+  "new_model_calls": 0,
+  "new_sut_executions": 0,
+  "digest": "10ffc56101c7e0c35df257325890fff7a0e2d99ded814f697cb4531f6df8cf85"
+}

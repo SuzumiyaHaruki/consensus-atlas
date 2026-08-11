@@ -3,10 +3,23 @@
 `CURRENT_STAGE.md`、README、架构和总体规划描述当前可运行系统。阶段总结是不可改写的历史记录，可能
 引用已经由 M5.16R 删除的源码路径；这不表示旧 API 仍然存在。
 
-## 当前主线阅读顺序
+## 最新阶段阅读顺序
 
-1. [当前阶段：M5.21e Matched Agent/Zero-model Execution Pilot](CURRENT_STAGE.md)
-2. [M5.21e Matched Agent/Zero-model Execution Pilot](stage-m5.21e-matched-agent-zero-pilot.md)
+1. [当前阶段：M5.21o Formal multi-pair CLI](CURRENT_STAGE.md)
+2. [M5.21o Formal multi-pair CLI](stage-m5.21o-formal-multi-pair-cli.md)
+3. [M5.21n Formal fresh evaluator](stage-m5.21n-formal-fresh-evaluator.md)
+4. [M5.21m FormalExposureAudit](stage-m5.21m-formal-exposure-audit.md)
+5. [M5.21l FormalBenchmarkContract](stage-m5.21l-formal-benchmark-contract.md)
+6. [M5.21k Formal Holdout Readiness Gap](stage-m5.21k-holdout-readiness-gap.md)
+7. [M5.21j 最小可信 RiskWitness](stage-m5.21j-risk-witness.md)
+8. [M5.21i Ordered Method Corpus](stage-m5.21i-ordered-method-corpus.md)
+9. [M5.21h Missing Effective Execution](stage-m5.21h-missing-effective-execution.md)
+10. [M5.21g Effective Execution Gate](stage-m5.21g-effective-execution-gate.md)
+11. [M5.21f Planner Usefulness Gate](stage-m5.21f-planner-usefulness-gate.md)
+
+## 较早主线阅读顺序
+
+1. [M5.21e Matched Agent/Zero-model Execution Pilot](stage-m5.21e-matched-agent-zero-pilot.md)
 3. [M5.21d5 Single-call External Connectivity Calibration](stage-m5.21d5-single-call-connectivity.md)
 4. [M5.21d4 Pre-plan Terminal Accounting](stage-m5.21d4-pre-plan-terminal-accounting.md)
 5. [M5.21d3 Opt-in Durable-call Runner](stage-m5.21d3-opt-in-durable-runner.md)
@@ -89,6 +102,10 @@
 - [M5.21d4 pre-plan terminal accounting](stage-m5.21d4-pre-plan-terminal-accounting.md)；
 - [M5.21d5 single-call external connectivity calibration](stage-m5.21d5-single-call-connectivity.md)；
 - [M5.21e matched Agent/zero-model execution pilot](stage-m5.21e-matched-agent-zero-pilot.md)；
+- [M5.21l FormalBenchmarkContract](stage-m5.21l-formal-benchmark-contract.md)；
+- [M5.21m FormalExposureAudit](stage-m5.21m-formal-exposure-audit.md)；
+- [M5.21n Formal fresh evaluator](stage-m5.21n-formal-fresh-evaluator.md)；
+- [M5.21o Formal multi-pair CLI](stage-m5.21o-formal-multi-pair-cli.md)；
 - [M5.14 admission](stage-m5.14-admission-and-pruning.md)；
 - [M5.15 workload](stage-m5.15-semantic-workload.md)；
 - [M5.16 bundle/evaluator](stage-m5.16-execution-bundle.md)；

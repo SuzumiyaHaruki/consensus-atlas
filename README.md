@@ -5,51 +5,16 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21e Matched Agent/Zero-model Execution Pilot**。Zero-model 完成
-2 attempts/64 decisions；Agent 的第一个 choice、plan、bundle 和 PSS curve 与基线前缀完全一致，
-第二次调用则因 `Prefer` 字段形状漂移被 strict parser 拒绝。Agent 以 1 committed attempt、
-2 calls/5211 tokens 和 durable failure 结束。这个负结果说明下一步应由可信代码机械提供精确
-proposal template/schema，而不是放宽 parser 或重试有利样本。M5.21d5 已完成真实连通：新的 durable
-Campaign runner 以固定输入完成 1 次外部调用（2417 tokens），proposal 通过可信编译并使用
-action-class-random 提交 1 个 8-decision attempt。Summary/Observation 可从 stopped Campaign 字节一致地
-重建，且没有第二次调用。这只证明连通与可恢复链路，不是 Agent 方法优势证据。
-M5.21d4 已完成 terminal accounting：通用
-Campaign store 使用
-exact call intent、dispatch marker 和 result 三段 no-replace 记录远程规划调用。dispatch-only
-状态在恢复后机械成为 `ambiguous`，不能再调用或补写 result。`CampaignConfig/v3`
-显式冻结 `none/zero-model/durable-call` planner mode。d2 已用注入的离线 transport 把该状态机
-接入 etcd/raft provider：durable success result 恢复不重调，dispatch-only/failed 不重试，模型
-成本只在 Campaign 外层累计一次。M5.21d3 已增加独立显式 strategy，并按 attempt 强制
-`exact intent durable -> key read -> one Step -> key clear`。测试只使用注入的离线 key reader/transport；
-没有读取桌面密钥或调用真实模型，外部 model calls/tokens 仍为 0。M5.21d4 只允许 failure marker
-引用 store 已验证的同 ordinal model-call result，并将 terminal work 纳入 failed Summary totals，
-同时保持 attempt/checkpoint/PSS evidence 不增加。dispatch-only ambiguous 仍为零成本；failed、
-proposal-invalid 与 over-budget durable result 的实际调用成本均可恢复并机械聚合。
+当前阶段已完成 **M5.21o Formal multi-pair CLI**。curator 可用 private contract、passed
+exposure audit、MethodSpec 和 `trial_id -> BuildAudit/binary path` 清单调用 M5.21n evaluator。
+CLI 在任何 SUT execution 前完成 exact composition、六个 trial 集合和全部 build/binary
+digest 校验，且要求全新 artifact/output path；现有 public single-pair 模式保持不变。
 
-M5.21c 已完成 Durable Planned Attempt。用户给定 attempts、decisions、first seed
-和 wall-clock ceiling 后，etcd/raft runner 在每个 attempt 前从已提交 Observation 构造最小
-Planner View，用 zero-model deterministic planner 只修改 `Prefer`，再经可信 compiler 生成
-plan/instance/choice。完整 planned envelope 以 fsync/no-replace 先于 target execution 落盘；
-恢复时复用 exact `head+1` plan，不重算 Planner。checkpoint、artifact 和 Observation 均机械绑定
-planned-attempt digest。当前 `CampaignConfig/v3` 仍显式区分 base-request/planned-attempt，因此计划缺失、
-替换、篡改或 future ordinal 不能降级为旧路径。
-
-first seed 101 的真实 3x8-decision 见证完成 3 attempts：24 primary decisions、27/27
-primary/replay work、27 个 Core PSS samples、17 个唯一状态，model calls/tokens 为 0。这只证明
-zero-model 规划/恢复/执行/观测链连通，不证明方法优势或覆盖完备。真实远程 Planner 仍需先增加
-durable call-intent 和 ambiguous terminal，以处理“已收费但响应未落盘”的恢复歧义。
-此前 M5.18b4 pair orchestration/persistence 已接到
-freeze-before-key、failure-before-return-persistence 的正式 CLI 和 Make 入口。已有 pair 复用 frozen request consumer，
-以固定双臂顺序、失败隔离、完整成本 pair ledger 和全新目录持久化形成离线闭环；未读取 key、
-未调用模型。单臂 consumer 已把 freeze 绑定的 exact request 接入既有
-response audit、strict parser、baseline validator、plan v2、seed-4 execution 和 IntentOutcome。
-pair 层已验证固定顺序、首臂失败隔离、ledger 篡改拒绝、禁止覆盖以及 key/私有诊断不落盘。
-runner 还已验证已存在目录在 source construction 前拒绝、无效 freeze 在 key 前拒绝，两个 typed
-arm failure 先落盘再返回。入口不被任何测试目标自动调用。
-M5.18b4R 当前清单为 26/26 exact-once，受影响的 13 项 agent shard race 已通过。M5.18b4 已冻结的
-no-feedback/with-feedback 两臂精确 prompt/request bytes、共同
-hard baseline、seed 4、执行预算和 transport 上限已在
-读取 key 前冻结。唯一可见信息差异是 feedback 为 JSON `null` 或可重算对象。本轮没有调用模型。
+公开 synthetic 集成用一次 official etcd/raft correct execution 复用为 3 pair/6 trial，得到
+3 control-pass、3 candidate-survived、0 false positive/invalid；最后一个 binary 篡改会在
+runner calls=0 时拒绝。这只证明 CLI plumbing，不是真实 provenance 或 holdout 效果。
+真实 private pair 和第二 strict CFT 仍未完成，所以 `formal_ready=false`。本阶段模型调用为 0。
+完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环
 
@@ -110,6 +75,7 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
   client history、decision history、Qualification 和 work ledger；
 - TraceIntegrity 与 Agreement 两个 v2 trusted monitor；
 - source-bound 构建变体、build audit 和公开 calibration pair evaluator；
+- private/opaque formal contract、direct no-echo exposure audit 和 composition-aware multi-pair fresh evaluator；
 - Experiment v2 的共同 admissible frontier、三类显式终止、pending workload 和选择审计；
 - target-owned WorkloadRouter，以及 fresh replay 中对每次 Invoke 唯一目标的重算；
 - 有序 MutationSourceCorpus、occurrence-aware trace mutation v2、可信重投影 PSSFeedback；
@@ -349,9 +315,9 @@ internal/
   controlexperiment/      admission、workload、policy、ExecutionBundle
   psscore/                固定 Core PSS IR 与投影
   protocolstate/          状态发现与跨 run 聚合
-  semantic/               协议无关 decision observation
+  semantic/               协议无关 decision observation 与 RiskWitness validator
   oracle/                 v2 trusted monitors
-  defectbench/            最小 control/candidate evaluator
+  defectbench/            公开 evaluator + private/opaque formal contract
   sutbuild/               source-bound 构建与审计
 cmd/                      资格、实验、构建和评测 composition roots
 qualifications/           两个真实 Adapter 的机械资格组合
@@ -360,7 +326,8 @@ docs/                     当前设计与不可改写的阶段记录
 ```
 
 `agents/`、`drivers/`、`families/`、旧 Campaign/Coverage/Engine/Host，以及旧 Planner/model transport
-源码已经删除。`make audit-no-v1` 和 `make audit-no-retired-experiment` 阻止可编译源码重新依赖这些路径。
+源码已经删除。新的 Raft RiskWitness 定义位于 `internal/semantic/raft`，不复活 v1 Family 路径。
+`make audit-no-v1` 和 `make audit-no-retired-experiment` 阻止可编译源码重新依赖退役路径。
 
 ## 信任边界与限制
 
@@ -378,7 +345,14 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21d4 terminal accounting](docs/stage-m5.21d4-pre-plan-terminal-accounting.md)、[M5.21d3 opt-in durable runner](docs/stage-m5.21d3-opt-in-durable-runner.md)、[M5.21d2 offline durable planner](docs/stage-m5.21d2-etcdraft-offline-model-planner.md)、[M5.21d1 durable model call](docs/stage-m5.21d1-durable-model-call.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21o formal multi-pair CLI](docs/stage-m5.21o-formal-multi-pair-cli.md)、
+[M5.21n formal fresh evaluator](docs/stage-m5.21n-formal-fresh-evaluator.md)、
+[M5.21m exposure audit](docs/stage-m5.21m-formal-exposure-audit.md)、
+[M5.21l formal contract](docs/stage-m5.21l-formal-benchmark-contract.md)、
+[M5.21k holdout readiness](docs/stage-m5.21k-holdout-readiness-gap.md)、
+[M5.21j RiskWitness](docs/stage-m5.21j-risk-witness.md)、
+[M5.21i method corpus](docs/stage-m5.21i-ordered-method-corpus.md)、
+[M5.21d4 terminal accounting](docs/stage-m5.21d4-pre-plan-terminal-accounting.md)、[M5.21d3 opt-in durable runner](docs/stage-m5.21d3-opt-in-durable-runner.md)、[M5.21d2 offline durable planner](docs/stage-m5.21d2-etcdraft-offline-model-planner.md)、[M5.21d1 durable model call](docs/stage-m5.21d1-durable-model-call.md)、
 [M5.21c durable planned attempt](docs/stage-m5.21c-durable-planned-attempt.md)、
 [M5.21b choice attribution](docs/stage-m5.21b-prior-choice-attribution.md)、
 [M5.21a Planner View](docs/stage-m5.21a-campaign-planner-view.md)、[M5.20 Campaign Observation](docs/stage-m5.20-campaign-observation.md)、
