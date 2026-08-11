@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "id": "etcdraft-public-calibration-v2",
+  "classification": "public-calibration-only",
+  "formal_evaluation_eligible": false,
+  "trust_hardening": {
+    "canonical_persisted_trace": true,
+    "ledger_witness_reconstructed": true,
+    "module_tree_bound": true,
+    "binary_and_build_audit_bound": true,
+    "trusted_evaluator_rerun": true,
+    "submitted_report_matches_rerun": true
+  },
+  "qualification": {
+    "official_candidates": 4,
+    "qualified": 0,
+    "deferred": 4,
+    "catalog_digest": "bf1d2612137c9a9a60e83e76acf0f21e3752909f6d5bf8fcffc74d83e0866e3b",
+    "snapshot_digest": "39032033962a2f8b808cc0834038882550f561ca7ef44da7c4d75ee6212abf1f"
+  },
+  "shared_budget": {
+    "max_runs": 1,
+    "max_decisions": 96,
+    "max_primary_work_units": 200
+  },
+  "trials": [
+    {
+      "trial_id": "trial-41c7a1",
+      "status": "control-pass",
+      "runs": 1,
+      "decisions": 41,
+      "primary_work_units": 127,
+      "replay_work_units": 127,
+      "coverage_covered": 21,
+      "coverage_total": 55,
+      "coverage_score": 38.66666666666667,
+      "trace_digest": "3055c07ecb1da29abaa192528cd152db81e96545bc43b548bad0b6b4aaadb184",
+      "build_audit_digest": "f1f352473925a68e66589c766a7eb7f456143c051b08d56bc0ac160b5f51c377",
+      "binary_digest": "647a1e4fdf8cf53ad21968ce692e5321bf53f1caaa0fd13e2ec4bcf876378888"
+    },
+    {
+      "trial_id": "trial-a93d5e",
+      "status": "killed",
+      "runs": 1,
+      "decisions": 41,
+      "primary_work_units": 127,
+      "replay_work_units": 127,
+      "coverage_covered": 21,
+      "coverage_total": 55,
+      "coverage_score": 38.66666666666667,
+      "trace_digest": "5a0c0c922f9c60cf1cd9c5039cf1a04e5df319530ae51e87162a0c6efb6dfb46",
+      "build_audit_digest": "fa7a13a238c4181bc57646609353fe8625ec4b11f08871ad688d552428fb7e44",
+      "binary_digest": "c54f7a76280db298a519fc82a19dbb01459981c2c5aece7d383a6610dee80a8e",
+      "trusted_finding": {
+        "monitor": "agreement",
+        "trace_step": 118,
+        "first_kill_primary_work": 127
+      }
+    }
+  ],
+  "external_result": {
+    "root_causes": 1,
+    "killed_root_causes": 1,
+    "false_positives": 0,
+    "invalid_trials": 0
+  },
+  "negative_checks": [
+    "protocol-family-scope-rejected",
+    "profile-bound-mismatch-rejected",
+    "persisted-ledger-tamper-invalid",
+    "non-target-module-change-alters-tree-digest",
+    "swapped-binary-rejected",
+    "submitted-report-mismatch-rejected"
+  ],
+  "interpretation": "Public calibration verifies the hardened execution/evaluation path only. Coverage remains explanatory and does not create a kill result."
+}

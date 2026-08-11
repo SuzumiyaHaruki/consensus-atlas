@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "etcdraft-v3.6-public-candidates-v1",
+  "candidates": [
+    {
+      "id": "etcdraft-63903dd-duplicate-read-index",
+      "protocol": "etcd-raft-v3.6",
+      "family": "raft",
+      "provenance": {
+        "kind": "official-historical-fix",
+        "repository": "https://github.com/etcd-io/raft"
+      },
+      "source_reference": {
+        "revision": "63903dd1ecd953554ff835b6ec85e1e15f2735c6",
+        "url": "https://github.com/etcd-io/raft/commit/63903dd1ecd953554ff835b6ec85e1e15f2735c6"
+      },
+      "root_cause_group": "etcdraft-duplicate-read-index-context",
+      "requirements": {
+        "controllable_inputs": ["campaign", "duplicate", "heal", "message", "partition", "propose", "read-index"],
+        "observable_events": ["event:message", "observation-kind:commit", "read-state"],
+        "driver_capabilities": [
+          "explicit-campaign",
+          "message-drop-duplicate-partition",
+          "message-release-control",
+          "read-index-input",
+          "read-state-observation"
+        ],
+        "trusted_monitors": ["linearizable-read"],
+        "execution_outcomes": ["campaign-report-v2", "deterministic-trace-replay", "oracle-from-saved-trace"],
+        "profile_bounds": ["election-rounds>=2", "partitions>=1", "proposals>=1"]
+      }
+    },
+    {
+      "id": "etcdraft-76f1249-log-truncation-panic",
+      "protocol": "etcd-raft-v3.6",
+      "family": "raft",
+      "provenance": {
+        "kind": "official-historical-fix",
+        "repository": "https://github.com/etcd-io/raft"
+      },
+      "source_reference": {
+        "revision": "76f1249811314330929f91ff8f8c2cfafb488d22",
+        "url": "https://github.com/etcd-io/raft/commit/76f1249811314330929f91ff8f8c2cfafb488d22"
+      },
+      "root_cause_group": "etcdraft-msgapp-after-log-truncation",
+      "requirements": {
+        "controllable_inputs": ["log-compaction"],
+        "observable_events": [],
+        "driver_capabilities": ["log-compaction-control"],
+        "trusted_monitors": [],
+        "execution_outcomes": ["campaign-report-v2", "process-exit-classified"],
+        "profile_bounds": ["slow-follower-inflight-saturation"]
+      }
+    },
+    {
+      "id": "etcdraft-8ecce32-committed-pagination",
+      "protocol": "etcd-raft-v3.6",
+      "family": "raft",
+      "provenance": {
+        "kind": "official-historical-fix",
+        "repository": "https://github.com/etcd-io/raft"
+      },
+      "source_reference": {
+        "revision": "8ecce32df47b4899596a19140a5f147e66537ca2",
+        "url": "https://github.com/etcd-io/raft/commit/8ecce32df47b4899596a19140a5f147e66537ca2"
+      },
+      "root_cause_group": "etcdraft-committed-entries-pagination-cursor",
+      "requirements": {
+        "controllable_inputs": ["committed-entry-pagination"],
+        "observable_events": ["committed-entry-page"],
+        "driver_capabilities": ["committed-entries-pagination"],
+        "trusted_monitors": ["committed-entry-continuity"],
+        "execution_outcomes": ["campaign-report-v2"],
+        "profile_bounds": ["committed-entry-page-boundary"]
+      }
+    },
+    {
+      "id": "etcdraft-0675f3d-ready-must-sync",
+      "protocol": "etcd-raft-v3.6",
+      "family": "raft",
+      "provenance": {
+        "kind": "official-historical-fix",
+        "repository": "https://github.com/etcd-io/raft"
+      },
+      "source_reference": {
+        "revision": "0675f3d543f39f74066530156f1e9bb17d2be787",
+        "url": "https://github.com/etcd-io/raft/commit/0675f3d543f39f74066530156f1e9bb17d2be787"
+      },
+      "root_cause_group": "etcdraft-ready-must-sync-empty-hard-state",
+      "requirements": {
+        "controllable_inputs": ["read-index"],
+        "observable_events": ["ready-must-sync"],
+        "driver_capabilities": ["conditional-ready-sync", "ready-must-sync-observation"],
+        "trusted_monitors": ["ready-must-sync"],
+        "execution_outcomes": ["campaign-report-v2"],
+        "profile_bounds": []
+      }
+    }
+  ]
+}

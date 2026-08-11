@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "id": "etcdraft-63903dd-fixed-control-v3",
+  "trial_id": "trial-fixed-63903dd-v3",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "sources": [
+    {
+      "relative_path": "raft.go",
+      "original_digest": "4283c10e12c6da14964c6d6784a69851af1312245aa83925ec0e9426a07ed7bb",
+      "transformed_digest": "be1e864df2d13bce326cb98132999f87ddae08d877a39ecd7d29fac7ba353185",
+      "replacements": [
+        {
+          "match": "func (r *raft) bcastHeartbeat() {\n\tlastCtx := r.readOnly.lastPendingRequestCtx()\n\tif len(lastCtx) == 0 {\n\t\tr.bcastHeartbeatWithCtx(nil)\n\t} else {\n\t\tr.bcastHeartbeatWithCtx([]byte(lastCtx))\n\t}\n}",
+          "replacement": "func (r *raft) bcastHeartbeat() {\n\tr.bcastHeartbeatWithCtx(r.readOnly.heartbeatCtx())\n}"
+        },
+        {
+          "match": "\t\tif r.trk.Voters.VoteResult(r.readOnly.recvAck(m.From, m.Context)) != quorum.VoteWon {\n\t\t\treturn nil\n\t\t}\n\n\t\trss := r.readOnly.advance(m)",
+          "replacement": "\t\tr.readOnly.recvAck(m.From, m.Context)\n\t\trss := r.readOnly.maybeAdvance(r.trk.Voters)"
+        },
+        {
+          "match": "\t\tr.readOnly.recvAck(r.id, m.Entries[0].Data)\n\t\tr.bcastHeartbeatWithCtx(m.Entries[0].Data)",
+          "replacement": "\t\tr.readOnly.recvAck(r.id, r.readOnly.heartbeatCtx())\n\t\tr.bcastHeartbeat()"
+        }
+      ]
+    },
+    {
+      "relative_path": "read_only.go",
+      "original_digest": "298b7d3edf32eecfc96172ced95506e9f3ac0964ec39068c32c572d95f782dc5",
+      "transformed_digest": "70531ba4967c397969a1a8189fc496cd7b2d9d8f6e4f45af6f3d4d6d9aa8fb42",
+      "replacements": [
+        {
+          "match": "import pb \"go.etcd.io/raft/v3/raftpb\"",
+          "replacement": "import (\n\t\"encoding/binary\"\n\n\t\"go.etcd.io/raft/v3/quorum\"\n\tpb \"go.etcd.io/raft/v3/raftpb\"\n)"
+        },
+        {
+          "match": "type readIndexStatus struct {\n\treq   pb.Message\n\tindex uint64\n\t// NB: this never records 'false', but it's more convenient to use this\n\t// instead of a map[uint64]struct{} due to the API of quorum.VoteResult. If\n\t// this becomes performance sensitive enough (doubtful), quorum.VoteResult\n\t// can change to an API that is closer to that of CommittedIndex.\n\tacks map[uint64]bool\n}\n\ntype readOnly struct {\n\toption           ReadOnlyOption\n\tpendingReadIndex map[string]*readIndexStatus\n\treadIndexQueue   []string\n}\n\nfunc newReadOnly(option ReadOnlyOption) *readOnly {\n\treturn &readOnly{\n\t\toption:           option,\n\t\tpendingReadIndex: make(map[string]*readIndexStatus),\n\t}\n}\n\n// addRequest adds a read only request into readonly struct.\n// `index` is the commit index of the raft state machine when it received\n// the read only request.\n// `m` is the original read only request message from the local or remote node.\nfunc (ro *readOnly) addRequest(index uint64, m pb.Message) {\n\ts := string(m.Entries[0].Data)\n\tif _, ok := ro.pendingReadIndex[s]; ok {\n\t\treturn\n\t}\n\tro.pendingReadIndex[s] = &readIndexStatus{index: index, req: m, acks: make(map[uint64]bool)}\n\tro.readIndexQueue = append(ro.readIndexQueue, s)\n}\n\n// recvAck notifies the readonly struct that the raft state machine received\n// an acknowledgment of the heartbeat that attached with the read only request\n// context.\nfunc (ro *readOnly) recvAck(id uint64, context []byte) map[uint64]bool {\n\trs, ok := ro.pendingReadIndex[string(context)]\n\tif !ok {\n\t\treturn nil\n\t}\n\n\trs.acks[id] = true\n\treturn rs.acks\n}\n\n// advance advances the read only request queue kept by the readonly struct.\n// It dequeues the requests until it finds the read only request that has\n// the same context as the given `m`.\nfunc (ro *readOnly) advance(m pb.Message) []*readIndexStatus {\n\tvar (\n\t\ti     int\n\t\tfound bool\n\t)\n\n\tctx := string(m.Context)\n\tvar rss []*readIndexStatus\n\n\tfor _, okctx := range ro.readIndexQueue {\n\t\ti++\n\t\trs, ok := ro.pendingReadIndex[okctx]\n\t\tif !ok {\n\t\t\tpanic(\"cannot find corresponding read state from pending map\")\n\t\t}\n\t\trss = append(rss, rs)\n\t\tif okctx == ctx {\n\t\t\tfound = true\n\t\t\tbreak\n\t\t}\n\t}\n\n\tif found {\n\t\tro.readIndexQueue = ro.readIndexQueue[i:]\n\t\tfor _, rs := range rss {\n\t\t\tdelete(ro.pendingReadIndex, string(rs.req.Entries[0].Data))\n\t\t}\n\t\treturn rss\n\t}\n\n\treturn nil\n}\n\n// lastPendingRequestCtx returns the context of the last pending read only\n// request in readonly struct.\nfunc (ro *readOnly) lastPendingRequestCtx() string {\n\tif len(ro.readIndexQueue) == 0 {\n\t\treturn \"\"\n\t}\n\treturn ro.readIndexQueue[len(ro.readIndexQueue)-1]\n}",
+          "replacement": "type readIndexRequest struct {\n\treq   pb.Message\n\tindex uint64\n}\n\ntype readOnly struct {\n\toption ReadOnlyOption\n\tacks   map[uint64]uint64\n\n\tunconfirmedReads []*readIndexRequest\n\t// Number of readIndexRequests that were confirmed in the past by this\n\t// readOnly, which were removed from the beginning of `unconfirmedReads`.\n\tconfirmedReads uint64\n}\n\nfunc newReadOnly(option ReadOnlyOption) *readOnly {\n\treturn &readOnly{\n\t\toption: option,\n\t\tacks:   make(map[uint64]uint64),\n\t}\n}\n\n// addRequest adds a read only request into the `readOnly`.\n// `commitIndex` is the commit index of the raft state machine when it received\n// the read only request.\n// `req` is the original read only request message from the local or remote node.\nfunc (ro *readOnly) addRequest(commitIndex uint64, req pb.Message) {\n\tro.unconfirmedReads = append(ro.unconfirmedReads, &readIndexRequest{req: req, index: commitIndex})\n}\n\n// recvAck notifies the `readOnly` of an acknowledgment of a heartbeat response.\nfunc (ro *readOnly) recvAck(from uint64, ctx []byte) {\n\tif len(ctx) != 0 {\n\t\tro.acks[from] = max(ro.acks[from], binary.LittleEndian.Uint64(ctx))\n\t}\n}\n\n// AckedIndex allows for using `CommittedIndex` in `maybeAdvance`.\nfunc (ro *readOnly) AckedIndex(voterID uint64) (quorum.Index, bool) {\n\tidx, found := ro.acks[voterID]\n\treturn quorum.Index(idx), found\n}\n\n// maybeAdvance uses the existing acknowledgements and current raft\n// configuration to confirm and return as many unconfirmed reads as possible.\nfunc (ro *readOnly) maybeAdvance(c quorum.JointConfig) []*readIndexRequest {\n\t// Use `CommittedIndex` to figure out how many reads are now confirmed.\n\tnewConfirmedReads := uint64(c.CommittedIndex(ro))\n\tif newConfirmedReads <= ro.confirmedReads {\n\t\treturn nil\n\t}\n\treadStates := ro.unconfirmedReads[:newConfirmedReads-ro.confirmedReads]\n\tro.unconfirmedReads = ro.unconfirmedReads[newConfirmedReads-ro.confirmedReads:]\n\tro.confirmedReads = newConfirmedReads\n\treturn readStates\n}\n\n// heartbeatCtx returns the `Context` that should be sent in order to confirm\n// all currently unconfirmed reads.\nfunc (ro *readOnly) heartbeatCtx() []byte {\n\tif len(ro.unconfirmedReads) == 0 {\n\t\treturn nil\n\t}\n\tunconfirmedReadPosition := ro.confirmedReads + uint64(len(ro.unconfirmedReads))\n\tencLastIndex := make([]byte, 8)\n\tbinary.LittleEndian.PutUint64(encLastIndex, unconfirmedReadPosition)\n\treturn encLastIndex\n}"
+        }
+      ]
+    }
+  ],
+  "package": "./cmd/campaign",
+  "sut_build_identity": "sut-f2bfe81563cb2739",
+  "command_allowlist": ["go-build", "go-list-module"],
+  "output_path": "artifacts/pilots/etcdraft-readindex-v1/bin/sut-f2bfe81563cb2739-v3"
+}

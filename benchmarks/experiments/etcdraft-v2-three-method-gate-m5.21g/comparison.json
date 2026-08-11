@@ -1,0 +1,44 @@
+{
+  "schema_version": "consensus-atlas/planner-usefulness-gate/v1",
+  "source_campaign_archive_sha256": "a0ccca92d064f78cc07f3d0a3edb63d77a9ef1b866b9283ee5cdead965534afd",
+  "source_model_calls": 2,
+  "source_model_tokens": 6027,
+  "new_model_calls": 0,
+  "new_sut_executions": 0,
+  "attempts": [
+    {
+      "ordinal": 1,
+      "planner_view_digest": "ac6cbe68ffd35e8d93b85d7a78626d1e9278a600c90e2290bbef82ad3203e960",
+      "agent": {
+        "backend_id": "action-class-random",
+        "effective_execution_digest": "33b44d586744ee97f20e3517c6a8177a7c842942fb1cab00000b9c1dc7913bc8"
+      },
+      "zero_model": {
+        "backend_id": "action-class-random",
+        "effective_execution_digest": "33b44d586744ee97f20e3517c6a8177a7c842942fb1cab00000b9c1dc7913bc8"
+      },
+      "adaptive": {
+        "backend_id": "action-class-random",
+        "effective_execution_digest": "33b44d586744ee97f20e3517c6a8177a7c842942fb1cab00000b9c1dc7913bc8"
+      },
+      "unique_effective_executions": 1
+    },
+    {
+      "ordinal": 2,
+      "planner_view_digest": "7a130d516a8f2d15e7742aeedb0dbb17bf9bf61efa5e6f343b3ade3d97276a5f",
+      "agent": {
+        "backend_id": "action-class-random",
+        "effective_execution_digest": "e240b2cdaec26372435015adb42aa5b3001bc917d04b270a6603cf72e6e1c52b"
+      },
+      "zero_model": {
+        "backend_id": "action-class-random",
+        "effective_execution_digest": "e240b2cdaec26372435015adb42aa5b3001bc917d04b270a6603cf72e6e1c52b"
+      },
+      "adaptive": {
+        "backend_id": "admissible-uniform",
+        "effective_execution_digest": "089d9fbbfc7d8cbecee15d9b66b6a706378ccc6730f9130a8774ca6357f1b3d9"
+      },
+      "unique_effective_executions": 2
+    }
+  ]
+}

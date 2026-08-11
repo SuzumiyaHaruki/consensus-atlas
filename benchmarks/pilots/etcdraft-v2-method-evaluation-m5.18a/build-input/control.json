@@ -1,0 +1,18 @@
+{
+  "version": 4,
+  "id": "etcdraft-v2-unmodified-control-m5.18a",
+  "trial_id": "trial-control",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "package": "./cmd/control-experiment",
+  "identity_variable": "github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2.SUTBuildIdentity",
+  "sut_build_identity": "sut-5826353327bce116",
+  "command_allowlist": [
+    "go-build",
+    "go-list-module"
+  ],
+  "output_path": "artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-5826353327bce116-control-v2"
+}

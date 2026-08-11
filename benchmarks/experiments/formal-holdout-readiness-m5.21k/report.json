@@ -1,0 +1,122 @@
+{
+  "schema_version": "consensus-atlas/holdout-readiness-gap/v1",
+  "id": "formal-holdout-readiness-m5-21k",
+  "policy": {
+    "min_distinct_root_causes": 3,
+    "min_matching_controls": 3,
+    "require_private_dataset": true,
+    "require_blind_surface": true,
+    "require_second_strict_cft": true
+  },
+  "sources": [
+    {
+      "path": "benchmarks/pilots/etcdraft-calibration-v1/evaluator/manifest.json",
+      "status": "archived-public-sample",
+      "file_sha256": "2e65abc00d393253f3a545f012229a54793d725eb41c1b048ff8eeb3f0575bc7",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    },
+    {
+      "path": "benchmarks/pilots/etcdraft-calibration-v2/evaluator/manifest.json",
+      "status": "archived-public-sample",
+      "file_sha256": "079aa7209c7dfb8309980ec045e6cd1e248387f5872fd03c60f9e6dd6a3ab9c7",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    },
+    {
+      "path": "benchmarks/pilots/etcdraft-readindex-v1/evaluator/manifest.json",
+      "status": "archived-public-sample",
+      "file_sha256": "4b15c832fa8d82a3dcf255c27a5f7116d756319115ce509dea4a29538cb05ae1",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    },
+    {
+      "path": "benchmarks/pilots/etcdraft-ready-must-sync-v1/evaluator/manifest.json",
+      "status": "archived-public-sample",
+      "file_sha256": "222838f23e0731eed2347e298b88a7403b9e112fe98240e340b1be9047093af9",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    },
+    {
+      "path": "benchmarks/pilots/etcdraft-v2-action-class-random-m5.17a/evaluator/manifest.json",
+      "status": "live-public-calibration",
+      "file_sha256": "41726272aedf829b9381f55204e590ac168f2d702c13d00b326c6172c1677d4a",
+      "manifest_digest": "b132e29774536abc9e449c3e0a0ee64b074cd23beb580a51248fdecb432ff838",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    },
+    {
+      "path": "benchmarks/pilots/etcdraft-v2-calibration-m5.16/evaluator/manifest.json",
+      "status": "live-public-calibration",
+      "file_sha256": "83d4f98fc5b1212b8c515fb6937daa9c63d29efad67b7c4092e0dcbf12b5eada",
+      "manifest_digest": "0ca75d758a50f83d2d735787d863c1cb3eeeb6ddd5cd471ba5e89c0e10dc17ad",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    },
+    {
+      "path": "benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/evaluator/manifest.json",
+      "status": "live-public-calibration",
+      "file_sha256": "5f79249d9221502ef7b58d732731fffe1db4abeb90b7e96407a16128fbc4d17a",
+      "manifest_digest": "0bf5a38fcf1e61d108860910aaa0a10f10c08503f0ed4f88280bfe04446bbce9",
+      "pairs": 1,
+      "controls": 1,
+      "distinct_root_causes": 1
+    }
+  ],
+  "current_surface": {
+    "scope": "current-repository",
+    "supported_benchmark_classifications": [
+      "public-calibration-only"
+    ],
+    "live_manifest_count": 3,
+    "archived_manifest_count": 4,
+    "fresh_evaluator_pair_limit": 1,
+    "private_blind_surface": false
+  },
+  "second_strict_cft": {
+    "target": "hashicorp-raft-v2",
+    "qualification_bundle_digest": "cdcad3a20179b1ea8e6deaea3b9875626fe50de2d2d42557fea807bdde873555",
+    "qualification_report_digest": "a64f578c486d78dbe4202a8374f6a8afb58b4e8b6e17899afdcb8dd6ecde4e9a",
+    "qualified": false,
+    "required_capabilities": 8,
+    "validated_required_capabilities": 3,
+    "missing_required_capabilities": [
+      "audited-entropy-replay",
+      "natural-temporal-progress",
+      "pure-enabled-check",
+      "strict-decision-replay",
+      "strict-yield-evidence"
+    ]
+  },
+  "summary": {
+    "repository_public_pairs": 7,
+    "repository_public_distinct_root_causes": 3,
+    "live_public_pairs": 3,
+    "live_public_distinct_root_causes": 1,
+    "archived_public_pairs": 4,
+    "archived_public_distinct_root_causes": 3,
+    "formal_private_pairs": 0,
+    "formal_eligible_root_causes": 0,
+    "formal_eligible_controls": 0,
+    "ready": false
+  },
+  "findings": [
+    "archived-public-samples-not-formal-holdout",
+    "formal-classification-unsupported",
+    "formal-private-dataset-absent",
+    "fresh-evaluator-single-pair-only",
+    "insufficient-formal-controls",
+    "insufficient-formal-root-causes",
+    "private-blind-surface-retired",
+    "second-strict-cft-target-unqualified"
+  ],
+  "new_model_calls": 0,
+  "new_sut_executions": 0,
+  "digest": "e3e0b4197c2e17eab9d5f4dbbc88edfd813595d8f412f8f0f485fb2b2e504550"
+}

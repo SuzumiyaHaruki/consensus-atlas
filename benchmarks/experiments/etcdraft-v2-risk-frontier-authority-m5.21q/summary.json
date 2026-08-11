@@ -1,0 +1,126 @@
+{
+  "schema_version": "consensus-atlas/risk-frontier-authority-gate/v1",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "views": [
+    {
+      "id": "after-invoke",
+      "digest": "1e40caf7a58bd042d272586eccdf833065bb88ca5b578f5616a1586f4e3f38e6",
+      "prefix_decisions": 28,
+      "next_decision": 29,
+      "progress": {
+        "schema_version": "consensus-atlas/risk-witness-progress/v1",
+        "spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+        "risk_id": "leader-change-with-inflight-proposal",
+        "evidence_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+        "satisfied_milestones": ["workload-invoked-at-coordinator"],
+        "first_missing_milestone": "coordinator-changed-while-inflight",
+        "status": "not-reached",
+        "source_result_digest": "f499fa93c21abe67a03f1b9dfe15e6751e49b8c30796554eaeaf342795bb2b0d",
+        "digest": "640aa9165384b8670d23c0e81e7f3ffbda2a4e69aeb9a31570b3f7ce62312a6f"
+      },
+      "runtime_action_count": 15,
+      "admissible_action_count": 15,
+      "reconstruction_work": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 28, "work_units": 30}
+    },
+    {
+      "id": "after-coordinator-change",
+      "digest": "5278df43616e7e474da13ace2fcb336dc5ccb3554db6e96d0803797020ccd8a2",
+      "prefix_decisions": 53,
+      "next_decision": 54,
+      "progress": {
+        "schema_version": "consensus-atlas/risk-witness-progress/v1",
+        "spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+        "risk_id": "leader-change-with-inflight-proposal",
+        "evidence_prefix_digest": "ae1876e6ba655bc1e5b482b1d53e3397f3a765a61a2299e7564e88772afc94dd",
+        "satisfied_milestones": ["workload-invoked-at-coordinator", "coordinator-changed-while-inflight"],
+        "first_missing_milestone": "old-coordinator-restarted-after-change",
+        "status": "not-reached",
+        "source_result_digest": "85bf3ccd9c79b79d215a3e0973fe2963031d1c80a68b55e908df71403fe9aca3",
+        "digest": "03e120ae80e4d10e616c2f50e25c220b112f3488e280a06275530e64826654a9"
+      },
+      "runtime_action_count": 13,
+      "admissible_action_count": 11,
+      "reconstruction_work": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 53, "work_units": 55}
+    }
+  ],
+  "choices": [
+    {
+      "id": "choose-crash-old-coordinator",
+      "view_digest": "1e40caf7a58bd042d272586eccdf833065bb88ca5b578f5616a1586f4e3f38e6",
+      "decision": 29,
+      "action_id": "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+      "action_digest": "6ad0ef7bd27d64abf1ce14141f0a8909c8ed2eb02238a585a94a3b5ae428a259",
+      "kind": "crash",
+      "node_ref": {"node": "n1", "incarnation": 1},
+      "choice_digest": "a3e2578d20e9abf37300f5d38e7b4d5e9352cf3f1809c70abe9363bda724e402"
+    },
+    {
+      "id": "choose-progress-without-fault",
+      "view_digest": "1e40caf7a58bd042d272586eccdf833065bb88ca5b578f5616a1586f4e3f38e6",
+      "decision": 29,
+      "action_id": "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+      "action_digest": "7ed50d9c5729951e0543ed85dfb4015096eca8441fd145942f5b2d2de9ede5db",
+      "kind": "complete-effect",
+      "node_ref": {"node": "n1", "incarnation": 1},
+      "choice_digest": "f239c57483ba84e6964616189a3d2036687e82ab3efb4ad6ecc064b5779f422d"
+    },
+    {
+      "id": "choose-restart-old-coordinator",
+      "view_digest": "5278df43616e7e474da13ace2fcb336dc5ccb3554db6e96d0803797020ccd8a2",
+      "decision": 54,
+      "action_id": "action-551500f7e26cbeda1b7159692b42de074acfa75e3e25b05e24c1f014f21bba6f",
+      "action_digest": "4c54037456617a364422f712ebc613323975290aa20086401254b28b51229ae4",
+      "kind": "restart",
+      "node_ref": {"node": "n1", "incarnation": 2},
+      "choice_digest": "04abd0a929ff2ab2b38766cbe1495c88c0a8023bd8f588a9388189d15312de40"
+    }
+  ],
+  "executions": [
+    {
+      "id": "risk-directed",
+      "policy_digest": "62895e3940363ea1a21466dccfc9b97d53de20c3a2e4413aa619b926320ef20f",
+      "config_digest": "26a955b3ea8a0c0e1d0ab1b6e72f990fb9b5910d9e4ed6d8048615b53d819fed",
+      "report_digest": "3c572ec3db45bc70d5bcd3d8e2ff6453f8b033a07119278642122cdc3f1ee6d3",
+      "bundle_digest": "acd932af2a209836566f8fc5cdd0c89123a8b606de106f78b6fa5f8dd0bdd292",
+      "trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+      "work": {
+        "primary": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 64, "work_units": 66},
+        "replay": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 64, "work_units": 66},
+        "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+      },
+      "workload": {"plan_id": "single-write-v1", "plan_digest": "1cbab34bdff921f0b9d16b955d6365d1d9db319e717514df4f4510d0ba28b13c", "planned": 1, "offered": 1, "completed": 0, "pending": 1, "results": [], "results_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},
+      "unique_pss_states": 48,
+      "risk": {"status": "reached", "satisfied_milestones": ["workload-invoked-at-coordinator", "coordinator-changed-while-inflight", "old-coordinator-restarted-after-change"], "digest": "91bc5653c6a090d6ae4f0cf952fd72aa6cb057c12b856057df3f27ffc5450dd4"}
+    },
+    {
+      "id": "progress-control",
+      "policy_digest": "3261ef20c2f97578dfa34c3af2d1da114d875e2f9e0c3e754cb1b07210402791",
+      "config_digest": "c2df1d5a941257b65e45092a696cfe1c5bb7fa04cc800afc50fddbdaee8163d2",
+      "report_digest": "cc471a5790401671b04874566bc6ee63b9ce44f7a69305bf7779e5df479feae8",
+      "bundle_digest": "d5d5dda62b8c82f4048070a2d456b286eb7a5629c1f45f912d9bc5bddbb0da76",
+      "trace_digest": "aac9faf0c7a63359899b2729a8daf363b6113c829d8649621de4e961572c9abf",
+      "work": {
+        "primary": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 64, "work_units": 66},
+        "replay": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 64, "work_units": 66},
+        "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+      },
+      "workload": {
+        "plan_id": "single-write-v1", "plan_digest": "1cbab34bdff921f0b9d16b955d6365d1d9db319e717514df4f4510d0ba28b13c",
+        "planned": 1, "offered": 1, "completed": 1, "pending": 0,
+        "results": [{"invocation_id": "m5.15-write-1", "owner": "n1", "status": "committed", "payload_digest": "641bae9b39c837677ac1003c8b15f98ddb3e4286f7d624040deb7af5e026d67b"}],
+        "results_digest": "ac9d716ccf9befc750e34b2da67647a1ddd1eded1aefedbeb004804d0312c1e4"
+      },
+      "unique_pss_states": 52,
+      "risk": {"status": "not-reached", "satisfied_milestones": ["workload-invoked-at-coordinator"], "first_missing": "coordinator-changed-while-inflight", "digest": "72a270fafbf4997686d3434d00003eb9c3d8f7ff7751212617ca512b518c4242"}
+    }
+  ],
+  "policy_identity_different": true,
+  "trace_behavior_different": true,
+  "risk_outcome_different": true,
+  "new_model_calls": 0,
+  "new_sut_executions": 2,
+  "classification": "no-model-exact-frontier-authority-changes-real-execution-not-agent-effect-or-method-ranking"
+}

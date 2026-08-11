@@ -1,0 +1,174 @@
+{
+  "version": 2,
+  "id": "etcdraft-v3.6-public-candidates-v1-qualification",
+  "candidate_catalog_digest": "74e3271412979747511f58b75e90f4698c14da71df15065080b5fc7ffd9efeff",
+  "capability_snapshot_digest": "11f0072245ebc4a56152f723e7d5cc2d7d30c25bade16ce4183e37767562cbf2",
+  "capability_snapshot": {
+    "version": 2,
+    "id": "etcdraft-v3.6-capability-snapshot-v2",
+    "protocol": "etcd-raft-v3.6",
+    "family": "raft",
+    "profile_id": "raft-campaign/etcdraft-ready-must-sync-v1",
+    "profile_digest": "b9881db6422d734eaeaad64beddc5b03d2280c98f7bc76459a1abeaf88d93de0",
+    "driver_manifest_digest": "36504a81f2258f08e0ded52801c854e74f353a2e51ef30ce388f8a45260051ee",
+    "controllable_inputs": [
+      "campaign",
+      "crash",
+      "duplicate",
+      "heal",
+      "message",
+      "partition",
+      "propose",
+      "query",
+      "read-index",
+      "restart",
+      "start"
+    ],
+    "observable_events": [
+      "event:acknowledge",
+      "event:campaign",
+      "event:propose",
+      "event:query",
+      "observation-kind:commit",
+      "observation-kind:ready",
+      "observation-label:ready:must-sync",
+      "observation-label:transition:follower-\u003ecandidate",
+      "read-state",
+      "ready-must-sync"
+    ],
+    "driver_capabilities": [
+      "application-apply",
+      "conditional-ready-sync",
+      "explicit-campaign",
+      "message-drop-duplicate-partition",
+      "message-release-control",
+      "power-loss-restart",
+      "read-index-input",
+      "read-state-observation",
+      "ready-crash-cutpoints",
+      "ready-must-sync-observation",
+      "visible-write-durable-sync"
+    ],
+    "trusted_monitors": [
+      "agreement",
+      "linearizable-read",
+      "ready-must-sync"
+    ],
+    "execution_outcomes": [
+      "campaign-report-v2",
+      "deterministic-trace-replay",
+      "in-process-error-classified",
+      "oracle-from-saved-trace"
+    ],
+    "profile_bounds": [
+      "election-rounds\u003e=1",
+      "fault-model=cft",
+      "nodes=3",
+      "proposals\u003e=1"
+    ]
+  },
+  "results": [
+    {
+      "candidate_id": "etcdraft-0675f3d-ready-must-sync",
+      "status": "qualified",
+      "missing_requirements": [],
+      "reason_codes": []
+    },
+    {
+      "candidate_id": "etcdraft-63903dd-duplicate-read-index",
+      "status": "deferred",
+      "missing_requirements": [
+        {
+          "type": "observable-event",
+          "id": "event:message",
+          "reason_code": "missing.observable-event.event:message"
+        },
+        {
+          "type": "profile-bound",
+          "id": "election-rounds\u003e=2",
+          "reason_code": "missing.profile-bound.election-rounds\u003e=2"
+        },
+        {
+          "type": "profile-bound",
+          "id": "partitions\u003e=1",
+          "reason_code": "missing.profile-bound.partitions\u003e=1"
+        }
+      ],
+      "reason_codes": [
+        "missing.observable-event.event:message",
+        "missing.profile-bound.election-rounds\u003e=2",
+        "missing.profile-bound.partitions\u003e=1"
+      ]
+    },
+    {
+      "candidate_id": "etcdraft-76f1249-log-truncation-panic",
+      "status": "deferred",
+      "missing_requirements": [
+        {
+          "type": "controllable-input",
+          "id": "log-compaction",
+          "reason_code": "missing.controllable-input.log-compaction"
+        },
+        {
+          "type": "driver-capability",
+          "id": "log-compaction-control",
+          "reason_code": "missing.driver-capability.log-compaction-control"
+        },
+        {
+          "type": "execution-outcome",
+          "id": "process-exit-classified",
+          "reason_code": "missing.execution-outcome.process-exit-classified"
+        },
+        {
+          "type": "profile-bound",
+          "id": "slow-follower-inflight-saturation",
+          "reason_code": "missing.profile-bound.slow-follower-inflight-saturation"
+        }
+      ],
+      "reason_codes": [
+        "missing.controllable-input.log-compaction",
+        "missing.driver-capability.log-compaction-control",
+        "missing.execution-outcome.process-exit-classified",
+        "missing.profile-bound.slow-follower-inflight-saturation"
+      ]
+    },
+    {
+      "candidate_id": "etcdraft-8ecce32-committed-pagination",
+      "status": "deferred",
+      "missing_requirements": [
+        {
+          "type": "controllable-input",
+          "id": "committed-entry-pagination",
+          "reason_code": "missing.controllable-input.committed-entry-pagination"
+        },
+        {
+          "type": "observable-event",
+          "id": "committed-entry-page",
+          "reason_code": "missing.observable-event.committed-entry-page"
+        },
+        {
+          "type": "driver-capability",
+          "id": "committed-entries-pagination",
+          "reason_code": "missing.driver-capability.committed-entries-pagination"
+        },
+        {
+          "type": "trusted-monitor",
+          "id": "committed-entry-continuity",
+          "reason_code": "missing.trusted-monitor.committed-entry-continuity"
+        },
+        {
+          "type": "profile-bound",
+          "id": "committed-entry-page-boundary",
+          "reason_code": "missing.profile-bound.committed-entry-page-boundary"
+        }
+      ],
+      "reason_codes": [
+        "missing.controllable-input.committed-entry-pagination",
+        "missing.observable-event.committed-entry-page",
+        "missing.driver-capability.committed-entries-pagination",
+        "missing.trusted-monitor.committed-entry-continuity",
+        "missing.profile-bound.committed-entry-page-boundary"
+      ]
+    }
+  ]
+}

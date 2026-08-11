@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/raft-campaign-v1.json",
+  "title": "ConsensusAtlas bounded Raft campaign spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "id", "family", "pss_id", "fault_model", "bounds", "transitions",
+    "message_types", "fault_message_types", "crash_roles", "storage_cutpoints",
+    "log_relations", "partition_shapes", "evaluation"
+  ],
+  "properties": {
+    "$schema": {"const": "./campaign-schema-v1.json"},
+    "version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "family": {"const": "raft"},
+    "pss_id": {"const": "raft-family-pss-v1"},
+    "fault_model": {"const": "cft"},
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "election_rounds", "proposals", "crashes", "restarts", "partitions"],
+      "properties": {
+        "nodes": {"type": "integer", "minimum": 3, "maximum": 8},
+        "election_rounds": {"type": "integer", "minimum": 1, "maximum": 16},
+        "proposals": {"type": "integer", "minimum": 1, "maximum": 16},
+        "crashes": {"type": "integer", "minimum": 1, "maximum": 8},
+        "restarts": {"type": "integer", "minimum": 1, "maximum": 8},
+        "partitions": {"type": "integer", "minimum": 1, "maximum": 8}
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "from", "to", "trigger", "requires"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "from": {"type": "string", "minLength": 1},
+          "to": {"type": "string", "minLength": 1},
+          "trigger": {"enum": ["campaign", "message", "timeout"]},
+          "message_type": {"type": "string", "minLength": 1},
+          "requires": {"$ref": "#/$defs/nonEmptyUniqueStrings"}
+        }
+      }
+    },
+    "message_types": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "fault_message_types": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "crash_roles": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "storage_cutpoints": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "log_relations": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "partition_shapes": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weights", "threshold"],
+      "properties": {
+        "weights": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transition", "ordering", "fault", "boundary", "property"],
+          "properties": {
+            "transition": {"type": "number", "exclusiveMinimum": 0},
+            "ordering": {"type": "number", "exclusiveMinimum": 0},
+            "fault": {"type": "number", "exclusiveMinimum": 0},
+            "boundary": {"type": "number", "exclusiveMinimum": 0},
+            "property": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "threshold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "min_category"],
+          "properties": {
+            "score": {"type": "number", "minimum": 0, "maximum": 100},
+            "min_category": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyUniqueStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

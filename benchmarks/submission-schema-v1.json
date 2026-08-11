@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/defect-benchmark-submission-v1.json",
+  "title": "ConsensusAtlas blind defect benchmark submission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "benchmark_id", "benchmark_digest", "trials"],
+  "properties": {
+    "version": {"const": 1},
+    "benchmark_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "benchmark_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "trials": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trial_id", "campaign_report"],
+        "properties": {
+          "trial_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+          "campaign_report": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

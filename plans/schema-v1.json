@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/test-plan-suite-v1.json",
+  "title": "ConsensusAtlas bounded Test Plan Suite v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "id", "profile_id", "profile_digest", "max_total_runs",
+    "max_total_decisions", "plans"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "profile_id": {"type": "string", "minLength": 1},
+    "profile_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "max_total_runs": {"type": "integer", "minimum": 1, "maximum": 512},
+    "max_total_decisions": {"type": "integer", "minimum": 1, "maximum": 65536},
+    "plans": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/plan"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "targets", "stimuli", "search"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "targets": {
+          "type": "array", "minItems": 1, "maxItems": 24, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "prepare": {
+          "type": "array", "maxItems": 96,
+          "items": {"$ref": "#/$defs/action"}
+        },
+        "stimuli": {
+          "type": "array", "minItems": 1, "maxItems": 24,
+          "items": {"$ref": "#/$defs/input"}
+        },
+        "search": {"$ref": "#/$defs/search"}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": {"enum": ["protocol-input", "campaign", "propose", "query", "timeout", "crash", "restart"]},
+        "operation": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "payload": {}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op"],
+      "properties": {
+        "op": {"enum": ["inject", "execute", "execute_optional", "drop", "duplicate", "partition", "heal", "drain", "advance", "capture_message", "execute_ref"]},
+        "kind": {"type": "string", "minLength": 1},
+        "operation": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "payload": {},
+        "match": {"$ref": "#/$defs/selector"},
+        "groups": {
+          "type": "array", "minItems": 2,
+          "items": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          }
+        },
+        "count": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "ticks": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "ref": {"$ref": "#/$defs/id"}
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "start", "protocol-input", "campaign", "propose", "query", "message", "timeout", "persist", "sync",
+            "emit", "apply", "acknowledge", "crash", "restart", "duplicate", "partition", "heal", "clock-advance"
+          ]
+        },
+        "operation": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "type_hint": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "config"],
+      "properties": {
+        "strategy": {"enum": ["random", "dfs"]},
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_runs", "budget_per_run", "decision_budget", "seed", "actions"],
+          "properties": {
+            "max_runs": {"type": "integer", "minimum": 1, "maximum": 64},
+            "budget_per_run": {"type": "integer", "minimum": 1, "maximum": 512},
+            "decision_budget": {"type": "integer", "minimum": 1},
+            "seed": {"type": "integer"},
+            "actions": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["drop_messages", "duplicate_messages", "max_duplicates_per_run"],
+              "properties": {
+                "drop_messages": {"type": "boolean"},
+                "duplicate_messages": {"type": "boolean"},
+                "max_duplicates_per_run": {"type": "integer", "minimum": 0, "maximum": 4}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

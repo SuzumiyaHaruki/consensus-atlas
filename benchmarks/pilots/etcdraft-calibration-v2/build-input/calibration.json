@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "etcdraft-public-command-divergence-calibration-v2",
+  "trial_id": "trial-a93d5e",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source": {
+    "relative_path": "raft.go",
+    "original_digest": "4283c10e12c6da14964c6d6784a69851af1312245aa83925ec0e9426a07ed7bb",
+    "match": "func (r *raft) handleAppendEntries(m pb.Message) {\n\t// TODO(pav-kv): construct logSlice up the stack next to receiving the\n",
+    "replacement": "func (r *raft) handleAppendEntries(m pb.Message) {\n\t// ConsensusAtlas public calibration only: node 3 forms divergent command bytes.\n\tif r.id == 3 {\n\t\tfor i := range m.Entries {\n\t\t\tif m.Entries[i].Type == pb.EntryNormal && len(m.Entries[i].Data) != 0 {\n\t\t\t\tm.Entries[i].Data = append([]byte(\"calibration-divergence:\"), m.Entries[i].Data...)\n\t\t\t}\n\t\t}\n\t}\n\t// TODO(pav-kv): construct logSlice up the stack next to receiving the\n",
+    "transformed_digest": "0fa106fa2a574c1bf56c427d9f3c8cb1fbae48f77d8ed26be06032b5eecb382c"
+  },
+  "package": "./cmd/campaign",
+  "sut_build_identity": "sut-0cb5c0409ddd0bff",
+  "command_allowlist": ["go-build", "go-list-module"],
+  "output_path": "artifacts/pilots/etcdraft-calibration-v2/bin/sut-0cb5c0409ddd0bff"
+}

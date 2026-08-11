@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/qualification-report-v2.json",
+  "title": "ConsensusAtlas scoped mechanical QualificationReport v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "id", "candidate_catalog_digest", "capability_snapshot_digest",
+    "capability_snapshot", "results"
+  ],
+  "properties": {
+    "version": {"const": 2},
+    "id": {"type": "string", "minLength": 1},
+    "candidate_catalog_digest": {"$ref": "#/$defs/digest"},
+    "capability_snapshot_digest": {"$ref": "#/$defs/digest"},
+    "capability_snapshot": {"$ref": "#/$defs/snapshot"},
+    "results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/result"}}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "strings": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version", "id", "protocol", "family", "profile_id", "profile_digest", "driver_manifest_digest",
+        "controllable_inputs", "observable_events", "driver_capabilities", "trusted_monitors",
+        "execution_outcomes", "profile_bounds"
+      ],
+      "properties": {
+        "version": {"const": 2},
+        "id": {"type": "string", "minLength": 1},
+        "protocol": {"type": "string", "minLength": 1},
+        "family": {"type": "string", "minLength": 1},
+        "profile_id": {"type": "string", "minLength": 1},
+        "profile_digest": {"$ref": "#/$defs/digest"},
+        "driver_manifest_digest": {"$ref": "#/$defs/digest"},
+        "controllable_inputs": {"$ref": "#/$defs/strings"},
+        "observable_events": {"$ref": "#/$defs/strings"},
+        "driver_capabilities": {"$ref": "#/$defs/strings"},
+        "trusted_monitors": {"$ref": "#/$defs/strings"},
+        "execution_outcomes": {"$ref": "#/$defs/strings"},
+        "profile_bounds": {"$ref": "#/$defs/strings"}
+      }
+    },
+    "missing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "reason_code"],
+      "properties": {
+        "type": {"enum": [
+          "controllable-input", "observable-event", "driver-capability",
+          "trusted-monitor", "execution-outcome", "profile-bound"
+        ]},
+        "id": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "status", "missing_requirements", "reason_codes"],
+      "properties": {
+        "candidate_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["qualified", "deferred"]},
+        "missing_requirements": {"type": "array", "items": {"$ref": "#/$defs/missing"}},
+        "reason_codes": {"$ref": "#/$defs/strings"}
+      }
+    }
+  }
+}

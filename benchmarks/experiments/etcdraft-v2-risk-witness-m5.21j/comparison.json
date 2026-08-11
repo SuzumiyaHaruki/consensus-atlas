@@ -1,0 +1,117 @@
+{
+  "schema_version": "consensus-atlas/risk-witness-corpus/v1",
+  "source_campaign_archive_sha256": "a0ccca92d064f78cc07f3d0a3edb63d77a9ef1b866b9283ee5cdead965534afd",
+  "spec": {
+    "schema_version": "consensus-atlas/risk-witness-spec/v1",
+    "id": "raft-leader-change-with-inflight-proposal-v1",
+    "family_id": "raft",
+    "risk_id": "leader-change-with-inflight-proposal",
+    "milestones": [
+      {
+        "id": "workload-invoked-at-coordinator"
+      },
+      {
+        "id": "coordinator-changed-while-inflight"
+      },
+      {
+        "id": "old-coordinator-restarted-after-change"
+      }
+    ],
+    "required_order": [
+      {
+        "before": "coordinator-changed-while-inflight",
+        "after": "old-coordinator-restarted-after-change"
+      },
+      {
+        "before": "workload-invoked-at-coordinator",
+        "after": "coordinator-changed-while-inflight"
+      }
+    ],
+    "digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3"
+  },
+  "projector_id": "official-etcdraft-v2/leader-change-with-inflight-proposal-v1",
+  "new_model_calls": 0,
+  "new_sut_executions": 0,
+  "results": [
+    {
+      "schema_version": "consensus-atlas/risk-witness-result/v1",
+      "id": "action-class-attempt-1",
+      "spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+      "risk_id": "leader-change-with-inflight-proposal",
+      "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "execution_digest": "e3472f65116ed0df0dca95f8631e48d0df8673e98a43711a87f59b79e4d5f102",
+      "projector_id": "official-etcdraft-v2/leader-change-with-inflight-proposal-v1",
+      "milestones": [],
+      "satisfied_milestones": [],
+      "missing_milestones": [
+        "workload-invoked-at-coordinator",
+        "coordinator-changed-while-inflight",
+        "old-coordinator-restarted-after-change"
+      ],
+      "order_violations": [],
+      "status": "not-reached",
+      "reason_code": "milestone-missing",
+      "digest": "19c90622eeb6746437a9c6c5b8718440c23f1184680cdd2621a7c72ceaafa5c2"
+    },
+    {
+      "schema_version": "consensus-atlas/risk-witness-result/v1",
+      "id": "action-class-attempt-2",
+      "spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+      "risk_id": "leader-change-with-inflight-proposal",
+      "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "execution_digest": "61835804b881168b1bb13f777d9a8dad61cd2a73565c51ea7f7d8e762983fd68",
+      "projector_id": "official-etcdraft-v2/leader-change-with-inflight-proposal-v1",
+      "milestones": [],
+      "satisfied_milestones": [],
+      "missing_milestones": [
+        "workload-invoked-at-coordinator",
+        "coordinator-changed-while-inflight",
+        "old-coordinator-restarted-after-change"
+      ],
+      "order_violations": [],
+      "status": "not-reached",
+      "reason_code": "milestone-missing",
+      "digest": "b304a4355c1dfc919e7bbfa4857f52fcf60a7e2b49ab8e42225394beb242e467"
+    },
+    {
+      "schema_version": "consensus-atlas/risk-witness-result/v1",
+      "id": "uniform-attempt-2",
+      "spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+      "risk_id": "leader-change-with-inflight-proposal",
+      "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "execution_digest": "937046e636e50d96e60f725671837d38aa63d62e8a1600ad406f2f599b94b792",
+      "projector_id": "official-etcdraft-v2/leader-change-with-inflight-proposal-v1",
+      "milestones": [],
+      "satisfied_milestones": [],
+      "missing_milestones": [
+        "workload-invoked-at-coordinator",
+        "coordinator-changed-while-inflight",
+        "old-coordinator-restarted-after-change"
+      ],
+      "order_violations": [],
+      "status": "not-reached",
+      "reason_code": "milestone-missing",
+      "digest": "165acc69c52c84b9d68a62d0768d48d3af01761c1be1c7dde01098bb369b6e1b"
+    }
+  ],
+  "summary": {
+    "executions": 3,
+    "reached": 0,
+    "not_reached": 3,
+    "missing": [
+      {
+        "milestone_id": "workload-invoked-at-coordinator",
+        "executions": 3
+      },
+      {
+        "milestone_id": "coordinator-changed-while-inflight",
+        "executions": 3
+      },
+      {
+        "milestone_id": "old-coordinator-restarted-after-change",
+        "executions": 3
+      }
+    ]
+  },
+  "classification": "existing-replay-stable-evidence-all-witness-not-reached-no-method-advantage-claim"
+}

@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "id": "etcdraft-readindex-63903dd-v1",
+  "classification": "historical-regression-reproduction",
+  "formal_method_comparison_eligible": false,
+  "method_comparison_exclusion": "one curator-frozen historical trace and one matching control cannot establish a search-method comparison",
+  "trust_hardening": {
+    "canonical_persisted_trace": true,
+    "ledger_witness_reconstructed": true,
+    "module_tree_bound": true,
+    "binary_and_build_audit_bound": true,
+    "trusted_evaluator_rerun": true,
+    "submitted_report_matches_rerun": true,
+    "coverage_score_accumulation_order_fixed": true
+  },
+  "qualification": {
+    "official_candidates": 4,
+    "qualified": 1,
+    "deferred": 3,
+    "qualified_candidate_id": "etcdraft-63903dd-duplicate-read-index",
+    "catalog_digest": "bf1d2612137c9a9a60e83e76acf0f21e3752909f6d5bf8fcffc74d83e0866e3b",
+    "snapshot_digest": "d54e5c6e0616298a388a06408c0f4e262e47ecfe02e45835cedd95a034d4f7f3"
+  },
+  "shared_budget": {
+    "max_runs": 1,
+    "max_decisions": 1,
+    "max_primary_work_units": 218
+  },
+  "trials": [
+    {
+      "trial_id": "trial-candidate-v3.6.0-v2",
+      "status": "killed",
+      "runs": 1,
+      "decisions": 1,
+      "primary_work_units": 218,
+      "replay_work_units": 218,
+      "coverage_covered": 26,
+      "coverage_total": 55,
+      "coverage_score": 45.666666666666664,
+      "trace_digest": "e275ff9b22a101bf9fc4b74045a40aa860736aafb5e52993265a7b4ce6968c62",
+      "build_audit_digest": "45eb2815859313631420443503fd0113c2b9369d442ddf8a964d0be7ea711e02",
+      "binary_digest": "40cf5c3f5f9b30427af9bd7763134844963c41d4dee8e58b2180e7bc42eb8099",
+      "trusted_finding": {
+        "monitor": "linearizable-read",
+        "trace_step": 201,
+        "first_kill_primary_work": 218
+      }
+    },
+    {
+      "trial_id": "trial-fixed-63903dd-v3",
+      "status": "control-pass",
+      "runs": 1,
+      "decisions": 1,
+      "primary_work_units": 218,
+      "replay_work_units": 218,
+      "coverage_covered": 26,
+      "coverage_total": 55,
+      "coverage_score": 45.666666666666664,
+      "build_audit_digest": "059273f024e95f628b8424409368b6e599295796c307855862efc7269645d9ea",
+      "binary_digest": "d1a4d4f9586f815a4e421442dc1458b26f43d1336325947d3fc028352d3255f5"
+    }
+  ],
+  "external_result": {
+    "root_causes": 1,
+    "killed_root_causes": 1,
+    "false_positives": 0,
+    "invalid_trials": 0
+  },
+  "interpretation": "The historical candidate/control distinction is externally evaluated, while identical Coverage is explanatory only. This pilot does not establish Agent, PSS, or Coverage effectiveness."
+}

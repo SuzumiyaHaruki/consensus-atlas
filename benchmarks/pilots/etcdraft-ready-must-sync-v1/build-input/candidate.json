@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "etcdraft-ready-must-sync-historical-semantic-candidate-v1",
+  "trial_id": "trial-ready-must-sync-candidate-v1",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source": {
+    "relative_path": "rawnode.go",
+    "original_digest": "40862955319a6dd7327ce417737fe856db5a2ceed6dda615aab9cb49cf9b0ce3",
+    "match": "rd.MustSync = MustSync(r.hardState(), rn.prevHardSt, len(rd.Entries))",
+    "replacement": "rd.MustSync = MustSync(rd.HardState, rn.prevHardSt, len(rd.Entries))",
+    "transformed_digest": "591bd2db43799b87b6401db31bc400e12872e6a6c989953f6f429eaaaea73384"
+  },
+  "package": "./cmd/campaign",
+  "sut_build_identity": "sut-a277bf530a06feb0",
+  "command_allowlist": ["go-build", "go-list-module"],
+  "output_path": "artifacts/pilots/etcdraft-ready-must-sync-v1/bin/sut-a277bf530a06feb0"
+}

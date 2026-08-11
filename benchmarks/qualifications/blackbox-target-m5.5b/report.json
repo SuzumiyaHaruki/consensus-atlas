@@ -1,0 +1,42 @@
+{
+  "schema_version": "consensus-atlas/blackbox-target-conformance/v1",
+  "report_id": "process-fixture-m5.5b",
+  "checks": {
+    "data-survived-restart": true,
+    "frozen-call-survived-restart": true,
+    "independent-process-started": true,
+    "opaque-call-delivered": true,
+    "opaque-call-dropped-without-effect": true,
+    "process-killed-and-restarted": true
+  },
+  "boundaries": [
+    {
+      "surface": "durability",
+      "grade": "observable",
+      "evidence": "value-visible-after-process-restart"
+    },
+    {
+      "surface": "external-input",
+      "grade": "interceptable",
+      "evidence": "freeze-deliver-drop"
+    },
+    {
+      "surface": "lifecycle",
+      "grade": "interceptable",
+      "evidence": "process-kill-restart-incarnation"
+    },
+    {
+      "surface": "opaque-endpoint",
+      "grade": "observable",
+      "evidence": "unix-readiness-and-response"
+    }
+  ],
+  "limitations": [
+    "wall-clock-readiness",
+    "one-call-per-connection",
+    "direct-child-process-only",
+    "no-peer-message-boundary",
+    "no-strict-replay"
+  ],
+  "digest": "868a8c4bd97de25d2d2cecd67b5c3c84d5b5bf14d7d4b416abfbfd8faa42d95d"
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/sut-build-audit-v2.json",
+  "title": "ConsensusAtlas module-tree-bound SUT build audit v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "trial_id", "build_spec_digest", "module", "source_path",
+    "input_source_digest", "output_source_digest", "input_module_digest", "output_module_digest",
+    "sut_build_identity", "binary_path", "binary_digest", "command_identity", "commands",
+    "toolchain_identity", "module_cache_unmodified", "offline_readonly_build", "exact_match_count"
+  ],
+  "properties": {
+    "version": {"const": 2},
+    "trial_id": {"type": "string", "minLength": 1},
+    "build_spec_digest": {"$ref": "#/$defs/digest"},
+    "module": {"$ref": "#/$defs/module"},
+    "source_path": {"type": "string", "minLength": 1},
+    "input_source_digest": {"$ref": "#/$defs/digest"},
+    "output_source_digest": {"$ref": "#/$defs/digest"},
+    "input_module_digest": {"$ref": "#/$defs/digest"},
+    "output_module_digest": {"$ref": "#/$defs/digest"},
+    "sut_build_identity": {"type": "string", "minLength": 1},
+    "binary_path": {"type": "string", "minLength": 1},
+    "binary_digest": {"$ref": "#/$defs/digest"},
+    "command_identity": {"$ref": "#/$defs/digest"},
+    "commands": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/command"}},
+    "toolchain_identity": {"type": "string", "minLength": 1},
+    "module_cache_unmodified": {"const": true},
+    "offline_readonly_build": {"const": true},
+    "exact_match_count": {"const": 1}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "module": {
+      "type": "object", "additionalProperties": false, "required": ["path", "version"],
+      "properties": {"path": {"type": "string"}, "version": {"type": "string"}}
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "digest", "executable", "logical_args", "environment", "command_policy"],
+      "properties": {
+        "identity": {"enum": ["go-list-module", "go-build"]},
+        "digest": {"$ref": "#/$defs/digest"},
+        "executable": {"const": "go"},
+        "logical_args": {"type": "array", "items": {"type": "string"}},
+        "environment": {"type": "array", "items": {"type": "string"}},
+        "command_policy": {"const": "exact-allowlist-v1"}
+      }
+    }
+  }
+}

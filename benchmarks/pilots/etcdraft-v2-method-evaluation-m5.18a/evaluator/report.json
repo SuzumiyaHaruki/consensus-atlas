@@ -1,0 +1,76 @@
+{
+  "schema_version": "consensus-atlas/bundle-defect-evaluation/v2",
+  "benchmark_id": "public-etcdraft-v2-method-evaluation-m5.18a",
+  "benchmark_digest": "0bf5a38fcf1e61d108860910aaa0a10f10c08503f0ed4f88280bfe04446bbce9",
+  "classification": "public-calibration-only",
+  "method_spec_digest": "ee856fbf62ff99a82cfc0c2753d3021e6ca879e6490242074b08ea28d48fdbcf",
+  "results": [
+    {
+      "trial_id": "trial-calibration",
+      "variant_id": "public-command-divergence",
+      "kind": "calibration-candidate",
+      "root_cause_id": "calibration-command-data-divergence",
+      "status": "killed",
+      "bundle_digest": "db89a98c638a084f1a1fd92c9b9547930de20ee0d1b6336c745acca558761079",
+      "build_id": "sut-c9811ab0ed8e2f39",
+      "decisions": 96,
+      "primary_work_units": 98,
+      "replay_work_units": 98,
+      "build_audit_digest": "439d4d7b44b3786f5444d1946df1b2d7609f157087fd5323d293d33ebed4df21",
+      "binary_digest": "b21039b751474c8449dd5b2a35445e0e327eb53f6b8fcb71433cda1b53793b04",
+      "method_config_projection_digest": "8459b8a708f4b64e0718b9750109f709e3eec69d0dfdc76ac4eaa24b2a73e92f",
+      "operation_history_digest": "778aae5d58351749884098cc1cc90971fca6fc3158efaadd358e5888131c7735",
+      "oracle": {
+        "checked": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violations": [
+          {
+            "monitor": "agreement",
+            "step": 55,
+            "message": "conflicting applied values at position 5: n1/c504dcd8a2c2f10c412e84fa30bfcab803644020ed4953142d830cf62117c373 and n3/57056a96c358416d06acc6dd834da6f99f6e1b02fe9a26726a3bb9f813df704a"
+          }
+        ]
+      },
+      "finding": {
+        "monitor": "agreement",
+        "step": 55,
+        "message": "conflicting applied values at position 5: n1/c504dcd8a2c2f10c412e84fa30bfcab803644020ed4953142d830cf62117c373 and n3/57056a96c358416d06acc6dd834da6f99f6e1b02fe9a26726a3bb9f813df704a",
+        "trace_digest": "1c31de10a3cddac8aed9e97857a73603de405ca823c9029b912803febb082d69"
+      }
+    },
+    {
+      "trial_id": "trial-control",
+      "variant_id": "official-control",
+      "kind": "control",
+      "status": "control-pass",
+      "bundle_digest": "432467655ad78ee171be0e10b6d97d8370d717463f6c614271851e57cece3b55",
+      "build_id": "sut-5826353327bce116",
+      "decisions": 96,
+      "primary_work_units": 98,
+      "replay_work_units": 98,
+      "build_audit_digest": "b4c2ddbe2b0a0afc34ee981eac99d36c1494f5329fc6f8a748e29d7dd447846a",
+      "binary_digest": "2f707ed1be64157a20c6f41353454d3dc63700d7fcef25be792ae77f8871fb5b",
+      "method_config_projection_digest": "8459b8a708f4b64e0718b9750109f709e3eec69d0dfdc76ac4eaa24b2a73e92f",
+      "operation_history_digest": "778aae5d58351749884098cc1cc90971fca6fc3158efaadd358e5888131c7735",
+      "oracle": {
+        "checked": [
+          "trace-integrity",
+          "agreement"
+        ],
+        "violations": null
+      }
+    }
+  ],
+  "summary": {
+    "controls": 1,
+    "false_positives": 0,
+    "calibration_candidates": 1,
+    "killed_calibration_candidates": 1,
+    "root_causes": 1,
+    "killed_root_causes": 1,
+    "invalid_trials": 0
+  },
+  "digest": "4cac6cd0731bdb9d28b2c1d927d634e3ce0dfdc2ccfac271f55df0b5bd7ef4ee"
+}

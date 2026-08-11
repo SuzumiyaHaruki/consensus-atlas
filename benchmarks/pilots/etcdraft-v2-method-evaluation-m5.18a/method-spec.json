@@ -1,0 +1,20 @@
+{
+  "schema_version": "consensus-atlas/method-spec/v1",
+  "id": "public-etcdraft-v2-fixed-calibration-m5.18a",
+  "executor_id": "consensus-atlas/control-experiment-cli/v1",
+  "strategy": "workload-evaluation-v3",
+  "decisions": 96,
+  "policy_seed": 1,
+  "budget": {
+    "max_execution_attempts": 1,
+    "max_primary_work_units": 98,
+    "max_replay_work_units": 98
+  },
+  "pss_id": "official-etcdraft-v2/core-pss-v1",
+  "projector_id": "official-etcdraft-v2/applied-prefix-digest-v1",
+  "config_projection_digest": "8459b8a708f4b64e0718b9750109f709e3eec69d0dfdc76ac4eaa24b2a73e92f",
+  "required_bundle_schema": "consensus-atlas/execution-bundle/v3",
+  "required_operation_schema": "consensus-atlas/operation-history/v1",
+  "timeout_millis": 120000,
+  "digest": "ee856fbf62ff99a82cfc0c2753d3021e6ca879e6490242074b08ea28d48fdbcf"
+}

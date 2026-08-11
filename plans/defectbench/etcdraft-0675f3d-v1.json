@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "etcdraft-0675f3d-ready-must-sync-v1",
+  "profile_id": "raft-campaign/etcdraft-ready-must-sync-v1",
+  "profile_digest": "b9881db6422d734eaeaad64beddc5b03d2280c98f7bc76459a1abeaf88d93de0",
+  "max_total_runs": 1,
+  "max_total_decisions": 1,
+  "plans": [
+    {
+      "id": "message-only-ready-unchanged-hardstate",
+      "targets": [
+        "boundary.election-rounds.1",
+        "property.ready-must-sync-empty-hardstate"
+      ],
+      "prepare": [
+        {"op": "inject", "kind": "campaign", "target": "n1"},
+        {"op": "drain", "count": 200},
+
+        {"op": "inject", "kind": "query", "target": "n1", "payload": {"operation": "linearizable-read", "request_id": "must-sync-check"}},
+        {"op": "execute", "match": {"kind": "query", "target": "n1"}},
+        {"op": "drain", "count": 200}
+      ],
+      "stimuli": [
+        {"kind": "query", "target": "n1", "payload": {"operation": "linearizable-read", "request_id": "measurement"}}
+      ],
+      "search": {
+        "strategy": "dfs",
+        "config": {
+          "max_runs": 1,
+          "budget_per_run": 1,
+          "decision_budget": 1,
+          "seed": 0,
+          "actions": {"drop_messages": false, "duplicate_messages": false, "max_duplicates_per_run": 0}
+        }
+      }
+    }
+  ]
+}

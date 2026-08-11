@@ -1,0 +1,32 @@
+{
+  "schema_version": "consensus-atlas/bundle-defect-benchmark/v2",
+  "id": "public-etcdraft-v2-method-evaluation-m5.18a",
+  "classification": "public-calibration-only",
+  "projector_id": "official-etcdraft-v2/applied-prefix-digest-v1",
+  "method_spec_digest": "ee856fbf62ff99a82cfc0c2753d3021e6ca879e6490242074b08ea28d48fdbcf",
+  "required_bundle_schema": "consensus-atlas/execution-bundle/v3",
+  "budget": {
+    "max_decisions": 96,
+    "max_primary_work_units": 98
+  },
+  "variants": [
+    {
+      "trial_id": "trial-calibration",
+      "variant_id": "public-command-divergence",
+      "kind": "calibration-candidate",
+      "root_cause_id": "calibration-command-data-divergence",
+      "expected_build_id": "sut-c9811ab0ed8e2f39",
+      "expected_build_audit_digest": "439d4d7b44b3786f5444d1946df1b2d7609f157087fd5323d293d33ebed4df21",
+      "expected_binary_digest": "b21039b751474c8449dd5b2a35445e0e327eb53f6b8fcb71433cda1b53793b04"
+    },
+    {
+      "trial_id": "trial-control",
+      "variant_id": "official-control",
+      "kind": "control",
+      "expected_build_id": "sut-5826353327bce116",
+      "expected_build_audit_digest": "b4c2ddbe2b0a0afc34ee981eac99d36c1494f5329fc6f8a748e29d7dd447846a",
+      "expected_binary_digest": "2f707ed1be64157a20c6f41353454d3dc63700d7fcef25be792ae77f8871fb5b"
+    }
+  ],
+  "digest": "0bf5a38fcf1e61d108860910aaa0a10f10c08503f0ed4f88280bfe04446bbce9"
+}

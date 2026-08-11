@@ -1,0 +1,136 @@
+{
+  "schema_version": "consensus-atlas/planner-attempt/v1",
+  "status": "execution-failed",
+  "planner_id": "deepseek-restricted-planner/v1",
+  "scope": {
+    "experiment_id": "public-etcdraft-v2-deepseek-planner-m5.13",
+    "pss_id": "official-etcdraft-v2/core-pss-v1",
+    "runtime": {
+      "seed_hex": "6f6666696369616c2d65746364726166742d76322d636c75737465722d73656564",
+      "clock_error": 0,
+      "max_clones": 1
+    },
+    "decisions_per_run": 32,
+    "require_replay": true,
+    "runs": [
+      1,
+      2
+    ]
+  },
+  "scope_digest": "bf186b1304c1ae0f86d1cb566dd03c680ca72619c91a30d5f8608c5610bb5c11",
+  "proposal": {
+    "schema_version": "consensus-atlas/planner-proposal/v1",
+    "policies": [
+      {
+        "run": 1,
+        "rules": [
+          {
+            "decision": 5,
+            "kind": "crash",
+            "node": "n3"
+          },
+          {
+            "decision": 10,
+            "kind": "restart",
+            "node": "n3"
+          }
+        ],
+        "priority": [
+          "complete-effect",
+          "deliver-message",
+          "fire-temporal-event"
+        ]
+      },
+      {
+        "run": 2,
+        "rules": [
+          {
+            "decision": 3,
+            "kind": "drop-message",
+            "node": "n1"
+          },
+          {
+            "decision": 7,
+            "kind": "duplicate-message",
+            "node": "n2"
+          }
+        ],
+        "priority": [
+          "complete-effect",
+          "deliver-message",
+          "fire-temporal-event"
+        ]
+      }
+    ]
+  },
+  "compilation": {
+    "accepted": true,
+    "proposal_digest": "913a357d5ef9677ddaa3e36782f917d6afdf4a60ee6caf3a1477e49fe079217e",
+    "config_digest": "a6a7d368a4cef01fbee756b5aac2e54a2b2c21101b888b5d9657b9cdc13a115d"
+  },
+  "work": {
+    "proposal_attempts": 1,
+    "model": {
+      "calls": 1,
+      "input_tokens": 555,
+      "output_tokens": 189,
+      "total_tokens": 744
+    },
+    "execution": {
+      "primary": {
+        "setup_attempts": 2,
+        "runtime_initializations": 2,
+        "prepare_actions": 0,
+        "scheduler_decisions": 34,
+        "work_units": 36
+      },
+      "replay": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 0,
+        "scheduler_decisions": 32,
+        "work_units": 33
+      },
+      "model": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      },
+      "resources": {
+        "wall_time": "not-collected",
+        "cpu_time": "not-collected",
+        "peak_rss": "not-collected"
+      }
+    }
+  },
+  "model_audit": {
+    "provider": "deepseek",
+    "requested_model": "deepseek-v4-flash",
+    "response_model": "deepseek-v4-flash",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "prompt_digest": "1c86168210c9ea95753f9ca95dbe2ee5be867e61fb1ce2e3ab7cfdb2c86780f8",
+    "request_digest": "1ca23da846023e5156ef19ef289816cd21958e169c4d2eac29209cde36467c99",
+    "response_digest": "ea6bb342811f9d65c4dc0a4e11f06e12782347cae713258d7aea6438a6e6a6b0",
+    "response_id": "2445cf09-650a-4171-9e5e-b0e409e522b2",
+    "system_fingerprint": "fp_a18b46594c_prod0820_fp8_kvcache_20260402",
+    "finish_reason": "stop",
+    "thinking_mode": "disabled",
+    "temperature": 0,
+    "max_tokens": 1800,
+    "prompt_tokens": 555,
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 555,
+    "completion_tokens": 189,
+    "reasoning_tokens": 0,
+    "total_tokens": 744,
+    "duration_millis": 1321
+  },
+  "failure": {
+    "phase": "primary-policy",
+    "reason_code": "EXPERIMENT_POLICY_RULE_NOT_ENABLED",
+    "run": 2,
+    "decision": 3
+  },
+  "digest": "e90e464a3a1fc010cb80fb60eeafff90c77ba4f6d2c4ec27ccf6bf93b225e87f"
+}

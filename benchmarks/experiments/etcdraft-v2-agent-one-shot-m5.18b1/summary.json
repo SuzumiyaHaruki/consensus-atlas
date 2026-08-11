@@ -1,0 +1,89 @@
+{
+  "schema_version": "consensus-atlas/agent-one-shot-summary/v1",
+  "id": "etcdraft-v2-agent-one-shot-m5-18b1",
+  "classification": "public-transport-calibration-only",
+  "agent": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "thinking": "disabled",
+    "temperature": 0,
+    "max_output_tokens": 1200,
+    "calls": 1,
+    "input_tokens": 1568,
+    "output_tokens": 211,
+    "total_tokens": 1779,
+    "duration_millis": 362,
+    "finish_reason": "stop",
+    "prompt_digest": "8694f3c8b6783981a10203be69bcfa3d652ef313375fb5ac5deaeec0d1b3c007",
+    "request_digest": "1ef485bb0d10ac257a93244eb14bdb9f29c2dfafb76ca97694b01b93c6a33156",
+    "response_digest": "b3052ed14578c4409315391df9a68de3a20b9cad29297105b201eab9e96b484d",
+    "audit_digest": "101c854817f51e6b4fc604e21953c06bab9d92ba1f8f6ab90936c2a84bb64e7e"
+  },
+  "prompt_observation": {
+    "status": "anchored-example-copied",
+    "evidence": "The accepted id, decisions, fault envelope, and preferred backend exactly matched the concrete structural example in the request.",
+    "interpretation": "This run establishes transport and guarded execution plumbing, not independent Agent planning quality.",
+    "remediation": "The active prompt now uses fictional invalid choices and requires every fictional value to be replaced; it has not received a second model call in this stage."
+  },
+  "view_digest": "63ccd9fdaf71b6e64942e4611b4b5a49238f6a4eab9fed60982ef07ed8f8b28d",
+  "accepted_intent": {
+    "schema_version": "consensus-atlas/guarded-test-intent/v1",
+    "id": "agent-one-shot-intent",
+    "view_digest": "63ccd9fdaf71b6e64942e4611b4b5a49238f6a4eab9fed60982ef07ed8f8b28d",
+    "risk_id": "leader-change-with-inflight-proposal",
+    "must": {
+      "decisions": 96,
+      "fault_envelope": {
+        "max_crashes": 1,
+        "max_concurrent_crashes": 1,
+        "max_message_drops": 2,
+        "max_message_duplicates": 1,
+        "max_partitions": 1,
+        "max_active_partitions": 1
+      }
+    },
+    "prefer": {
+      "backend_ids": [
+        "admissible-uniform"
+      ]
+    },
+    "digest": "1fe92d6670cfdcf08bf1dc036c9f6911465cd4ec670add66d8f4bf8d11cd1de2"
+  },
+  "compiled": {
+    "plan_digest": "21e0a826580dfd24dc0aad42a7173b9cb02e92a711c8b5ac080666594d7ab261",
+    "backend_id": "admissible-uniform",
+    "strategy": "workload-admissible-uniform",
+    "policy_seed": 1,
+    "compiler_work_units": 3,
+    "fallback_used": false
+  },
+  "execution": {
+    "report_digest": "ab9270fa41856b878ba78c1099145cd16679e72d142cfec5a650994ca173ac60",
+    "bundle_digest": "ba5cda6aa1afcabd1f32efa4690bca76f13dfce8a707fdf43a291f3bc57d561b",
+    "config_digest": "d89c8472787226d333cc3915ea589e433a6aebf0ccf034a7ffff313bb1ebb1fd",
+    "trace_digest": "ed28289fed9dce9606eb2cc0743f7b301abe02a18fd3c89a69a6097a36996ea1",
+    "decisions": 96,
+    "primary_work_units": 98,
+    "replay_work_units": 98,
+    "replay_stable": true,
+    "workload_status": "committed",
+    "core_pss_states": 82,
+    "prefix_area": 3620,
+    "action_counts": {
+      "complete-effect": 43,
+      "crash": 1,
+      "deliver-message": 19,
+      "drop-message": 2,
+      "duplicate-message": 1,
+      "fire-temporal-event": 28,
+      "invoke": 1,
+      "restart": 1
+    }
+  },
+  "claims_not_supported": [
+    "Agent planning quality or advantage over a baseline",
+    "defect detection or holdout effectiveness",
+    "protocol correctness or coverage completeness",
+    "effectiveness of the remediated non-anchoring prompt"
+  ]
+}

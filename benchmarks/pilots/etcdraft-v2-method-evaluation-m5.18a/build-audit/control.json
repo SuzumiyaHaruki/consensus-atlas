@@ -1,0 +1,68 @@
+{
+  "version": 4,
+  "trial_id": "trial-control",
+  "build_spec_digest": "8e660322a7ab49204a2c65dff7fd7f1bfa84bf1645acf6bf1686134e7c8a0024",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source_path": "\u003cunmodified\u003e",
+  "input_source_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "output_source_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "input_module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "output_module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "sut_build_identity": "sut-5826353327bce116",
+  "binary_path": "artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-5826353327bce116-control-v2",
+  "binary_digest": "2f707ed1be64157a20c6f41353454d3dc63700d7fcef25be792ae77f8871fb5b",
+  "command_identity": "975874f846e6895119bcac871ecee3469dea9d800f1281034edeb082ae13fa50",
+  "commands": [
+    {
+      "identity": "go-list-module",
+      "digest": "31180163a6c1039d91283d0e6033726684c7630e6a022010380d5fe2c7b5bb5d",
+      "executable": "go",
+      "logical_args": [
+        "list",
+        "-mod=readonly",
+        "-m",
+        "-json",
+        "go.etcd.io/raft/v3"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    },
+    {
+      "identity": "go-build",
+      "digest": "210be4c8380f52cabe714db8bbbc764a4522ca7a7325a4eff293ff790856fa4c",
+      "executable": "go",
+      "logical_args": [
+        "build",
+        "-mod=readonly",
+        "-trimpath",
+        "-buildvcs=false",
+        "-modfile=\u003cgenerated\u003e",
+        "-ldflags=-buildid= -X=github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2.SUTBuildIdentity=sut-5826353327bce116",
+        "-o",
+        "artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-5826353327bce116-control-v2",
+        "./cmd/control-experiment"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    }
+  ],
+  "toolchain_identity": "go1.25.8/linux/amd64",
+  "module_cache_unmodified": true,
+  "offline_readonly_build": true,
+  "exact_match_count": 0
+}

@@ -1,0 +1,151 @@
+# Defect Benchmark 与完整执行成本
+
+本阶段解决一个比继续增加义务或 Agent 更基础的问题：ConsensusAtlas 自己定义的
+Coverage/PSS 指标，不能再反过来单独证明 ConsensusAtlas 有效。正式实验首先回答：
+
+> 在相同完整执行预算下，一个方法能否稳定检出它事先看不到的独立缺陷根因，同时不在正确版本上误报？
+
+义务覆盖和 PSS 状态发现仍然保留，但定位为解释变量；它们不会直接写入 defect kill
+结论。
+
+## 可信边界
+
+```text
+private Manifest (variant/root cause/source/SUT digest)
+                |
+                +--> Blind Manifest (only opaque trial IDs + shared budget)
+                                      |
+                       Agent/search method runs Campaign
+                                      |
+                    report + BuildAudit + binary + Profile/plans
+                                      |
+             trusted evaluator reruns digest-bound binary
+                                      |
+private Manifest + trusted monitors -> Defect Ledger -> evaluation report
+```
+
+Agent 只能看到 benchmark/profile identity、统一预算和无语义的 `trial_id`。以下内容
+在实验结束前都属于 evaluator 私有数据：
+
+- control/defect 类型；
+- 历史修复或 mutant patch；
+- 触发测试与缺陷类别；
+- `root_cause_id`；
+- 源码与 SUT Manifest digest 的对应关系。
+
+私有 Manifest 还包含随机 `blinding_nonce`，使公开 benchmark digest 不能被低熵
+缺陷目录直接枚举反推。归档 Benchmark/Submission schema 位于 `benchmarks/schema-v1.json` 与
+`benchmarks/submission-schema-v2.json`；新的正式 Manifest 使用 `benchmarks/schema-v2.json`，
+将 Family/PSS identity 固定进私有与 blind 视图，evaluator 不再依赖独立的 PSS 命令行参数。
+Build spec/audit 的 v1/v2/v3 schema 按输入或 audit
+版本保留（旧 schema 不会放宽去接受新格式）。`internal/defectbench` 负责 canonical digest、
+盲测视图、预算检查和 root-cause 账本；`cmd/defect-eval` 是可信 evaluator 入口。
+
+## Kill 判定
+
+一个 defect 只有在 Campaign report 同时满足以下条件时才算 `killed`：
+
+1. protocol、Family、Profile digest 和私有 SUT/BuildAudit/binary digest 完全匹配；
+2. evaluator 亲自重跑已验证 binary，结果与提交的 Campaign v2 report digest 相同；
+3. report 没有超过冻结预算，且 Ledger witness 与完整成本可由 trace 重建；
+4. 对应 run 严格重放稳定、Driver conformant 且无执行错误；
+5. evaluator 从重跑的 setup + measurement trace 重新执行私有 Manifest 允许的可信
+   Oracle，并得到违规。
+
+Campaign report 内保存的 Oracle 结果不是 kill 权威；evaluator 会重新计算。Coverage
+得分、Agent 声明的 target、PSS 状态数和自然语言解释均不会产生 kill credit。
+
+同样证据出现在 control 上时记为 `false-positive`。身份不匹配、旧报告、成本字段
+不一致或超预算记为 `invalid`，不能按 survived 或 killed 混入有效分母。同一根因的
+多个 mutant 可以用于稳定性检查，但最终 root-cause kill rate 只计一次。
+
+## 完整成本
+
+Campaign report v2 把 primary 与 replay 分开，并为每个阶段记录：
+
+- `setup_attempts`：创建 fresh SUT 的次数，包括失败尝试；
+- `setup_steps`：重复执行的 bootstrap/prepare/stimuli 场景步骤；
+- `setup_runtime_events`：这些步骤实际执行的 Runtime events；
+- `measurement_events`：Explorer 实际决策/事件；
+- `work_units`：fresh SUT 尝试、每个场景步骤或其批量 Runtime event，以及每个
+  measurement event 的确定性总费用。
+
+`work_units` 是跨机器稳定的逻辑执行量，不是 CPU 或 wall-clock 估计。正式搜索比较
+以 `primary.work_units` 为首要统一预算；run、scheduler decision、replay work、模型
+token、CPU 和 wall clock 独立报告。公共且每个方法只执行一次的初始化可以明确排除，
+但每个 run 重复的 bootstrap/prepare 不能免费。
+
+Agent Coordinator 目前仍以 run/decision/token 限制在线生成；Defect Benchmark 会
+额外拒绝超过 `max_primary_work_units` 的 trial。因此旧的 decision-only 实验可用于
+历史分析，但不能作为新 benchmark 的公平主结果。
+
+## 最小正反例
+
+`internal/defectbench/defectbench_test.go` 运行真实的通用 Campaign，而不是直接伪造
+kill 结果：
+
+- control 在同一 index 两次提交相同值；
+- fixture mutant 在同一 index 提交两个不同值；
+- 两者命中完全相同的 Coverage obligation，Coverage 均为 100；
+- evaluator 只 kill mutant，control 无误报；
+- 两个 mutant 表象共享一个 `root_cause_id`，最终只形成一个根因。
+
+该测试刻意证明“覆盖分相同而外部结果不同”，从代码层切断 Coverage/PSS 与 kill 的
+循环定义。
+
+## 当前可编译评测面
+
+M5.16R 删除了旧 Candidate Catalog、preflight、blind audit、blind replay 和 submission CLI 的
+可编译实现；对应 schema、阶段文档和实验工件仅作为历史归档。当前 `internal/defectbench` 只保留
+`BundleBenchmark` 与 bundle evaluator，`cmd/defect-eval` 只组合 etcd/raft projector：
+
+- 合法 classification 只有 `public-calibration-only`；
+- manifest 数据模型能容纳多组 variant，但 CLI 的 legacy/fresh 路径都只接受恰好一组
+  control/calibration candidate；
+- fresh 路径验证 MethodSpec、BuildAudit、binary digest，亲自执行冻结 binary 后重算 bundle 和 monitor；
+- 公开 single-pair CLI 保持原语义；formal mode 已能从 private path manifest 执行多 pair
+  evaluator-owned fresh evaluation。
+
+因此本页开头的私有评测图仍是目标可信边界，不是当前功能声明。若未来恢复正式链，必须在 v2 数据面
+上重新实现最小合约，不能把已删除的 M4 工具或归档 schema 直接当作可用实现。
+
+M5.21l 已在当前 v2 数据面新建最小 `FormalBenchmarkContract/v1`，没有恢复旧 runner。
+private contract 用显式 pair 绑定 candidate/control、root cause、build evidence 和 composition identity；
+`FormalOpaqueView/v1` 只公开 opaque trial 与共同方法/预算。通用 resolver 能按 ID 选取
+projector/monitor；M5.21n 已将它接入 private fresh evaluator，但当前仍没有可消费该链的
+multi-pair CLI 或真实 private dataset。
+
+M5.21m 增加 `FormalExposureAudit/v1`：它重算 contract 的 exact opaque view，为每份公开 JSON
+byte snapshot 保存 SHA，并递归检查 key/value string 是否等于已枚举 private atom。报告不回显
+命中值或本地路径。它只防直接复制，不防协议推断或编码泄露，也不替代 runner 隔离。
+
+M5.21n 增加 `FormalFreshEvaluation/v1`。入口必须同时接收 sealed contract、passed exposure audit、
+MethodSpec、精确 trial→fresh evidence map 和已注册 composition；随后逐 pair 复用既有 fresh evaluator
+的 build/method/bundle/projection/budget 校验，并以 TraceIntegrity 加 contract-selected monitors 判定。
+private ledger 显式保存 pair/root mapping，机械汇总 control false positive、candidate/root-cause kill 和
+invalid trial，并绑定 contract/exposure/method digest。公开 synthetic fixture 的六个 trial 全都引用同一
+correct bundle，因此只验证 plumbing，不是 holdout 或检出证据。
+
+M5.21o 增加 `FormalFreshInputs/v1` 与 `cmd/defect-eval` formal mode。path manifest 是 private
+curator input，路径不写入 evaluation ledger。CLI 要求 contract/exposure/inputs/method/artifact/out
+全部显式提供，不允许混入 public-pair flags；它会在第一次 SUT execution 前验证全部
+trial/audit/binary，并拒绝覆盖旧 artifact/output。实际执行和 MethodSpec timeout 复用原有
+fresh subprocess runner。当前 registry 只支持 official etcd/raft projector 与 Agreement monitor。
+
+## 公开样本的定位
+
+仓库共有七组公开 candidate/control pair。三组能由当前 `BundleBenchmark` 验证，但都指向同一个公开
+command-data calibration 根因；另外四组使用已退役格式，其中包括公开 ReadIndex 历史回归和
+Ready.MustSync 语义重构。全部工件都可用于复验 monitor、构建和 evaluator 链，不能改标成非公开
+holdout，也不能评价 Random、DFS、专家或 Agent。
+
+`benchmarks/experiments/formal-holdout-readiness-m5.21k/report.json` 对七份 manifest 的文件 SHA、当前
+manifest digest、公开 root-cause/control 计数和 HashiCorp Raft qualification 做机械绑定。当前仓库虽有
+7 个公开 pair、3 个公开 root-cause label，但正式 eligible root cause/control 都是 0；HashiCorp Raft
+required strict 能力为 3/8，故 readiness 为 `false`。对应 Go 回归还验证 formal classification 会被
+当前合约拒绝、多 pair 会被 CLI 拒绝、退役 blind 命令没有 Go 源码。
+
+该结果只覆盖当前仓库，不断言仓库外不存在私有样本；root-cause label 的因果独立性仍需在冻结前
+由 curator 审查。当前工程链已到真实输入边界：下一步应在仓库外准备至少 3 组人工复核的
+private matching pair 和真实 BuildAudit/binary，再运行 formal CLI。如果没有这些数据，必须报告
+benchmark-input gap，不应继续增加 evaluator schema 或用 synthetic pair 填充。

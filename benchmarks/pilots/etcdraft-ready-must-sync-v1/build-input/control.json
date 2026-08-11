@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "id": "etcdraft-ready-must-sync-current-control-v1",
+  "trial_id": "trial-ready-must-sync-control-v1",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "package": "./cmd/campaign",
+  "sut_build_identity": "sut-5b83c9e4579067c0",
+  "command_allowlist": ["go-build", "go-list-module"],
+  "output_path": "artifacts/pilots/etcdraft-ready-must-sync-v1/bin/sut-5b83c9e4579067c0"
+}

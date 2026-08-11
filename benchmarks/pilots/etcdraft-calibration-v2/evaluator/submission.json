@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "benchmark_id": "etcdraft-public-calibration-v2",
+  "benchmark_digest": "1a8e80dfaa63fd559a6f2db84f9a471692c17de23ed3ccd7e3f1e305d759c213",
+  "trials": [
+    {
+      "trial_id": "trial-41c7a1",
+      "campaign_report": "../campaign/trial-41c7a1.json",
+      "build_audit": "../build-audit/trial-41c7a1.json",
+      "binary": "../../../../artifacts/pilots/etcdraft-calibration-v2/bin/sut-d3e2b40dc3993d40",
+      "profile": "../../../../artifacts/profiles/etcdraft-campaign-v1.json",
+      "plans": "../../../../plans/calibration/etcdraft-command-agreement-v1.json"
+    },
+    {
+      "trial_id": "trial-a93d5e",
+      "campaign_report": "../campaign/trial-a93d5e.json",
+      "build_audit": "../build-audit/trial-a93d5e.json",
+      "binary": "../../../../artifacts/pilots/etcdraft-calibration-v2/bin/sut-0cb5c0409ddd0bff",
+      "profile": "../../../../artifacts/profiles/etcdraft-campaign-v1.json",
+      "plans": "../../../../plans/calibration/etcdraft-command-agreement-v1.json"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "trial_id": "trial-calibration",
+  "build_spec_digest": "0ee629e7cbcc837bf5d2b3cd5a1e945d85cc0b50528abe06d1c8f8760f1440ba",
+  "module": {
+    "path": "go.etcd.io/raft/v3",
+    "version": "v3.6.0"
+  },
+  "source_path": "raft.go",
+  "input_source_digest": "4283c10e12c6da14964c6d6784a69851af1312245aa83925ec0e9426a07ed7bb",
+  "output_source_digest": "4340bfc4f0f723c2b36a66c8f065eb421b9d71fcb4fb767fb0a9b4142921943f",
+  "input_module_digest": "64bf7a0ef14de2a4044c02d1ecabb4c2210946c147fb52e2080edb76f4155dbb",
+  "output_module_digest": "a7171f7b9a943cbf681212602cf174751222b5629357a563baf0696222088250",
+  "sut_build_identity": "sut-c9811ab0ed8e2f39",
+  "binary_path": "artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-c9811ab0ed8e2f39-candidate-v2",
+  "binary_digest": "b21039b751474c8449dd5b2a35445e0e327eb53f6b8fcb71433cda1b53793b04",
+  "command_identity": "283e4cfe058a29ff27370782bc4c9d1b59e24e70c1c24a38433722bd5f4d3e2f",
+  "commands": [
+    {
+      "identity": "go-list-module",
+      "digest": "31180163a6c1039d91283d0e6033726684c7630e6a022010380d5fe2c7b5bb5d",
+      "executable": "go",
+      "logical_args": [
+        "list",
+        "-mod=readonly",
+        "-m",
+        "-json",
+        "go.etcd.io/raft/v3"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    },
+    {
+      "identity": "go-build",
+      "digest": "4d6a5a14cdafbd142da8c2cb7793fcb569b2d3b827527eb0f927ec72d85c65ba",
+      "executable": "go",
+      "logical_args": [
+        "build",
+        "-mod=readonly",
+        "-trimpath",
+        "-buildvcs=false",
+        "-modfile=\u003cgenerated\u003e",
+        "-ldflags=-buildid= -X=github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2.SUTBuildIdentity=sut-c9811ab0ed8e2f39",
+        "-o",
+        "artifacts/pilots/etcdraft-v2-method-evaluation-m5.18a/bin/sut-c9811ab0ed8e2f39-candidate-v2",
+        "./cmd/control-experiment"
+      ],
+      "environment": [
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOWORK=off",
+        "GOFLAGS=",
+        "GOTOOLCHAIN=local"
+      ],
+      "command_policy": "exact-allowlist-v1"
+    }
+  ],
+  "toolchain_identity": "go1.25.8/linux/amd64",
+  "module_cache_unmodified": true,
+  "offline_readonly_build": true,
+  "exact_match_count": 1
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": "consensus-atlas/campaign-checkpoint/v1",
+  "id": "etcdraft-model-campaign-v1-checkpoint-1",
+  "config_id": "etcdraft-model-campaign-v1",
+  "config_digest": "848435e0999c6eede1b44543d60c6b9876751b26e766da801c7788224c7d727a",
+  "target_id": "etcdraft-v2",
+  "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+  "experiment_spec_digest": "5fb743563d60b0550b55058dfc8a32cad2fcf7dfb148151c99736ea44823c28f",
+  "budget": {
+    "max_attempts": 1,
+    "max_primary_scheduler_decisions": 8,
+    "max_primary_work_units": 10,
+    "max_replay_work_units": 10,
+    "max_model_calls": 1,
+    "max_model_tokens": 8192
+  },
+  "wall_clock_ceiling_ms": 180000,
+  "checkpoint_policy": "checkpoint-after-each-terminal-attempt",
+  "sequence": 1,
+  "previous_digest": "09de415989a44077ba31469c3ba3e323533a4dc395c4eb457940a7f9af3dc9a1",
+  "record": {
+    "schema_version": "consensus-atlas/campaign-attempt/v1",
+    "ordinal": 1,
+    "id": "etcdraft-model-campaign-v1-attempt-1",
+    "input_digest": "b277d083da2ed8d7b5f996a2934c5a2b86d7d54177b53e67d81fd7f9c4359648",
+    "artifact_digest": "4d59cecaec2961637acbc5d93f82a3803db9cf5d0d6d1047db99a907995b28ce",
+    "outcome": "completed",
+    "work": {
+      "primary": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 0,
+        "scheduler_decisions": 8,
+        "work_units": 9
+      },
+      "replay": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 0,
+        "scheduler_decisions": 8,
+        "work_units": 9
+      },
+      "model": {
+        "calls": 1,
+        "input_tokens": 2203,
+        "output_tokens": 214,
+        "total_tokens": 2417
+      },
+      "resources": {
+        "wall_time": "not-collected",
+        "cpu_time": "not-collected",
+        "peak_rss": "not-collected"
+      }
+    },
+    "digest": "4ddd49ea81f71d35237856066a2e7786178121328575ab3c3389a1b9727c386f"
+  },
+  "totals": {
+    "primary": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 0,
+      "scheduler_decisions": 8,
+      "work_units": 9
+    },
+    "replay": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 0,
+      "scheduler_decisions": 8,
+      "work_units": 9
+    },
+    "model": {
+      "calls": 1,
+      "input_tokens": 2203,
+      "output_tokens": 214,
+      "total_tokens": 2417
+    },
+    "resources": {
+      "wall_time": "not-collected",
+      "cpu_time": "not-collected",
+      "peak_rss": "not-collected"
+    }
+  },
+  "elapsed_ms": 2761,
+  "stop_reason": "attempt-limit",
+  "digest": "8b12601dddb596a6c1f49fcebc77e214c279ff3f1a00a0201f9735266ed99604"
+}

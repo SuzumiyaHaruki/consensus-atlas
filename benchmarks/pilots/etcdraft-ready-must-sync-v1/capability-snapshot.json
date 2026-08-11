@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "id": "etcdraft-v3.6-capability-snapshot-v2",
+  "protocol": "etcd-raft-v3.6",
+  "family": "raft",
+  "profile_id": "raft-campaign/etcdraft-ready-must-sync-v1",
+  "profile_digest": "b9881db6422d734eaeaad64beddc5b03d2280c98f7bc76459a1abeaf88d93de0",
+  "driver_manifest_digest": "36504a81f2258f08e0ded52801c854e74f353a2e51ef30ce388f8a45260051ee",
+  "controllable_inputs": [
+    "campaign",
+    "crash",
+    "duplicate",
+    "heal",
+    "message",
+    "partition",
+    "propose",
+    "query",
+    "read-index",
+    "restart",
+    "start"
+  ],
+  "observable_events": [
+    "event:acknowledge",
+    "event:campaign",
+    "event:propose",
+    "event:query",
+    "observation-kind:commit",
+    "observation-kind:ready",
+    "observation-label:ready:must-sync",
+    "observation-label:transition:follower-\u003ecandidate",
+    "read-state",
+    "ready-must-sync"
+  ],
+  "driver_capabilities": [
+    "application-apply",
+    "conditional-ready-sync",
+    "explicit-campaign",
+    "message-drop-duplicate-partition",
+    "message-release-control",
+    "power-loss-restart",
+    "read-index-input",
+    "read-state-observation",
+    "ready-crash-cutpoints",
+    "ready-must-sync-observation",
+    "visible-write-durable-sync"
+  ],
+  "trusted_monitors": [
+    "agreement",
+    "linearizable-read",
+    "ready-must-sync"
+  ],
+  "execution_outcomes": [
+    "campaign-report-v2",
+    "deterministic-trace-replay",
+    "in-process-error-classified",
+    "oracle-from-saved-trace"
+  ],
+  "profile_bounds": [
+    "election-rounds\u003e=1",
+    "fault-model=cft",
+    "nodes=3",
+    "proposals\u003e=1"
+  ]
+}

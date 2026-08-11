@@ -1,0 +1,40 @@
+{
+  "schema_version": "consensus-atlas/compiled-test-intent-plan/v2",
+  "id": "etcdraft-feedback-ablation-baseline-m5-18b4-pre-compiled",
+  "view_digest": "d20b9fead66352e04e667143b60e19dfacccc82a30e4721f08ecd1b511c2e036",
+  "intent_digest": "fc28590cc269da1af768432d470e7cb2712b692809669347133b9f4926bcd620",
+  "catalog_digest": "2effd56ba9bc3687ac040be714da3c75b43b1e430fc90e40ab4d22a0d594f861",
+  "risk_id": "leader-change-with-inflight-proposal",
+  "backend_id": "action-class-random",
+  "strategy": "workload-action-class-random-b4",
+  "decisions": 96,
+  "fault_envelope": {
+    "max_crashes": 1,
+    "max_concurrent_crashes": 1,
+    "max_message_drops": 2,
+    "max_message_duplicates": 1,
+    "max_partitions": 0,
+    "max_active_partitions": 0
+  },
+  "required_capabilities": [
+    "crash-restart-incarnation",
+    "natural-temporal-progress",
+    "opaque-invoke-boundary",
+    "runtime-owned-message",
+    "strict-decision-replay"
+  ],
+  "required_actions": [
+    "crash",
+    "deliver-message",
+    "fire-temporal-event",
+    "invoke",
+    "restart"
+  ],
+  "fallback_used": false,
+  "compiler_work": {
+    "candidates_evaluated": 2,
+    "preference_checks": 1,
+    "work_units": 3
+  },
+  "digest": "4b263fd42f9a472bd475cb3b3be04ed8753f0103a80c4b5f6e7df66e0e326e87"
+}

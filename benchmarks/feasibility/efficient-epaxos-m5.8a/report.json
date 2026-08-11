@@ -1,0 +1,158 @@
+{
+  "schema_version": "consensus-atlas/target-feasibility/v1",
+  "report_id": "efficient-epaxos-m5.8a",
+  "source": {
+    "repository": "https://github.com/efficient/epaxos.git",
+    "commit": "791b115669fca472d3136f6a2eda46c00b3f8251",
+    "tree": "708b8e37f6b50a4e6b6fcbb95045dc53ad7d6344",
+    "archive_sha256": "9ffde18a3bfb7763c0995ce20064d34c7ddfcf944510a845cbc655a94a676068",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "75b383c71ee050b140d1f49bc4f605c18a4c9ea1a8d53d60cc2022d38853738f"
+      },
+      {
+        "path": "src/README",
+        "sha256": "5d937d521ace3e5a7ad7bad429f752e196344cc7d1d5d8b2b48cb5222ce13653"
+      },
+      {
+        "path": "src/client/client.go",
+        "sha256": "630312170c5a368547af5f11a4e94d17d82ab3e622491b7aab68dca6ca8c2553"
+      },
+      {
+        "path": "src/epaxos/epaxos-exec.go",
+        "sha256": "1595210f19e8c9bc93e6a40db71b75c93e21dfdd4d4d62249d19ace6b4a4c5e1"
+      },
+      {
+        "path": "src/epaxos/epaxos.go",
+        "sha256": "8f7c01cfd2a00d30ce4f5dbb0c7e7325adeaffa66b7fe1c067f61d8196d66488"
+      },
+      {
+        "path": "src/genericsmr/genericsmr.go",
+        "sha256": "10f6c8d0e283d8ab197e85266002029f25fd664d273db282f36176f6280f66c3"
+      },
+      {
+        "path": "src/server/server.go",
+        "sha256": "7039fa4b92d04732ed93cb4bb928a8c71bd89f90104529ce9654fdedd87e6d94"
+      }
+    ]
+  },
+  "toolchain": "go1.25.8-linux-amd64/GO111MODULE=off",
+  "facts": [
+    {
+      "id": "durable-restart",
+      "status": "unsupported",
+      "evidence_code": "STABLE_STORE_RECOVERY_UNAVAILABLE",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "the fixed source creates and appends a store but exposes no reconstruction path"
+    },
+    {
+      "id": "external-input-surface",
+      "status": "observed",
+      "evidence_code": "PUBLIC_PROPOSE_CHANNEL_AND_TCP_CLIENT",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "opaque commands enter through ProposeChan or the client TCP codec"
+    },
+    {
+      "id": "message-freeze-witness",
+      "status": "missing",
+      "evidence_code": "NO_STABLE_MESSAGE_ITEM_BOUNDARY",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "no real peer frame has yet been frozen, selected and released by Control Runtime"
+    },
+    {
+      "id": "peer-message-surface",
+      "status": "observed",
+      "evidence_code": "DIRECT_TCP_SEND_AND_RPC_CHANNEL_RECEIVE",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "SendMsg writes framed protocol bytes and replicaListener feeds registered protocol channels"
+    },
+    {
+      "id": "production-build",
+      "status": "observed",
+      "evidence_code": "LEGACY_GOPATH_BUILD_PASSED",
+      "evidence_digest": "9ffde18a3bfb7763c0995ce20064d34c7ddfcf944510a845cbc655a94a676068",
+      "detail": "epaxos, genericsmr, server, master and client production packages build"
+    },
+    {
+      "id": "semantic-fields",
+      "status": "observed",
+      "evidence_code": "PUBLIC_INSTANCE_SPACE_AND_FRONTIERS",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "InstanceSpace, CommittedUpTo and ExecedUpTo expose candidate mapping inputs"
+    },
+    {
+      "id": "source-lock",
+      "status": "observed",
+      "evidence_code": "GIT_COMMIT_AND_ARCHIVE_MATCH",
+      "evidence_digest": "9ffde18a3bfb7763c0995ce20064d34c7ddfcf944510a845cbc655a94a676068",
+      "detail": "official master HEAD and selected files are digest-bound"
+    },
+    {
+      "id": "stable-yield",
+      "status": "missing",
+      "evidence_code": "BACKGROUND_SELECT_LOOP_HAS_NO_QUIESCENCE_HANDSHAKE",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "constructor starts goroutines and observation has no stable yield identity"
+    },
+    {
+      "id": "strict-replay",
+      "status": "unsupported",
+      "evidence_code": "ASYNC_TCP_GOROUTINE_REPLAY_UNPROVEN",
+      "evidence_digest": "546fca29d760da30f52d3c24a853d6025de8004a20701dc0daa59ef6e5f730b2",
+      "detail": "successful wall-clock smoke is not a deterministic Action replay witness"
+    },
+    {
+      "id": "temporal-control",
+      "status": "unsupported",
+      "evidence_code": "WALL_CLOCK_SLEEP_NOT_INJECTABLE",
+      "evidence_digest": "13e6b05ecbd30749a3452e5978c78ffaf21bb8a34de6f10a265b644a0180d8f7",
+      "detail": "batch, beacon, recovery and execution progress use package time sleeps"
+    },
+    {
+      "id": "three-node-smoke",
+      "status": "observed",
+      "evidence_code": "THREE_NODE_ONE_COMMAND_SUCCESS",
+      "evidence_digest": "546fca29d760da30f52d3c24a853d6025de8004a20701dc0daa59ef6e5f730b2",
+      "detail": "three official server processes returned Successful: 1 with client exit 0"
+    },
+    {
+      "id": "upstream-tests",
+      "status": "blocked",
+      "evidence_code": "UPSTREAM_TEST_FIXTURE_STALE",
+      "evidence_digest": "9ffde18a3bfb7763c0995ce20064d34c7ddfcf944510a845cbc655a94a676068",
+      "detail": "epaxos_test.go no longer matches the production channel types"
+    }
+  ],
+  "blockers": [
+    {
+      "capability": "durable-restart",
+      "reason_code": "STABLE_STORE_RECOVERY_UNAVAILABLE"
+    },
+    {
+      "capability": "natural-temporal-progress",
+      "reason_code": "WALL_CLOCK_SLEEP_NOT_INJECTABLE"
+    },
+    {
+      "capability": "runtime-owned-message",
+      "reason_code": "NO_STABLE_MESSAGE_ITEM_BOUNDARY"
+    },
+    {
+      "capability": "strict-decision-replay",
+      "reason_code": "ASYNC_TCP_GOROUTINE_REPLAY_UNPROVEN"
+    },
+    {
+      "capability": "strict-yield-evidence",
+      "reason_code": "BACKGROUND_SELECT_LOOP_HAS_NO_QUIESCENCE_HANDSHAKE"
+    }
+  ],
+  "decision": {
+    "status": "proceed-limited",
+    "next_allowed": "test-only-message-port-worker-spike",
+    "full_adapter_allowed": false,
+    "action_changes": 0,
+    "runtime_changes": 0,
+    "core_pss_changes": 0
+  },
+  "digest": "d0585a8cdbccaad9b45a02086f06e01fbbd5330e0be1709a1301931dc370d905"
+}

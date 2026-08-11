@@ -1,0 +1,382 @@
+{
+  "schema_version": "consensus-atlas/adapter-qualification-bundle/v1",
+  "profile": {
+    "schema_version": "consensus-atlas/adapter-qualification-profile/v1",
+    "id": "portable-cft-control-v1",
+    "capabilities": [
+      {
+        "id": "audited-entropy-replay",
+        "required": true,
+        "manifest": {
+          "entropy_strict_replay": true
+        },
+        "conformance_cases": [
+          "entropy-audit-stable"
+        ]
+      },
+      {
+        "id": "crash-incarnation",
+        "required": true,
+        "manifest": {
+          "actions": [
+            "crash",
+            "restart"
+          ],
+          "crash_modes": [
+            "power-loss"
+          ]
+        },
+        "conformance_cases": [
+          "natural-crash-cancels-captured"
+        ]
+      },
+      {
+        "id": "formal-process-isolation",
+        "required": false,
+        "manifest": {
+          "entropy_strict_replay": true
+        },
+        "conformance_cases": [
+          "process-isolation-boundary"
+        ]
+      },
+      {
+        "id": "natural-temporal-progress",
+        "required": true,
+        "manifest": {
+          "actions": [
+            "fire-temporal-event"
+          ],
+          "items": [
+            "temporal"
+          ],
+          "any_temporal_kinds": [
+            "one-shot-timer",
+            "periodic-pulse",
+            "sleep-wakeup"
+          ]
+        },
+        "conformance_cases": [
+          "natural-released-message-recovery"
+        ]
+      },
+      {
+        "id": "opaque-invoke-boundary",
+        "required": true,
+        "manifest": {
+          "actions": [
+            "invoke"
+          ]
+        },
+        "conformance_cases": [
+          "opaque-invoke-boundary"
+        ]
+      },
+      {
+        "id": "pure-enabled-check",
+        "required": true,
+        "manifest": {
+          "strict_yield": true
+        },
+        "conformance_cases": [
+          "enabled-check-pure"
+        ]
+      },
+      {
+        "id": "runtime-owned-message",
+        "required": true,
+        "manifest": {
+          "min_nodes": 2,
+          "actions": [
+            "deliver-message",
+            "drop-message"
+          ],
+          "items": [
+            "message"
+          ]
+        },
+        "conformance_cases": [
+          "natural-released-message-recovery"
+        ]
+      },
+      {
+        "id": "strict-decision-replay",
+        "required": true,
+        "manifest": {
+          "strict_yield": true,
+          "strict_replay": true
+        },
+        "conformance_cases": [
+          "natural-crash-cancels-captured",
+          "natural-released-message-recovery",
+          "opaque-invoke-boundary"
+        ]
+      },
+      {
+        "id": "strict-yield-evidence",
+        "required": true,
+        "manifest": {
+          "strict_yield": true,
+          "evidence_schema": true
+        },
+        "conformance_cases": [
+          "collect-idempotent"
+        ]
+      }
+    ],
+    "digest": "97db636d45754d606ba3c25f19ead04c25674b11e4aec9a5be641eb1ecbf8baa"
+  },
+  "manifest": {
+    "schema_version": "consensus-atlas/control/v2alpha1",
+    "adapter_id": "official-etcdraft-v2alpha1",
+    "implementation_id": "go.etcd.io/raft/v3@v3.6.0",
+    "build_id": "go.etcd.io/raft/v3@v3.6.0",
+    "configuration_digest": "8f99c7c2e8bcf13f0a6c8d248f5c2a59fe912eca514cca3c911736ab667bea1c",
+    "nodes": [
+      "n1",
+      "n2",
+      "n3"
+    ],
+    "capabilities": {
+      "actions": [
+        "invoke",
+        "fire-temporal-event",
+        "complete-effect",
+        "crash",
+        "restart",
+        "drop-message",
+        "duplicate-message",
+        "partition",
+        "heal",
+        "deliver-message"
+      ],
+      "items": [
+        "temporal",
+        "host-effect",
+        "client-response",
+        "typed-observation",
+        "message"
+      ],
+      "temporal": {
+        "kinds": [
+          "periodic-pulse"
+        ],
+        "clock_error": 0
+      },
+      "entropy": {
+        "provider": "scoped-crypto-rand-reader-v1",
+        "algorithm": "hmac-sha256-counter-v1",
+        "domain_policy": "node-incarnation-native-call",
+        "reset_policy": "per-trial",
+        "strict_replay": true
+      },
+      "crash_modes": [
+        "power-loss"
+      ],
+      "effect_kinds": [
+        "raft-ready-persist",
+        "raft-ready-advance"
+      ],
+      "strict_yield": true,
+      "strict_replay": true,
+      "durable_checkpoints": true
+    },
+    "evidence_schemas": [
+      "consensus-atlas/etcdraft-v2-evidence/v1"
+    ]
+  },
+  "conformance_reports": [
+    {
+      "schema_version": "consensus-atlas/adapter-conformance/v2alpha1",
+      "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "cases": [
+        {
+          "id": "opaque-invoke-boundary",
+          "passed": true
+        }
+      ],
+      "validated_capabilities": [
+        "opaque-invoke-boundary"
+      ],
+      "passed": true,
+      "digest": "5ada48adcda84d4d3050bf62463920418614f20f14ab5eaed6ccff40551db893"
+    },
+    {
+      "schema_version": "consensus-atlas/adapter-conformance/v2alpha1",
+      "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "cases": [
+        {
+          "id": "natural-crash-cancels-captured",
+          "passed": true
+        },
+        {
+          "id": "natural-released-message-recovery",
+          "passed": true
+        }
+      ],
+      "validated_capabilities": [
+        "crash-incarnation",
+        "runtime-owned-message"
+      ],
+      "passed": true,
+      "digest": "861b1f75a4bf885e29f837134a53b32f0d67e80c23c30a2d32c2f7861d7780df"
+    },
+    {
+      "schema_version": "consensus-atlas/adapter-conformance/v2alpha1",
+      "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+      "cases": [
+        {
+          "id": "collect-idempotent",
+          "passed": true
+        },
+        {
+          "id": "enabled-check-pure",
+          "passed": true
+        },
+        {
+          "id": "entropy-audit-stable",
+          "passed": true
+        }
+      ],
+      "validated_capabilities": [
+        "pure-enabled-check",
+        "strict-entropy-replay",
+        "strict-yield"
+      ],
+      "passed": true,
+      "digest": "efe4d724b7e69bd5214b2a738f84164c55e2f47ed75b59ae50a530d56adc91fe"
+    }
+  ],
+  "unsupported": [
+    {
+      "capability_id": "formal-process-isolation",
+      "reason_code": "ADAPTER_PROCESS_ISOLATION_REQUIRED"
+    }
+  ],
+  "qualification": {
+    "schema_version": "consensus-atlas/adapter-qualification-report/v1",
+    "profile_id": "portable-cft-control-v1",
+    "profile_digest": "97db636d45754d606ba3c25f19ead04c25674b11e4aec9a5be641eb1ecbf8baa",
+    "adapter_id": "official-etcdraft-v2alpha1",
+    "implementation_id": "go.etcd.io/raft/v3@v3.6.0",
+    "build_id": "go.etcd.io/raft/v3@v3.6.0",
+    "configuration_digest": "8f99c7c2e8bcf13f0a6c8d248f5c2a59fe912eca514cca3c911736ab667bea1c",
+    "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+    "conformance_report_digests": [
+      "5ada48adcda84d4d3050bf62463920418614f20f14ab5eaed6ccff40551db893",
+      "861b1f75a4bf885e29f837134a53b32f0d67e80c23c30a2d32c2f7861d7780df",
+      "efe4d724b7e69bd5214b2a738f84164c55e2f47ed75b59ae50a530d56adc91fe"
+    ],
+    "unsupported": [
+      {
+        "capability_id": "formal-process-isolation",
+        "reason_code": "ADAPTER_PROCESS_ISOLATION_REQUIRED"
+      }
+    ],
+    "capabilities": [
+      {
+        "id": "audited-entropy-replay",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "entropy-audit-stable"
+        ]
+      },
+      {
+        "id": "crash-incarnation",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "natural-crash-cancels-captured"
+        ]
+      },
+      {
+        "id": "formal-process-isolation",
+        "required": false,
+        "declared": true,
+        "status": "unsupported",
+        "conformance_cases": [
+          "process-isolation-boundary"
+        ],
+        "unsupported_reason_code": "ADAPTER_PROCESS_ISOLATION_REQUIRED",
+        "findings": [
+          {
+            "code": "QUALIFICATION_EXPLICIT_UNSUPPORTED",
+            "kind": "unsupported",
+            "subject": "ADAPTER_PROCESS_ISOLATION_REQUIRED"
+          }
+        ]
+      },
+      {
+        "id": "natural-temporal-progress",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "natural-released-message-recovery"
+        ]
+      },
+      {
+        "id": "opaque-invoke-boundary",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "opaque-invoke-boundary"
+        ]
+      },
+      {
+        "id": "pure-enabled-check",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "enabled-check-pure"
+        ]
+      },
+      {
+        "id": "runtime-owned-message",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "natural-released-message-recovery"
+        ]
+      },
+      {
+        "id": "strict-decision-replay",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "natural-crash-cancels-captured",
+          "natural-released-message-recovery",
+          "opaque-invoke-boundary"
+        ]
+      },
+      {
+        "id": "strict-yield-evidence",
+        "required": true,
+        "declared": true,
+        "status": "validated",
+        "conformance_cases": [
+          "collect-idempotent"
+        ]
+      }
+    ],
+    "summary": {
+      "total": 9,
+      "required": 8,
+      "validated": 8,
+      "unsupported": 1,
+      "undeclared": 0,
+      "unvalidated": 0,
+      "failed": 0
+    },
+    "qualified": true,
+    "digest": "95430504ad01a9dbe33e229bdb9424861542787b146626c30efc32f8de8034c9"
+  },
+  "digest": "e528b88d6f9295275ba47eca3b8edfe9dd1765e11a3426d7df178aacf3859723"
+}
