@@ -12,6 +12,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
 	etcdqualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 	hashicorpqualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/hashicorpraftv2"
+	omnipaxosqualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/omnipaxosv2"
 )
 
 func main() {
@@ -22,8 +23,9 @@ func main() {
 }
 
 func run() error {
-	target := flag.String("target", "", "qualification target: etcdraftv2 or hashicorpraftv2")
+	target := flag.String("target", "", "qualification target: etcdraftv2, hashicorpraftv2, or omnipaxosv2")
 	out := flag.String("out", "", "qualification bundle output path")
+	worker := flag.String("worker", "", "target worker executable when required")
 	flag.Parse()
 	if *out == "" {
 		return errors.New("-out is required")
@@ -36,6 +38,8 @@ func run() error {
 		bundle, err = etcdqualification.Run(ctx)
 	case "hashicorpraftv2":
 		bundle, err = hashicorpqualification.Run(ctx)
+	case "omnipaxosv2":
+		bundle, err = omnipaxosqualification.Run(ctx, *worker)
 	default:
 		return fmt.Errorf("unsupported -target %q", *target)
 	}

@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.46（M5.21tA 边际 Binding 成本审计完成，进入非 Raft 可行性 probe）
+> 状态：Draft v1.53（M5.21zR partial admission 闭环完成，M5.21 收口）
 > 日期：2026-08-11
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -1858,7 +1858,8 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 ### M6：非 Raft 实现与边际接入验证
 
-优先以 EPaxos 作为第三目标，验证：
+先以 OmniPaxos 的 Sequence Paxos + BLE 作为首个非 Raft 目标，验证控制层和 Core PSS 能否跨协议；
+其后仍需用 leaderless/dependency-graph 实现（优先 EPaxos）验证更强差异：
 
 - Runtime、Action 和 Core PSS schema 零协议修改；
 - 只新增 Execution Binding、Semantic Mapping、fixture 和 composition；
@@ -1932,7 +1933,7 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 | Agent 动态改分母             | 分数不可比较            | Contract digest 与确定性 Profile 编译     |
 | Oracle 未被真正激活          | 空洞高覆盖              | Property activation atoms                 |
 | 权重主观                     | 分数缺少科学依据        | 隐藏突变体和历史缺陷校准                  |
-| 只在 Raft 家族上有效         | 贡献退化为专用 Harness  | 以 EPaxos 非 Raft Mapping 作为硬验收      |
+| 只在 Raft 家族上有效         | 贡献退化为专用 Harness  | 先以 OmniPaxos、再以 leaderless EPaxos 分层硬验收 |
 | 把活性当固定超时             | 大量误报                | GST、公平性、temperature/lasso 独立模块   |
 | Agent 误报被当成缺陷         | 结果不可信              | Oracle、重放、最小化、官方构建、人工确认  |
 | 自定义指标循环论证           | 系统复杂但缺少外部价值  | 隐藏历史缺陷/mutant 主评价，义务/PSS 只作解释 |
@@ -2650,7 +2651,8 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 48. 完整 `control.Adapter` 契约由共享 kit 复用；kit 不是 Runtime backend，且只有两个真实消费者共同需要时才进入共享包。
 49. 所有协议先映射到固定 Core PSS IR；Family/协议特有字段只能进入分开报告的 Extended PSS。
 50. 非 Raft 目标若要求修改 Runtime、Action 或 Core PSS schema，视为抽象失败并停止，而不是增加特例。
-51. 第三目标优先使用 EPaxos 验证无稳定 leader 和 dependency graph；Agora 使用过它不构成降低 conformance 的理由。
+51. 非 Raft 验收分两层：先用公开同步控制面较清晰的 OmniPaxos 验证控制层跨协议，再用 EPaxos 类目标
+    验证无稳定 leader/dependency graph；任何已有论文采用都不构成降低 conformance 的理由。
 52. feasibility 的人工源码事实、机械决策和外部 Qualification 必须分层报告；build/smoke 成功不等于
     stable item、strict replay、完整 Adapter 或目标正确性。
 53. connection byte chunk 不能当作 Message Item；无原生 message API 的目标必须在薄 Binding 中提供
@@ -2897,6 +2899,53 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      字段相似而进入共享 Core。下一步固定为非 Raft construction/yield probe：只验证原始公开接口能否
      暴露确定性多节点构造、消息与自然时间边界，不先写完整 Adapter；probe 期间若必须修改公共
      Action、Runtime 或 Core PSS，必须记录为抽象缺口并停止自动扩张。
+128. M5.21u 固定 `omnipaxos 0.2.2` 的三节点 probe 只用 logical tick、外部 pending-message FIFO、
+     explicit delivery、non-leader append 与 decided suffix 得到两次相同 80-event trace；公共
+     Action/Runtime/Core PSS 和上游源码 churn 为 0，因此只获得 non-Raft candidate-core go。下一阶段
+     M5.21v 仅做 `Temporal + Message` 最小 Binding 和 fresh-worker-process Replay，target-owned 生产
+     Binding 软目标 850 行、硬停止线 1,000 行；不得同时加入 workload、restart、durable storage、
+     PSS、RiskWitness、Agent 或 Qualification，也不得把该 leader-based 结果冒充 EPaxos 验证。
+129. M5.21v 已用未修改的 OmniPaxos worker/Go Adapter 接入唯一 Runtime：真实 51-decision 轨迹包含
+     natural temporal、message duplicate/drop/deliver，并在第二个 fresh worker process 精确重放；公共
+     Action/Runtime/Core PSS churn 为 0，target-owned 生产 Binding 为 770 行，低于 850/1,000 行界限。
+     该结果只证明 leader-based Sequence Paxos 最小控制数据面。M5.21w 只允许增加 non-leader opaque
+     append→decided→ClientResult，边际软目标 180 行、总量硬停止线 1,000 行；不得同时加入 restart、
+     durable HostEffect、PSS、RiskWitness、Agent 或 Qualification。
+130. M5.21w 在 n1 自然选主后从 n2 完成唯一 opaque append→decided→ClientResult；35-decision 轨迹在
+     fresh worker process 精确重放，结果只由声明 origin=n2 的 exact decided entry 产生一次。公共
+     Action/Runtime/Core PSS churn 和上游修改均为 0；生产 Binding 经 15 行收缩为 948 行，相对基线
+     增加 178 行，低于 180/1,000 行界限。下一阶段 M5.21x 只允许从稳定 Evidence 映射现有 Core PSS，
+     不修改 schema/Runtime/worker，不虚构 contending 或 durable state；mapping 软目标 180 行、硬停止
+     240 行，仍不得加入 Agent、Coverage 总分、Oracle 或 Qualification。
+131. M5.21x 以 154 行 target Mapper 将现有 OmniPaxos Evidence 保守映射到固定 Core PSS；35-decision
+     workload 得到 36 samples、35 complete Core states、9 semantic graphs，fresh sample/Discovery/
+     trace 完全相同。绝对 ballot/index/priority 变化不改变相对 Mapping，且不生成 contending、Value、
+     applied 或 durable 语义。35/9 均不得作为质量分数。下一阶段 M5.21y 只增加 exact decided-prefix
+     digest 与 target DecisionProjector，复用现有 Agreement；公共 Oracle/Runtime 不改，target 增量软目标
+     140 行、硬停止 200 行，不加入 restart、Agent、Coverage 总分、Qualification 或真实缺陷声明。
+132. M5.21y 从 OmniPaxos `read_decided_suffix(0)` 的完整有序前缀生成 domain-separated cumulative
+     SHA-256，并由 51 行 target DecisionProjector 投影 exact participant/position/digest。真实 35-decision
+     control 的两个同位置节点观察一致，fresh worker Replay 的 trace/projection 相同；只替换一个 Evidence
+     digest 的显式 calibration 触发现有 Agreement 1 次。calibration 不是协议执行或真实缺陷，control 的
+     0 violation 也不证明正确。target 生产增量 89 行，公共 Runtime/Oracle/Core PSS 与上游改动为 0。
+     下一阶段 M5.21z 只做机械 Qualification 差距审计：保留完整 Portable CFT Profile 的 partial/
+     unqualified 结果，并检查 executor 是否错误地把全能力资格作为所有子集实验的统一门槛；不得为通过
+     而缩小 requirement，也不得同时加入 restart、Agent、新评分或 formal 效果声明。
+133. M5.21z 保留 `portable-cft-control-v2` 的 8-required 完整分母，机械得到 OmniPaxos
+     `validated=3, unsupported=3, unvalidated=3, failed=0, qualified=false`。Temporal/Message/Replay 已有
+     target gate 证据，但 v2 Profile 的 witness 与 Crash/Restart lifecycle 组合，不能直接获得独立资格
+     信用；不得人工改写状态。现有 ExecutionAdmission 能绑定 partial report 的命名 validated subset，并
+     拒绝完整 Portable set，但 requirement 仍由调用方声明，尚未从 Policy/Workload/FaultEnvelope/Replay
+     机械推导下界。因此 meaningful OmniPaxos experiment 仍不可进入可信评测。M5.21zR 固定为 M5.21 最后
+     阶段：新增版本化解耦 witness/profile、在 SUT 执行前拒绝少报，并只运行无 crash/durability 的 admitted
+     smoke；历史 v2 identity 不改，不加入 Agent、Campaign、评分或真实缺陷声明。
+134. M5.21zR 新增 `portable-cft-control-v3`，不改写 v2 identity/digest；通用独立 witness
+     在 OmniPaxos 和官方 etcd/raft 上验证 Temporal/Message/Replay。OmniPaxos 机械结果为
+     `validated=6, unsupported=3, unvalidated=0, failed=0, qualified=false`。Config capability 下界在
+     Adapter factory/SUT 前由 Policy/Workload/FaultEnvelope/Replay 精确或保守推导，少报不得进入执行。
+     六能力 admitted smoke 完成 29 decisions、28 Core states、1 workload 且 fresh Replay 稳定；该结果
+     不含 crash/durable/Agent/方法优势。M5.21 已收口；M5.22 只用已认证的 etcd/raft 与 OmniPaxos
+     执行面做共同预算 cross-target Campaign/Planner，新 capability 必须由真实失败证据驱动。
 
 ---
 
@@ -2932,9 +2981,11 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 - 让 Agent 自动确认真实协议 bug；
 - 在没有控制随机性、网络和存储边界时仍声称严格确定性。
 
-总体判断：确定性控制在两个 Raft 实现上已经部分成立；下一风险是 Core PSS IR 和边际接入面能否在
-EPaxos 上保持不变。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 和协议 Oracle，但不应重写控制层或
-Core ledger。真正的论文创新应集中在：
+总体判断：确定性控制、opaque input/result、保守 Core PSS、Agreement 和 partial capability admission
+已在 Raft 与 leader-based Sequence Paxos 上成立。下一个主要风险不再是 Adapter 能否连通，而是同一
+Campaign/Planner 和评测账本能否在两个目标上保持无 Raft 字段、共同预算与可重算结果。随后才考虑
+leaderless/BFT 目标。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 和协议 Oracle，但不应重写
+控制层或 Core ledger。真正的论文创新应集中在：
 
 1. 固定 Core PSS IR + 薄 Mapping 如何以较低成本提供足够可靠的语义；
 2. 执行如何归约为保守、稳定、有意义的偏序场景；

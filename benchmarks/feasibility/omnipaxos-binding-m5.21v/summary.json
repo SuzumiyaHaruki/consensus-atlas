@@ -1,0 +1,61 @@
+{
+  "schema_version": "consensus-atlas/omnipaxos-binding-spike-report/v1",
+  "stage": "M5.21v",
+  "date": "2026-08-11",
+  "target": "crates.io/omnipaxos@0.2.2",
+  "protocol_family": "sequence-paxos-with-ballot-leader-election",
+  "classification": "binding-spike-pass-not-qualified",
+  "build": {
+    "worker_binary_sha256": "02afe07f93a99e460b412bae00f6a7912fe26f7d544a94b54e4550d5914dc1b0",
+    "go": "go1.25.8 linux/amd64",
+    "rustc": "1.88.0 (6b00bc388 2025-06-23)",
+    "cargo": "1.88.0 (873a06493 2025-05-10)"
+  },
+  "execution": {
+    "node_count": 3,
+    "leader": "n1",
+    "decisions": 51,
+    "trace_digest": "9f50a2b0de3538978ca75faee00abb6fd93384ecf5149f75a06d8c1d11a373d3",
+    "fresh_worker_processes": 2,
+    "fresh_process_strict_replay": true,
+    "unsupported_operation_rejected": true,
+    "abnormal_worker_exit_reported": true,
+    "actions_demonstrated": [
+      "fire-temporal-event",
+      "duplicate-message",
+      "drop-message",
+      "deliver-message"
+    ]
+  },
+  "control_boundary": {
+    "omnipaxos_algorithm_source_changes": 0,
+    "shared_core_production_added_lines": 0,
+    "shared_core_production_deleted_lines": 0,
+    "worker_owns_scheduler": false,
+    "storage_effect_interception": "not-demonstrated-synchronous-memory-storage"
+  },
+  "binding_composition_physical_lines": {
+    "target_native_worker": 211,
+    "cross_language_protocol_and_client": 142,
+    "target_normalization_and_bookkeeping": 417,
+    "conformance_test": 323,
+    "dependency_manifest": 12,
+    "dependency_lock": 429,
+    "production_total_excluding_dependency_files": 770,
+    "production_soft_limit": 850,
+    "mandatory_stop_line": 1000,
+    "limit_status": "below-soft-limit"
+  },
+  "not_demonstrated": [
+    "opaque-workload-and-client-result",
+    "crash-restart-durable-image",
+    "suspendable-storage-host-effect",
+    "audited-sut-entropy-replay",
+    "core-pss-mapping",
+    "risk-witness",
+    "oracle-or-coverage",
+    "agent-or-campaign",
+    "adapter-qualification",
+    "leaderless-dependency-graph-portability"
+  ]
+}

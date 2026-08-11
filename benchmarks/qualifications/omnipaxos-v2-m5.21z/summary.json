@@ -1,0 +1,99 @@
+{
+  "schema_version": "consensus-atlas/omnipaxos-qualification-audit-summary/v1",
+  "stage": "M5.21z",
+  "date": "2026-08-11",
+  "target": "crates.io/omnipaxos@0.2.2",
+  "profile_id": "portable-cft-control-v2",
+  "profile_was_narrowed": false,
+  "classification": "partial-qualification-valid-admission-derivation-gap",
+  "bundle_digest": "43f9e40340d7f8f76ab8d795bce779195a6635818597b9cedc00b3c106bb370c",
+  "qualification_digest": "c863bf591e396df9687031052851f292527dc15ecc3bb7ac41173ebc632d3f13",
+  "qualification": {
+    "qualified": false,
+    "total": 9,
+    "required": 8,
+    "validated": 3,
+    "unsupported": 3,
+    "unvalidated": 3,
+    "failed": 0,
+    "validated_capabilities": [
+      "opaque-invoke-boundary",
+      "pure-enabled-check",
+      "strict-yield-evidence"
+    ],
+    "unsupported_capabilities": {
+      "audited-entropy-replay": "ADAPTER_ENTROPY_CONTROL_UNAVAILABLE",
+      "crash-restart-incarnation": "ADAPTER_CONTROL_SURFACE_UNAVAILABLE",
+      "formal-process-isolation": "ADAPTER_PROCESS_ISOLATION_REQUIRED"
+    },
+    "unvalidated_capabilities": {
+      "natural-temporal-progress": [
+        "natural-released-message-recovery"
+      ],
+      "runtime-owned-message": [
+        "released-message-lifecycle"
+      ],
+      "strict-decision-replay": [
+        "natural-crash-cancels-captured",
+        "natural-released-message-recovery"
+      ]
+    }
+  },
+  "target_gate_evidence_not_credited_by_profile": {
+    "natural_temporal": "M5.21v pass",
+    "runtime_owned_message": "M5.21v pass",
+    "fresh_action_replay": "M5.21v/M5.21w/M5.21x/M5.21y pass",
+    "core_pss": "M5.21x pass",
+    "agreement": "M5.21y control pass and calibration trigger"
+  },
+  "admission_audit": {
+    "partial_report_accepted_as_identity": true,
+    "named_validated_subset_binding": "pass",
+    "full_portable_binding": "rejected",
+    "report_qualified_boolean_required": false,
+    "requirements_are_caller_declared": true,
+    "policy_action_to_capability_derivation": false,
+    "workload_to_capability_derivation": false,
+    "fault_envelope_to_capability_derivation": false,
+    "meaningful_omnipaxos_experiment_trusted_admission": false
+  },
+  "boundary": {
+    "qualification_composition_lines": 83,
+    "qualification_test_lines": 122,
+    "qualification_cli_line_delta": 4,
+    "adapter_changes": 0,
+    "control_runtime_changes": 0,
+    "conformance_core_changes": 0,
+    "experiment_admission_changes": 0,
+    "upstream_algorithm_changes": 0
+  },
+  "next": {
+    "stage": "M5.21zR",
+    "required": true,
+    "scope": [
+      "version decomposed protocol-neutral witnesses without rewriting portable-cft-control-v2",
+      "mechanically derive or verify Config capability requirements",
+      "reject under-declared Policy, Workload, and FaultEnvelope before execution",
+      "rerun OmniPaxos partial qualification and subset execution admission"
+    ]
+  },
+  "validation": {
+    "fresh_bundle_repeated_equal": true,
+    "frozen_bundle_validate": "pass",
+    "omnipaxos_binding_gate": "pass",
+    "full_go_test": "pass",
+    "go_vet": "pass",
+    "qualification_race_seconds": 8.989,
+    "qualification_race": "pass",
+    "json_syntax": "pass",
+    "plan_copies_identical": true
+  },
+  "not_demonstrated": [
+    "strict-portable-qualification",
+    "trusted-omnipaxos-campaign",
+    "crash-restart-or-durability",
+    "agent-method-advantage",
+    "coverage-quality-correlation",
+    "real-defect-or-private-holdout"
+  ]
+}

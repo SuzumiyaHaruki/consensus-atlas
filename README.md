@@ -5,14 +5,15 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21tA 边际 Binding 成本审计**。唯一满足多消费者门的重复面是
-Runtime→Adapter command wire contract；提取后审计生产面净减少 81 行，raft-rs target-owned Binding
-由 1,218 行降到 1,185 行。proposal、持久化、ClientResult、进程桥接与 PSS/Oracle 没有被伪装成
-共享代码。
+当前阶段已完成 **M5.21zR OmniPaxos partial admission 闭环**，M5.21 在此收口。新的
+`portable-cft-control-v3` 不改写 v2 identity，将 Temporal、Message 和 Replay witness 从
+Crash/Restart lifecycle 中解耦；OmniPaxos 机械结果为 `6 validated / 3 unsupported / 0 unvalidated`，
+仍明确 `qualified=false`。
 
-M5.21t 的 28-decision opaque input→commit→result 轨迹与 digest 保持不变。下一步固定为非 Raft
-construction/yield 可行性 probe，先验证控制抽象能否跨协议，不继续给 raft-rs 叠加功能。raft-rs 仍
-不是 Adapter Qualification，第二 strict target 和 formal holdout 未完成，故 `formal_ready=false`。
+executor 现在会从 Policy、Workload、FaultEnvelope 和 replay 配置机械推导 capability 下界，
+并在 Adapter factory/SUT 启动前拒绝少报。一次只使用六项已验证能力的三节点 opaque workload
+以 29 decisions 完成，fresh Replay 稳定。这证明 partial target 可以被可信执行，不是全能力资格、
+缺陷发现或方法优势结论。下一阶段转入 M5.22 跨目标 Campaign/Planner 实验；`formal_ready=false`。
 完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环
@@ -347,7 +348,14 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21tA Binding cost audit](docs/stage-m5.21ta-marginal-binding-cost-audit.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21zR admission closure](docs/stage-m5.21zr-admission-closure.md)、
+[M5.21z OmniPaxos Qualification audit](docs/stage-m5.21z-omnipaxos-qualification-audit.md)、
+[M5.21y OmniPaxos Agreement](docs/stage-m5.21y-omnipaxos-agreement.md)、
+[M5.21x OmniPaxos Core PSS](docs/stage-m5.21x-omnipaxos-core-pss.md)、
+[M5.21w OmniPaxos workload](docs/stage-m5.21w-omnipaxos-opaque-workload.md)、
+[M5.21v OmniPaxos Binding](docs/stage-m5.21v-omnipaxos-minimal-binding.md)、
+[M5.21u OmniPaxos core probe](docs/stage-m5.21u-omnipaxos-core-probe.md)、
+[M5.21tA Binding cost audit](docs/stage-m5.21ta-marginal-binding-cost-audit.md)、
 [M5.21t opaque workload](docs/stage-m5.21t-raft-rs-opaque-workload.md)、
 [M5.21sR Binding contraction](docs/stage-m5.21sr-raft-rs-binding-contraction.md)、
 [M5.21s raft-rs Binding spike](docs/stage-m5.21s-raft-rs-binding-spike.md)、

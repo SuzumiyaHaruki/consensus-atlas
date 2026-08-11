@@ -369,7 +369,54 @@ Invoke/result/mode 外层参数以及 schema/encoding/digest 解码；Runtime �
 HashiCorp Raft 与 raft-rs 是实际 decoder。审计生产面净减少 81 行，raft-rs target-owned Binding 降为
 1,185 行，原 trace bytes/digest 不变。proposal、Ready/持久化、ClientResult、process bridge 和
 PSS/Oracle 仍为 target-owned；当前没有第二个 process bridge 消费者，因此不建立通用 worker kit。
-下一步先做非 Raft construction/yield probe；probe 不得修改 Action/Runtime/Core PSS 来迁就目标。
+
+M5.21u 已用固定 `omnipaxos 0.2.2` 做非 Raft construction/yield probe。Sequence Paxos + BLE 核心以
+同步对象暴露逻辑 tick、outgoing message、incoming delivery、append 和 decided suffix；外部 FIFO
+拥有 pending message。两次 fresh 三节点运行得到相同 80-event trace，且公共 Action/Runtime/Core PSS
+与上游源码零修改。该结果只允许进入 `Temporal + Message` 的最小 Binding，不意味着 storage trait 已是
+可暂停 HostEffect，也不证明 restart、PSS/Oracle、Qualification 或 leaderless 协议。
+
+M5.21v 已将该核心接入唯一 Runtime 的最小 `Temporal + Message` 数据面。target-owned worker 每次只执行
+一个 `tick/step`；Runtime 实际拥有 pending set、duplicate/drop/deliver、logical time 和 strict Replay。
+第一条消息被复制、原件被丢弃、克隆被投递，三节点最终观察到 n1 leader；第二个 fresh process 精确
+重放 51 个 decision。公共 Core churn 为 0，生产 Binding 为 770 行。同步 `MemoryStorage` 仍留在 worker
+内部，未建模为 HostEffect；下一阶段只能增加 opaque append/result，不同时扩展持久化或 PSS。
+
+M5.21w 已完成 non-leader opaque input→result：n1 自然选主后，Runtime OfferInvoke n2；Adapter 从可信
+command identity 写入 origin，OmniPaxos 通过 Runtime-owned message forwarding/replication 决定 entry，
+且只有 origin n2 的增量 decided observation 产生一次 ClientResult。35-decision 轨迹在 fresh process
+严格重放。生产 Binding 经收缩为 948 行，公共 Core churn 继续为 0。下一阶段仅把稳定 Evidence 映射到
+现有 Core PSS；不可观测的 contending、持久化和协议专有 ballot 细节不得由 Mapping 猜测。
+
+M5.21x 已在不改 Core schema/Runtime/worker 的条件下加入 154 行 OmniPaxos Mapper。participant 只映射
+passive/coordinating；absolute promise/decided 数值被归一为相对 rank；Evidence 不支持的 contending、
+Value、applied 和 durable entity 均不生成。真实轨迹得到 35 complete Core states、9 semantic graphs，
+fresh sample/Discovery 相同。这两个数都不是质量分数。下一阶段在 target 边界增加 exact decided-prefix
+digest 并复用通用 Agreement，不把 ClientResult 或 PSS 当作正确性判定。
+
+M5.21y 已在 target worker 中从完整 `read_decided_suffix(0)` 生成 domain-separated cumulative digest；
+51 行 OmniPaxos DecisionProjector 只投影 participant/exact position/digest。真实 35-decision control 的
+两个同位置节点观察一致，fresh worker Replay 的 trace/projection 相同；替换一个 Evidence digest 的明确
+calibration 触发同一 Agreement。公共 Runtime/Oracle/Core PSS 零修改。该摘要 identity 当前只覆盖无
+compaction/snapshot/reconfiguration 的 MemoryStorage，遇到非完整前缀即 fail closed。
+
+M5.21z 将 OmniPaxos 放入未缩小的 `portable-cft-control-v2`，机械得到 3 validated、3 unsupported、
+3 unvalidated。v2 Profile 将 natural temporal、runtime-owned message 和 strict replay 的 witness 与
+Crash/Restart lifecycle 组合，因而不能给已由 target gate 验证的独立路径资格信用。现有
+`ExecutionAdmission` 接受 partial report 的命名 validated subset，但只校验调用方声明的 requirement；
+它尚未从 Policy ActionKinds、Workload、FaultEnvelope 和 Replay 配置推导能力下界。M5.21zR 必须在执行前
+拒绝少报，并以新版本解耦 witness；不得改写历史 v2 Profile 或把 target gate 结果直接手填为 validated。
+
+M5.21zR 新增 `portable-cft-control-v3`，保持 v2 identity/digest 不变，只将 natural temporal、
+runtime-owned message 和 strict replay 改为不依赖 lifecycle 的独立 witness。OmniPaxos 因而机械得到
+6 validated、3 unsupported、0 unvalidated，仍为 partial target。同一 independent control witness 在官方
+etcd/raft Adapter 通过，防止将 OmniPaxos 私有语义放入通用 Conformance。
+
+`VerifyConfigAdmission` 现在从 Policy、Workload、FaultEnvelope 和 Replay 开关推导 capability 下界，
+在 Adapter factory/SUT 启动前拒绝少报。固定已知 Action 做精确并集，开放 policy 和未分类
+effect/callback 保守要求 Profile 全部 required set。一次只使用六项已验证能力的 OmniPaxos
+workload 以 29 decisions 完成并 fresh Replay 稳定；这只证明 partial admission 闭环，不是 full
+qualification、缺陷发现或方法优势。M5.21 在此收口，M5.22 转入跨目标 Campaign/Planner 实验。
 
 M5.21q 已增加一条 no-model Risk Frontier authority gate：通用组合层只通过 strict prefix Replay
 重建下一步 enabled/admissible ActionRef，并将 exact ActionID choice 编译回既有 Policy。target

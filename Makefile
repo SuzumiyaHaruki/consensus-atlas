@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment probe-raftrs-core test-raftrs-binding adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-campaign experiment-etcdraft-v2-campaign-resume experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment probe-raftrs-core probe-omnipaxos-core test-raftrs-binding test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-campaign experiment-etcdraft-v2-campaign-resume experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -92,6 +92,27 @@ probe-raftrs-core:
 	cargo run --manifest-path probes/raftrs/Cargo.toml --locked --quiet | \
 		diff -u benchmarks/feasibility/raft-rs-m5.21r/report.json -
 
+# M5.21u is a bounded non-Raft core probe. It may not change shared Actions,
+# Runtime, PSS, or upstream OmniPaxos source and does not imply qualification.
+probe-omnipaxos-core:
+	sha256sum -c benchmarks/feasibility/omnipaxos-m5.21u/inputs.sha256
+	cargo fmt --manifest-path probes/omnipaxos/Cargo.toml -- --check
+	cargo clippy --manifest-path probes/omnipaxos/Cargo.toml --locked --quiet -- -D warnings
+	cargo run --manifest-path probes/omnipaxos/Cargo.toml --locked --quiet | \
+		diff -u benchmarks/feasibility/omnipaxos-m5.21u/report.json -
+
+# Current OmniPaxos gate exercises the M5.21v control boundary, M5.21w workload,
+# M5.21x PSS, and M5.21y decided-prefix Agreement path. It is not Qualification.
+test-omnipaxos-binding:
+	cargo fmt --manifest-path adapters/omnipaxosv2/worker/Cargo.toml -- --check
+	cargo clippy --manifest-path adapters/omnipaxosv2/worker/Cargo.toml --locked --quiet -- -D warnings
+	go test ./adapters/omnipaxosv2 -count=1 -v
+
+# M5.21x checks only the target-owned mapping into the existing Core PSS IR.
+# Core state counts remain descriptive and are not a quality/coverage score.
+test-omnipaxos-pss:
+	go test ./adapters/omnipaxosv2 -run '^TestCorePSS' -count=1 -v
+
 # Current raft-rs gate exercises target-owned Go/Rust binding, opaque workload,
 # error boundaries, and fresh-process Control Runtime replay. It is not qualification.
 test-raftrs-binding:
@@ -106,6 +127,12 @@ adapter-qualify-etcdraftv2:
 adapter-qualify-hashicorpraftv2:
 	go run ./cmd/adapter-qualify -target hashicorpraftv2 \
 		-out artifacts/qualifications/hashicorp-raft-v2-current/report.json
+
+adapter-qualify-omnipaxosv2:
+	cargo build --locked --quiet --manifest-path adapters/omnipaxosv2/worker/Cargo.toml
+	go run ./cmd/adapter-qualify -target omnipaxosv2 \
+		-worker adapters/omnipaxosv2/worker/target/debug/consensus-atlas-omnipaxos-worker \
+		-out artifacts/qualifications/omnipaxos-v2-current/report.json
 
 audit-hashicorp-determinism:
 	go test ./adapters/hashicorpraftv2 \

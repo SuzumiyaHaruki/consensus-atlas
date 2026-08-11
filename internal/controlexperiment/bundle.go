@@ -129,10 +129,7 @@ func executeQualifiedBundle(
 	if err := qualification.Validate(); err != nil {
 		return Report{}, ExecutionBundle{}, fmt.Errorf("EXECUTION_BUNDLE_QUALIFICATION_INVALID: %w", err)
 	}
-	if config.Admission == nil {
-		return Report{}, ExecutionBundle{}, errors.New("EXPERIMENT_ADMISSION_REQUIRED")
-	}
-	if err := config.Admission.VerifyQualification(qualification.Qualification); err != nil {
+	if err := VerifyConfigAdmission(config, qualification.Qualification); err != nil {
 		return Report{}, ExecutionBundle{}, err
 	}
 	if projector == nil || projector.ID() == "" {

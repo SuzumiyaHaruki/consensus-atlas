@@ -1,0 +1,67 @@
+{
+  "schema_version": "consensus-atlas/omnipaxos-core-pss-probe-report/v1",
+  "stage": "M5.21x",
+  "date": "2026-08-11",
+  "target": "crates.io/omnipaxos@0.2.2",
+  "mapping_id": "omnipaxos-v2/core-pss-v1",
+  "classification": "core-pss-mapping-probe-pass-not-coverage-validation",
+  "build": {
+    "worker_binary_sha256": "c22406c3c56c3aefd83f4671358240146faf8d9c3eceae61c847e42db38d1206"
+  },
+  "execution": {
+    "decisions": 35,
+    "samples": 36,
+    "core_states": 35,
+    "semantic_graphs": 9,
+    "minimum_semantic_milestones": [
+      "all-passive-before-election",
+      "one-coordinating-after-election",
+      "relative-decision-entity-after-decide"
+    ],
+    "trace_digest": "2064f35a31c4839b006b0e3d9fda5d4a72f34508aaf2a91145341684b3694acf",
+    "fresh_worker_processes": 2,
+    "fresh_action_replay": true,
+    "sample_sequence_equal": true,
+    "discovery_ledger_equal": true
+  },
+  "relative_invariance": {
+    "absolute_ballot_shift_ignored": true,
+    "absolute_decision_index_shift_ignored": true,
+    "leader_priority_order_preserving_shift_ignored": true
+  },
+  "conservative_mapping": {
+    "participant_modes": [
+      "passive",
+      "coordinating"
+    ],
+    "contending_entities": 0,
+    "value_entities": 0,
+    "applied_entities": 0,
+    "durable_entities": 0
+  },
+  "boundary": {
+    "mapping_production_lines": 154,
+    "mapping_test_lines": 271,
+    "mapping_soft_target": 180,
+    "mapping_hard_stop_line": 240,
+    "core_pss_schema_changes": 0,
+    "control_runtime_changes": 0,
+    "worker_changes": 0,
+    "upstream_algorithm_changes": 0
+  },
+  "interpretation": {
+    "core_states_are_quality_score": false,
+    "semantic_graphs_are_quality_score": false,
+    "core_state_count_includes_control_queue_shape": true,
+    "mapping_proves_protocol_state_equivalence": false
+  },
+  "not_demonstrated": [
+    "extended-sequence-paxos-pss",
+    "safety-or-liveness-oracle",
+    "coverage-quality-correlation",
+    "crash-restart-durable-image",
+    "agent-or-campaign",
+    "adapter-qualification",
+    "leaderless-dependency-graph-portability"
+  ]
+}

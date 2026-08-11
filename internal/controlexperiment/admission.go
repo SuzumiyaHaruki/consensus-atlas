@@ -102,6 +102,95 @@ func (admission ExecutionAdmission) VerifyQualification(report conformance.Quali
 	return requireValidatedCapabilities(report, admission.RequiredCapabilities)
 }
 
+// VerifyConfigAdmission checks the caller-declared admission against a
+// conservative capability lower bound derived from the exact Config. It runs
+// before any Adapter factory or SUT process is invoked.
+func VerifyConfigAdmission(config Config, report conformance.QualificationReport) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	if config.Admission == nil {
+		return errors.New("EXPERIMENT_ADMISSION_REQUIRED")
+	}
+	if err := config.Admission.VerifyQualification(report); err != nil {
+		return err
+	}
+	declared := stringSet(config.Admission.RequiredCapabilities)
+	for _, capability := range minimumConfigCapabilities(config, report) {
+		if _, ok := declared[capability]; !ok {
+			return fmt.Errorf("EXPERIMENT_ADMISSION_CAPABILITY_UNDERDECLARED: %s", capability)
+		}
+	}
+	return nil
+}
+
+func minimumConfigCapabilities(config Config, report conformance.QualificationReport) []string {
+	required := map[string]struct{}{
+		conformance.CapabilityStrictYieldEvidence:  {},
+		conformance.CapabilityPureEnabledCheck:     {},
+		conformance.CapabilityStrictDecisionReplay: {},
+	}
+	conservativeFull := false
+	for _, run := range config.Runs {
+		if run.Workload != nil {
+			required[conformance.CapabilityOpaqueInvokeBoundary] = struct{}{}
+		}
+		if run.Policy.Version != PolicyVersion {
+			conservativeFull = true
+			continue
+		}
+		kinds := append([]control.ActionKind(nil), run.Policy.Priority...)
+		for _, rule := range run.Policy.Rules {
+			kinds = append(kinds, rule.Kind)
+		}
+		for _, kind := range kinds {
+			if !addActionCapability(required, kind) {
+				conservativeFull = true
+			}
+		}
+	}
+	if config.FaultEnvelope != nil {
+		envelope := *config.FaultEnvelope
+		if envelope.MaxCrashes > 0 || envelope.MaxConcurrentCrashes > 0 {
+			required[conformance.CapabilityCrashRestart] = struct{}{}
+		}
+		if envelope.MaxMessageDrops > 0 || envelope.MaxMessageDuplicates > 0 ||
+			envelope.MaxPartitions > 0 || envelope.MaxActivePartitions > 0 {
+			required[conformance.CapabilityRuntimeOwnedMessage] = struct{}{}
+		}
+	}
+	if conservativeFull {
+		for _, capability := range report.Capabilities {
+			if capability.Required {
+				required[capability.ID] = struct{}{}
+			}
+		}
+	}
+	result := make([]string, 0, len(required))
+	for capability := range required {
+		result = append(result, capability)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func addActionCapability(required map[string]struct{}, kind control.ActionKind) bool {
+	switch kind {
+	case control.ActionInvoke:
+		required[conformance.CapabilityOpaqueInvokeBoundary] = struct{}{}
+	case control.ActionFireTemporal:
+		required[conformance.CapabilityNaturalTemporal] = struct{}{}
+	case control.ActionDeliverMessage, control.ActionDropMessage, control.ActionDuplicateMessage,
+		control.ActionPartition, control.ActionHeal:
+		required[conformance.CapabilityRuntimeOwnedMessage] = struct{}{}
+	case control.ActionCrash, control.ActionRestart:
+		required[conformance.CapabilityCrashRestart] = struct{}{}
+	default:
+		return false
+	}
+	return true
+}
+
 func (admission ExecutionAdmission) seal() (ExecutionAdmission, error) {
 	admission.RequiredCapabilities = append([]string(nil), admission.RequiredCapabilities...)
 	sort.Strings(admission.RequiredCapabilities)
@@ -158,5 +247,5 @@ func (report Report) ValidateWithQualification(qualification conformance.Qualifi
 	if report.ManifestDigest != report.Config.Admission.ManifestDigest {
 		return errors.New("EXPERIMENT_ADMISSION_MANIFEST_MISMATCH")
 	}
-	return report.Config.Admission.VerifyQualification(qualification)
+	return VerifyConfigAdmission(report.Config, qualification)
 }

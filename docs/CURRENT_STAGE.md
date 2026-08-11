@@ -2,23 +2,58 @@
 
 日期：2026-08-11
 
-阶段：M5.21tA 边际 Binding 成本审计已完成
+阶段：M5.21zR OmniPaxos partial admission 闭环已完成，M5.21 已收口
 
 ## 输入、处理、输出
 
-输入是 M5.21t 的 raft-rs 1,218 行 Binding，以及 Runtime、fixture、etcd/raft、HashiCorp Raft 中的
-命令编解码实现。M5.21tA 逐项区分协议语义与重复 wire boilerplate，只把被三个共识 Adapter 和 fixture
-共同消费的 command envelope、Invoke/result/mode 包装及校验提取到 `internal/control`。
+输入是 OmniPaxos Manifest、版本化的 `portable-cft-control-v3`、独立 Temporal/Message/Replay/Invoke
+witness，以及一份明确声明 Policy、Workload、FaultEnvelope 和 replay 边界的 Config。
 
-输出是一份无新 capability 的机械成本账本：审计生产面 4,013→3,932，净减少 81 行；raft-rs
-target-owned Binding 1,218→1,185，workload 相对 981 行基线的边际成本由 +237 降至 +204。proposal、
-持久化、ClientResult、进程桥接和 PSS/Oracle 仍保留在目标专用边界。
+通用 Conformance 机械得到 `total=9, required=8, validated=6, unsupported=3, unvalidated=0,
+failed=0`，`qualified=false`。`VerifyConfigAdmission` 从实验配置推导 capability 下界，在 Adapter
+factory 调用前拒绝少报；随机/变异等开放 policy 保守要求全部 required set。
 
-raft-rs 回归仍为 decisions=28、Invoke=1、ClientResult=1，trace digest 保持
-`0dabc820...a56164`，worker digest 未变化；全仓 test/vet 和受影响包 race 均通过。本阶段
-model calls=0、新增 benchmark/campaign trial=0（仅执行回归测试），`formal_ready=false`。下一步是
-M5.21u 非 Raft
-construction/yield 可行性 probe，而不是继续扩张 raft-rs。详见
+输出还包含一次真实 admitted smoke：6 项 validated capability、29 decisions、28 Core states、
+1 个 completed workload、fresh Replay stable。它没有 crash/restart、durability、Agent 或方法比较。详见
+`docs/stage-m5.21zr-admission-closure.md`。
+
+下一阶段 M5.22 不继续扩张 Adapter 基础设施，而是在 etcd/raft 和 OmniPaxos 两个已认证执行面上
+做共同预算的 cross-target Campaign/Planner 实验。
+
+## 上一阶段：M5.21z OmniPaxos Qualification audit
+
+M5.21z 保留 v2 组合 witness 的负结果：`3 validated / 3 unsupported / 3 unvalidated`，并定位
+Config capability 少报缺口。详见 `docs/stage-m5.21z-omnipaxos-qualification-audit.md`。
+
+## 上一阶段：M5.21y OmniPaxos Agreement
+
+M5.21y 用 exact decided-prefix projection 接通通用 Agreement；正确 control 为 0 violation，明确
+calibration 触发 1 次。详见 `docs/stage-m5.21y-omnipaxos-agreement.md`。
+
+## 上一阶段：M5.21x OmniPaxos Core PSS
+
+M5.21x 用 154 行 target Mapper 得到 replay-stable 的保守 Core PSS；35/9 均不是质量分数。详见
+`docs/stage-m5.21x-omnipaxos-core-pss.md`。
+
+## 上一阶段：M5.21w OmniPaxos opaque workload
+
+M5.21w 从 n2 完成唯一 opaque append→decided→ClientResult，并在 fresh worker 精确重放；生产 Binding
+948 行。详见 `docs/stage-m5.21w-omnipaxos-opaque-workload.md`。
+
+## 上一阶段：M5.21v OmniPaxos 最小 Binding
+
+M5.21v 以 770 行生产 Binding 完成 Temporal、message duplicate/drop/deliver、natural election 和 fresh
+worker Replay。详见 `docs/stage-m5.21v-omnipaxos-minimal-binding.md`。
+
+## 上一阶段：M5.21u OmniPaxos deterministic-core probe
+
+M5.21u 用 325 行隔离 probe 证明 logical tick、外部 pending message、explicit delivery、non-leader append
+与两次 fresh trace equality；它没有接入 Runtime。详见 `docs/stage-m5.21u-omnipaxos-core-probe.md`。
+
+## 上一阶段：M5.21tA 边际 Binding 成本审计
+
+M5.21tA 只提取被多方真实消费的 Runtime→Adapter command wire contract。审计生产面净减少 81 行，
+raft-rs target-owned Binding 从 1,218 降至 1,185，原 trace digest 不变。详见
 `docs/stage-m5.21ta-marginal-binding-cost-audit.md`。
 
 ## 上一阶段：M5.21t raft-rs opaque workload 纵向切片

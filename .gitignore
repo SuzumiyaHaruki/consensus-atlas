@@ -1,6 +1,8 @@
 /artifacts/
 /probes/raftrs/target/
+/probes/omnipaxos/target/
 /adapters/raftrsv2/worker/target/
+/adapters/omnipaxosv2/worker/target/
 /agents/__pycache__/
 *.pyc
 key.txt

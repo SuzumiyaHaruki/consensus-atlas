@@ -71,10 +71,7 @@ func ExecuteQualified(
 	mapper psscore.SemanticMapper,
 	router WorkloadRouter,
 ) (Report, error) {
-	if config.Admission == nil {
-		return Report{}, errors.New("EXPERIMENT_ADMISSION_REQUIRED")
-	}
-	if err := config.Admission.VerifyQualification(qualification); err != nil {
+	if err := VerifyConfigAdmission(config, qualification); err != nil {
 		return Report{}, err
 	}
 	return execute(ctx, config, newAdapter, mapper, router, nil)

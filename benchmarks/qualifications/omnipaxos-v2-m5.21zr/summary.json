@@ -1,0 +1,94 @@
+{
+  "schema_version": "consensus-atlas/omnipaxos-admission-closure-summary/v1",
+  "stage": "M5.21zR",
+  "date": "2026-08-11",
+  "target": "crates.io/omnipaxos@0.2.2",
+  "classification": "partial-target-admission-closed-m5.21-complete",
+  "identity": {
+    "profile_id": "portable-cft-control-v3",
+    "profile_digest": "80c6634ae9577e33853c2f66c8971b10fd13fcb608fcecb71d4d9c8fdd3f7971",
+    "bundle_digest": "1750d6c32976d71c590a15776e6e09cf4cd15685ea8cf7e3307f819bb0840e66",
+    "qualification_digest": "459db6182b1a0e9e51fe201220a98f0939bf3637cf39349d038448da6228d3ba",
+    "worker_binary_sha256": "2e02273494cb1a196e5111f8a0d0afa7350a7105963f09f1098b5246abeb6d66"
+  },
+  "compatibility": {
+    "portable_v2_rewritten": false,
+    "portable_v2_profile_digest": "8ceb2e870d0b5bc67fbdf5019f93f103a358c4f850bd3f6cebb2af3aa2a5f3c8",
+    "m5_21z_bundle_still_valid": true,
+    "existing_etcd_v2_qualification_tests": "pass"
+  },
+  "qualification": {
+    "qualified": false,
+    "total": 9,
+    "required": 8,
+    "validated": 6,
+    "unsupported": 3,
+    "unvalidated": 0,
+    "failed": 0,
+    "validated_capabilities": [
+      "natural-temporal-progress",
+      "opaque-invoke-boundary",
+      "pure-enabled-check",
+      "runtime-owned-message",
+      "strict-decision-replay",
+      "strict-yield-evidence"
+    ],
+    "unsupported_capabilities": {
+      "audited-entropy-replay": "ADAPTER_ENTROPY_CONTROL_UNAVAILABLE",
+      "crash-restart-incarnation": "ADAPTER_CONTROL_SURFACE_UNAVAILABLE",
+      "formal-process-isolation": "ADAPTER_PROCESS_ISOLATION_REQUIRED"
+    }
+  },
+  "independent_witnesses": {
+    "natural-temporal-progress-independent": "pass",
+    "released-message-control": "pass",
+    "action-trace-replay": "pass",
+    "action_trace_contains_temporal_and_message_control": true,
+    "second_official_target_etcd_raft": "pass"
+  },
+  "admission_lower_bound": {
+    "checked_before_adapter_factory": true,
+    "fixed_policy_known_actions": "exact-capability-union",
+    "workload": "requires-opaque-invoke-boundary",
+    "message_fault_envelope": "requires-runtime-owned-message",
+    "crash_fault_envelope": "requires-crash-restart-incarnation",
+    "random_or_trace_mutation_policy": "requires-all-required-capabilities",
+    "unclassified_effect_or_callback_action": "requires-all-required-capabilities",
+    "underdeclared_test": "rejected-before-factory-call"
+  },
+  "admitted_smoke": {
+    "admission_digest": "529bbb39ccfc01430193b5bca4b89bc620ac76cbe8d3a9701e3e13c55b4fb579",
+    "report_digest": "900ef46be7a3dabbc7e7a29dcbcb379d84dc978e34bc51ddf38566df08d27ba4",
+    "trace_digest": "b315eb2928762bb5ff0a8172ff771bea26f4608b772f96a9c6bab50ead755c2b",
+    "required_capabilities": 6,
+    "decisions": 29,
+    "core_states": 28,
+    "workload_completed": 1,
+    "termination": "configured-stop",
+    "fresh_replay_stable": true,
+    "crash_or_restart_actions": 0,
+    "durability_capability_claimed": false
+  },
+  "boundary": {
+    "generic_production_line_delta": 304,
+    "target_workload_router_lines": 36,
+    "qualification_composition_lines": 85,
+    "omnipaxos_target_production_lines": 1227,
+    "runtime_action_schema_changes": 0,
+    "core_pss_schema_changes": 0,
+    "oracle_changes": 0,
+    "upstream_algorithm_changes": 0
+  },
+  "milestone": {
+    "m5_21_complete": true,
+    "next": "M5.22 cross-target campaign and planner evaluation"
+  },
+  "not_demonstrated": [
+    "full-portable-qualification",
+    "crash-restart-or-durable-omnipaxos",
+    "effect-specific-independent-capability",
+    "agent-method-advantage",
+    "coverage-quality-correlation",
+    "real-defect-or-private-holdout"
+  ]
+}
