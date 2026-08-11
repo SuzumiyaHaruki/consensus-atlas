@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-campaign experiment-etcdraft-v2-campaign-resume experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment probe-raftrs-core adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-campaign experiment-etcdraft-v2-campaign-resume experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -82,6 +82,15 @@ audit-no-retired-experiment:
 		echo 'M5.17bR2 violation: compiled source references a retired experiment path' >&2; \
 		exit 1; \
 	fi
+
+# M5.21r is a bounded candidate probe, not Adapter qualification. Exact Cargo
+# resolution and a checked-in output keep the result independently reproducible.
+probe-raftrs-core:
+	sha256sum -c benchmarks/feasibility/raft-rs-m5.21r/inputs.sha256
+	cargo fmt --manifest-path probes/raftrs/Cargo.toml -- --check
+	cargo clippy --manifest-path probes/raftrs/Cargo.toml --locked --quiet -- -D warnings
+	cargo run --manifest-path probes/raftrs/Cargo.toml --locked --quiet | \
+		diff -u benchmarks/feasibility/raft-rs-m5.21r/report.json -
 
 adapter-qualify-etcdraftv2:
 	go run ./cmd/adapter-qualify -target etcdraftv2 \

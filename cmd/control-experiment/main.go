@@ -430,6 +430,7 @@ func etcdraftReport(
 func supportsQualifiedBundleOutput(strategy string) bool {
 	switch strategy {
 	case "workload", "workload-semantics-v2", "workload-evaluation-v3",
+		"workload-risk-witness-calibration",
 		"workload-admissible-uniform", "workload-admissible-uniform-b4",
 		"workload-action-class-random", "workload-action-class-random-b4",
 		"workload-trace-mutation":
@@ -479,7 +480,7 @@ func etcdraftExecutionWithMethodSpec(
 	schemaVersion := controlexperiment.SchemaVersion
 	workloadRouterID := ""
 	switch strategy {
-	case "workload", "workload-semantics-v2", "workload-evaluation-v3", "workload-admissible-uniform", "workload-admissible-uniform-b4", "workload-action-class-random", "workload-action-class-random-v2", "workload-action-class-random-b4":
+	case "workload", "workload-semantics-v2", "workload-evaluation-v3", "workload-risk-witness-calibration", "workload-admissible-uniform", "workload-admissible-uniform-b4", "workload-action-class-random", "workload-action-class-random-v2", "workload-action-class-random-b4":
 		bundle, bound, workload, err := etcdraftQualifiedWorkload(ctx)
 		if err != nil {
 			return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
@@ -494,7 +495,7 @@ func etcdraftExecutionWithMethodSpec(
 			},
 		}
 		stopAfterWorkload := false
-		if strategy == "workload" || strategy == "workload-semantics-v2" || strategy == "workload-evaluation-v3" {
+		if strategy == "workload" || strategy == "workload-semantics-v2" || strategy == "workload-evaluation-v3" || strategy == "workload-risk-witness-calibration" {
 			experimentID = "public-etcdraft-v2-semantic-workload-m5.15"
 			if strategy == "workload-semantics-v2" {
 				experimentID = "public-etcdraft-v2-experiment-semantics-m5.17c0"
@@ -505,6 +506,26 @@ func etcdraftExecutionWithMethodSpec(
 				experimentID = "public-etcdraft-v2-method-evaluation-m5.18a"
 				schemaVersion = controlexperiment.SchemaVersionV2
 				workloadRouterID = etcdraftv2.WorkloadRouterID
+			} else if strategy == "workload-risk-witness-calibration" {
+				if decisions != 64 || policySeed != 1 {
+					return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
+						errors.New("risk witness calibration requires -decisions 64 and -policy-seed 1")
+				}
+				experimentID = "public-etcdraft-v2-risk-witness-reachability-m5.21p"
+				schemaVersion = controlexperiment.SchemaVersionV2
+				workloadRouterID = etcdraftv2.WorkloadRouterID
+				policy = controlexperiment.Policy{
+					Version: controlexperiment.PolicyVersion,
+					ID:      "etcdraft-risk-witness-reachability-calibration-v1",
+					Rules: []controlexperiment.DecisionRule{
+						{Decision: 29, Kind: control.ActionCrash, Node: "n1"},
+						{Decision: 54, Kind: control.ActionRestart, Node: "n1"},
+					},
+					Priority: []control.ActionKind{
+						control.ActionInvoke, control.ActionCompleteEffect,
+						control.ActionDeliverMessage, control.ActionFireTemporal,
+					},
+				}
 			}
 			faultEnvelope = &controlexperiment.FaultEnvelope{
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,

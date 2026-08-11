@@ -42,6 +42,27 @@ func TestPolicyUsesExactRuleBeforeFallbackPriority(t *testing.T) {
 	}
 }
 
+func TestPolicyExactActionIDCannotSubstituteSameClassAction(t *testing.T) {
+	policy := Policy{
+		Version: PolicyVersion, ID: "exact-action",
+		Rules: []DecisionRule{{
+			Decision: 1, Kind: control.ActionCrash, Node: "n1", ActionID: "crash-n1-incarnation-1",
+		}},
+		Priority: []control.ActionKind{control.ActionDeliverMessage},
+	}
+	if err := policy.Validate(1); err != nil {
+		t.Fatal(err)
+	}
+	_, err := policy.selectAction(1, []control.Action{
+		{ID: "crash-n1-incarnation-2", Kind: control.ActionCrash, Node: control.NodeRef{Node: "n1", Incarnation: 2}},
+		{ID: "deliver", Kind: control.ActionDeliverMessage},
+	})
+	var selection *policySelectionError
+	if !errors.As(err, &selection) || selection.failureCode() != "EXPERIMENT_POLICY_RULE_NOT_ENABLED" {
+		t.Fatalf("same-class substitution error = %v, want exact-action rejection", err)
+	}
+}
+
 func TestConfigRejectsOptionalReplayAndDuplicateRun(t *testing.T) {
 	config := Config{
 		SchemaVersion: SchemaVersion, ID: "test", PSSID: "pss", DecisionsPerRun: 2,

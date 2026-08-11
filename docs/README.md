@@ -5,17 +5,20 @@
 
 ## 最新阶段阅读顺序
 
-1. [当前阶段：M5.21o Formal multi-pair CLI](CURRENT_STAGE.md)
-2. [M5.21o Formal multi-pair CLI](stage-m5.21o-formal-multi-pair-cli.md)
-3. [M5.21n Formal fresh evaluator](stage-m5.21n-formal-fresh-evaluator.md)
-4. [M5.21m FormalExposureAudit](stage-m5.21m-formal-exposure-audit.md)
-5. [M5.21l FormalBenchmarkContract](stage-m5.21l-formal-benchmark-contract.md)
-6. [M5.21k Formal Holdout Readiness Gap](stage-m5.21k-holdout-readiness-gap.md)
-7. [M5.21j 最小可信 RiskWitness](stage-m5.21j-risk-witness.md)
-8. [M5.21i Ordered Method Corpus](stage-m5.21i-ordered-method-corpus.md)
-9. [M5.21h Missing Effective Execution](stage-m5.21h-missing-effective-execution.md)
-10. [M5.21g Effective Execution Gate](stage-m5.21g-effective-execution-gate.md)
-11. [M5.21f Planner Usefulness Gate](stage-m5.21f-planner-usefulness-gate.md)
+1. [当前阶段：M5.21r 第二 strict target 候选门](CURRENT_STAGE.md)
+2. [M5.21r 第二 strict target 候选门](stage-m5.21r-second-target-candidate-gate.md)
+3. [M5.21q Risk Frontier 精确执行权限](stage-m5.21q-risk-frontier-authority.md)
+4. [M5.21p RiskWitness 可达性校准](stage-m5.21p-risk-witness-reachability.md)
+5. [M5.21o Formal multi-pair CLI](stage-m5.21o-formal-multi-pair-cli.md)
+6. [M5.21n Formal fresh evaluator](stage-m5.21n-formal-fresh-evaluator.md)
+7. [M5.21m FormalExposureAudit](stage-m5.21m-formal-exposure-audit.md)
+8. [M5.21l FormalBenchmarkContract](stage-m5.21l-formal-benchmark-contract.md)
+9. [M5.21k Formal Holdout Readiness Gap](stage-m5.21k-holdout-readiness-gap.md)
+10. [M5.21j 最小可信 RiskWitness](stage-m5.21j-risk-witness.md)
+11. [M5.21i Ordered Method Corpus](stage-m5.21i-ordered-method-corpus.md)
+12. [M5.21h Missing Effective Execution](stage-m5.21h-missing-effective-execution.md)
+13. [M5.21g Effective Execution Gate](stage-m5.21g-effective-execution-gate.md)
+14. [M5.21f Planner Usefulness Gate](stage-m5.21f-planner-usefulness-gate.md)
 
 ## 较早主线阅读顺序
 
@@ -106,6 +109,9 @@
 - [M5.21m FormalExposureAudit](stage-m5.21m-formal-exposure-audit.md)；
 - [M5.21n Formal fresh evaluator](stage-m5.21n-formal-fresh-evaluator.md)；
 - [M5.21o Formal multi-pair CLI](stage-m5.21o-formal-multi-pair-cli.md)；
+- [M5.21p RiskWitness 可达性校准](stage-m5.21p-risk-witness-reachability.md)；
+- [M5.21q Risk Frontier 精确执行权限](stage-m5.21q-risk-frontier-authority.md)；
+- [M5.21r 第二 strict target 候选门](stage-m5.21r-second-target-candidate-gate.md)；
 - [M5.14 admission](stage-m5.14-admission-and-pruning.md)；
 - [M5.15 workload](stage-m5.15-semantic-workload.md)；
 - [M5.16 bundle/evaluator](stage-m5.16-execution-bundle.md)；

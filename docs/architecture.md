@@ -204,6 +204,13 @@ mode separation、formal admission、exact input set 和全部 binary digest 校
 `runFreshBundle`。当前 composition root 只注册 etcd/raft projector 与 Agreement；第二 target
 应在这里增加注册项，不得修改 formal evaluator。
 
+M5.21p 不增加执行层。`workload-risk-witness-calibration` 是 etcd/raft composition root 中
+冻结到 seed 1/64 decisions 的公开校准 Policy，仍进入唯一 qualified executor。它在准确
+decision 上只能从当前 admissible frontier 选择 Crash/Restart；其余角色变化只由
+Adapter 的自然 temporal/message/effect 推进产生。保存的小型 summary 由集成测试重跑
+primary/replay，再用既有 RiskWitness projector/validator 重算。该 strategy 是 projector/control-surface
+正向校准，不是新 scheduler、Agent backend、Oracle 或方法比较样本。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，
@@ -345,6 +352,15 @@ internal/control*  -X-> adapters or consensus packages
 ```
 
 ## 当前未完成
+
+M5.21r 将第二 strict target 的下一候选冻结为 raft-rs 0.7.0，但只通过独立 deterministic-core
+probe。该 probe 尚不属于 Adapter/Runtime 数据面。M5.21s 只能增加 target-owned Rust worker 与
+Go Binding 的最小纵向切片；如果必须为其修改公共 Action/Runtime/PSS 或复制 scheduler，则候选门失败。
+
+M5.21q 已增加一条 no-model Risk Frontier authority gate：通用组合层只通过 strict prefix Replay
+重建下一步 enabled/admissible ActionRef，并将 exact ActionID choice 编译回既有 Policy。target
+projector 仍在 composition root，协议 evidence/payload 不进入通用视图。该边界证明选择会改变
+真实执行，但不会把 RiskWitness feedback、Agent proposal 或方法效果混成同一个结论。
 
 - 真实非公开 holdout curator pack 与正式方法比较；
 - PSS-guided 的可执行性结构约束（只在评测缺口证明必要时增加）；

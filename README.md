@@ -5,15 +5,14 @@ CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21o Formal multi-pair CLI**。curator 可用 private contract、passed
-exposure audit、MethodSpec 和 `trial_id -> BuildAudit/binary path` 清单调用 M5.21n evaluator。
-CLI 在任何 SUT execution 前完成 exact composition、六个 trial 集合和全部 build/binary
-digest 校验，且要求全新 artifact/output path；现有 public single-pair 模式保持不变。
+当前阶段已完成 **M5.21r 第二 strict CFT target 候选门**。HashiCorp Raft 因官方墙钟、
+全局随机和 goroutine 控制缺口，不再作为 strict 迁移目标；efficient/epaxos 保持 deferred；
+raft-rs 0.7.0 通过 bounded deterministic-core probe，获准进入下一轮 Binding spike。
 
-公开 synthetic 集成用一次 official etcd/raft correct execution 复用为 3 pair/6 trial，得到
-3 control-pass、3 candidate-survived、0 false positive/invalid；最后一个 binary 篡改会在
-runner calls=0 时拒绝。这只证明 CLI plumbing，不是真实 provenance 或 holdout 效果。
-真实 private pair 和第二 strict CFT 仍未完成，所以 `formal_ready=false`。本阶段模型调用为 0。
+probe 用官方同步 `RawNode<MemStorage>` 创建两组 fresh 三节点 cluster，只通过 5 次逻辑 Tick、
+显式消息 Step 和 Ready/advance，自然选出 n1 并提交 index 1。两次 28-record trace digest 相同。
+该结果不是 Adapter Qualification，也没有改变公共 Action/Runtime/PSS；第二 strict target 和
+formal holdout 仍未完成，所以 `formal_ready=false`。
 完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环
@@ -345,7 +344,10 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21o formal multi-pair CLI](docs/stage-m5.21o-formal-multi-pair-cli.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21r second-target candidate gate](docs/stage-m5.21r-second-target-candidate-gate.md)、
+[M5.21q Risk Frontier authority](docs/stage-m5.21q-risk-frontier-authority.md)、
+[M5.21p RiskWitness reachability](docs/stage-m5.21p-risk-witness-reachability.md)、
+[M5.21o formal multi-pair CLI](docs/stage-m5.21o-formal-multi-pair-cli.md)、
 [M5.21n formal fresh evaluator](docs/stage-m5.21n-formal-fresh-evaluator.md)、
 [M5.21m exposure audit](docs/stage-m5.21m-formal-exposure-audit.md)、
 [M5.21l formal contract](docs/stage-m5.21l-formal-benchmark-contract.md)、

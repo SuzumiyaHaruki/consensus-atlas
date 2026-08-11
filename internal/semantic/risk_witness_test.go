@@ -81,6 +81,39 @@ func TestRiskWitnessSeparatesMissingFromWrongOrder(t *testing.T) {
 	}
 }
 
+func TestRiskWitnessProgressIsMinimalTraceBoundAndTamperEvident(t *testing.T) {
+	spec := riskWitnessTestSpec(t)
+	n1 := control.NodeRef{Node: "n1", Incarnation: 1}
+	result, err := NewRiskWitnessResult(
+		"partial-witness", spec, strings.Repeat("a", 64), strings.Repeat("b", 64),
+		"fixture/projector-v1", []RiskWitnessMilestoneEvidence{{
+			MilestoneID: "workload-invoked", Step: 3, Kind: "trace-action",
+			EvidenceDigest: strings.Repeat("c", 64), Participant: &n1,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress, err := NewRiskWitnessProgress(spec, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != RiskWitnessNotReached ||
+		len(progress.SatisfiedMilestones) != 1 ||
+		progress.FirstMissingMilestone != "coordinator-changed" ||
+		progress.EvidencePrefixDigest != result.ExecutionDigest {
+		t.Fatalf("unexpected progress projection: %#v", progress)
+	}
+	if err := progress.ValidateSource(spec, result); err != nil {
+		t.Fatal(err)
+	}
+	tampered := progress
+	tampered.FirstMissingMilestone = "old-coordinator-restarted"
+	if err := tampered.Validate(spec); err == nil {
+		t.Fatal("tampered progress digest was accepted")
+	}
+}
+
 func TestRiskWitnessSpecRejectsCycles(t *testing.T) {
 	_, err := NewRiskWitnessSpec(
 		"cycle", "raft", "risk",

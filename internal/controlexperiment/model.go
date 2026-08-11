@@ -55,6 +55,7 @@ type DecisionRule struct {
 	Decision int                `json:"decision"`
 	Kind     control.ActionKind `json:"kind"`
 	Node     control.NodeID     `json:"node,omitempty"`
+	ActionID control.ActionID   `json:"action_id,omitempty"`
 }
 
 // Policy is intentionally limited to common Action fields. Rules override the
@@ -204,13 +205,14 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 			continue
 		}
 		for _, action := range enabled {
-			if action.Kind == rule.Kind && (rule.Node == "" || action.Node.Node == rule.Node) {
+			if (rule.ActionID == "" || action.ID == rule.ActionID) &&
+				action.Kind == rule.Kind && (rule.Node == "" || action.Node.Node == rule.Node) {
 				return action, nil
 			}
 		}
 		return control.Action{}, &policySelectionError{
 			code:   "EXPERIMENT_POLICY_RULE_NOT_ENABLED",
-			detail: fmt.Sprintf("decision=%d kind=%s node=%s", decision, rule.Kind, rule.Node),
+			detail: fmt.Sprintf("decision=%d kind=%s node=%s action=%s", decision, rule.Kind, rule.Node, rule.ActionID),
 		}
 	}
 	for _, kind := range policy.Priority {

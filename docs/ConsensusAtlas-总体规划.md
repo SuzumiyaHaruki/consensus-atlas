@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.38（M5.21i Ordered Method Corpus 完成）
+> 状态：Draft v1.41（M5.21r Second Strict Target Candidate Gate 完成）
 > 日期：2026-08-11
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -2428,6 +2428,36 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     下一步停止增加 evaluator schema，在仓库外准备至少 3 组人工复核的 private
     matching pair/BuildAudit/binary curator pack；如数据不存在就明确报告 input gap。
     详见 `docs/stage-m5.21o-formal-multi-pair-cli.md`。
+92. [X] M5.21p 完成首个真实 Runtime RiskWitness 正向可达性校准。公开、固定的
+    etcd/raft strategy 只通过现有 qualified executor 从 enabled Action 选择：64 decisions 中实际
+    `Invoke(n1)@28 -> coordinator n2@53 -> Restart(n1)@54`，中间的新主由自然 temporal/
+    message/effect 推进产生，没有强制 term/role/timeout。workload 保持 `offered=1, completed=0,
+    pending=1`，primary/replay 均为 66 work units，Replay 稳定，RiskWitness 三个 milestone
+    全部由真实 Trace/Evidence/NodeTransition 投影并得到 `reached`。这只证明冻结 risk
+    可由当前控制面实现、projector 不是恒空谓词；该人工固定校准不进入方法排名、
+    Oracle verdict、formal holdout 或单次测试质量评分。model calls=0，新增独立
+    SUT execution=1。下一步不再扩 evaluator；只设计 Agent 与强确定性自适应基线可共用的
+    RiskWitness progress/current-frontier 信息面，并用无模型 gate 证明新权限能改变
+    effective execution。在 formal holdout readiness 与第二 strict CFT 迁移门完成前，
+    不将 witness feedback 交给 Agent，也不调用模型。详见 `docs/stage-m5.21p-risk-witness-reachability.md`。
+93. [X] M5.21q 完成 no-model Risk Frontier exact-authority gate。通用层从 M5.21p 真实
+    trace 的 28/53 decision 前缀，以 fresh Adapter 严格 Replay 后重建 Runtime-enabled 与
+    envelope-admissible ActionRef；可信 progress 只保留已满足 milestone、首个缺失项和 source
+    digest。消费者选择必须逐字段引用当前 view 成员，并编译为 exact ActionID rule。
+    `Crash(n1)@29 + Restart(n1)@54` 重现 reached 风险轨迹；同一前缀选择普通
+    `CompleteEffect(n1)@29` 则完成 workload、仅满足 1/3 milestone，policy/config/trace identity
+    均不同。两臂各为 66/66 primary/replay work，前缀重建 30/55 work 另行记账；model calls=0，
+    新增 SUT executions=2。该结果只证明精确选择具有真实执行权限，不是 Agent 效果或方法排名。
+    下一步优先将该通用边界迁移到第二 strict deterministic CFT target；不继续增加 etcd/raft
+    专用目标来回避跨实现门禁。详见 `docs/stage-m5.21q-risk-frontier-authority.md`。
+94. [X] M5.21r 完成第二 strict target 候选门。HashiCorp v1.7.3 因官方 clock/RNG/goroutine
+    边界不作为 strict 迁移目标，efficient/epaxos 因只证明 framing 而保持 deferred。固定
+    Cargo.lock 的 raft-rs 0.7.0 probe 在两组 fresh 三节点 RawNode 上，仅通过 5 次 logical tick、
+    显式 message step 与 Ready/advance 自然选出 n1 并提交 index 1；两份 28-record trace digest
+    相同。该结果只允许进入 bounded Binding spike，不授予 Adapter/Runtime replay/Qualification，
+    也不产生 PSS/RiskWitness/Agent/formal credit。M5.21s 新 target-owned 生产代码软上限 900 行，
+    不得修改公共 Action/Runtime/PSS 或 raft-rs 算法源码。详见
+    `docs/stage-m5.21r-second-target-candidate-gate.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2811,6 +2841,35 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      命中数量或 curator 本地路径。它只是 direct-atom leakage 的必要门禁，不得声称防止
      协议推断、编码/改写泄露，也不得替代进程、网络和文件系统隔离。审计通过不产生
      defect credit，只允许工件进入后续 formal evaluator 阶段。
+116. Formal holdout 回答的是方法在隐藏 matching candidate/control 上的外部效果，不是
+     单条 Campaign 的绝对测试质量分数。对一次测试的产出必须继续并列报告
+     obligation/profile coverage、Core PSS discovery、RiskWitness reached/missing、Oracle findings
+     和完整成本；任何一项都不得被 holdout kill rate 或复合总分替代。
+117. 默认研究对象是一个物理 Planner Agent。Scenario/Critic/Onboarding 只有在预注册消融证明
+     其解决了单 Planner 的明确失败类后才增加。每个 formal trial 必须使用新鲜上下文、
+     无跨 trial memory，且 Agent、Random/自适应基线和专家方法只能读取预注册的同等
+     public/opaque 信息面；model/provider/version、calls/tokens 和全部执行成本必须独立记账。
+118. M5.21o formal CLI 当前只能 fresh 执行一个 CLI-compatible `MethodSpec`，且该
+     MethodSpec 的 execution attempt 上限为 1。在 durable multi-attempt Planner provider、per-trial reset、
+     同等信息面和完整 model-work 记账接入同一 fresh runner 前，不得把该 CLI 称为
+     formal Agent Campaign evaluator，也不得用手工预生成 bundle 替代 fresh method execution。
+119. 一个 RiskWitness 在作为 Planner 目标或反馈前，必须先通过公开真实 Runtime 正向可达
+     校准和明确负例。正向校准只证明 control surface/projector 可用，不进入方法效果
+     分母。Agent 只能读取可重算的已满足/首个缺失进度与当前 enabled ActionRef，
+     不能自报 milestone evidence、step 或 reached。
+120. 第二个 strict deterministic CFT target 是控制层、Core PSS、RiskWitness 和 formal runner
+     的独立迁移门，不以 Agent 公开 pilot 是否取得正结果为前提。无论 Agent 当前强弱，
+     都不得用继续增加 etcd/raft 专用 backend/risk/monitor 来回避该迁移门。
+121. RiskWitness progress 进入任何 Planner 前必须由可信 target projection 绑定严格 Replay 的 trace
+     prefix，只暴露已满足里程碑、首个缺失项和 source digest；当前 frontier 必须由 fresh Runtime
+     重建并同时冻结 enabled/admissible digest。消费者只能选择视图中的 exact ActionID/Action digest，
+     不得以同 kind/node 的相似动作替换；prefix 重建成本必须单独计入 ledger。该 authority gate 通过
+     只证明选择可改变真实执行，不得称为 Agent 效果或方法排名。
+122. 第二 strict target 必须先通过隔离的 deterministic-core candidate probe，再进入有 LOC 停止线的
+     Binding spike。candidate probe 的 fresh equality 不等于 Control Runtime Replay 或 Qualification；
+     harness 未调用墙钟/线程/显式 campaign 也不能外推成 SUT source audit。部分资格目标不得通过外围
+     包装升级为 strict；若新目标需要协议 Action、Runtime type switch、第二 scheduler 或修改算法源码，
+     必须停止并重新选择目标。
 
 ---
 

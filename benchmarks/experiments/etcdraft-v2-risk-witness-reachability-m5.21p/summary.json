@@ -1,0 +1,118 @@
+{
+  "schema_version": "consensus-atlas/risk-witness-reachability-calibration/v1",
+  "strategy": "workload-risk-witness-calibration",
+  "decision_budget": 64,
+  "policy_seed": 1,
+  "config_digest": "0bc3a8adb74361c047b9c4fb9ecde8e363b780f972f2118d6eeb62184c8ffc6e",
+  "policy_digest": "e09f240a190f58cf95c4b4948e6f5dc40ab45c6f30fe5682ca0eefc9ba8a76f0",
+  "report_digest": "733ff65e1153d72a0b152f8f60904b68e0c5898b4655d959e4357227ca9071b1",
+  "bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "decision_history_digest": "75c5207a51c0b338a2f36f2954bb139127f8c3e505ca0a0ce0dee41cbb5371fd",
+  "replay_stable": true,
+  "work": {
+    "primary": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 1,
+      "scheduler_decisions": 64,
+      "work_units": 66
+    },
+    "replay": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 1,
+      "scheduler_decisions": 64,
+      "work_units": 66
+    },
+    "model": {
+      "calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "resources": {
+      "wall_time": "not-collected",
+      "cpu_time": "not-collected",
+      "peak_rss": "not-collected"
+    }
+  },
+  "workload": {
+    "plan_id": "single-write-v1",
+    "plan_digest": "1cbab34bdff921f0b9d16b955d6365d1d9db319e717514df4f4510d0ba28b13c",
+    "planned": 1,
+    "offered": 1,
+    "completed": 0,
+    "pending": 1,
+    "results": [],
+    "results_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "faults": {
+    "crashes": 1,
+    "message_drops": 0,
+    "message_duplicates": 0,
+    "partitions": 0
+  },
+  "unique_pss_states": 48,
+  "risk_witness": {
+    "schema_version": "consensus-atlas/risk-witness-result/v1",
+    "id": "public-calibration-reached",
+    "spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+    "risk_id": "leader-change-with-inflight-proposal",
+    "target_identity_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+    "execution_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+    "projector_id": "official-etcdraft-v2/leader-change-with-inflight-proposal-v1",
+    "milestones": [
+      {
+        "milestone_id": "workload-invoked-at-coordinator",
+        "step": 28,
+        "kind": "trace-action",
+        "evidence_digest": "d0a78d25d627eea663323b2c1d1fd5235b56d4bf7fa82224fd183a7dc0d562d0",
+        "participant": {
+          "node": "n1",
+          "incarnation": 1
+        }
+      },
+      {
+        "milestone_id": "coordinator-changed-while-inflight",
+        "step": 53,
+        "kind": "target-evidence",
+        "evidence_digest": "e9ec119c49e5706bdddb0dfb5028d5744621c2044e0e724bf58dadded2cf08c8",
+        "participant": {
+          "node": "n2",
+          "incarnation": 1
+        },
+        "related_participant": {
+          "node": "n1",
+          "incarnation": 1
+        }
+      },
+      {
+        "milestone_id": "old-coordinator-restarted-after-change",
+        "step": 54,
+        "kind": "node-transition",
+        "evidence_digest": "660f4715d1923507907a7fde9d4a4e3811749135c6535fd0633d25bebb12beb0",
+        "participant": {
+          "node": "n1",
+          "incarnation": 2
+        },
+        "related_participant": {
+          "node": "n2",
+          "incarnation": 1
+        }
+      }
+    ],
+    "satisfied_milestones": [
+      "workload-invoked-at-coordinator",
+      "coordinator-changed-while-inflight",
+      "old-coordinator-restarted-after-change"
+    ],
+    "missing_milestones": [],
+    "order_violations": [],
+    "status": "reached",
+    "digest": "b92d7587455e64e5ed4a3236b2e3aa8b57c13c1314aaa274528fa2f52c2e3b93"
+  },
+  "new_model_calls": 0,
+  "new_sut_executions": 1,
+  "classification": "real-runtime-risk-witness-reached-calibration-not-method-ranking-or-oracle-verdict"
+}

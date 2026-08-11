@@ -2,30 +2,71 @@
 
 日期：2026-08-11
 
-阶段：M5.21o Formal multi-pair CLI 已完成
+阶段：M5.21r 第二 strict CFT target 候选门已完成
 
 ## 输入、处理、输出
+
+M5.21r 没有把部分资格的 HashiCorp Raft 强行包装成 strict。机械盘点确认其官方 v1.7.3
+仍缺 clock/RNG injection、strict yield/replay；efficient/epaxos 只有 message framing witness，
+完整构造、时间、restart 和 stable yield 未解决。两者分别为 rejected-for-strict/deferred。
+
+新建的隔离 Rust probe 固定 crates.io `raft=0.7.0` 和完整 Cargo.lock。在不调用 Campaign、
+墙钟或线程的 harness 中，两组 fresh 三节点 `RawNode<MemStorage>` 都通过 5 次 n1 logical tick、
+显式 message Step 和 Ready/advance 自然选出 n1、提交 index 1；28 条记录和 trace digest
+`425332...e635` 相同。
+
+因此 raft-rs 只获得“进入 bounded Binding spike”的资格，尚未取得 ConsensusAtlas Adapter、
+Control Runtime strict Replay、durable restart、PSS/RiskWitness/workload 或 Qualification。
+model calls=0；ConsensusAtlas SUT executions=0；`formal_ready=false`。详见
+`docs/stage-m5.21r-second-target-candidate-gate.md`。
+
+## 上一阶段：M5.21q Risk Frontier 精确执行权限校准
+
+M5.21q 从 M5.21p 真实轨迹的 28/53 decision 前缀，用 fresh official etcd/raft Adapter
+严格 Replay，重建可信 RiskWitness 进度与当时真实 enabled/admissible ActionRef。冻结选择只能
+引用视图成员的 exact ActionID，再通过已有唯一 qualified executor 执行。
+
+在共同 64-decision ceiling 下，选择 decision 29 `Crash(n1)` 和 decision 54
+`Restart(n1)` 精确重现 reached 风险轨迹（workload pending、48 PSS states）；选择 decision 29
+普通 `CompleteEffect(n1)` 则得到不同轨迹（workload committed、52 PSS states、RiskWitness
+只满足 1/3）。两臂均为 66/66 primary/replay work；前缀重建 30/55 work 单独记账。
+model calls=0，新增 SUT executions=2。
+
+这只证明精确前沿引用拥有真实执行权限，不证明 Agent 会正确选择、方法优于基线、Oracle
+发现缺陷或 formal holdout ready。详见 `docs/stage-m5.21q-risk-frontier-authority.md`。
+
+## 上一阶段：M5.21p RiskWitness 正向可达性校准
+
+M5.21p 用 official etcd/raft Adapter、已有 Qualification/FaultEnvelope 和唯一 qualified executor
+运行一条固定公开校准。Runtime 在 step 28 实际 Invoke n1，step 29 从 enabled set 选择
+Crash n1，随后只通过自然 temporal/message/effect 推进，在 workload 尚未 return 时于
+step 53 观察到 n2 以更高 term 成为新主，step 54 再从 enabled set 选择 Restart n1。
+
+执行消耗 64 decisions、66/66 primary/replay work，Replay 稳定，workload 为
+`planned=1, offered=1, completed=0, pending=1`，发现 48 个 Core PSS states。已有 projector
+从真实 Trace/Evidence/NodeTransition 得到三个有序 milestone，RiskWitness 为 `reached`。
+这只证明当前控制面可到达该风险区且 projector 不是恒空谓词；该人工固定校准不进入
+方法排名、Oracle verdict、formal holdout 或单次测试质量总分。model calls=0，新增独立
+SUT execution=1；`formal_ready=false`。详见 `docs/stage-m5.21p-risk-witness-reachability.md`。
+
+```text
+official etcd/raft + fixed seed/budget + qualified workload
+                         |
+                         v
+ existing qualified executor -> strict replay-stable bundle
+                         |
+                         v
+ target projection -> ordered RiskWitness reached
+```
+
+## 上一阶段：M5.21o Formal multi-pair CLI
 
 M5.21o 将 formal evaluator 接入现有 `cmd/defect-eval`。curator 输入 private contract、passed
 exposure audit、MethodSpec 和 `FormalFreshInputs/v1` path manifest；CLI 先机械校验模式互斥、
 exact composition、全部 trial 集合及 audit/binary digest，再使用既有 fresh subprocess runner。
-
-公开 synthetic 回归只运行一次 32-decision official etcd/raft correct execution，再通过 injected
-runner 复用为 3 pair/6 trial，得到 3 control-pass、3 candidate-survived、0 false positive/
-invalid。六份输入均在 runner 前预检；篡改最后 binary 时 runner calls=0；旧输出路径
-不会被覆盖。该结果只验证 CLI plumbing，不是真实 private provenance/holdout。真实
-private pair 和第二 strict CFT 仍缺失，故 `formal_ready=false`；model calls=0、新增
-in-process SUT integration execution=1。详见 `docs/stage-m5.21o-formal-multi-pair-cli.md`。
-
-```text
-contract + exposure + method + private trial path manifest
-                         |
-                         v
- admission + all-input preflight -> existing fresh runner
-                         |
-                         v
- per-trial artifacts + private multi-pair evaluation ledger
-```
+公开 synthetic 回归得到 3 control-pass、3 candidate-survived、0 false positive/invalid，
+只验证 CLI plumbing。真实 private pair 和第二 strict CFT 仍缺失。详见
+`docs/stage-m5.21o-formal-multi-pair-cli.md`。
 
 ## 上一阶段：M5.21n Formal fresh evaluator
 
