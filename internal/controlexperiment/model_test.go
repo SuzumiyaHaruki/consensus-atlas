@@ -219,6 +219,125 @@ func TestAdmissibleUniformIsOrderIndependentAndHonorsPreparationPriority(t *test
 	}
 }
 
+func TestBoundedStochasticPolicyFiltersBeforeSelectionAndBindsSurface(t *testing.T) {
+	policy := Policy{
+		Version: BoundedActionClassPolicyVersion, ID: "bounded-class", SeedHex: "01",
+		Priority: []control.ActionKind{control.ActionInvoke},
+		SelectableActions: []control.ActionKind{
+			control.ActionDeliverMessage, control.ActionDropMessage,
+			control.ActionFireTemporal, control.ActionInvoke,
+		},
+	}
+	if err := policy.Validate(64); err != nil {
+		t.Fatal(err)
+	}
+	actions := []control.Action{
+		{ID: "crash", Kind: control.ActionCrash},
+		{ID: "deliver", Kind: control.ActionDeliverMessage},
+		{ID: "duplicate", Kind: control.ActionDuplicateMessage},
+		{ID: "timer", Kind: control.ActionFireTemporal},
+	}
+	for decision := 1; decision <= 64; decision++ {
+		selected, err := policy.selectAction(decision, actions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.Kind != control.ActionDeliverMessage && selected.Kind != control.ActionFireTemporal {
+			t.Fatalf("bounded decision %d selected %s", decision, selected.Kind)
+		}
+	}
+	leftDigest, err := policy.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := policy
+	changed.SelectableActions = []control.ActionKind{
+		control.ActionDeliverMessage, control.ActionFireTemporal, control.ActionInvoke,
+	}
+	rightDigest, err := changed.Digest()
+	if err != nil || leftDigest == rightDigest {
+		t.Fatalf("selection surface digest was not bound: %s/%s/%v", leftDigest, rightDigest, err)
+	}
+	invalid := policy
+	invalid.Priority = []control.ActionKind{control.ActionCrash}
+	if err := invalid.Validate(64); err == nil ||
+		err.Error() != "EXPERIMENT_BOUNDED_POLICY_PRIORITY_OUTSIDE_SURFACE" {
+		t.Fatalf("outside priority error=%v", err)
+	}
+}
+
+func TestBoundedPolicyRequiresCanonicalSurfaceAndWorkloadInvoke(t *testing.T) {
+	payload, err := control.NewPayload("input", "opaque", []byte("value"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := Policy{
+		Version: BoundedUniformPolicyVersion, ID: "bounded-uniform", SeedHex: "01",
+		SelectableActions: []control.ActionKind{control.ActionInvoke, control.ActionDeliverMessage},
+	}
+	if err := policy.Validate(8); err == nil || err.Error() != "EXPERIMENT_BOUNDED_UNIFORM_POLICY_INVALID" {
+		t.Fatalf("non-canonical surface error=%v", err)
+	}
+	policy.SelectableActions = []control.ActionKind{control.ActionDeliverMessage}
+	legacyConfig := Config{
+		SchemaVersion: SchemaVersion, ID: "legacy-bounded", PSSID: "pss",
+		Runtime: RuntimeConfig{SeedHex: "01"}, DecisionsPerRun: 8, RequireReplay: true,
+		Runs: []RunPlan{{Run: 1, Policy: policy}},
+	}
+	if err := legacyConfig.Validate(); err == nil ||
+		err.Error() != "run 1: EXPERIMENT_BOUNDED_POLICY_REQUIRES_V2" {
+		t.Fatalf("legacy experiment error=%v", err)
+	}
+	admission, err := BindExecutionAdmission(admissionQualification(t), ExecutionRequirements{
+		Capabilities: []string{"strict-replay"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{
+		SchemaVersion: SchemaVersionV2, ID: "bounded-workload", PSSID: "pss",
+		WorkloadRouterID: "router", Runtime: RuntimeConfig{SeedHex: "01"},
+		Admission: &admission, DecisionsPerRun: 8, RequireReplay: true,
+		Runs: []RunPlan{{Run: 1, Policy: policy, Workload: &WorkloadPlan{
+			SchemaVersion: WorkloadPlanVersion, ID: "workload",
+			TargetSelector: TargetSingleCoordinatingMember,
+			Invocations: []WorkloadInvocation{{
+				ID: "request", Input: payload, ExpectedStatus: "complete",
+			}},
+		}}},
+	}
+	if err := config.Validate(); err == nil ||
+		err.Error() != "run 1: EXPERIMENT_BOUNDED_POLICY_INVOKE_REQUIRED" {
+		t.Fatalf("missing invoke error=%v", err)
+	}
+}
+
+func TestBoundedPolicyRejectsTraceActionOutsideSurface(t *testing.T) {
+	policy := Policy{
+		Version: BoundedUniformPolicyVersion,
+		ID:      "bounded-trace",
+		SeedHex: "01",
+		SelectableActions: []control.ActionKind{
+			control.ActionDeliverMessage,
+			control.ActionInvoke,
+		},
+	}
+	trace := controlruntime.Trace{Records: []controlruntime.ActionRecord{{
+		Action: control.Action{ID: "crash-1", Kind: control.ActionCrash},
+	}}}
+
+	err := policy.validateTraceSurface(trace)
+	if err == nil || err.Error() !=
+		"EXPERIMENT_BOUNDED_POLICY_TRACE_ACTION_OUTSIDE_SURFACE: decision=1 kind=crash" {
+		t.Fatalf("unexpected validation result: %v", err)
+	}
+
+	policy.Version = AdmissibleUniformPolicyVersion
+	if err := policy.validateTraceSurface(trace); err != nil {
+		t.Fatalf("legacy policy should retain its historical open semantics: %v", err)
+	}
+}
+
 func TestAdjacentTraceMutationUsesExactSpliceAndDeclaredSuffix(t *testing.T) {
 	trace, err := (controlruntime.Trace{Records: []controlruntime.ActionRecord{
 		{Action: control.Action{ID: "a", Kind: control.ActionCompleteEffect}},

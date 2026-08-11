@@ -352,7 +352,7 @@ func (bundle ExecutionBundle) validateRunAndWork() error {
 			if !bundle.Run.BudgetReached {
 				return errors.New("EXECUTION_BUNDLE_RUN_TERMINATION_MISMATCH")
 			}
-		case RunTerminationQuiescent, RunTerminationConfigured:
+		case RunTerminationQuiescent, RunTerminationPolicySurface, RunTerminationConfigured:
 			if bundle.Run.BudgetReached {
 				return errors.New("EXECUTION_BUNDLE_RUN_TERMINATION_MISMATCH")
 			}

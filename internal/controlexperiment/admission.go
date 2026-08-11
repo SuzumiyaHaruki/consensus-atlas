@@ -135,13 +135,18 @@ func minimumConfigCapabilities(config Config, report conformance.QualificationRe
 		if run.Workload != nil {
 			required[conformance.CapabilityOpaqueInvokeBoundary] = struct{}{}
 		}
-		if run.Policy.Version != PolicyVersion {
+		var kinds []control.ActionKind
+		switch {
+		case run.Policy.Version == PolicyVersion:
+			kinds = append(kinds, run.Policy.Priority...)
+			for _, rule := range run.Policy.Rules {
+				kinds = append(kinds, rule.Kind)
+			}
+		case run.Policy.bounded():
+			kinds = append(kinds, run.Policy.SelectableActions...)
+		default:
 			conservativeFull = true
 			continue
-		}
-		kinds := append([]control.ActionKind(nil), run.Policy.Priority...)
-		for _, rule := range run.Policy.Rules {
-			kinds = append(kinds, rule.Kind)
 		}
 		for _, kind := range kinds {
 			if !addActionCapability(required, kind) {
@@ -180,8 +185,7 @@ func addActionCapability(required map[string]struct{}, kind control.ActionKind) 
 		required[conformance.CapabilityOpaqueInvokeBoundary] = struct{}{}
 	case control.ActionFireTemporal:
 		required[conformance.CapabilityNaturalTemporal] = struct{}{}
-	case control.ActionDeliverMessage, control.ActionDropMessage, control.ActionDuplicateMessage,
-		control.ActionPartition, control.ActionHeal:
+	case control.ActionDeliverMessage, control.ActionDropMessage:
 		required[conformance.CapabilityRuntimeOwnedMessage] = struct{}{}
 	case control.ActionCrash, control.ActionRestart:
 		required[conformance.CapabilityCrashRestart] = struct{}{}

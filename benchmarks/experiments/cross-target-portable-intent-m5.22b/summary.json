@@ -1,0 +1,115 @@
+{
+  "schema_version": "consensus-atlas/cross-target-portable-intent-summary/v1",
+  "stage": "M5.22b",
+  "date": "2026-08-11",
+  "classification": "one-protocol-neutral-parent-intent-executed-on-two-qualified-target-surfaces",
+  "common_surface": {
+    "validated_capabilities": 6,
+    "available_actions": [
+      "deliver-message",
+      "fire-temporal-event",
+      "invoke"
+    ],
+    "eligible_backends": [
+      "bounded-action-class"
+    ],
+    "opaque_source_views": 2,
+    "target_specific_tokens_present": false
+  },
+  "shared_execution_ceiling": {
+    "decisions_per_target": 96,
+    "primary_work_units_per_target": 98,
+    "replay_work_units_per_target": 98,
+    "policy_seed": 1,
+    "model_calls": 0
+  },
+  "identities": {
+    "common_view_digest": "a119e7afb86c9c2144243e0e18652876d90a3ff507a68422820d572d198fed40",
+    "parent_intent_digest": "e0dce20d88ef0a4bc35c6164b57daf4e465055a3b7c59738d0541b99a28cf5b9",
+    "etcd_target_plan_digest": "3de18bfc94070ce7b15059f2b138aa5820b5c0bd324843848b29f6648bae6707",
+    "omnipaxos_target_plan_digest": "dcecf35bded49a8815da54886bc117f6bddec4ddab5d741c8066fc4ba11fdee9"
+  },
+  "targets": [
+    {
+      "target": "go.etcd.io/raft/v3@v3.6.0",
+      "target_plan_capabilities": 6,
+      "execution_admission_capabilities": 8,
+      "common_actions": [
+        "deliver-message",
+        "fire-temporal-event",
+        "invoke"
+      ],
+      "target_local_plumbing": [
+        "complete-effect"
+      ],
+      "report_digest": "9e644e9730e3d44333c142d3a36bc62bbbf2474ba3795cd39700802863f655d0",
+      "bundle_digest": "1579a0f7ae11afc75b5ecbb875e4d842c02ff3cf6d72c5f4a75d205cff55f68c",
+      "trace_digest": "a463f0a3e8d22b2bc50cca09d8ab28ed72590dadbed662bf83dfeb0f017a38e8",
+      "decisions": 42,
+      "primary_work_units": 44,
+      "replay_work_units": 44,
+      "workload_completed": 1,
+      "replay_stable": true,
+      "target_local_core_pss_states": 31,
+      "selected_action_counts": {
+        "invoke": 1,
+        "deliver-message": 6,
+        "fire-temporal-event": 13,
+        "complete-effect": 22
+      }
+    },
+    {
+      "target": "crates.io/omnipaxos@0.2.2",
+      "target_plan_capabilities": 6,
+      "execution_admission_capabilities": 6,
+      "common_actions": [
+        "deliver-message",
+        "fire-temporal-event",
+        "invoke"
+      ],
+      "target_local_plumbing": [],
+      "report_digest": "bf10cdd5b05c2eb1e509a5c5da0e92a3880853d4e610a3cdc6a00c566cab7b91",
+      "bundle_digest": "94e0d1de99c9471b568b6a3742e889e02414182cab221be1379d134e1cb1acf6",
+      "trace_digest": "4abe9c283e90fd0a8c275b6de4e3076f7a20176828d005c99c58514c357a72bb",
+      "decisions": 29,
+      "primary_work_units": 31,
+      "replay_work_units": 31,
+      "workload_completed": 1,
+      "replay_stable": true,
+      "target_local_core_pss_states": 28,
+      "selected_action_counts": {
+        "invoke": 1,
+        "deliver-message": 24,
+        "fire-temporal-event": 4
+      }
+    }
+  ],
+  "negative_lowering_gate": {
+    "target": "go.etcd.io/raft/v3@v3.6.0",
+    "removed_target_local_plumbing": "complete-effect",
+    "termination": "policy-surface-exhausted",
+    "decisions": 0,
+    "intent_status": "not-reached",
+    "missing_common_actions": 3
+  },
+  "comparison_policy": {
+    "pss_is_target_local": true,
+    "cross_target_pss_sum_or_ranking": "forbidden",
+    "comparable_fields": [
+      "parent intent identity",
+      "common semantic plan fields",
+      "logical ceilings",
+      "execution completion",
+      "replay stability",
+      "work accounting"
+    ]
+  },
+  "not_demonstrated": [
+    "LLM or Agent effectiveness",
+    "a reusable multi-target Campaign runner",
+    "method advantage over a baseline",
+    "cross-target PSS equivalence",
+    "defect detection or an Oracle verdict",
+    "BFT or leaderless protocol portability"
+  ]
+}

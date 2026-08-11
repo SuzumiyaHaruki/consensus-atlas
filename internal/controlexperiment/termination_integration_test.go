@@ -80,3 +80,26 @@ func TestExperimentV2RecordsAndReplaysQuiescentTermination(t *testing.T) {
 		t.Fatalf("unexpected quiescent discovery: %#v", report.StateDiscovery)
 	}
 }
+
+func TestExperimentV2DistinguishesPolicySurfaceExhaustionFromQuiescence(t *testing.T) {
+	config := Config{
+		SchemaVersion: SchemaVersionV2, ID: "policy-surface-termination",
+		PSSID: quiescentMapper{}.ID(), Runtime: RuntimeConfig{SeedHex: "01"},
+		DecisionsPerRun: 4, RequireReplay: true,
+		Runs: []RunPlan{{Run: 1, Policy: Policy{
+			Version: BoundedUniformPolicyVersion, ID: "invoke-only", SeedHex: "01",
+			SelectableActions: []control.ActionKind{control.ActionInvoke},
+		}}},
+	}
+	report, err := execute(t.Context(), config, func() (control.Adapter, error) {
+		return fixture.New(), nil
+	}, quiescentMapper{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := report.Runs[0]
+	if run.Termination != RunTerminationPolicySurface || run.ChargedDecisions != 0 ||
+		run.BudgetReached || run.Replay.Decisions != 0 || len(run.Selections) != 0 {
+		t.Fatalf("unexpected policy-surface run: %#v", run)
+	}
+}

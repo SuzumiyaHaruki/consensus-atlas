@@ -1,19 +1,19 @@
 # ConsensusAtlas
 
-ConsensusAtlas 是面向共识实现的确定性测试研究框架。当前已验证范围是 leader-based
-CFT/Raft；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称已具备 BFT 适用性。主线已经收敛到一套协议无关的
+ConsensusAtlas 是面向共识实现的确定性测试研究框架。当前已验证范围是 leader-based CFT，
+包括 Raft 和 Sequence Paxos；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称已具备 BFT
+或 leaderless 协议适用性。主线已经收敛到一套协议无关的
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.21zR OmniPaxos partial admission 闭环**，M5.21 在此收口。新的
-`portable-cft-control-v3` 不改写 v2 identity，将 Temporal、Message 和 Replay witness 从
-Crash/Restart lifecycle 中解耦；OmniPaxos 机械结果为 `6 validated / 3 unsupported / 0 unvalidated`，
-仍明确 `qualified=false`。
+当前阶段已完成 **M5.22d 跨目标 preference 权限校准**。可信层从 etcd/raft 与 OmniPaxos 的
+target-bound view 机械求交，得到只含六项共同能力、Invoke/DeliverMessage/FireTemporal 和一个 bounded
+backend 的 Agent-facing view；其中没有协议、Adapter、PSS 或 Oracle 字段。
 
-executor 现在会从 Policy、Workload、FaultEnvelope 和 replay 配置机械推导 capability 下界，
-并在 Adapter factory/SUT 启动前拒绝少报。一次只使用六项已验证能力的三节点 opaque workload
-以 29 decisions 完成，fresh Replay 稳定。这证明 partial target 可以被可信执行，不是全能力资格、
-缺陷发现或方法优势结论。下一阶段转入 M5.22 跨目标 Campaign/Planner 实验；`formal_ready=false`。
+同一父 Intent 已能经过 durable preference-only model call 投影到两个 target Campaign，模型成本只计一次。
+但离线 blind mock 与 deterministic baseline 的真实执行完全相同：共同 Catalog 只有一个 backend，当前
+preference 只能改变 proposal/plan identity，不能改变 Runtime 行为。因此下一步先建立第二个行为不同的
+共同 backend gate，不能据此宣称 Agent 已有测试优势。PSS 继续 target-local；`formal_ready=false`。
 完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环
@@ -47,11 +47,19 @@ qualified Adapter + opaque workload + bounded policy
 ```text
 ProtocolKnowledgePack + Qualification -> AgentSemanticView
                                                |
+                              target-view intersection
+                                               |
+                                CrossTargetPlannerView
+                                               |
                                      GuardedTestIntent
                                                |
                               deterministic compiler/fallback
                                                |
+                           target-local durable planned attempts
+                                               |
                                existing qualified policy path
+                                               |
+                         reference-only cross-target ledger
 ```
 
 通用 Oracle 不解析 Raft 字段。etcd/raft 的可信 composition 提供
@@ -94,6 +102,7 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - execution/workload 分离的 feedback v2、冻结 source/unseen seed 与完整 per-arm 成本的 follow-up spec；
 - Runtime-supported / Experiment-producible / backend-selectable 三层 Action surface；
 - seed-free CompiledIntentPlan v2、digest-bound execution instance 和独立 IntentOutcome；
+- opaque source digest 约束的 CrossTargetPlannerView、共同父 Intent 与 target-local lowering；
 - pre-call exact-byte request freeze、单份 proposal/baseline 校验与 1-call/0-retry 消融边界；
 - 按 ActionKind 再按成员均匀采样的确定性随机基线，以及 digest-bound FaultEnvelope selectable view；
 - 精确 source prefix、相邻 Action swap、显式 priority suffix 与不可执行变体记账的 trace mutation；
@@ -348,7 +357,11 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.21zR admission closure](docs/stage-m5.21zr-admission-closure.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.22d cross-target preference authority](docs/stage-m5.22d-cross-target-preference-authority.md)、
+[M5.22c durable cross-target composition](docs/stage-m5.22c-durable-cross-target-composition.md)、
+[M5.22b cross-target portable intent](docs/stage-m5.22b-cross-target-portable-intent.md)、
+[M5.22a bounded stochastic admission](docs/stage-m5.22a-bounded-stochastic-admission.md)、
+[M5.21zR admission closure](docs/stage-m5.21zr-admission-closure.md)、
 [M5.21z OmniPaxos Qualification audit](docs/stage-m5.21z-omnipaxos-qualification-audit.md)、
 [M5.21y OmniPaxos Agreement](docs/stage-m5.21y-omnipaxos-agreement.md)、
 [M5.21x OmniPaxos Core PSS](docs/stage-m5.21x-omnipaxos-core-pss.md)、

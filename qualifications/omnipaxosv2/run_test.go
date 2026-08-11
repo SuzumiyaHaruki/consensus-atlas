@@ -81,6 +81,107 @@ func TestAdmissionAcceptsOnlyNamedValidatedSubset(t *testing.T) {
 	}
 }
 
+func TestLegacyOpenPolicyRemainsRejectedBeforeOmniPaxosFactory(t *testing.T) {
+	workerPath := buildWorker(t)
+	bundle, err := qualification.Run(context.Background(), workerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := partialAdmission(t, bundle)
+	payload, err := adapterv2.InputPayload(adapterv2.Input{
+		RequestID: "m5.22a-legacy-open", Value: []byte("legacy-open"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := omniWorkloadConfig(admission, payload, controlexperiment.Policy{
+		Version: controlexperiment.ActionClassPolicyVersion, ID: "legacy-open", SeedHex: "01",
+		Priority: []control.ActionKind{control.ActionInvoke, control.ActionDeliverMessage},
+	})
+	factoryCalls := 0
+	_, err = controlexperiment.ExecuteQualified(
+		context.Background(), config, bundle.Qualification, func() (control.Adapter, error) {
+			factoryCalls++
+			return adapterv2.New(adapterv2.Config{WorkerPath: workerPath})
+		}, adapterv2.CorePSSMapper{}, adapterv2.WorkloadRouter{},
+	)
+	if err == nil || err.Error() !=
+		"EXPERIMENT_ADMISSION_CAPABILITY_UNDERDECLARED: audited-entropy-replay" {
+		t.Fatalf("legacy open admission error=%v", err)
+	}
+	if factoryCalls != 0 {
+		t.Fatalf("legacy open policy started %d factories before rejection", factoryCalls)
+	}
+}
+
+func TestBoundedActionClassAdmitsPartialOmniPaxosTarget(t *testing.T) {
+	workerPath := buildWorker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	bundle, err := qualification.Run(ctx, workerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := partialAdmission(t, bundle)
+	payload, err := adapterv2.InputPayload(adapterv2.Input{
+		RequestID: "m5.22a-bounded", Value: []byte("bounded-stochastic"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := omniWorkloadConfig(admission, payload, controlexperiment.Policy{
+		Version: controlexperiment.BoundedActionClassPolicyVersion,
+		ID:      "omnipaxos-bounded-class", SeedHex: "01",
+		Priority: []control.ActionKind{control.ActionInvoke, control.ActionDeliverMessage},
+		SelectableActions: []control.ActionKind{
+			control.ActionDeliverMessage, control.ActionFireTemporal, control.ActionInvoke,
+		},
+	})
+	report, execution, err := controlexperiment.ExecuteQualifiedBundle(
+		ctx, config, bundle, func() (control.Adapter, error) {
+			return adapterv2.New(adapterv2.Config{WorkerPath: workerPath})
+		}, adapterv2.CorePSSMapper{}, adapterv2.DecisionProjector{}, adapterv2.WorkloadRouter{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := report.ValidateWithQualification(bundle.Qualification); err != nil {
+		t.Fatal(err)
+	}
+	run := report.Runs[0]
+	if run.Workload == nil || run.Workload.Completed != 1 || !run.Replay.Stable ||
+		run.Termination != controlexperiment.RunTerminationConfigured {
+		t.Fatalf("bounded admitted run=%+v", run)
+	}
+	for _, selection := range run.Selections {
+		if selection.SelectedAction == "" {
+			t.Fatal("bounded selection audit omitted selected action")
+		}
+	}
+	allowed := map[control.ActionKind]bool{
+		control.ActionInvoke: true, control.ActionDeliverMessage: true, control.ActionFireTemporal: true,
+	}
+	actionCounts := make(map[control.ActionKind]int)
+	for _, record := range execution.Trace.Records {
+		if !allowed[record.Action.Kind] {
+			t.Fatalf("bounded execution selected action outside surface: %s", record.Action.Kind)
+		}
+		actionCounts[record.Action.Kind]++
+	}
+	if admission.Digest != "529bbb39ccfc01430193b5bca4b89bc620ac76cbe8d3a9701e3e13c55b4fb579" ||
+		run.PolicyDigest != "168754ff6a8e492521db3c3de97817ff4a01eff719fcddac8d4e92dc423177c9" ||
+		report.Digest != "675526310af28c25a73ef3712f877acc7e71a5bd899c069188d48072ab168433" ||
+		execution.Digest != "43bee8e83bae3e532422f42f93a1b0551da3887a50f08ed53333dcee3d04540e" ||
+		run.TraceDigest != "86bab01761d838546e9a190a447f38ecfc42183dfb6eedd2c6ef5534159873d0" {
+		t.Fatalf("bounded artifact identity drift: admission=%s policy=%s report=%s bundle=%s trace=%s",
+			admission.Digest, run.PolicyDigest, report.Digest, execution.Digest, run.TraceDigest)
+	}
+	t.Logf("admission=%s policy=%s report=%s bundle=%s trace=%s decisions=%d core_states=%d invoke=%d deliver=%d temporal=%d",
+		admission.Digest, run.PolicyDigest, report.Digest, execution.Digest, run.TraceDigest,
+		run.ChargedDecisions, report.StateDiscovery.UniqueStates, actionCounts[control.ActionInvoke],
+		actionCounts[control.ActionDeliverMessage], actionCounts[control.ActionFireTemporal])
+}
+
 func TestV3SubsetAdmitsOpaqueWorkloadWithoutLifecycleOrDurability(t *testing.T) {
 	workerPath := buildWorker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -192,6 +293,45 @@ func capabilityStatus(bundle qualification.Bundle, id string) conformance.Capabi
 		}
 	}
 	return ""
+}
+
+func partialAdmission(t *testing.T, bundle qualification.Bundle) controlexperiment.ExecutionAdmission {
+	t.Helper()
+	admission, err := controlexperiment.BindExecutionAdmission(bundle.Qualification,
+		controlexperiment.ExecutionRequirements{Capabilities: []string{
+			conformance.CapabilityStrictYieldEvidence, conformance.CapabilityPureEnabledCheck,
+			conformance.CapabilityNaturalTemporal, conformance.CapabilityRuntimeOwnedMessage,
+			conformance.CapabilityStrictDecisionReplay, conformance.CapabilityOpaqueInvokeBoundary,
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return admission
+}
+
+func omniWorkloadConfig(
+	admission controlexperiment.ExecutionAdmission,
+	payload control.PayloadEnvelope,
+	policy controlexperiment.Policy,
+) controlexperiment.Config {
+	return controlexperiment.Config{
+		SchemaVersion: controlexperiment.SchemaVersionV2, ID: "omnipaxos-m5.22a-bounded",
+		PSSID: adapterv2.CorePSSMappingID, WorkloadRouterID: adapterv2.WorkloadRouterID,
+		Admission: &admission, Runtime: controlexperiment.RuntimeConfig{
+			SeedHex: hex.EncodeToString([]byte("omnipaxos-m5.22a-bounded")), MaxClones: 1,
+		},
+		DecisionsPerRun: 96, RequireReplay: true,
+		Runs: []controlexperiment.RunPlan{{
+			Run: 1, StopAfterWorkload: true, Policy: policy,
+			Workload: &controlexperiment.WorkloadPlan{
+				SchemaVersion: controlexperiment.WorkloadPlanVersion, ID: "single-omnipaxos-write",
+				TargetSelector: controlexperiment.TargetSingleCoordinatingMember,
+				Invocations: []controlexperiment.WorkloadInvocation{{
+					ID: "m5.22a-bounded", Input: payload, ExpectedStatus: "decided",
+				}},
+			},
+		}},
+	}
 }
 
 func buildWorker(t *testing.T) string {

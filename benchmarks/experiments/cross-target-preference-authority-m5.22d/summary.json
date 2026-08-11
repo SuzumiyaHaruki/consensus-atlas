@@ -1,0 +1,63 @@
+{
+  "schema_version": "consensus-atlas/cross-target-preference-authority-summary/v1",
+  "stage": "M5.22d",
+  "date": "2026-08-11",
+  "classification": "durable-target-blind-preference-proposal-with-no-execution-influence",
+  "transport": {
+    "provider_shape": "deepseek-v4-flash",
+    "mode": "offline-deterministic-mock",
+    "network_calls": 0,
+    "key_reads": 0,
+    "model_calls_charged": 1,
+    "model_tokens_charged": 7,
+    "model_call_digest": "98a42ed72e42a7397a1c60e3901fe2138c126583e4ed54405d267ff50ad6cddd",
+    "model_result_digest": "55fa91138417f052ebe3ef0328c0a086d591ec782d5e2376f4442b080e6793d1"
+  },
+  "authority": {
+    "mutable_fields": [
+      "prefer.backend_ids",
+      "prefer.actions"
+    ],
+    "common_backends": 1,
+    "common_actions": 3,
+    "target_or_campaign_tokens_in_request": false,
+    "model_work_owner": "target-a-campaign-only"
+  },
+  "identities": {
+    "baseline_parent": "e0dce20d88ef0a4bc35c6164b57daf4e465055a3b7c59738d0541b99a28cf5b9",
+    "mock_parent": "301b11731eeb07aa23bd2f6c89da89af2f66401720094d01d7b722e650ebe81e",
+    "baseline_etcd_plan": "3de18bfc94070ce7b15059f2b138aa5820b5c0bd324843848b29f6648bae6707",
+    "mock_etcd_plan": "3518f0a51c9b9752c65628d97d2518d626713a4b93e6891adeee2d1e837fc129",
+    "baseline_omnipaxos_plan": "dcecf35bded49a8815da54886bc117f6bddec4ddab5d741c8066fc4ba11fdee9",
+    "mock_omnipaxos_plan": "2bcab96ceef127548bae242ab583e2b95b009bb624cb31ff84bf02d54a355a2d",
+    "baseline_ledger": "2aa1365af08189c097a46d9d34b5437dff7bfe45daee1479ea3ccbfe2c10f536",
+    "mock_ledger": "3388d340576cf57b3b90ea4b72beedf73829242d196bdb9632db080cfb7142da"
+  },
+  "execution_comparison": {
+    "etcd_report_equal": true,
+    "etcd_bundle_equal": true,
+    "etcd_trace_equal": true,
+    "omnipaxos_report_equal": true,
+    "omnipaxos_bundle_equal": true,
+    "omnipaxos_trace_equal": true,
+    "baseline_primary_work_units": 75,
+    "mock_primary_work_units": 75,
+    "baseline_replay_work_units": 75,
+    "mock_replay_work_units": 75,
+    "baseline_model_tokens": 0,
+    "mock_model_tokens": 7
+  },
+  "finding": {
+    "execution_influence": false,
+    "agent_advantage_claimable": false,
+    "reason": "the common catalog exposes only one executable backend and preferences do not alter its lowering",
+    "required_next_gate": "at-least-two-existing-behaviorally-distinct-common-backends"
+  },
+  "not_demonstrated": [
+    "real LLM output quality",
+    "Agent advantage over a deterministic baseline",
+    "defect detection",
+    "cross-target PSS equivalence or coverage",
+    "multi-attempt adaptive planning"
+  ]
+}

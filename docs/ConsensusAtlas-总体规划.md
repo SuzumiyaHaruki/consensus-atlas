@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.53（M5.21zR partial admission 闭环完成，M5.21 收口）
+> 状态：Draft v1.57（M5.22d cross-target preference authority calibration 完成）
 > 日期：2026-08-11
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -364,6 +364,11 @@ Coordinator、Runtime、Evidence Matcher、Coverage Ledger、Replay、Conformanc
 ---
 
 ## 4. 通用 Runtime 与薄 Driver
+
+术语约束：本节的 `ProtocolDriver`、`OutputBatch` 是架构层概念名；当前生产代码中的唯一执行契约是
+`control.Adapter`，冻结输出单位是 `ProducedItem`。后续文档不得把概念接口误写成另一套待恢复的生产 API，
+也不得同时维护 Driver Runtime 与 Adapter Runtime 两条路径。目标专用代码统一称 Execution Binding；只有
+具体 Go 类型或历史工件才使用其冻结名称。
 
 ### 4.1 为什么不能做到真正的“零接入”
 
@@ -2946,6 +2951,45 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      六能力 admitted smoke 完成 29 decisions、28 Core states、1 workload 且 fresh Replay 稳定；该结果
      不含 crash/durable/Agent/方法优势。M5.21 已收口；M5.22 只用已认证的 etcd/raft 与 OmniPaxos
      执行面做共同预算 cross-target Campaign/Planner，新 capability 必须由真实失败证据驱动。
+135. M5.22a 不放宽旧开放 stochastic policy 的保守完整能力门禁。新增版本化 bounded uniform/action-class
+     policy，将 canonical `selectable_actions` 纳入 Policy digest，并只允许进入 Experiment v2；Runtime-enabled 动作先经过 FaultEnvelope，
+     再与冻结选择面求交，admission 从同一集合机械推导 capability 下界。Priority 越界、workload 无 Invoke、
+     Trace 实际动作越界均失败关闭；Runtime 仍有动作但选择面为空时记为 `policy-surface-exhausted`，不冒充
+     quiescent。未知 Effect/Callback 与尚无独立 witness 的 Duplicate/Partition/Heal 仍保守要求完整 required
+     set。旧 v1 policy identity/序列化不变。OmniPaxos 六能力正向校准只允许 Invoke/DeliverMessage/
+     FireTemporal，以 29 decisions 完成 1 workload、发现 28 个 Core states 且 fresh Replay 稳定；旧开放
+     action-class 在 Adapter factory 前机械拒绝。该结果只证明 partial target 可使用受限 stochastic backend，
+     不证明 Agent、跨目标 Campaign、方法优势、缺陷检出或绝对覆盖质量。M5.22b 只实现不含协议字段的共同
+     semantic view/bounded intent 跨 etcd/raft 与 OmniPaxos composition，PSS/coverage 保持 target-local。
+136. M5.22b 新增只读 `CrossTargetPlannerView/v1`：source AgentSemanticView 必须共享 KnowledgePack/Catalog，
+     对 validated capability、Manifest Action 和 backend-selectable surface 做机械交集，对 Agent 只公开 opaque
+     source digest。同一父 GuardedTestIntent 只替换 target view identity 后重新 seal，两个 child plan 的 risk、
+     backend、strategy、预算、FaultEnvelope、required capabilities/actions、preference 和 compiler work 必须
+     相同，再进入已有 target compiler 与唯一 executor。共同面固定 Invoke/DeliverMessage/FireTemporal。
+     etcd/raft Ready 的 CompleteEffect 是显式 target-local deterministic plumbing，不是 Agent 搜索动作；由于
+     尚无独立 effect capability，它保守绑定完整 8-cap admission，移除后真实执行在 0 decision 以
+     `policy-surface-exhausted`/not-reached 停止。OmniPaxos 使用六能力 admission。正向见证中 etcd/raft 为
+     42 decisions、44/44 work、31 target-local states，OmniPaxos 为 29 decisions、31/31 work、28
+     target-local states，两侧 workload 完成且 Replay stable；PSS 数量不得跨 mapping 相加或排名。该阶段
+     model calls=0，不证明 Agent/方法优势、缺陷检出或 durable multi-target Campaign。M5.22c 只在现有
+     single-target Campaign 之上增加引用 committed artifacts 的 composition ledger，不改历史 identity、
+     不复制 bundle、不增加第二个 Coordinator。
+137. M5.22c 保持 `CampaignConfig`、Coordinator 和 artifact store 的单目标语义：两个 child plan 在任何
+     target 执行前分别通过原有 `PreparePlannedAttempt` 持久化，执行后将各自 report/bundle/outcome
+     提交为内容寻址 artifact，再从两个独立 Campaign 目录恢复。`CrossTargetCampaignLedger/v1`
+     只保存 config/head/record/plan/artifact digest、target-local PSS identity 和 WorkLedger；它不复制
+     artifact、不合并 PSS、不产生 Action/判定，也不是第二个 Campaign。真实恢复得到
+     42/29 decisions、75/75 合计 work；修改任一内容寻址 artifact 后恢复失败关闭。下一阶段
+     只允许在已有 durable planner-call/request 边界上比较一次受限共同 proposal 与 deterministic
+     baseline；若不产生可比较新行为，应停止增加跨目标结构并转入 holdout/mutant 评测。
+138. M5.22d 复用原 durable model-call，由 target-a Campaign 仅担任单次模型成本所有者；模型看到的
+     request bytes 只含共同 view 与 preference-only contract，不含 target/Campaign identity。离线 blind
+     mock 改变 parent 和两个 target plan digest，但 etcd/raft 与 OmniPaxos 的 report、bundle、trace 都与
+     deterministic baseline 逐字节相同；mock 只增加 1 call/7 tokens 和 compiler checks。这是负证据：
+     当前共同 Catalog 仅有一个 executable backend，Agent preference 没有实际执行权限，因而不得
+     声称 Agent 已控制测试或优于 baseline。下一 gate 只允许复用已 admission 的现有策略，
+     建立至少两个在两目标上都可执行且真实 trace 不同的共同 backend。若该 gate 失败，
+     停止 preference-only Agent 路线；若通过，再做一次真实 LLM 小预算校准后转入 holdout/mutant。
 
 ---
 

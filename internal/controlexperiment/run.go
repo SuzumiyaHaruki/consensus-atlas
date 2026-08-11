@@ -243,7 +243,8 @@ func executeRun(
 				"primary-observe", "EXPERIMENT_ENABLED_DIGEST_FAILED", plan.Run, decision, *work, err,
 			)
 		}
-		selectable := admissibleActions(faultEnvelope, faultUsage, enabled, runtime.Snapshot())
+		faultAdmissible := admissibleActions(faultEnvelope, faultUsage, enabled, runtime.Snapshot())
+		selectable := plan.Policy.constrainSelectableActions(faultAdmissible)
 		admissibleDigest, err := control.CanonicalDigest(selectable)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
@@ -252,6 +253,9 @@ func executeRun(
 		}
 		if schemaVersion == SchemaVersionV2 && len(selectable) == 0 {
 			termination = RunTerminationQuiescent
+			if len(faultAdmissible) != 0 {
+				termination = RunTerminationPolicySurface
+			}
 			break
 		}
 		action, err := plan.Policy.selectAction(decision, selectable)
@@ -322,6 +326,12 @@ func executeRun(
 			"primary-observe", "EXPERIMENT_PRIMARY_TRACE_FAILED", plan.Run, decisionBudget, *work, err,
 		)
 	}
+	if err := plan.Policy.validateTraceSurface(trace); err != nil {
+		return RunReport{}, nil, executionFailure(
+			"primary-observe", "EXPERIMENT_PRIMARY_TRACE_OUTSIDE_POLICY_SURFACE",
+			plan.Run, len(trace.Records), *work, err,
+		)
+	}
 	workloadReport, err := finishWorkload(
 		plan.Workload, offeredWorkload, runtime.Snapshot(), router, currentEvidence, strictWorkload,
 	)
@@ -352,6 +362,12 @@ func executeRun(
 	if err != nil {
 		return RunReport{}, nil, executionFailure(
 			"replay", "EXPERIMENT_REPLAY_TRACE_FAILED", plan.Run, progress.Decisions, *work, err,
+		)
+	}
+	if err := plan.Policy.validateTraceSurface(replayTrace); err != nil {
+		return RunReport{}, nil, executionFailure(
+			"replay", "EXPERIMENT_REPLAY_TRACE_OUTSIDE_POLICY_SURFACE",
+			plan.Run, len(replayTrace.Records), *work, err,
 		)
 	}
 	if err := validateReplayedWorkloadRoutes(
@@ -483,6 +499,16 @@ func validateReplayedTermination(
 			len(admissibleActions(faultEnvelope, usage, enabled, runtime.Snapshot())) != 0 {
 			return errors.New("EXPERIMENT_REPLAY_QUIESCENT_TERMINATION_INVALID")
 		}
+	case RunTerminationPolicySurface:
+		enabled, err := runtime.EnabledActions(ctx)
+		if err != nil {
+			return err
+		}
+		faultAdmissible := admissibleActions(faultEnvelope, usage, enabled, runtime.Snapshot())
+		if decisions >= decisionBudget || len(faultAdmissible) == 0 ||
+			len(plan.Policy.constrainSelectableActions(faultAdmissible)) != 0 {
+			return errors.New("EXPERIMENT_REPLAY_POLICY_SURFACE_TERMINATION_INVALID")
+		}
 	default:
 		return errors.New("EXPERIMENT_REPLAY_TERMINATION_INVALID")
 	}
@@ -611,6 +637,10 @@ func validateRunTermination(plan RunPlan, run RunReport) error {
 	case RunTerminationQuiescent:
 		if run.BudgetReached {
 			return errors.New("EXPERIMENT_RUN_QUIESCENT_TERMINATION_INVALID")
+		}
+	case RunTerminationPolicySurface:
+		if run.BudgetReached || !plan.Policy.bounded() {
+			return errors.New("EXPERIMENT_RUN_POLICY_SURFACE_TERMINATION_INVALID")
 		}
 	case RunTerminationConfigured:
 		if run.BudgetReached || !plan.StopAfterWorkload || run.Workload == nil ||

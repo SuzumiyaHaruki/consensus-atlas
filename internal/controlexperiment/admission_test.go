@@ -89,6 +89,16 @@ func TestConfigCapabilityLowerBoundIsExactOrConservative(t *testing.T) {
 	if got := minimumConfigCapabilities(fixed, report); !reflect.DeepEqual(got, want) {
 		t.Fatalf("fixed lower bound=%v, want %v", got, want)
 	}
+	bounded := Config{Runs: []RunPlan{{Policy: Policy{
+		Version: BoundedActionClassPolicyVersion,
+		SelectableActions: []control.ActionKind{
+			control.ActionDeliverMessage, control.ActionDropMessage,
+			control.ActionFireTemporal, control.ActionInvoke,
+		},
+	}, Workload: &WorkloadPlan{}}}}
+	if got := minimumConfigCapabilities(bounded, report); !reflect.DeepEqual(got, want) {
+		t.Fatalf("bounded lower bound=%v, want %v", got, want)
+	}
 
 	open := Config{Runs: []RunPlan{{Policy: Policy{Version: RandomPolicyVersion}}}}
 	got := minimumConfigCapabilities(open, report)
@@ -100,6 +110,15 @@ func TestConfigCapabilityLowerBoundIsExactOrConservative(t *testing.T) {
 	}}}}
 	if got := minimumConfigCapabilities(unknownEffect, report); len(got) != 8 {
 		t.Fatalf("effect lower bound=%v, want conservative full set", got)
+	}
+	duplicate := Config{Runs: []RunPlan{{Policy: Policy{
+		Version: BoundedActionClassPolicyVersion,
+		SelectableActions: []control.ActionKind{
+			control.ActionDeliverMessage, control.ActionDuplicateMessage,
+		},
+	}}}}
+	if got := minimumConfigCapabilities(duplicate, report); len(got) != 8 {
+		t.Fatalf("unwitnessed duplicate lower bound=%v, want conservative full set", got)
 	}
 }
 

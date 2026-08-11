@@ -418,6 +418,42 @@ effect/callback 保守要求 Profile 全部 required set。一次只使用六项
 workload 以 29 decisions 完成并 fresh Replay 稳定；这只证明 partial admission 闭环，不是 full
 qualification、缺陷发现或方法优势。M5.21 在此收口，M5.22 转入跨目标 Campaign/Planner 实验。
 
+M5.22a 不放宽上述门禁，而是新增 digest-bound bounded stochastic policy。`selectable_actions` 是策略
+identity 的规范化组成部分；Runtime-enabled 动作先通过 FaultEnvelope，再与该集合求交，最后才进入原有
+uniform/action-class 随机选择。admission 从同一集合推导 capability 下界，primary/replay Trace 还会逐项
+检查 ActionKind 没有越界。旧开放 policy 继续保守要求完整 required set；未知 effect/callback 和尚无独立
+witness 的 Duplicate/Partition/Heal 也不能借 bounded 名义绕过。OmniPaxos 正向校准只允许
+Invoke/DeliverMessage/FireTemporal，以 29 decisions 完成 workload 并稳定 Replay。该阶段只建立 stochastic
+backend 的 partial admission 边界，尚未接通跨目标 Planner。
+
+M5.22b 在单目标 AgentSemanticView 之上增加只读 `CrossTargetPlannerView/v1`。它要求 source view 使用
+相同 KnowledgePack/Catalog，只公开 opaque source digest，并对 validated capability、Manifest Action 和
+backend-selectable surface 做机械交集。同一父 GuardedTestIntent 只替换 target view identity 后重新 seal，
+继续进入原有 target compiler 和唯一 executor。共同计划固定 Invoke/DeliverMessage/FireTemporal；
+etcd/raft Ready 的 CompleteEffect 是显式 target-local deterministic plumbing，因独立 capability 尚缺而
+保守使用完整 8-cap admission，OmniPaxos 仍使用六能力 admission。两个 target 的 PSS identity 和统计不
+进入共同 view，也不得跨目标合并。当前组合是一次集成见证，不是 durable multi-target Campaign。
+
+M5.22c 不把 `CampaignConfig` 改成多目标，也不增加 Coordinator。父 Intent 的两个 child plan 在执行前
+分别进入原有 target-local `CampaignPlannedAttempt`，执行后的 report/bundle/outcome 分别进入原有内容
+寻址 artifact store。`CrossTargetCampaignLedger/v1` 是恢复后建立的只读组合索引，只保存两个 Campaign
+的 config/head/record/plan/artifact digest、target-local PSS identity 和 WorkLedger。planned attempt 已在
+`plans/` 中，因此 target artifact 只引用其 digest；外层 ledger 更不复制 report、bundle、trace 或
+Qualification。构造时重新读取 artifact 并验证 parent/child intent 语义、planned input、Manifest、
+report/bundle/outcome、record work 和 checkpoint chain。两个 PSS 状态集合始终分离。该层没有 Action、
+enabled 判定、planner 调用或 verdict 权限。
+
+M5.22d 将现有 durable model-call 绑定到 target-a Campaign request 作为唯一成本所有者，但冻结给模型的
+request bytes 只含 `CrossTargetPlannerView` 和 preference-only contract；target/Campaign request identity
+不跨入 Agent 边界。可信 validator 冻结 ID、view、risk、Must，只允许 Prefer 中的共同 backend/action。
+模型结果随后投影为两个 target-local planned attempt，target-b 不复制 model work。ledger 通过 planned
+attempt 的 `AttachPlanningWork` 重算 record work，因此 1 次模型调用只出现一次。
+
+离线 blind mock 改变了 parent/child/plan identity 和 compiler checks，但两个目标的 report、bundle、trace
+与 deterministic baseline 完全相同。这不是模型失败，而是当前 action：共同 Catalog 只有一个 backend，
+preference 没有 lowering 权限。后续不得再增加跨目标持久化层；必须先用已有策略证明至少两个共同 backend
+会产生不同 trace，否则 preference-only Agent 路线不具备可评价的测试控制力。
+
 M5.21q 已增加一条 no-model Risk Frontier authority gate：通用组合层只通过 strict prefix Replay
 重建下一步 enabled/admissible ActionRef，并将 exact ActionID choice 编译回既有 Policy。target
 projector 仍在 composition root，协议 evidence/payload 不进入通用视图。该边界证明选择会改变

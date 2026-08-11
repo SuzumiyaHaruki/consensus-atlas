@@ -17,19 +17,22 @@ import (
 )
 
 const (
-	SchemaVersion                  = "consensus-atlas/control-experiment/v1"
-	SchemaVersionV2                = "consensus-atlas/control-experiment/v2"
-	PolicyVersion                  = "consensus-atlas/action-priority-policy/v1"
-	RandomPolicyVersion            = "consensus-atlas/uniform-random-policy/v1"
-	AdmissibleUniformPolicyVersion = "consensus-atlas/admissible-uniform-random-policy/v1"
-	ActionClassPolicyVersion       = "consensus-atlas/action-class-random-policy/v1"
-	TraceMutationPolicyVersion     = "consensus-atlas/adjacent-trace-mutation-policy/v1"
-	TraceMutationPolicyVersionV2   = "consensus-atlas/adjacent-trace-mutation-policy/v2"
-	StatusMeasurementComplete      = "measurement-complete"
-	ResourceNotCollected           = "not-collected"
-	RunTerminationBudget           = "budget-exhausted"
-	RunTerminationQuiescent        = "quiescent"
-	RunTerminationConfigured       = "configured-stop"
+	SchemaVersion                   = "consensus-atlas/control-experiment/v1"
+	SchemaVersionV2                 = "consensus-atlas/control-experiment/v2"
+	PolicyVersion                   = "consensus-atlas/action-priority-policy/v1"
+	RandomPolicyVersion             = "consensus-atlas/uniform-random-policy/v1"
+	AdmissibleUniformPolicyVersion  = "consensus-atlas/admissible-uniform-random-policy/v1"
+	BoundedUniformPolicyVersion     = "consensus-atlas/admissible-uniform-random-policy/v2"
+	ActionClassPolicyVersion        = "consensus-atlas/action-class-random-policy/v1"
+	BoundedActionClassPolicyVersion = "consensus-atlas/action-class-random-policy/v2"
+	TraceMutationPolicyVersion      = "consensus-atlas/adjacent-trace-mutation-policy/v1"
+	TraceMutationPolicyVersionV2    = "consensus-atlas/adjacent-trace-mutation-policy/v2"
+	StatusMeasurementComplete       = "measurement-complete"
+	ResourceNotCollected            = "not-collected"
+	RunTerminationBudget            = "budget-exhausted"
+	RunTerminationQuiescent         = "quiescent"
+	RunTerminationPolicySurface     = "policy-surface-exhausted"
+	RunTerminationConfigured        = "configured-stop"
 )
 
 func validSHA256(value string) bool {
@@ -59,14 +62,16 @@ type DecisionRule struct {
 }
 
 // Policy is intentionally limited to common Action fields. Rules override the
-// fallback priority at exact one-based decision numbers.
+// fallback priority at exact one-based decision numbers. SelectableActions is
+// only valid for bounded stochastic policies and is part of their identity.
 type Policy struct {
-	Version       string               `json:"version"`
-	ID            string               `json:"id"`
-	SeedHex       string               `json:"seed_hex,omitempty"`
-	Rules         []DecisionRule       `json:"rules,omitempty"`
-	Priority      []control.ActionKind `json:"priority,omitempty"`
-	TraceMutation *TraceMutationPlan   `json:"trace_mutation,omitempty"`
+	Version           string               `json:"version"`
+	ID                string               `json:"id"`
+	SeedHex           string               `json:"seed_hex,omitempty"`
+	Rules             []DecisionRule       `json:"rules,omitempty"`
+	Priority          []control.ActionKind `json:"priority,omitempty"`
+	SelectableActions []control.ActionKind `json:"selectable_actions,omitempty"`
+	TraceMutation     *TraceMutationPlan   `json:"trace_mutation,omitempty"`
 }
 
 type policySelectionError struct {
@@ -92,27 +97,36 @@ func (policy Policy) Validate(decisionBudget int) error {
 	if policy.Version == RandomPolicyVersion {
 		seed, err := hex.DecodeString(policy.SeedHex)
 		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || len(policy.Priority) != 0 ||
-			policy.TraceMutation != nil {
+			len(policy.SelectableActions) != 0 || policy.TraceMutation != nil {
 			return errors.New("EXPERIMENT_RANDOM_POLICY_INVALID")
 		}
 		return nil
 	}
 	if policy.Version == AdmissibleUniformPolicyVersion {
 		seed, err := hex.DecodeString(policy.SeedHex)
-		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || policy.TraceMutation != nil {
+		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || len(policy.SelectableActions) != 0 ||
+			policy.TraceMutation != nil {
 			return errors.New("EXPERIMENT_ADMISSIBLE_UNIFORM_POLICY_INVALID")
 		}
 		return validatePriority(policy.Priority)
 	}
+	if policy.Version == BoundedUniformPolicyVersion {
+		return policy.validateBoundedStochastic("EXPERIMENT_BOUNDED_UNIFORM_POLICY_INVALID")
+	}
 	if policy.Version == ActionClassPolicyVersion {
 		seed, err := hex.DecodeString(policy.SeedHex)
-		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || policy.TraceMutation != nil {
+		if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || len(policy.SelectableActions) != 0 ||
+			policy.TraceMutation != nil {
 			return errors.New("EXPERIMENT_ACTION_CLASS_POLICY_INVALID")
 		}
 		return validatePriority(policy.Priority)
 	}
+	if policy.Version == BoundedActionClassPolicyVersion {
+		return policy.validateBoundedStochastic("EXPERIMENT_BOUNDED_ACTION_CLASS_POLICY_INVALID")
+	}
 	if policy.Version == TraceMutationPolicyVersion || policy.Version == TraceMutationPolicyVersionV2 {
 		if policy.SeedHex != "" || len(policy.Rules) != 0 || len(policy.Priority) != 0 ||
+			len(policy.SelectableActions) != 0 ||
 			policy.TraceMutation == nil {
 			return errors.New("EXPERIMENT_TRACE_MUTATION_POLICY_INVALID")
 		}
@@ -124,7 +138,7 @@ func (policy Policy) Validate(decisionBudget int) error {
 		}
 		return policy.TraceMutation.Validate(decisionBudget)
 	}
-	if policy.Version != PolicyVersion || policy.SeedHex != "" {
+	if policy.Version != PolicyVersion || policy.SeedHex != "" || len(policy.SelectableActions) != 0 {
 		return errors.New("EXPERIMENT_POLICY_IDENTITY_INVALID")
 	}
 	if len(policy.Priority) == 0 || policy.TraceMutation != nil {
@@ -142,6 +156,24 @@ func (policy Policy) Validate(decisionBudget int) error {
 			return err
 		}
 		seenDecisions[rule.Decision] = true
+	}
+	return nil
+}
+
+func (policy Policy) validateBoundedStochastic(reason string) error {
+	seed, err := hex.DecodeString(policy.SeedHex)
+	if err != nil || len(seed) == 0 || len(policy.Rules) != 0 || policy.TraceMutation != nil ||
+		!canonicalActionKinds(policy.SelectableActions, true) {
+		return errors.New(reason)
+	}
+	if err := validatePriority(policy.Priority); err != nil {
+		return err
+	}
+	allowed := actionKindSet(policy.SelectableActions)
+	for _, kind := range policy.Priority {
+		if !allowed[kind] {
+			return errors.New("EXPERIMENT_BOUNDED_POLICY_PRIORITY_OUTSIDE_SURFACE")
+		}
 	}
 	return nil
 }
@@ -165,6 +197,7 @@ func (policy Policy) Digest() (string, error) {
 }
 
 func (policy Policy) selectAction(decision int, enabled []control.Action) (control.Action, error) {
+	enabled = policy.constrainSelectableActions(enabled)
 	if len(enabled) == 0 {
 		return control.Action{}, &policySelectionError{
 			code: "EXPERIMENT_POLICY_NO_ACTION", detail: fmt.Sprintf("decision=%d", decision),
@@ -177,7 +210,7 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 		}
 		return enabled[index], nil
 	}
-	if policy.Version == AdmissibleUniformPolicyVersion {
+	if policy.Version == AdmissibleUniformPolicyVersion || policy.Version == BoundedUniformPolicyVersion {
 		for _, kind := range policy.Priority {
 			for _, action := range enabled {
 				if action.Kind == kind {
@@ -187,7 +220,7 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 		}
 		return policy.admissibleUniform(decision, enabled)
 	}
-	if policy.Version == ActionClassPolicyVersion {
+	if policy.Version == ActionClassPolicyVersion || policy.Version == BoundedActionClassPolicyVersion {
 		for _, kind := range policy.Priority {
 			for _, action := range enabled {
 				if action.Kind == kind {
@@ -225,6 +258,40 @@ func (policy Policy) selectAction(decision int, enabled []control.Action) (contr
 	return control.Action{}, &policySelectionError{
 		code: "EXPERIMENT_POLICY_NO_ACTION", detail: fmt.Sprintf("decision=%d", decision),
 	}
+}
+
+func (policy Policy) bounded() bool {
+	return policy.Version == BoundedUniformPolicyVersion || policy.Version == BoundedActionClassPolicyVersion
+}
+
+func (policy Policy) constrainSelectableActions(enabled []control.Action) []control.Action {
+	if !policy.bounded() {
+		return append([]control.Action(nil), enabled...)
+	}
+	allowed := actionKindSet(policy.SelectableActions)
+	result := make([]control.Action, 0, len(enabled))
+	for _, action := range enabled {
+		if allowed[action.Kind] {
+			result = append(result, action)
+		}
+	}
+	return result
+}
+
+func (policy Policy) validateTraceSurface(trace controlruntime.Trace) error {
+	if !policy.bounded() {
+		return nil
+	}
+	allowed := actionKindSet(policy.SelectableActions)
+	for index, record := range trace.Records {
+		if !allowed[record.Action.Kind] {
+			return fmt.Errorf(
+				"EXPERIMENT_BOUNDED_POLICY_TRACE_ACTION_OUTSIDE_SURFACE: decision=%d kind=%s",
+				index+1, record.Action.Kind,
+			)
+		}
+	}
+	return nil
 }
 
 // admissibleUniform samples each Action in the common admissible frontier
@@ -407,10 +474,16 @@ func (config Config) Validate() error {
 		if err := run.Policy.Validate(config.DecisionsPerRun); err != nil {
 			return fmt.Errorf("run %d: %w", run.Run, err)
 		}
+		if run.Policy.bounded() && config.SchemaVersion != SchemaVersionV2 {
+			return fmt.Errorf("run %d: EXPERIMENT_BOUNDED_POLICY_REQUIRES_V2", run.Run)
+		}
 		if run.Workload != nil {
 			hasWorkload = true
 			if err := run.Workload.Validate(); err != nil {
 				return fmt.Errorf("run %d: %w", run.Run, err)
+			}
+			if run.Policy.bounded() && !actionKindSet(run.Policy.SelectableActions)[control.ActionInvoke] {
+				return fmt.Errorf("run %d: EXPERIMENT_BOUNDED_POLICY_INVOKE_REQUIRED", run.Run)
 			}
 		}
 		if run.StopAfterWorkload && (config.SchemaVersion != SchemaVersionV2 || run.Workload == nil) {
