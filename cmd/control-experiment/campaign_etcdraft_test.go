@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -149,6 +150,15 @@ func TestEtcdraftM521d2RecoversResultWithoutSecondTransport(t *testing.T) {
 	prepared, err := provider.prepareRequest(view)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var messages []deepSeekMessage
+	if err := json.Unmarshal(prepared.PromptBytes, &messages); err != nil || len(messages) != 2 ||
+		!strings.Contains(messages[0].Content, "proposal_template") ||
+		!strings.Contains(messages[1].Content, `"backend_ids": []`) ||
+		!strings.Contains(messages[1].Content, `"actions": []`) ||
+		!strings.Contains(messages[1].Content, `"allowed_backend_ids"`) ||
+		strings.Contains(messages[1].Content, `"backend_id":`) {
+		t.Fatalf("campaign request omitted the exact proposal contract: %#v/%v", messages, err)
 	}
 	result, err := provider.resolveCall(ctx, request, view, prepared)
 	if err != nil || calls != 1 || len(recovered.PlannedAttempts) != 0 {

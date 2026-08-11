@@ -217,11 +217,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	} else if *sourceBundleOut != "" || *methodOut != "" {
 		return errors.New("-source-bundle-out and -method-out require workload-trace-mutation-corpus")
 	} else if *bundleOut != "" {
-		if *strategy != "workload" && *strategy != "workload-semantics-v2" &&
-			*strategy != "workload-evaluation-v3" &&
-			*strategy != "workload-admissible-uniform" &&
-			*strategy != "workload-action-class-random" &&
-			*strategy != "workload-trace-mutation" {
+		if !supportsQualifiedBundleOutput(*strategy) {
 			return errors.New("-bundle-out requires a qualified workload strategy")
 		}
 		var captured controlexperiment.ExecutionBundle
@@ -431,6 +427,18 @@ func etcdraftReport(
 	return report, err
 }
 
+func supportsQualifiedBundleOutput(strategy string) bool {
+	switch strategy {
+	case "workload", "workload-semantics-v2", "workload-evaluation-v3",
+		"workload-admissible-uniform", "workload-admissible-uniform-b4",
+		"workload-action-class-random", "workload-action-class-random-b4",
+		"workload-trace-mutation":
+		return true
+	default:
+		return false
+	}
+}
+
 func etcdraftExecution(
 	ctx context.Context,
 	strategy string,
@@ -518,6 +526,12 @@ func etcdraftExecutionWithMethodSpec(
 				ID:      "action-class-random-v1/run-1", SeedHex: randomPolicySeed(policySeed, 1),
 				Priority: []control.ActionKind{control.ActionInvoke},
 			}
+			if strategy == "workload-action-class-random-b4" {
+				policy, err = etcdraftCampaignExecutionPolicy(strategy, policySeed, decisions)
+				if err != nil {
+					return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+				}
+			}
 			faultEnvelope = &controlexperiment.FaultEnvelope{
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
 				MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
@@ -533,6 +547,12 @@ func etcdraftExecutionWithMethodSpec(
 				Version: controlexperiment.AdmissibleUniformPolicyVersion,
 				ID:      "admissible-uniform-v1/run-1", SeedHex: randomPolicySeed(policySeed, 1),
 				Priority: []control.ActionKind{control.ActionInvoke},
+			}
+			if strategy == "workload-admissible-uniform-b4" {
+				policy, err = etcdraftCampaignExecutionPolicy(strategy, policySeed, decisions)
+				if err != nil {
+					return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+				}
 			}
 			faultEnvelope = &controlexperiment.FaultEnvelope{
 				MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
@@ -553,10 +573,8 @@ func etcdraftExecutionWithMethodSpec(
 		SchemaVersion: schemaVersion,
 		ID:            experimentID,
 		PSSID:         etcdraftv2.CorePSSMappingID,
-		Runtime: controlexperiment.RuntimeConfig{
-			SeedHex: hex.EncodeToString([]byte("official-etcdraft-v2-cluster-seed")), MaxClones: 1,
-		},
-		Admission: admission, FaultEnvelope: faultEnvelope, WorkloadRouterID: workloadRouterID,
+		Runtime:       etcdraftCampaignRuntimeConfig(),
+		Admission:     admission, FaultEnvelope: faultEnvelope, WorkloadRouterID: workloadRouterID,
 		DecisionsPerRun: decisions, RequireReplay: true, Runs: runs,
 	}
 	factory := func() (control.Adapter, error) {
@@ -729,14 +747,22 @@ func etcdraftQualifiedWorkload(
 	if err != nil {
 		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
 	}
+	workload, err := etcdraftCampaignWorkload()
+	if err != nil {
+		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
+	}
+	return bundle, bound, workload, nil
+}
+
+func etcdraftCampaignWorkload() (controlexperiment.WorkloadPlan, error) {
 	const requestID = "m5.15-write-1"
 	payload, err := etcdraftv2.InputPayload(etcdraftv2.Input{
 		Operation: etcdraftv2.OperationPropose, RequestID: requestID, Value: []byte("alpha"),
 	})
 	if err != nil {
-		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
+		return controlexperiment.WorkloadPlan{}, err
 	}
-	return bundle, bound, controlexperiment.WorkloadPlan{
+	return controlexperiment.WorkloadPlan{
 		SchemaVersion: controlexperiment.WorkloadPlanVersion, ID: "single-write-v1",
 		TargetSelector: controlexperiment.TargetSingleCoordinatingMember,
 		Invocations: []controlexperiment.WorkloadInvocation{{

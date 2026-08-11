@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	etcdraftCampaignModelPlannerVersion = "consensus-atlas/etcdraft-campaign-model-planner/v1"
-	etcdraftCampaignModelPromptVersion  = "campaign-preference-only-v1"
+	etcdraftCampaignModelPlannerVersion = "consensus-atlas/etcdraft-campaign-model-planner/v2"
+	etcdraftCampaignModelPromptVersion  = "campaign-preference-only-v2"
 	etcdraftCampaignModelFailed         = "ETCDRAFT_CAMPAIGN_MODEL_CALL_FAILED"
 	etcdraftCampaignModelAmbiguous      = "ETCDRAFT_CAMPAIGN_MODEL_CALL_AMBIGUOUS"
 )
@@ -187,13 +187,24 @@ func (provider etcdraftDurableModelCampaignProvider) prepareRequest(
 	if err := view.Validate(); err != nil {
 		return deepSeekPreparedRequest{}, err
 	}
+	contract, err := controlexperiment.NewCampaignPlannerProposalContract(view)
+	if err != nil {
+		return deepSeekPreparedRequest{}, err
+	}
+	contractJSON, err := contract.MarshalIndent()
+	if err != nil {
+		return deepSeekPreparedRequest{}, err
+	}
 	encoded, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
 		return deepSeekPreparedRequest{}, err
 	}
 	system := "Return exactly one preference-only GuardedTestIntent JSON object and no prose. " +
-		"Copy every baseline field except Prefer, and leave digest empty."
-	user := "Planner schema " + etcdraftCampaignModelPromptVersion + ". CampaignPlannerView JSON:\n" + string(encoded)
+		"Copy proposal_template exactly, changing only prefer.backend_ids and prefer.actions. " +
+		"Both Prefer fields must remain JSON arrays, use only allowed values, and leave digest empty."
+	user := "Planner schema " + etcdraftCampaignModelPromptVersion + ".\n" +
+		"Trusted output contract JSON:\n" + string(contractJSON) +
+		"\nCampaignPlannerView JSON:\n" + string(encoded)
 	return provider.client.prepare(system, user)
 }
 

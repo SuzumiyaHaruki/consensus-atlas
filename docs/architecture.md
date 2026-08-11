@@ -149,6 +149,23 @@ attempt 强制 `intent durable -> key read -> one Coordinator Step -> key clear`
 call 允许读 key；completed result、pending plan、ambiguous 和 failed 恢复均无 transport 权限。
 pre-plan failure 的 Work 目前以 durable call result 为准，尚未进入 checkpoint/Summary totals。
 
+M5.21g 在完整 planned-attempt 审计 identity 之外增加
+`CampaignEffectiveExecution/v1`。后者只绑定真正能改变 target execution 的 target/environment、
+strategy、Policy、seed、decision/fault/work budget，不包含 proposal、compiler work 或 plan digest。
+协议无关类型不解释 target；etcd/raft composition 用固定 Runtime、workload/router、Adapter manifest
+和 exact Policy 构造 opaque environment/policy digest，并用已保存 Report.Config 反向核对。该 identity
+只用于 proposal-only 行为归因和执行去重，不替代完整审计链、Replay fingerprint 或 PSS key。
+
+M5.21h 用同一 qualified executor 补齐 gate 中唯一缺失的 adaptive uniform identity。独立 CLI 只增加
+两个既有 B4 strategy 的 bundle-output allowlist，不增加执行器；保存的 report/bundle 会由回归测试
+与 frozen effective identity、归档 ActionClass config、Replay 和可信 monitors 重新对账。单次 PSS
+集合比较只诊断真实 behavior delta，不能替代跨 attempt 的方法聚合或外部缺陷效果评价。
+
+M5.21i 不增加运行时组件。实验检查器从每个保存的 bundle 重新执行 PSS projection 和可信 monitors，
+再把有序 samples 交给现有 `protocolstate.Aggregate`，生成方法级 union、完整 discovery curve 和
+first-attempt witnesses。相同 effective identity 的物理 bundle 可以跨 method view 复用，但每个方法的
+logical attempts/work 仍完整计费；Agent model work 保持独立。该聚合只提供 discovery 诊断。
+
 ## 唯一执行路径
 
 `internal/controlexperiment` 当前只保留 qualified workload/Experiment v2、action-class random 和 trace mutation，

@@ -1,14 +1,95 @@
 package controlexperiment
 
 import (
+	"encoding/json"
 	"errors"
 	"sort"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 )
 
 const (
-	CampaignPlannerViewVersion = "consensus-atlas/campaign-planner-view/v1"
-	CampaignPlannerSemantics   = "discovery-counts-have-no-completeness-denominator;monitor-triggers-are-not-verdicts"
+	CampaignPlannerViewVersion             = "consensus-atlas/campaign-planner-view/v1"
+	CampaignPlannerSemantics               = "discovery-counts-have-no-completeness-denominator;monitor-triggers-are-not-verdicts"
+	CampaignPlannerProposalContractVersion = "consensus-atlas/campaign-planner-proposal-contract/v1"
 )
+
+// CampaignPlannerProposalTemplate deliberately does not use omitempty on the
+// two mutable arrays. A model must see their exact wire names even when the
+// frozen baseline has no preference.
+type CampaignPlannerProposalTemplate struct {
+	SchemaVersion string     `json:"schema_version"`
+	ID            string     `json:"id"`
+	ViewDigest    string     `json:"view_digest"`
+	RiskID        string     `json:"risk_id"`
+	Must          IntentMust `json:"must"`
+	Prefer        struct {
+		BackendIDs []string             `json:"backend_ids"`
+		Actions    []control.ActionKind `json:"actions"`
+	} `json:"prefer"`
+	Digest string `json:"digest"`
+}
+
+// CampaignPlannerProposalContract is prompt material produced by trusted
+// code. Exact request bytes provide its durable identity, while validation
+// recomputes the same constraints from the trusted PlannerView rather than
+// accepting a contract object supplied by the Agent.
+type CampaignPlannerProposalContract struct {
+	SchemaVersion     string                          `json:"schema_version"`
+	MutableFields     []string                        `json:"mutable_fields"`
+	AllowedBackendIDs []string                        `json:"allowed_backend_ids"`
+	AllowedActions    []control.ActionKind            `json:"allowed_actions"`
+	Template          CampaignPlannerProposalTemplate `json:"proposal_template"`
+}
+
+func NewCampaignPlannerProposalContract(
+	view CampaignPlannerView,
+) (CampaignPlannerProposalContract, error) {
+	if err := view.Validate(); err != nil {
+		return CampaignPlannerProposalContract{}, err
+	}
+	backends, err := campaignPlannerEligibleBackends(view)
+	if err != nil {
+		return CampaignPlannerProposalContract{}, err
+	}
+	backendSet := stringSet(backends)
+	actionSet := make(map[control.ActionKind]bool)
+	for _, backend := range view.SemanticView.EligibleBackends {
+		if !backendSet[backend.ID] {
+			continue
+		}
+		for _, action := range backend.SupportedActions {
+			actionSet[action] = true
+		}
+	}
+	actions := make([]control.ActionKind, 0, len(actionSet))
+	for _, action := range view.SemanticView.AvailableActions {
+		if actionSet[action] {
+			actions = append(actions, action)
+		}
+	}
+	template := CampaignPlannerProposalTemplate{
+		SchemaVersion: GuardedTestIntentVersion,
+		ID:            view.Baseline.ID,
+		ViewDigest:    view.Baseline.ViewDigest,
+		RiskID:        view.Baseline.RiskID,
+		Must:          view.Baseline.Must,
+		Digest:        "",
+	}
+	template.Prefer.BackendIDs = make([]string, 0)
+	template.Prefer.Actions = make([]control.ActionKind, 0)
+	return CampaignPlannerProposalContract{
+		SchemaVersion:     CampaignPlannerProposalContractVersion,
+		MutableFields:     []string{"prefer.backend_ids", "prefer.actions"},
+		AllowedBackendIDs: append([]string(nil), backends...),
+		AllowedActions:    actions,
+		Template:          template,
+	}, nil
+}
+
+func (contract CampaignPlannerProposalContract) MarshalIndent() ([]byte, error) {
+	return json.MarshalIndent(contract, "", "  ")
+}
 
 // CampaignPlannerAttemptFeedback deliberately omits artifact, bundle, trace,
 // witness, build and defect identities. It is an attempt-indexed summary, not
@@ -185,23 +266,9 @@ func PlanDeterministicCampaignFixture(
 	if err := view.Validate(); err != nil {
 		return GuardedTestIntent{}, err
 	}
-	baseline := view.Baseline
-	risk, ok := findProtocolRisk(view.SemanticView.KnowledgePack.Risks, baseline.RiskID)
-	if !ok {
-		return GuardedTestIntent{}, errors.New("EXPERIMENT_CAMPAIGN_PLANNER_RISK_UNKNOWN")
-	}
-	eligible := make(map[string]bool, len(view.SemanticView.EligibleBackends))
-	for _, backend := range view.SemanticView.EligibleBackends {
-		eligible[backend.ID] = true
-	}
-	backends := make([]string, 0, len(risk.AllowedBackendIDs))
-	for _, backend := range risk.AllowedBackendIDs {
-		if eligible[backend] {
-			backends = append(backends, backend)
-		}
-	}
-	if len(backends) == 0 {
-		return GuardedTestIntent{}, errors.New("EXPERIMENT_CAMPAIGN_PLANNER_NO_BACKEND")
+	backends, err := campaignPlannerEligibleBackends(view)
+	if err != nil {
+		return GuardedTestIntent{}, err
 	}
 	if attempts := view.Feedback.Attempts; len(attempts) > 0 {
 		latest := attempts[len(attempts)-1]
@@ -217,9 +284,84 @@ func PlanDeterministicCampaignFixture(
 		}
 		backends = append(backends[selected:], backends[:selected]...)
 	}
+	return newCampaignPlannerPreferenceProposal(view, backends)
+}
+
+// PlanDeterministicBalancedCampaignBaseline is the first non-LLM adaptive
+// comparison method. It has exactly the same view and preference-only
+// authority as the Agent. It explores every eligible backend once, then
+// rotates after zero semantic novelty or aggregate workload stagnation.
+func PlanDeterministicBalancedCampaignBaseline(
+	view CampaignPlannerView,
+) (GuardedTestIntent, error) {
+	if err := view.Validate(); err != nil {
+		return GuardedTestIntent{}, err
+	}
+	backends, err := campaignPlannerEligibleBackends(view)
+	if err != nil {
+		return GuardedTestIntent{}, err
+	}
+	used := make(map[string]bool, len(backends))
+	for _, attempt := range view.Feedback.Attempts {
+		used[attempt.Choice.BackendID] = true
+	}
+	selected := 0
+	for index, backend := range backends {
+		if !used[backend] {
+			selected = index
+			return newCampaignPlannerPreferenceProposal(
+				view, append(backends[selected:], backends[:selected]...),
+			)
+		}
+	}
+	attempts := view.Feedback.Attempts
+	if len(attempts) > 0 {
+		latest := attempts[len(attempts)-1]
+		for index, backend := range backends {
+			if backend == latest.Choice.BackendID {
+				selected = index
+				break
+			}
+		}
+		stagnantWorkload := view.Feedback.Workload.Pending > 0 && view.Feedback.Workload.Completed == 0
+		if (latest.ExecutionEvidence && latest.NewPSSStates == 0) || stagnantWorkload {
+			selected = (selected + 1) % len(backends)
+		}
+	}
+	return newCampaignPlannerPreferenceProposal(
+		view, append(backends[selected:], backends[:selected]...),
+	)
+}
+
+func campaignPlannerEligibleBackends(view CampaignPlannerView) ([]string, error) {
+	risk, ok := findProtocolRisk(view.SemanticView.KnowledgePack.Risks, view.Baseline.RiskID)
+	if !ok {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_PLANNER_RISK_UNKNOWN")
+	}
+	eligible := make(map[string]bool, len(view.SemanticView.EligibleBackends))
+	for _, backend := range view.SemanticView.EligibleBackends {
+		eligible[backend.ID] = true
+	}
+	backends := make([]string, 0, len(risk.AllowedBackendIDs))
+	for _, backend := range risk.AllowedBackendIDs {
+		if eligible[backend] {
+			backends = append(backends, backend)
+		}
+	}
+	if len(backends) == 0 {
+		return nil, errors.New("EXPERIMENT_CAMPAIGN_PLANNER_NO_BACKEND")
+	}
+	return backends, nil
+}
+
+func newCampaignPlannerPreferenceProposal(
+	view CampaignPlannerView,
+	backends []string,
+) (GuardedTestIntent, error) {
+	baseline := view.Baseline
 	proposal, err := NewGuardedTestIntent(GuardedTestIntent{
 		ID: baseline.ID, ViewDigest: baseline.ViewDigest, RiskID: baseline.RiskID,
-		Must: baseline.Must, Prefer: IntentPrefer{BackendIDs: backends},
+		Must: baseline.Must, Prefer: IntentPrefer{BackendIDs: append([]string(nil), backends...)},
 	})
 	if err != nil {
 		return GuardedTestIntent{}, err
@@ -239,7 +381,26 @@ func ValidateCampaignPlannerProposal(view CampaignPlannerView, proposal GuardedT
 	if proposal.ID != view.Baseline.ID {
 		return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_PROPOSAL_ID_CHANGED")
 	}
-	return ValidatePreferenceOnlyProposal(view.SemanticView, view.Baseline, proposal)
+	if err := ValidatePreferenceOnlyProposal(view.SemanticView, view.Baseline, proposal); err != nil {
+		return err
+	}
+	contract, err := NewCampaignPlannerProposalContract(view)
+	if err != nil {
+		return err
+	}
+	allowedBackends := stringSet(contract.AllowedBackendIDs)
+	for _, backend := range proposal.Prefer.BackendIDs {
+		if !allowedBackends[backend] {
+			return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_BACKEND_PREFERENCE_INVALID")
+		}
+	}
+	allowedActions := actionKindSet(contract.AllowedActions)
+	for _, action := range proposal.Prefer.Actions {
+		if !allowedActions[action] {
+			return errors.New("EXPERIMENT_CAMPAIGN_PLANNER_ACTION_PREFERENCE_INVALID")
+		}
+	}
+	return nil
 }
 
 func projectCampaignPlannerFeedback(observation CampaignObservation) CampaignPlannerFeedback {

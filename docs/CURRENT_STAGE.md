@@ -1,8 +1,8 @@
 # 当前阶段
 
-日期：2026-08-10
+日期：2026-08-11
 
-阶段：M5.21e Matched Agent/Zero-model Execution Pilot 已完成
+阶段：M5.21i Ordered Method Corpus 聚合已完成
 
 ## 输入、处理、输出
 
@@ -31,6 +31,55 @@
   + content-addressed full artifacts stored once
   + no composite score
 ```
+
+M5.21i 已从三个保存的 bundle 机械聚合两条有序、等逻辑成本的两步 method corpus，没有调用模型或
+运行新 SUT。ActionClass→ActionClass 为 32 个 states、prefix area 1325、new states 25/7；
+ActionClass→Uniform 为 40 个 states、prefix area 1444、new states 25/15。两边均为 64 decisions、
+66/66 primary/replay work、workload 0 completed/2 pending、4 次 monitor checks/0 findings。
+
+两个最终状态集合交集 26、并集 46。Agent 与 zero-model 指向相同 ActionClass corpus，Agent 额外消耗
+2 calls/6027 tokens；adaptive 指向 40-state corpus。这个公开两尝试结果只证明当前 Agent 没有行为
+增益、简单轮换产生了不同 discovery，不证明 adaptive 总体更优。下一阶段不扩大 LLM pilot，先实现
+最小 target milestone + family partial order + generic validator RiskWitness，并重判现有 bundle 的
+reached/not-reached；不调用模型、不运行新 SUT。
+
+M5.21h 已完成 M5.21g gate 判定的唯一缺失执行：attempt-2 adaptive uniform 在 seed 172、32 decisions、
+34/34 work ceiling 下实际消耗 33/33 primary/replay work，Replay 稳定，Agreement 与 Trace Integrity
+均为零 finding；本阶段模型调用为 0。B4 ActionClass/Uniform 现在可通过既有 CLI 保存 qualified bundle，
+该修复只补 allowlist，没有新增执行路径。
+
+同边界归档 ActionClass 得到 17 个单次 PSS states，新 Uniform 得到 23 个；集合交集 8、并集 32，
+Jaccard 0.25。两边 workload 都是 0 completed/1 pending。这证明 behavior identity 差异确实对应不同
+轨迹，但单 seed 状态数不能证明方法优势。下一阶段只复用已有 bundle，聚合 `shared attempt 1 +
+ActionClass attempt 2` 与 `shared attempt 1 + Uniform attempt 2` 的两步等预算 method corpus；不调用
+模型、不执行新 SUT。
+
+M5.21g 已完成。新增协议无关 `CampaignEffectiveExecution/v1`，只绑定 target/environment、strategy、
+完整 Policy、seed、decisions、FaultEnvelope 和 work budget；proposal、compiler work、plan/instance
+digest 继续用于审计，但不进入行为去重。etcd/raft 组合层把固定 Runtime、workload/router、manifest
+和 exact Policy 机械绑定，并与 M5.21f 归档 Report.Config 反向核对。
+
+两个 frozen PlannerViews 的三方法 proposal-only gate 结果为：attempt 1 Agent/zero/adaptive 全部共享
+一个 effective identity；attempt 2 Agent/zero 共享 action-class identity，adaptive 产生唯一新的 uniform
+identity。Agent 相对 zero-model behavior delta 为 0/2，adaptive 相对 zero-model 为 1/2。M5.21g 没有
+新模型调用或 SUT execution。
+
+下一阶段只执行尚未存在的 attempt-2 adaptive uniform identity，再与归档 action-class execution 做
+相同逻辑工作比较。本阶段不证明 adaptive 效果更好、PSS 完备或协议正确。
+
+M5.21f 已完成。可信代码现在逐请求生成精确 proposal template、两个 Prefer 数组和 allowed values；
+strict parser 与 no-retry 不变。新确定性自适应基线与 Agent 读取同一 PlannerView、拥有同一
+preference-only 权限。M5.21e frozen view 上，它选择 `admissible-uniform`，zero-model 选择
+`action-class-random`，compiled plan 和完整 execution input 均不同。
+
+新契约下的真实 2-call public pilot 完成 2/2 valid proposals、2 committed attempts、66/66
+primary/replay work 和 6027 tokens，得到 32 个 Core PSS states；workload 0 completed/2 pending，
+monitor 零触发。Agent 两轮都选择 `action-class-random`，第二轮与 zero-model 的有效执行输入相同，
+没有相对 zero-model 的行为增益；同视图自适应基线会切换到 `admissible-uniform`。
+
+Pilot 还证明 plan/instance digest 会被当前无执行作用的 `Prefer.Actions` 改变。下一阶段必须先形成
+trusted effective-execution identity，再做三方法 proposal-only gate；identity 相同的方案不重复执行
+SUT。该结果不证明 Agent 优劣、PSS 完备或协议正确。
 
 M5.21e 已完成。Zero-model 完成 2 attempts/64 decisions，得到 46 个 PSS states。Agent
 第一次调用的 choice、plan、bundle 和 32-decision PSS curve 与基线完全一致；第二次

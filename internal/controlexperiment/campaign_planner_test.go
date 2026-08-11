@@ -43,6 +43,54 @@ func TestCampaignPlannerViewIsBoundMinimalAndPreferenceOnly(t *testing.T) {
 			t.Fatalf("planner view exposed %q", forbidden)
 		}
 	}
+	contract, err := NewCampaignPlannerProposalContract(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractJSON, err := contract.MarshalIndent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.AllowedBackendIDs) != 2 || contract.AllowedBackendIDs[0] != "backend-a" ||
+		len(contract.AllowedActions) != 1 || contract.AllowedActions[0] != control.ActionInvoke ||
+		!strings.Contains(string(contractJSON), `"backend_ids": []`) ||
+		!strings.Contains(string(contractJSON), `"actions": []`) ||
+		strings.Contains(string(contractJSON), `"backend_id":`) {
+		t.Fatalf("proposal contract does not expose the exact bounded wire shape: %s", contractJSON)
+	}
+	contract.Template.Prefer.BackendIDs = []string{"backend-b", "backend-a"}
+	templateJSON, err := json.Marshal(contract.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseGuardedTestIntentProposal(templateJSON)
+	if err != nil || ValidateCampaignPlannerProposal(view, parsed) != nil {
+		t.Fatalf("contract template did not round-trip through the strict boundary: %#v/%v", parsed, err)
+	}
+	malformed := strings.Replace(string(templateJSON), `"backend_ids"`, `"backend_id"`, 1)
+	if _, err := ParseGuardedTestIntentProposal([]byte(malformed)); err == nil {
+		t.Fatal("legacy singular preference spelling was accepted")
+	}
+	invalidBackend := parsed
+	invalidBackend.Prefer.BackendIDs = []string{"unknown-backend"}
+	invalidBackend, err = NewGuardedTestIntent(invalidBackend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCampaignPlannerProposal(view, invalidBackend); err == nil ||
+		!strings.Contains(err.Error(), "BACKEND_PREFERENCE_INVALID") {
+		t.Fatalf("out-of-contract backend preference was accepted: %v", err)
+	}
+	invalidAction := parsed
+	invalidAction.Prefer.Actions = []control.ActionKind{control.ActionCrash}
+	invalidAction, err = NewGuardedTestIntent(invalidAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCampaignPlannerProposal(view, invalidAction); err == nil ||
+		!strings.Contains(err.Error(), "ACTION_PREFERENCE_INVALID") {
+		t.Fatalf("out-of-contract action preference was accepted: %v", err)
+	}
 
 	proposal, err := PlanDeterministicCampaignFixture(view)
 	if err != nil {
@@ -98,6 +146,36 @@ func TestCampaignPlannerViewIsBoundMinimalAndPreferenceOnly(t *testing.T) {
 	}
 }
 
+func TestDeterministicBalancedCampaignBaselineCreatesBehaviorDelta(t *testing.T) {
+	semantic := campaignPlannerSemantic(t)
+	observation, request := campaignPlannerPrefixForChanges(t, []bool{true})
+	baseline, err := NewGuardedTestIntent(GuardedTestIntent{
+		ID: "planner-baseline", ViewDigest: semantic.Digest, RiskID: "risk",
+		Must: IntentMust{Decisions: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := NewCampaignPlannerView("planner-delta-view", semantic, observation, request, baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero, err := PlanDeterministicCampaignFixture(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptive, err := PlanDeterministicBalancedCampaignBaseline(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zero.Prefer.BackendIDs[0] != "backend-a" || adaptive.Prefer.BackendIDs[0] != "backend-b" ||
+		zero.Must.Decisions != adaptive.Must.Decisions ||
+		zero.Must.FaultEnvelope != adaptive.Must.FaultEnvelope ||
+		zero.ViewDigest != adaptive.ViewDigest || zero.RiskID != adaptive.RiskID {
+		t.Fatalf("same-view behavior delta is not preference-only: zero=%#v adaptive=%#v", zero, adaptive)
+	}
+}
+
 func campaignPlannerSemantic(t *testing.T) AgentSemanticView {
 	t.Helper()
 	pack, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
@@ -129,6 +207,13 @@ func campaignPlannerSemantic(t *testing.T) AgentSemanticView {
 }
 
 func campaignPlannerPrefix(t *testing.T) (CampaignObservation, CampaignAttemptRequest) {
+	return campaignPlannerPrefixForChanges(t, []bool{true, false})
+}
+
+func campaignPlannerPrefixForChanges(
+	t *testing.T,
+	stateChanges []bool,
+) (CampaignObservation, CampaignAttemptRequest) {
 	t.Helper()
 	config := campaignTestConfig(t, "planner-campaign", strings.Repeat("a", 64), CampaignLogicalBudget{
 		MaxAttempts: 3, MaxPrimarySchedulerDecisions: 3, MaxPrimaryWorkUnits: 6, MaxReplayWorkUnits: 6,
@@ -137,7 +222,7 @@ func campaignPlannerPrefix(t *testing.T) (CampaignObservation, CampaignAttemptRe
 	if err != nil {
 		t.Fatal(err)
 	}
-	for ordinal := 1; ordinal <= 2; ordinal++ {
+	for ordinal := 1; ordinal <= len(stateChanges); ordinal++ {
 		artifact := []byte("planner-artifact-" + string(rune('0'+ordinal)))
 		record, err := NewCampaignAttemptRecord(CampaignAttemptRecord{
 			Ordinal: ordinal, ID: "planner-attempt-" + string(rune('0'+ordinal)),
@@ -157,9 +242,13 @@ func campaignPlannerPrefix(t *testing.T) (CampaignObservation, CampaignAttemptRe
 	}
 	initial := campaignObservationState(t, "passive")
 	changed := campaignObservationState(t, "coordinating")
-	projections := []CampaignAttemptProjection{
-		campaignObservationProjection(summary.Attempts[0], initial, changed),
-		campaignObservationProjection(summary.Attempts[1], initial, initial),
+	projections := make([]CampaignAttemptProjection, 0, len(stateChanges))
+	for index, stateChanged := range stateChanges {
+		final := initial
+		if stateChanged {
+			final = changed
+		}
+		projections = append(projections, campaignObservationProjection(summary.Attempts[index], initial, final))
 	}
 	for index := range projections {
 		choice, err := (CampaignExecutionChoice{

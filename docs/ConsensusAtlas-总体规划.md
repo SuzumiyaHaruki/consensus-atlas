@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.34（M5.20 Campaign Observation 完成）
-> 日期：2026-08-09
+> 状态：Draft v1.38（M5.21i Ordered Method Corpus 完成）
+> 日期：2026-08-11
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -2341,6 +2341,38 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
     由 result-bound terminal accounting 准确记录。这个负结果说明当前 Agent 未改变首个搜索前缀，
     且下一步必须机械提供精确输出 template/schema，不能放宽 parser 或重试本 pilot。
     详见 `docs/stage-m5.21e-matched-agent-zero-pilot.md`。
+82. [X] M5.21f 完成 Planner usefulness gate 第一阶段。可信代码将精确 proposal template、
+    `prefer.backend_ids`/`prefer.actions` 数组和当前 allowed/eligible 枚举冻结进 prompt；strict parser
+    与 0 retry 保持不变。新确定性自适应基线只读取同一 PlannerView、只修改同一 Prefer：先尝试每个
+    backend，之后在零 PSS 新颖度或 workload 持续停滞时轮换。M5.21e frozen view 证明它与 zero-model
+    可产生不同 backend 和执行输入。一次新契约下的 2-call public pilot 得到 2/2 valid proposals、
+    2 committed attempts、66/66 primary/replay work 和 6027 tokens；Agent 两轮都选择
+    `action-class-random`，第二轮与 zero-model 相同、与选择 `admissible-uniform` 的自适应基线不同。
+    Pilot 同时发现完整 plan/instance digest 会被当前无执行作用的 `Prefer.Actions` 改变，因而后续
+    behavior delta 必须由 trusted effective-execution identity 判定，不能把审计元数据差异计为搜索增益。
+    详见 `docs/stage-m5.21f-planner-usefulness-gate.md`。
+83. [X] M5.21g 实现协议无关 `CampaignEffectiveExecution/v1` 与首个三方法 proposal-only gate。
+    identity 绑定 target/environment、strategy、exact Policy/seed、decisions、FaultEnvelope 和 work budget，
+    排除 proposal/compiler/plan/instance 中未进入执行器的元数据。etcd/raft composition 绑定固定 Runtime、
+    workload/router、target manifest 与 Policy，并用 M5.21f 归档 Report.Config 反向核对。两个 frozen views
+    上，attempt 1 Agent/zero/adaptive 折叠为一个有效执行；attempt 2 Agent/zero 折叠为 action-class，
+    adaptive 产生唯一 uniform identity。因此 Agent 对 zero behavior delta 为 0/2，adaptive 为 1/2；
+    本阶段新增 model calls=0、SUT executions=0，不作效果优势结论。
+    详见 `docs/stage-m5.21g-effective-execution-gate.md`。
+84. [X] M5.21h 只补跑 gate 中唯一没有证据的 attempt-2 adaptive uniform identity。official
+    etcd/raft v2 在 seed 172、32 decisions、34/34 ceiling 下实际消耗 33/33 primary/replay work，Replay
+    稳定，Agreement/Trace Integrity 零 finding。与同边界归档 ActionClass 相比，单次 PSS states 为
+    23 对 17，集合交集 8、并集 32、Jaccard 0.25；两边 workload 都是 pending。这证明 identity delta
+    对应真实轨迹差异，但不能从单 seed 状态数推出方法优势。CLI 只补两个既有 B4 strategy 的 qualified
+    bundle allowlist，没有新增执行器。下一步仅复用三个已有 bundle 聚合两条等预算两步 method corpus，
+    不调用模型或运行新 SUT。详见 `docs/stage-m5.21h-missing-effective-execution.md`。
+85. [X] M5.21i 从三个可信 bundle 重投影并按顺序聚合两条等成本 method corpus。ActionClass→
+    ActionClass 与 ActionClass→Uniform 都计 2 attempts、64 decisions、66/66 primary/replay work；前者
+    得到 32 states/1325 prefix area，后者为 40/1444，最终集合交集 26、并集 46。Agent/zero 指向
+    相同 32-state corpus，但 Agent 另计 2 calls/6027 tokens；本阶段新增 model calls/SUT executions
+    均为 0。结果只说明当前两尝试中 Agent 无 behavior delta、简单 adaptive 轮换产生 discovery 增量，
+    不构成总体方法优势。下一步不扩大 LLM pilot，先实现最小可信 RiskWitness 并重判现有证据。
+    详见 `docs/stage-m5.21i-ordered-method-corpus.md`。
 
 当前主线已完成 v2 的第一个真实测试闭环、v1 实现锥体删除、action-class random、trace mutation、
 qualified uniform 和 batch PSS-guided 基线，以及 Experiment/corpus/feedback/MethodLedger 可信数据面。
@@ -2680,6 +2712,30 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      共同 attempts、decision ceilings、seeds 和 executor 与 Agent 独有 model calls/tokens 必须同时报告。
      PSS 数量、workload completion 或 monitor 触发都只是分量，不允许事后合成一个分数、换 seed
      或补跑以获得有利结果。
+107. Preference-only Agent 的输出形状必须由可信代码逐请求生成，并作为 exact prompt/request bytes
+     的一部分持久化。空 `backend_ids`/`actions` 也必须显式编码为数组；允许值由冻结 risk、eligible
+     backend 和 backend action surface 机械求交。可靠性修复不得通过放宽 unknown-field parser、
+     自动重试或修改 hard baseline 实现。
+108. Planner behavior delta 不能只比较 intent、plan 或 `IntentExecutionInstance` digest。这些审计
+     identity 正确绑定 proposal 和 compiler work，但可能被不影响 backend/strategy 的偏好元数据改变。
+     决定是否需要重复 SUT 执行时，必须另行比较由可信组合层生成的 effective execution identity，至少
+     绑定 target/runtime composition、实际 strategy/Policy、seed、decisions、FaultEnvelope 和实际 work
+     budget；LLM 与非 LLM 方法使用完全相同规则。该 identity 只用于执行去重和行为差异归因，不取代
+     完整审计 identity、Replay fingerprint 或 PSS semantic key。
+109. Effective execution identity 的通用层只能接收 target/environment 与 Policy 的 opaque digest，
+     不得导入协议类型。目标组合层必须从真实 Adapter/Runtime/workload/router/policy 构造输入，并用已保存
+     execution config 反向核对；backend 描述 ID、Agent proposal 和 compiler 统计若不进入执行器，就不能
+     单独改变该 identity。方法比较只执行尚无可信 evidence 的唯一 effective identity，已有相同 identity
+     的 bundle 可共享，但共享关系不能跨 target build/config、Runtime composition、seed 或预算。
+110. 多 attempt 方法结果必须从该方法按顺序引用的有效 bundle 重新聚合，不能相加每次的 unique PSS
+     states、prefix area 或 monitor 计数。物理共享一个相同 effective identity 的 bundle 不免除各方法臂的
+     逻辑 execution work 记账；实际新增 SUT execution 与每臂逻辑成本必须分别报告。单次 identity 对照
+     只证明行为差异，只有共同预算的完整 method corpus 才能形成方法级 discovery 诊断；外部缺陷检出与
+     control 误报仍是独立的主要效果指标。
+111. Method view、ordered execution corpus 和物理 evidence object 必须分层。多个方法可以引用同一
+     corpus，多个 corpus 可以引用同一 bundle；去重只减少物理 SUT 执行，不改变每个方法的 attempts、
+     primary/replay logical work 或独有 model work。Agent 与 zero-model 若映射到同一 corpus，就没有
+     behavior delta；Agent 的额外 token 不能被 PSS metadata 差异或共享执行掩盖。
 
 ---
 
