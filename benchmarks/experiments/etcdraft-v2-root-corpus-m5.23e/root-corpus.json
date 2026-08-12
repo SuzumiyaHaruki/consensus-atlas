@@ -1,0 +1,38 @@
+{
+  "schema_version": "consensus-atlas/stateless-root-corpus/v1",
+  "id": "etcdraft-m5-23e-roots",
+  "selection_rule_id": "fixed-source-milestone-anchors-v1",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+  "roots": [
+    {
+      "schema_version": "consensus-atlas/stateless-root-entry/v1",
+      "id": "initial",
+      "phase_id": "source-initial-state",
+      "decisions": 0,
+      "prefix_digest": "8b0dfb1afa5fc436188fbdcc612a31c1eb1f35b2ef7fe1cece66bd3515d9d456",
+      "final_state_digest": "f6ee742e089244695bd1b16fbdb1359d3c4e05e28e95f6e535e5e85e15f40812",
+      "digest": "206308419bad0e8522628a1a60994d1b38c6f4097b85f9a497bc3ea0d488fa9e"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-root-entry/v1",
+      "id": "invoked",
+      "phase_id": "workload-invoked-milestone",
+      "decisions": 28,
+      "prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+      "final_state_digest": "33e9cc66e59ea1e86dd0e93e584039d2106eb48348f866b0f8151f2d951e8408",
+      "digest": "c6f22b1a9fb2739fa88bca7c0aa0302efdaf6603a9b428217c0bc4dc3537f9c8"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-root-entry/v1",
+      "id": "restarted",
+      "phase_id": "old-coordinator-restarted-milestone",
+      "decisions": 54,
+      "prefix_digest": "798234dbe96fe3a1333e73838de549af0cbcccbeeacfc650b47a841785045b07",
+      "final_state_digest": "5126b243d266227b701326f3d9741aa19922e9c78049631a34e3ad34c53cfd67",
+      "digest": "3dfc3bf92a9bbf613c09c294416c05baec72f310fafcab97e23eb75b02fae8f7"
+    }
+  ],
+  "digest": "e8c7393804463bb52c3313c0885ffcacb8ed19da335b05e8067d971b89ca9ed8"
+}

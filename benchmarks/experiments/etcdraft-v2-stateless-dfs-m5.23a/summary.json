@@ -1,0 +1,143 @@
+{
+  "schema_version": "consensus-atlas/stateless-dfs-calibration-summary/v1",
+  "stage": "M5.23a",
+  "date": "2026-08-12",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "root_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+  "root_decisions": 28,
+  "spec_digest": "35dbc9c73fc35d4c6d49807388bba5ac207e389f5b63b25b0c91b1ed2f537abb",
+  "result_digest": "dff45f87678fd2fdf3fffb49f79e100ad7ae986996b05ad399c631841abcd648",
+  "max_depth": 2,
+  "max_work_items": 6,
+  "max_work_units": 1000,
+  "states_expanded": 2,
+  "work_items": 6,
+  "stop_reason": "work-item-limit",
+  "search_work": {
+    "frontier_reconstruction": {
+      "setup_attempts": 2,
+      "runtime_initializations": 2,
+      "prepare_actions": 2,
+      "scheduler_decisions": 57,
+      "work_units": 61
+    },
+    "child_materialization": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "child_verification": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "total_work_units": 443
+  },
+  "items": [
+    {
+      "ordinal": 1,
+      "parent_ordinal": 0,
+      "depth": 1,
+      "decision": 29,
+      "kind": "deliver-message",
+      "action_id": "action-03202a87d1bf5da8d64de7a256d15359f3cf0398cddb379b4b847edff8de4fe6",
+      "digest": "2530e5da764a21e037a2c7e75979f7c514e161f4f469c536451fa62de858f0a6",
+      "child_prefix_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3"
+    },
+    {
+      "ordinal": 2,
+      "parent_ordinal": 1,
+      "depth": 2,
+      "decision": 30,
+      "kind": "fire-temporal-event",
+      "action_id": "action-05171186728c26a6dfa6522a52f579ac20cc6766acb388ba0a08b07420cfe77c",
+      "digest": "480f57a2bee8fb5879ff9697d2444a4d4e11f362f3b08060470d49e38a81b698",
+      "child_prefix_digest": "c4e021f2ecdc138f3e9a95a84a48a117402ead756900c6d7ed6e81152e89fbef"
+    },
+    {
+      "ordinal": 3,
+      "parent_ordinal": 1,
+      "depth": 2,
+      "decision": 30,
+      "kind": "drop-message",
+      "action_id": "action-23915e804d2c2379119287d998e6a5ab76b5e74e3ede05ba562d14b1ca95be4b",
+      "digest": "e9f068ddf625a97d9ac23600f814d6771a150eed4e68aee339a6d13a47279500",
+      "child_prefix_digest": "d62a6a722584dfcadcaf7b0b005bb78fe25b08885ffd5dae880e4f541219b156"
+    },
+    {
+      "ordinal": 4,
+      "parent_ordinal": 1,
+      "depth": 2,
+      "decision": 30,
+      "kind": "crash",
+      "action_id": "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+      "digest": "0dde743a1c8bd662517da539dc731618af847eaa2d8c11638fa63bc35b6d7680",
+      "child_prefix_digest": "8911a48b3a03b1f6234d944379388939f429b0168710a3595e9de66aee3b75e1"
+    },
+    {
+      "ordinal": 5,
+      "parent_ordinal": 1,
+      "depth": 2,
+      "decision": 30,
+      "kind": "deliver-message",
+      "action_id": "action-43673aea70cd5531c34f1c3140630c274ec360cf2a588f99fb2187018f546a40",
+      "digest": "f4ec8d07d3b502e79b53b2cff33a3e317f23e34b141779e5ae5049462256202e",
+      "child_prefix_digest": "6b7992fa34b56c8d2d530d4a109c8a507fa0a9a3d765e298c8742681c608ba26"
+    },
+    {
+      "ordinal": 6,
+      "parent_ordinal": 1,
+      "depth": 2,
+      "decision": 30,
+      "kind": "complete-effect",
+      "action_id": "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+      "digest": "851b0d5d5d60348d02c39721d84ef7b328cb7805ab228b141d5bd9bb1dcd49bb",
+      "child_prefix_digest": "01183c47b6c06806987cec80c7125d2b5040f6dbc9585f544ded169ada2df4d0"
+    }
+  ],
+  "leaf_ordinal": 6,
+  "leaf_digest": "851b0d5d5d60348d02c39721d84ef7b328cb7805ab228b141d5bd9bb1dcd49bb",
+  "leaf_prefix_digest": "01183c47b6c06806987cec80c7125d2b5040f6dbc9585f544ded169ada2df4d0",
+  "leaf_state_digest": "5f5071334e29efb823a0f1c8bc4654f6567e322ea2aeb3cd9ad6dd92035a05e5",
+  "policy_digest": "6eac42bb7889837f9f40398ebb27334cfe4e1554acad01ab0cb264f62841abef",
+  "report_digest": "06778f4c82e4767e9f13564555255403a470bf1475b0f723b3fd4ef43ab60c41",
+  "bundle_digest": "2fedf2b88feea8e113c4fa3a6f645270115e61a2ea55e0c0df7236fb8a7fe2bf",
+  "execution_trace_digest": "21c8c13d0df308669bd4327e37c98f0c213f523a10e39625e1951a82555429aa",
+  "execution_work": {
+    "primary": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 1,
+      "scheduler_decisions": 64,
+      "work_units": 66
+    },
+    "replay": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 1,
+      "scheduler_decisions": 64,
+      "work_units": 66
+    },
+    "model": {
+      "calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "resources": {
+      "wall_time": "not-collected",
+      "cpu_time": "not-collected",
+      "peak_rss": "not-collected"
+    }
+  },
+  "execution_replay_stable": true,
+  "deterministic_repeat": true,
+  "leaf_prefix_reproduced": true,
+  "model_calls": 0,
+  "classification": "bounded-exact-prefix-stateless-dfs-calibration-not-state-complete-or-method-ranking"
+}

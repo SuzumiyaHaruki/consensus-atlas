@@ -33,6 +33,15 @@ type AgentTransportFreeze struct {
 	MaxRetries      int    `json:"max_retries"`
 }
 
+// Validate exposes the shared transport freeze check to durable Agent call
+// journals without granting transport authority.
+func (transport AgentTransportFreeze) Validate() error {
+	if !transport.valid() {
+		return errors.New("EXPERIMENT_AGENT_TRANSPORT_FREEZE_INVALID")
+	}
+	return nil
+}
+
 type AgentRequestCommitment struct {
 	ArmID           string `json:"arm_id"`
 	FeedbackExposed bool   `json:"feedback_exposed"`

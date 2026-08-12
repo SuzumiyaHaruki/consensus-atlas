@@ -1,0 +1,23 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "91e859d556a98af3769b6f0dde1c108d1e8ce95e7c0cbd09fbb481b2658c6d16",
+  "status": "completed",
+  "content": "ewogICJzY2hlbWFfdmVyc2lvbiI6ICJjb25zZW5zdXMtYXRsYXMvc3RhdGVsZXNzLWZyb250aWVyLW9yZGVyLXByb3Bvc2FsL3YxIiwKICAiaWQiOiAiZXRjZHJhZnQtbTUtMjNnLWRlZXBzZWVrLXJlcXVlc3QtMiIsCiAgInJlcXVlc3RfZGlnZXN0IjogIjJhYzU3MTczMmMwYjcxZWI4NDgxYmNmM2ZhMTk3YThiZDhkYjViZjdmZmNmNTQ2MDI4NTE3OWUyMTU4OTU2NzkiLAogICJ2aWV3X2RpZ2VzdCI6ICJlZTEwZTE2ZmYxNmEyNmNkMzc5MDVkMWM5MDFhMWFkMDAxZjcyYzNmMGRmYWZkODUzZWFlYmE4NjViYTBkMDVjIiwKICAiYWN0aW9uX2lkcyI6IFsKICAgICJhY3Rpb24tMmZmNmJjNTYwNWU5ZWUzZDZkNmZlYmQ3OGVlYzA4ZGM5YTU4ZDFmMTE5NmUxOWU1ZDNmYTg0YjNhN2ZhOGM1ZCIsCiAgICAiYWN0aW9uLTQ3NDdkZDFlYTVlYmFhNjQ3NDQ5NzUyMTg2OWQ1OGY1MTNhYzNmYmYzYjFjNWU2OWM1MzE5ODRhY2Q3MTg5ZGEiLAogICAgImFjdGlvbi05MTUzOTc3NTMyNzQzYjdiYzdlYzMxZTFmNjRjNGE3YTcxODIyMjJlZDhmMTk1YTg3OGE4MTNmY2FjMGY2ZDkzIiwKICAgICJhY3Rpb24tYTVkMzU1ZDliN2MxOGMzN2Q1MGQ2OTc4MTViZDZkZWYwZjA4MDc0ZjBiMzRhYjM4MTg0YzJkZjdhZTgzZTRiYyIsCiAgICAiYWN0aW9uLWIzZGFiMDA5Mzc4MWVkNmVmMzMwZWQxZDZiNGEyOTE1NjI1NDE3OTk2NjU1NWNmMzdmNGY1MTUyMTA1NmRlNGEiLAogICAgImFjdGlvbi1jNzczNzFmYmE1ZWMwYzBkMDgxNGNhY2E1Y2MzYTZhMmExZDhiN2NlZjJjZjQwN2M1Zjg2MzdkYmUwMzc4NThkIgogIF0sCiAgImRpZ2VzdCI6ICIiCn0=",
+  "content_digest": "98bffaafef5c0c82091253410caf3341c80b49ce373e331abcaa60a234fe942c",
+  "proposal_digest": "56333d357a70229c08d0fd7896440d8ae014ba1c9f94025ce53056c988c6beca",
+  "response_digest": "a8cd1946b328fc476f32138065e1950a63d5aa7d3db72beb8f9880ad4f6bfa37",
+  "response": {
+    "id": "2601a663-eb4f-4794-a9f6-4452ed4a11c4",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "fp_a18b46594c_prod0820_fp8_kvcache_20260402"
+  },
+  "duration_millis": 140,
+  "work": {
+    "calls": 1,
+    "input_tokens": 2638,
+    "output_tokens": 413,
+    "total_tokens": 3051
+  },
+  "digest": "a2947c61e5d803abcf1ee7e21cdbafbca25ce4185d30e8d909553e8d6f94e511"
+}

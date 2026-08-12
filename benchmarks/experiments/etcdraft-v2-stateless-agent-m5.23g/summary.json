@@ -1,0 +1,176 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-multi-root-pilot-summary/v1",
+  "stage": "M5.23g",
+  "date": "2026-08-12",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "prompt_version": "stateless-frontier-permutation-v1",
+  "max_retries": 0,
+  "max_model_calls": 6,
+  "actual_model_calls": 6,
+  "accepted_proposals": 6,
+  "model_work": {
+    "calls": 6,
+    "input_tokens": 24876,
+    "output_tokens": 3459,
+    "total_tokens": 28335
+  },
+  "corpus_digest": "e8c7393804463bb52c3313c0885ffcacb8ed19da335b05e8067d971b89ca9ed8",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "frozen_baseline_file_digest": "88223fbd769251264f3cd9ecfa17b6af328cabd837bcd1f7425424757fbdb784",
+  "knowledge_digest": "a698bbb9911655e48a40538d172122f602f0d09854bf2fb1b2cfe9f3dcb5e820",
+  "method_digest": "5dfaa9db70c0a163ab04a0e968e5bfbb14465c3ad7efdcf727ad42f3f0240ea4",
+  "agent_discovery_digest": "e969211c0f4ab748dbfa8a94c8139e382689c9b50bf7ae4f556c1b6040e058e6",
+  "corpus_baseline_pss_states": 38,
+  "corpus_baseline_pss_set_digest": "59906308bd8ca5b154f89f08432a515b5108a7c17b6bb684bbde409c3eb23588",
+  "root_count": 3,
+  "roots": [
+    {
+      "ordinal": 1,
+      "root_id": "initial",
+      "root_decisions": 0,
+      "spec_digest": "3c56aa39671229f9d29db460f14975a89de5db8964bfa78c02a073b7f12b828a",
+      "agent_result_digest": "635190427fcc8dafa0bffe1fbed02c0b06c9d3d0c9224893257e43659b479753",
+      "search_digest": "22339a5e83f8d11e51a16b918a1e3c1b9ba564b647554114e03aaa83ad018368",
+      "action_order_digest": "f40da72c69f408b14fcd422fd590878f63e851077daf08511af09ab661dc3ab6",
+      "planner_invocations": 2,
+      "accepted_proposals": 2,
+      "completed_history_entries": 0,
+      "completed_history_digest": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "root_discovery_digest": "c4c98152214cf2deb2eae12c6b1ed3e2b4e8e3a99f8eb4e5fbc7ea19c3947d12",
+      "corpus_novel_pss_states": 3,
+      "corpus_novel_pss_set_digest": "149c8236c60b25fcd9d9a24b656a7aa025581363c350f8e002ad35131c4fcbce",
+      "search_work_units": 37,
+      "primary_work_units": 17,
+      "replay_work_units": 17,
+      "qualified_execution_attempts": 6
+    },
+    {
+      "ordinal": 2,
+      "root_id": "invoked",
+      "root_decisions": 28,
+      "spec_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+      "agent_result_digest": "3e2522f112a1bfca6a3b3a117a22a7a7b5286d2bc4bb83014a8ea51f3bf47946",
+      "search_digest": "358b3097d5fda40485a9a0701bafe6c398d7efaa4318e3df1a61001c30413c5e",
+      "action_order_digest": "bba2f2a2e2580e19e6812064e3cc4d435b8a89d40f9d53d5bb1475810b50b232",
+      "planner_invocations": 2,
+      "accepted_proposals": 2,
+      "completed_history_entries": 1,
+      "completed_history_digest": "a847e2df2a79a658784e47f8ad9265909438981fc4d458daeb1909ecd395a7e4",
+      "root_discovery_digest": "62b844e28679c7fc42c019fc7d7de231faad34dd9e09cc59fdf2f8b0b4ea1651",
+      "corpus_novel_pss_states": 6,
+      "corpus_novel_pss_set_digest": "fa83af62f8a0927b0b61407060e7c56def25028f61e0399e4f6ec86a04f762a1",
+      "search_work_units": 443,
+      "primary_work_units": 191,
+      "replay_work_units": 191,
+      "qualified_execution_attempts": 6
+    },
+    {
+      "ordinal": 3,
+      "root_id": "restarted",
+      "root_decisions": 54,
+      "spec_digest": "f2b4bb77dd751a3f9e8d1ffed8d5f50f57c312fc0b1737bd6ddb7fe0b5ff5b35",
+      "agent_result_digest": "76346d3ccff6a420daaf5609327d6fd888834b658f6fe77bced13ee030d3d4ab",
+      "search_digest": "d912b0a998c4a64ed887b6be1ba4e5e2c4d311b2da2646b492d2c05e7debeebc",
+      "action_order_digest": "fac0526a0c13b39d229ee3c0a4c6c1fc3904979ab09c11ae3eaab068fba6ab96",
+      "planner_invocations": 2,
+      "accepted_proposals": 2,
+      "completed_history_entries": 2,
+      "completed_history_digest": "d4fa397260c53e28465c06b9c0c5bdba8894c47308a8edbcbb2d3d1b71a751f1",
+      "root_discovery_digest": "84092e8f83c4b789f05548e14f85bb6c0334613296afb41372c726cd28e2768f",
+      "corpus_novel_pss_states": 6,
+      "corpus_novel_pss_set_digest": "1976959bd98b8606ff3dbc83f9a6187d3072c7797b4dc23cb09f8f97cb347c06",
+      "search_work_units": 807,
+      "primary_work_units": 347,
+      "replay_work_units": 347,
+      "qualified_execution_attempts": 6
+    }
+  ],
+  "methods": [
+    {
+      "id": "etcdraft-m5-23c-canonical",
+      "strategy": "canonical-action-id-depth-first/v1",
+      "evidence_source": "frozen-m5.23e",
+      "method_digest": "3895abd77949d59dc8431ec87531078e6fe0fd74fdfd3b118a6b87737d717254",
+      "corpus_novel_pss_states": 15,
+      "corpus_novel_pss_set_digest": "72af8a13354a68114cb1404b65875e3537b05936db0242c939c75dff1f55286f",
+      "marginal_evidence_work_units": 2397,
+      "end_to_end_work_units": 2529,
+      "model_work": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      }
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-1",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "evidence_source": "frozen-m5.23e",
+      "method_digest": "b2064fa87710369defec5c1d36ea25243cdfb780ed8ed7b173f8413ed791b67f",
+      "corpus_novel_pss_states": 13,
+      "corpus_novel_pss_set_digest": "3283d60d0df23109f18de3652a3a7b515d84a701d9a683021a77bb16986e22e8",
+      "marginal_evidence_work_units": 2395,
+      "end_to_end_work_units": 2527,
+      "model_work": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      }
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-2",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "evidence_source": "frozen-m5.23e",
+      "method_digest": "faaeb94033b8308347ff1954a03e33ec6c9b28c14c648b04ef7eeb5a10dbef8b",
+      "corpus_novel_pss_states": 15,
+      "corpus_novel_pss_set_digest": "da960cba65175f2c9eb9cbd150323d4ac98998c8da9fdda9511745d7ccfc3bc0",
+      "marginal_evidence_work_units": 2395,
+      "end_to_end_work_units": 2527,
+      "model_work": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      }
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-3",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "evidence_source": "frozen-m5.23e",
+      "method_digest": "12b9519b617ea2c740b04d240d9bd59da35f4e86e05f2263a993fb292d4b86ed",
+      "corpus_novel_pss_states": 14,
+      "corpus_novel_pss_set_digest": "21500bc117d49789422478ec6d9e16dad426068092d726506bcdf260b139428f",
+      "marginal_evidence_work_units": 2397,
+      "end_to_end_work_units": 2529,
+      "model_work": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      }
+    },
+    {
+      "id": "etcdraft-m5-23g-deepseek",
+      "strategy": "validated-frontier-order/v1",
+      "evidence_source": "live-m5.23g",
+      "method_digest": "5dfaa9db70c0a163ab04a0e968e5bfbb14465c3ad7efdcf727ad42f3f0240ea4",
+      "corpus_novel_pss_states": 15,
+      "corpus_novel_pss_set_digest": "72af8a13354a68114cb1404b65875e3537b05936db0242c939c75dff1f55286f",
+      "marginal_evidence_work_units": 2397,
+      "end_to_end_work_units": 2529,
+      "model_work": {
+        "calls": 6,
+        "input_tokens": 24876,
+        "output_tokens": 3459,
+        "total_tokens": 28335
+      }
+    }
+  ],
+  "root_selection_uses_agent": false,
+  "read_only_pss_projection": true,
+  "strict_replay_required": true,
+  "classification": "bounded-single-agent-pilot-not-general-agent-superiority-coverage-completeness-defect-or-significance",
+  "digest": "d0e6ac7459d7177d37d5b7c99be73ccbda5e29a2ec5702c1f953b61ec2f43fba"
+}

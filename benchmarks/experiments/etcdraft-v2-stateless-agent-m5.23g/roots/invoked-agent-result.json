@@ -1,0 +1,957 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-traversal-result/v1",
+  "traversal": {
+    "schema_version": "consensus-atlas/stateless-traversal-result/v1",
+    "method": {
+      "schema_version": "consensus-atlas/stateless-traversal-method/v1",
+      "id": "etcdraft-m5-23g-deepseek",
+      "strategy": "validated-frontier-order/v1",
+      "planner_id": "deepseek-v4-flash-frontier-order",
+      "knowledge_digest": "a698bbb9911655e48a40538d172122f602f0d09854bf2fb1b2cfe9f3dcb5e820",
+      "digest": "5dfaa9db70c0a163ab04a0e968e5bfbb14465c3ad7efdcf727ad42f3f0240ea4"
+    },
+    "search": {
+      "schema_version": "consensus-atlas/stateless-dfs-result/v1",
+      "spec": {
+        "schema_version": "consensus-atlas/stateless-dfs-spec/v1",
+        "id": "etcdraft-m5-23e-root-2",
+        "root_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+        "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+        "root_decisions": 28,
+        "runtime": {
+          "seed_hex": "6f6666696369616c2d65746364726166742d76322d636c75737465722d73656564",
+          "clock_error": 0,
+          "max_clones": 1
+        },
+        "fault_envelope": {
+          "max_crashes": 1,
+          "max_concurrent_crashes": 1,
+          "max_message_drops": 2,
+          "max_message_duplicates": 1,
+          "max_partitions": 1,
+          "max_active_partitions": 1
+        },
+        "max_depth": 2,
+        "max_work_items": 6,
+        "max_work_units": 1500,
+        "digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1"
+      },
+      "items": [
+        {
+          "schema_version": "consensus-atlas/stateless-dfs-work-item/v1",
+          "search_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+          "ordinal": 1,
+          "state_ref": {
+            "prefix_trace_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+            "snapshot_digest": "33e9cc66e59ea1e86dd0e93e584039d2106eb48348f866b0f8151f2d951e8408",
+            "prefix_decisions": 28
+          },
+          "action_ref": {
+            "action_id": "action-03202a87d1bf5da8d64de7a256d15359f3cf0398cddb379b4b847edff8de4fe6",
+            "action_digest": "df227a1c6b07eba0f3247bfde4b435b8705544a1c7ceffaf99b331dfcd64c41a",
+            "kind": "deliver-message",
+            "node_ref": {
+              "node": "n3",
+              "incarnation": 1
+            },
+            "item_id": "etcdraft-v2-item-95ac51f9d0412fc258555d9f6f69c2d62c8ebb835b537a020b738a80a7262d9d",
+            "item_kind": "message",
+            "owner": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_source": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_target": "n3"
+          },
+          "path_metadata": {
+            "parent_ordinal": 0,
+            "depth": 1,
+            "decision": 29
+          },
+          "frontier_digest": "aeae4df347fb056b94b26e4f518740ddcb33f127ed48557a6fd7c4264e964ff1",
+          "child_prefix_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+          "child_state_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+          "replay_stable": true,
+          "digest": "aba6653816c9f65ae8e71b511ffcac16c0a5e65f5ac2e1bf488c43f949ebe28d"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-dfs-work-item/v1",
+          "search_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+          "ordinal": 2,
+          "state_ref": {
+            "prefix_trace_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+            "snapshot_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+            "prefix_decisions": 29
+          },
+          "action_ref": {
+            "action_id": "action-05171186728c26a6dfa6522a52f579ac20cc6766acb388ba0a08b07420cfe77c",
+            "action_digest": "9fa92fbd075bc0205f49302d6e0922543a7dea2107c0277041df884dcb8f1e26",
+            "kind": "fire-temporal-event",
+            "node_ref": {
+              "node": "n2",
+              "incarnation": 1
+            },
+            "item_id": "etcdraft-v2-item-46a34cc2ba34a507dafd07bb44a40c88ea4c9be1e6b1127b514adea7d16eb3d3",
+            "item_kind": "temporal",
+            "owner": {
+              "node": "n2",
+              "incarnation": 1
+            },
+            "message_source": {
+              "node": "",
+              "incarnation": 0
+            },
+            "temporal_kind": "periodic-pulse"
+          },
+          "path_metadata": {
+            "parent_ordinal": 1,
+            "depth": 2,
+            "decision": 30
+          },
+          "frontier_digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3",
+          "child_prefix_digest": "c4e021f2ecdc138f3e9a95a84a48a117402ead756900c6d7ed6e81152e89fbef",
+          "child_state_digest": "cc19a6d6198cac709a3a376ce76363fa2d33baeaeb4eabc9e03ada9636ce5cd2",
+          "replay_stable": true,
+          "digest": "55c5d7dd3027b972f6a0a7edcb7a471911850ea2058381134979aad4a0e22fa2"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-dfs-work-item/v1",
+          "search_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+          "ordinal": 3,
+          "state_ref": {
+            "prefix_trace_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+            "snapshot_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+            "prefix_decisions": 29
+          },
+          "action_ref": {
+            "action_id": "action-23915e804d2c2379119287d998e6a5ab76b5e74e3ede05ba562d14b1ca95be4b",
+            "action_digest": "3188c7fd58a7b27f5c0f71e2f9a3a073c7f8808063b2bf7637a93ce21ffe2ad3",
+            "kind": "drop-message",
+            "node_ref": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+            "item_kind": "message",
+            "owner": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_source": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_target": "n2"
+          },
+          "path_metadata": {
+            "parent_ordinal": 1,
+            "depth": 2,
+            "decision": 30
+          },
+          "frontier_digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3",
+          "child_prefix_digest": "d62a6a722584dfcadcaf7b0b005bb78fe25b08885ffd5dae880e4f541219b156",
+          "child_state_digest": "fc232b466e76732277ded07b07ea371f0a010921938d9595ace4bd2220bc1fed",
+          "replay_stable": true,
+          "digest": "1c69e827c4d3b0c883b9a0a1c97d3ab78583ef0f89b9ba2eefcbad7dbaee7e69"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-dfs-work-item/v1",
+          "search_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+          "ordinal": 4,
+          "state_ref": {
+            "prefix_trace_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+            "snapshot_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+            "prefix_decisions": 29
+          },
+          "action_ref": {
+            "action_id": "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+            "action_digest": "6ad0ef7bd27d64abf1ce14141f0a8909c8ed2eb02238a585a94a3b5ae428a259",
+            "kind": "crash",
+            "node_ref": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "owner": {
+              "node": "",
+              "incarnation": 0
+            },
+            "message_source": {
+              "node": "",
+              "incarnation": 0
+            }
+          },
+          "path_metadata": {
+            "parent_ordinal": 1,
+            "depth": 2,
+            "decision": 30
+          },
+          "frontier_digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3",
+          "child_prefix_digest": "8911a48b3a03b1f6234d944379388939f429b0168710a3595e9de66aee3b75e1",
+          "child_state_digest": "bfcbb9cd1a06528bab6aed657e4944e65e1c2a9599f368067f29bffc7c59b786",
+          "replay_stable": true,
+          "digest": "ae95ce163d8aa870a99a55555a1954acd81d2beb930341b57d4ce55d9cf3e471"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-dfs-work-item/v1",
+          "search_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+          "ordinal": 5,
+          "state_ref": {
+            "prefix_trace_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+            "snapshot_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+            "prefix_decisions": 29
+          },
+          "action_ref": {
+            "action_id": "action-43673aea70cd5531c34f1c3140630c274ec360cf2a588f99fb2187018f546a40",
+            "action_digest": "6a2cba43219a5dea9f0f2b589efad49990c2851510961e5f7a8f7ff1b614705a",
+            "kind": "deliver-message",
+            "node_ref": {
+              "node": "n2",
+              "incarnation": 1
+            },
+            "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+            "item_kind": "message",
+            "owner": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_source": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_target": "n2"
+          },
+          "path_metadata": {
+            "parent_ordinal": 1,
+            "depth": 2,
+            "decision": 30
+          },
+          "frontier_digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3",
+          "child_prefix_digest": "6b7992fa34b56c8d2d530d4a109c8a507fa0a9a3d765e298c8742681c608ba26",
+          "child_state_digest": "5cc825edb799a239b95f64462255f28e1dfd22b8adde3d3b32e210f3298ce061",
+          "replay_stable": true,
+          "digest": "1b4318f07e33ee7565a3759ec2be9f53c4de99071a4a4ff7a3d9d30072a9b0e9"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-dfs-work-item/v1",
+          "search_digest": "cf065c336b6b0fcad7b6c43712802d91e710cecd07f34c7b51b8234b67e9f0e1",
+          "ordinal": 6,
+          "state_ref": {
+            "prefix_trace_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+            "snapshot_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+            "prefix_decisions": 29
+          },
+          "action_ref": {
+            "action_id": "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+            "action_digest": "7ed50d9c5729951e0543ed85dfb4015096eca8441fd145942f5b2d2de9ede5db",
+            "kind": "complete-effect",
+            "node_ref": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "item_id": "etcdraft-v2-item-1dbf16b2b3d5486476be988ede68266fcb5a5ae7a9fab65623085b3627afe107",
+            "item_kind": "host-effect",
+            "owner": {
+              "node": "n1",
+              "incarnation": 1
+            },
+            "message_source": {
+              "node": "",
+              "incarnation": 0
+            },
+            "effect_kind": "raft-ready-persist",
+            "durability": "durable"
+          },
+          "path_metadata": {
+            "parent_ordinal": 1,
+            "depth": 2,
+            "decision": 30
+          },
+          "frontier_digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3",
+          "child_prefix_digest": "01183c47b6c06806987cec80c7125d2b5040f6dbc9585f544ded169ada2df4d0",
+          "child_state_digest": "5f5071334e29efb823a0f1c8bc4654f6567e322ea2aeb3cd9ad6dd92035a05e5",
+          "replay_stable": true,
+          "digest": "354fc38e16c557779cd9c0829aa44e144eb3054bd4d6baf541cb6d16704e8d43"
+        }
+      ],
+      "states_expanded": 2,
+      "work": {
+        "frontier_reconstruction": {
+          "setup_attempts": 2,
+          "runtime_initializations": 2,
+          "prepare_actions": 2,
+          "scheduler_decisions": 57,
+          "work_units": 61
+        },
+        "child_materialization": {
+          "setup_attempts": 6,
+          "runtime_initializations": 6,
+          "prepare_actions": 6,
+          "scheduler_decisions": 179,
+          "work_units": 191
+        },
+        "child_verification": {
+          "setup_attempts": 6,
+          "runtime_initializations": 6,
+          "prepare_actions": 6,
+          "scheduler_decisions": 179,
+          "work_units": 191
+        },
+        "total_work_units": 443
+      },
+      "stop_reason": "work-item-limit",
+      "digest": "358b3097d5fda40485a9a0701bafe6c398d7efaa4318e3df1a61001c30413c5e"
+    },
+    "digest": "203488de1449c638065a6e912f326fe18932b9594339cb2452c902e472f4190c"
+  },
+  "planner_invocations": 2,
+  "accepted_proposals": 2,
+  "model_work": {
+    "calls": 2,
+    "input_tokens": 9623,
+    "output_tokens": 1405,
+    "total_tokens": 11028
+  },
+  "records": [
+    {
+      "schema_version": "consensus-atlas/stateless-frontier-order-record/v1",
+      "request": {
+        "schema_version": "consensus-atlas/stateless-frontier-order-request/v1",
+        "id": "etcdraft-m5-23g-deepseek-request-1",
+        "ordinal": 1,
+        "method_digest": "5dfaa9db70c0a163ab04a0e968e5bfbb14465c3ad7efdcf727ad42f3f0240ea4",
+        "knowledge_digest": "a698bbb9911655e48a40538d172122f602f0d09854bf2fb1b2cfe9f3dcb5e820",
+        "frontier": {
+          "schema_version": "consensus-atlas/action-frontier-view/v1",
+          "id": "etcdraft-m5-23e-root-2-frontier-000001",
+          "prefix_decisions": 28,
+          "next_decision": 29,
+          "prefix_trace_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+          "snapshot_digest": "33e9cc66e59ea1e86dd0e93e584039d2106eb48348f866b0f8151f2d951e8408",
+          "runtime_enabled_digest": "7628e33a9043c074e71ede72a547891087f8ec00404fae8965ab3e565e3d2044",
+          "admissible_digest": "7628e33a9043c074e71ede72a547891087f8ec00404fae8965ab3e565e3d2044",
+          "runtime_action_count": 15,
+          "actions": [
+            {
+              "action_id": "action-03202a87d1bf5da8d64de7a256d15359f3cf0398cddb379b4b847edff8de4fe6",
+              "action_digest": "df227a1c6b07eba0f3247bfde4b435b8705544a1c7ceffaf99b331dfcd64c41a",
+              "kind": "deliver-message",
+              "node_ref": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-95ac51f9d0412fc258555d9f6f69c2d62c8ebb835b537a020b738a80a7262d9d",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-05171186728c26a6dfa6522a52f579ac20cc6766acb388ba0a08b07420cfe77c",
+              "action_digest": "9fa92fbd075bc0205f49302d6e0922543a7dea2107c0277041df884dcb8f1e26",
+              "kind": "fire-temporal-event",
+              "node_ref": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-46a34cc2ba34a507dafd07bb44a40c88ea4c9be1e6b1127b514adea7d16eb3d3",
+              "item_kind": "temporal",
+              "owner": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              },
+              "temporal_kind": "periodic-pulse"
+            },
+            {
+              "action_id": "action-23915e804d2c2379119287d998e6a5ab76b5e74e3ede05ba562d14b1ca95be4b",
+              "action_digest": "3188c7fd58a7b27f5c0f71e2f9a3a073c7f8808063b2bf7637a93ce21ffe2ad3",
+              "kind": "drop-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n2"
+            },
+            {
+              "action_id": "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+              "action_digest": "6ad0ef7bd27d64abf1ce14141f0a8909c8ed2eb02238a585a94a3b5ae428a259",
+              "kind": "crash",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "owner": {
+                "node": "",
+                "incarnation": 0
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              }
+            },
+            {
+              "action_id": "action-38875c7debcae6cc06e13c7b531433b45cea0c1223492dc6c607ff3f163221e6",
+              "action_digest": "fecb6bb529db24bde3109a594462358f18434b9dacc938216cab1cb5d5135789",
+              "kind": "drop-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-95ac51f9d0412fc258555d9f6f69c2d62c8ebb835b537a020b738a80a7262d9d",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-43673aea70cd5531c34f1c3140630c274ec360cf2a588f99fb2187018f546a40",
+              "action_digest": "6a2cba43219a5dea9f0f2b589efad49990c2851510961e5f7a8f7ff1b614705a",
+              "kind": "deliver-message",
+              "node_ref": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n2"
+            },
+            {
+              "action_id": "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+              "action_digest": "7ed50d9c5729951e0543ed85dfb4015096eca8441fd145942f5b2d2de9ede5db",
+              "kind": "complete-effect",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-1dbf16b2b3d5486476be988ede68266fcb5a5ae7a9fab65623085b3627afe107",
+              "item_kind": "host-effect",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              },
+              "effect_kind": "raft-ready-persist",
+              "durability": "durable"
+            },
+            {
+              "action_id": "action-6253a23dc5e8fac6cd39aab83e87e7f03e264a046add580c84f85e3a13f703b2",
+              "action_digest": "dfa8d5e2f8104c736b435c2af8d3cfe7bf966e8104658a5d3fb69d47321186ea",
+              "kind": "fire-temporal-event",
+              "node_ref": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-ad024a44eb21e989ece89b0cee5cae214d7ec426c84b6fd46149acc83caf2fad",
+              "item_kind": "temporal",
+              "owner": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              },
+              "temporal_kind": "periodic-pulse"
+            },
+            {
+              "action_id": "action-9153977532743b7bc7ec31e1f64c4a7a7182222ed8f195a878a813fcac0f6d93",
+              "action_digest": "c719a4e87583507d764855a642933d80ff6453d1f1823740b766b2a884d9b09a",
+              "kind": "crash",
+              "node_ref": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "owner": {
+                "node": "",
+                "incarnation": 0
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              }
+            },
+            {
+              "action_id": "action-9c713e42071738c9d6e9c9cebb969847297da3681cdba5c703a9d5bf9d311c2d",
+              "action_digest": "070f76b045e59cdfe12e58f45f7b8ee9fabd58e7dc37c6fa13e825f55fa0f46e",
+              "kind": "deliver-message",
+              "node_ref": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-b228688a58744bf9c4c7a0bce0b30138e2e75a5b34a0dd51d766bf116eb717c0",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-a19c5780872307110b3100f31fceb787b3d3ad92bd6a748f1b9593fa9ef5ef29",
+              "action_digest": "2f2c245e8076b30e110a6bb11bde7aaf0802ad44aff221fa13fab5c4b451790a",
+              "kind": "drop-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-b228688a58744bf9c4c7a0bce0b30138e2e75a5b34a0dd51d766bf116eb717c0",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-a5d355d9b7c18c37d50d697815bd6def0f08074f0b34ab38184c2df7ae83e4bc",
+              "action_digest": "a4afdb28f7063902dcb79bddc96fba5eed3dfd06d4a367755d96a5392ca64562",
+              "kind": "crash",
+              "node_ref": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "owner": {
+                "node": "",
+                "incarnation": 0
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              }
+            },
+            {
+              "action_id": "action-a94c2fb91492ebb264a5aa835ba3a607812ab93a1e81d606554aacf02a13644d",
+              "action_digest": "18a6ac37fc5ddbe3a102ecd729ba1af507ea96e69aafa7adc49955dc73ee9ae8",
+              "kind": "duplicate-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-b228688a58744bf9c4c7a0bce0b30138e2e75a5b34a0dd51d766bf116eb717c0",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-b5fe658fd1153e2011c3856508c42c91af3db4900eea6430e464b908dd607d4a",
+              "action_digest": "bef4ebda50102b60d323d592fb1b88523958f886b7cc301aa2bdb189e692f0fb",
+              "kind": "duplicate-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-95ac51f9d0412fc258555d9f6f69c2d62c8ebb835b537a020b738a80a7262d9d",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-f192245e3036405382d9e31338db4e1f80ac4b127dbeb89d088c6d68ca7b3dca",
+              "action_digest": "5f3b283ca9dc00ea4efd34d380b9a2966ebeb2b3ae4d7a5155f49d5a38eb0df5",
+              "kind": "duplicate-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n2"
+            }
+          ],
+          "digest": "aeae4df347fb056b94b26e4f518740ddcb33f127ed48557a6fd7c4264e964ff1"
+        },
+        "completed_history": [
+          {
+            "ordinal": 1,
+            "root_id": "initial",
+            "corpus_novel_pss_states": 3,
+            "corpus_novel_pss_set_digest": "149c8236c60b25fcd9d9a24b656a7aa025581363c350f8e002ad35131c4fcbce",
+            "discovery_digest": "c4c98152214cf2deb2eae12c6b1ed3e2b4e8e3a99f8eb4e5fbc7ea19c3947d12"
+          }
+        ],
+        "mutable_fields": [
+          "action_ids"
+        ],
+        "digest": "94f41080551a90dd781e788bfa58f9268748b93c2886eae160498a2cefbfb1d9"
+      },
+      "proposal": {
+        "schema_version": "consensus-atlas/stateless-frontier-order-proposal/v1",
+        "id": "etcdraft-m5-23g-deepseek-request-1",
+        "request_digest": "94f41080551a90dd781e788bfa58f9268748b93c2886eae160498a2cefbfb1d9",
+        "view_digest": "aeae4df347fb056b94b26e4f518740ddcb33f127ed48557a6fd7c4264e964ff1",
+        "action_ids": [
+          "action-03202a87d1bf5da8d64de7a256d15359f3cf0398cddb379b4b847edff8de4fe6",
+          "action-05171186728c26a6dfa6522a52f579ac20cc6766acb388ba0a08b07420cfe77c",
+          "action-23915e804d2c2379119287d998e6a5ab76b5e74e3ede05ba562d14b1ca95be4b",
+          "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+          "action-38875c7debcae6cc06e13c7b531433b45cea0c1223492dc6c607ff3f163221e6",
+          "action-43673aea70cd5531c34f1c3140630c274ec360cf2a588f99fb2187018f546a40",
+          "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+          "action-6253a23dc5e8fac6cd39aab83e87e7f03e264a046add580c84f85e3a13f703b2",
+          "action-9153977532743b7bc7ec31e1f64c4a7a7182222ed8f195a878a813fcac0f6d93",
+          "action-9c713e42071738c9d6e9c9cebb969847297da3681cdba5c703a9d5bf9d311c2d",
+          "action-a19c5780872307110b3100f31fceb787b3d3ad92bd6a748f1b9593fa9ef5ef29",
+          "action-a5d355d9b7c18c37d50d697815bd6def0f08074f0b34ab38184c2df7ae83e4bc",
+          "action-a94c2fb91492ebb264a5aa835ba3a607812ab93a1e81d606554aacf02a13644d",
+          "action-b5fe658fd1153e2011c3856508c42c91af3db4900eea6430e464b908dd607d4a",
+          "action-f192245e3036405382d9e31338db4e1f80ac4b127dbeb89d088c6d68ca7b3dca"
+        ],
+        "digest": "8ba08c09892a04e6eee54cc92084a8f4d6f14e216e031f07dd2e2dcf5563f554"
+      },
+      "model_work": {
+        "calls": 1,
+        "input_tokens": 5376,
+        "output_tokens": 783,
+        "total_tokens": 6159
+      },
+      "digest": "d9a16e1e73ee28121c90d6305210e65e0ef1487effc3ad161d5a08a64083bd89"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-frontier-order-record/v1",
+      "request": {
+        "schema_version": "consensus-atlas/stateless-frontier-order-request/v1",
+        "id": "etcdraft-m5-23g-deepseek-request-2",
+        "ordinal": 2,
+        "method_digest": "5dfaa9db70c0a163ab04a0e968e5bfbb14465c3ad7efdcf727ad42f3f0240ea4",
+        "knowledge_digest": "a698bbb9911655e48a40538d172122f602f0d09854bf2fb1b2cfe9f3dcb5e820",
+        "frontier": {
+          "schema_version": "consensus-atlas/action-frontier-view/v1",
+          "id": "etcdraft-m5-23e-root-2-frontier-000002",
+          "prefix_decisions": 29,
+          "next_decision": 30,
+          "prefix_trace_digest": "d1de30410d44230afad33caf913a29cd7669858e4682813c3220808b4f1900f3",
+          "snapshot_digest": "b0c48d1e4e66e2ab7fcc1079663bd92c2925be7425a0bc8e32e5c9cf3ee236e6",
+          "runtime_enabled_digest": "f869121f68f56c1465104e5d2eec0792ca7d63590133e303514a37364c191bfa",
+          "admissible_digest": "f869121f68f56c1465104e5d2eec0792ca7d63590133e303514a37364c191bfa",
+          "runtime_action_count": 11,
+          "actions": [
+            {
+              "action_id": "action-05171186728c26a6dfa6522a52f579ac20cc6766acb388ba0a08b07420cfe77c",
+              "action_digest": "9fa92fbd075bc0205f49302d6e0922543a7dea2107c0277041df884dcb8f1e26",
+              "kind": "fire-temporal-event",
+              "node_ref": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-46a34cc2ba34a507dafd07bb44a40c88ea4c9be1e6b1127b514adea7d16eb3d3",
+              "item_kind": "temporal",
+              "owner": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              },
+              "temporal_kind": "periodic-pulse"
+            },
+            {
+              "action_id": "action-23915e804d2c2379119287d998e6a5ab76b5e74e3ede05ba562d14b1ca95be4b",
+              "action_digest": "3188c7fd58a7b27f5c0f71e2f9a3a073c7f8808063b2bf7637a93ce21ffe2ad3",
+              "kind": "drop-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n2"
+            },
+            {
+              "action_id": "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+              "action_digest": "6ad0ef7bd27d64abf1ce14141f0a8909c8ed2eb02238a585a94a3b5ae428a259",
+              "kind": "crash",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "owner": {
+                "node": "",
+                "incarnation": 0
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              }
+            },
+            {
+              "action_id": "action-43673aea70cd5531c34f1c3140630c274ec360cf2a588f99fb2187018f546a40",
+              "action_digest": "6a2cba43219a5dea9f0f2b589efad49990c2851510961e5f7a8f7ff1b614705a",
+              "kind": "deliver-message",
+              "node_ref": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n2"
+            },
+            {
+              "action_id": "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+              "action_digest": "7ed50d9c5729951e0543ed85dfb4015096eca8441fd145942f5b2d2de9ede5db",
+              "kind": "complete-effect",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-1dbf16b2b3d5486476be988ede68266fcb5a5ae7a9fab65623085b3627afe107",
+              "item_kind": "host-effect",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              },
+              "effect_kind": "raft-ready-persist",
+              "durability": "durable"
+            },
+            {
+              "action_id": "action-49a20094111a98bf40df924a2b15512eaf25f44be28aa51ee8471e8bd540a1e7",
+              "action_digest": "5c36534eb8486859f76f76982df97f6302a9f510ce2b0d979e6e5bcd3c6f8083",
+              "kind": "complete-effect",
+              "node_ref": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-605e334de65ee0aabb06e4c74932d788575dd82f1d11465a0698b6e8853f9f4b",
+              "item_kind": "host-effect",
+              "owner": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              },
+              "effect_kind": "raft-ready-persist",
+              "durability": "durable"
+            },
+            {
+              "action_id": "action-9153977532743b7bc7ec31e1f64c4a7a7182222ed8f195a878a813fcac0f6d93",
+              "action_digest": "c719a4e87583507d764855a642933d80ff6453d1f1823740b766b2a884d9b09a",
+              "kind": "crash",
+              "node_ref": {
+                "node": "n3",
+                "incarnation": 1
+              },
+              "owner": {
+                "node": "",
+                "incarnation": 0
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              }
+            },
+            {
+              "action_id": "action-a19c5780872307110b3100f31fceb787b3d3ad92bd6a748f1b9593fa9ef5ef29",
+              "action_digest": "2f2c245e8076b30e110a6bb11bde7aaf0802ad44aff221fa13fab5c4b451790a",
+              "kind": "drop-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-b228688a58744bf9c4c7a0bce0b30138e2e75a5b34a0dd51d766bf116eb717c0",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-a5d355d9b7c18c37d50d697815bd6def0f08074f0b34ab38184c2df7ae83e4bc",
+              "action_digest": "a4afdb28f7063902dcb79bddc96fba5eed3dfd06d4a367755d96a5392ca64562",
+              "kind": "crash",
+              "node_ref": {
+                "node": "n2",
+                "incarnation": 1
+              },
+              "owner": {
+                "node": "",
+                "incarnation": 0
+              },
+              "message_source": {
+                "node": "",
+                "incarnation": 0
+              }
+            },
+            {
+              "action_id": "action-a94c2fb91492ebb264a5aa835ba3a607812ab93a1e81d606554aacf02a13644d",
+              "action_digest": "18a6ac37fc5ddbe3a102ecd729ba1af507ea96e69aafa7adc49955dc73ee9ae8",
+              "kind": "duplicate-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-b228688a58744bf9c4c7a0bce0b30138e2e75a5b34a0dd51d766bf116eb717c0",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n3"
+            },
+            {
+              "action_id": "action-f192245e3036405382d9e31338db4e1f80ac4b127dbeb89d088c6d68ca7b3dca",
+              "action_digest": "5f3b283ca9dc00ea4efd34d380b9a2966ebeb2b3ae4d7a5155f49d5a38eb0df5",
+              "kind": "duplicate-message",
+              "node_ref": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "item_id": "etcdraft-v2-item-a7e0a7224943da3e9dc1dbf3598b27f49a400447af9077e20ccaeacaff9f1e79",
+              "item_kind": "message",
+              "owner": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_source": {
+                "node": "n1",
+                "incarnation": 1
+              },
+              "message_target": "n2"
+            }
+          ],
+          "digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3"
+        },
+        "completed_history": [
+          {
+            "ordinal": 1,
+            "root_id": "initial",
+            "corpus_novel_pss_states": 3,
+            "corpus_novel_pss_set_digest": "149c8236c60b25fcd9d9a24b656a7aa025581363c350f8e002ad35131c4fcbce",
+            "discovery_digest": "c4c98152214cf2deb2eae12c6b1ed3e2b4e8e3a99f8eb4e5fbc7ea19c3947d12"
+          }
+        ],
+        "mutable_fields": [
+          "action_ids"
+        ],
+        "digest": "a6ccb9a21b6b37c61bf8adc1f7f95c8a95d5353f4a570bcd2000d5dbf229e088"
+      },
+      "proposal": {
+        "schema_version": "consensus-atlas/stateless-frontier-order-proposal/v1",
+        "id": "etcdraft-m5-23g-deepseek-request-2",
+        "request_digest": "a6ccb9a21b6b37c61bf8adc1f7f95c8a95d5353f4a570bcd2000d5dbf229e088",
+        "view_digest": "15b3ab0d55057807d358dd988fcff183ff92822fc9b3f6f62b4198d7736a99a3",
+        "action_ids": [
+          "action-05171186728c26a6dfa6522a52f579ac20cc6766acb388ba0a08b07420cfe77c",
+          "action-23915e804d2c2379119287d998e6a5ab76b5e74e3ede05ba562d14b1ca95be4b",
+          "action-2ff6bc5605e9ee3d6d6febd78eec08dc9a58d1f1196e19e5d3fa84b3a7fa8c5d",
+          "action-43673aea70cd5531c34f1c3140630c274ec360cf2a588f99fb2187018f546a40",
+          "action-44774c344dd01959a05f8e47de4c7aadbcba1136e3565145fe52a1f391d99129",
+          "action-49a20094111a98bf40df924a2b15512eaf25f44be28aa51ee8471e8bd540a1e7",
+          "action-9153977532743b7bc7ec31e1f64c4a7a7182222ed8f195a878a813fcac0f6d93",
+          "action-a19c5780872307110b3100f31fceb787b3d3ad92bd6a748f1b9593fa9ef5ef29",
+          "action-a5d355d9b7c18c37d50d697815bd6def0f08074f0b34ab38184c2df7ae83e4bc",
+          "action-a94c2fb91492ebb264a5aa835ba3a607812ab93a1e81d606554aacf02a13644d",
+          "action-f192245e3036405382d9e31338db4e1f80ac4b127dbeb89d088c6d68ca7b3dca"
+        ],
+        "digest": "ad11b64a5f75e601f3bead2740bc047c436a27eac0d3d99acfccb681f8c3dc7e"
+      },
+      "model_work": {
+        "calls": 1,
+        "input_tokens": 4247,
+        "output_tokens": 622,
+        "total_tokens": 4869
+      },
+      "digest": "6e6fdb468cf299e29a291a782744f1d296acc529b50f9b428abf451fbfdf9a88"
+    }
+  ],
+  "digest": "3e2522f112a1bfca6a3b3a117a22a7a7b5286d2bc4bb83014a8ea51f3bf47946"
+}

@@ -1,0 +1,52 @@
+{
+  "schema_version": "consensus-atlas/restricted-search-agent-calibration-summary/v1",
+  "stage": "M5.23f",
+  "date": "2026-08-12",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "root_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+  "root_decisions": 28,
+  "spec_digest": "996803e08f8f4bd654ff97457619659238e28f2fa29ccacf54c0db87da72eef7",
+  "knowledge_digest": "a698bbb9911655e48a40538d172122f602f0d09854bf2fb1b2cfe9f3dcb5e820",
+  "method_digest": "0a104a0804b42a9a8fd5ab780c23e60df119d241744ddcb6e23dc8ff7b2b2187",
+  "agent_traversal_digest": "73c02ac9c6a30db74e81ff00a5289327494b72a3c652f6613e0d20b3bd74f0aa",
+  "search_digest": "e223358397a252df980bfed536725cfa509dcf637fc8f1d5e6e6695956942cf5",
+  "canonical_action_order_digest": "bba2f2a2e2580e19e6812064e3cc4d435b8a89d40f9d53d5bb1475810b50b232",
+  "agent_action_order_digest": "01bf8690caedd0cc56cf04039f5b10addfb4ff08714f2d56a1335c997bd55d7c",
+  "distinct_from_canonical": true,
+  "deterministic_repeat": true,
+  "planner_invocations": 2,
+  "accepted_proposals": 2,
+  "record_set_digest": "c2f93dffe31aaa72ab7d21eb65bc9bf5c3f107e4384d7e2084ca897018303448",
+  "mutable_fields": ["action_ids"],
+  "rejected_authority_expansions": [
+    "additional-action",
+    "duplicate-action",
+    "invented-action",
+    "missing-action",
+    "unknown-json-field"
+  ],
+  "search_work": {
+    "frontier_reconstruction": {
+      "setup_attempts": 2, "runtime_initializations": 2, "prepare_actions": 2,
+      "scheduler_decisions": 57, "work_units": 61
+    },
+    "child_materialization": {
+      "setup_attempts": 6, "runtime_initializations": 6, "prepare_actions": 6,
+      "scheduler_decisions": 179, "work_units": 191
+    },
+    "child_verification": {
+      "setup_attempts": 6, "runtime_initializations": 6, "prepare_actions": 6,
+      "scheduler_decisions": 179, "work_units": 191
+    },
+    "total_work_units": 443
+  },
+  "model_work": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+  "leaf_ordinal": 6,
+  "leaf_prefix_digest": "86d1188f729f8d2cc319ed4728e89d8fa2611f149e359803dbfff83bda1727bc",
+  "leaf_report_digest": "193d3699950934121c4096d3c307f874e498d9ae4a0db92eb450cb287aa105e9",
+  "leaf_bundle_digest": "cdec57bfa6dcd61b138e13eabeb0d4c908053278527e499300ef05d1ef8f7c98",
+  "leaf_replay_stable": true,
+  "model_calls": 0,
+  "proposal_source": "deterministic-no-model-reverse-frontier-fixture",
+  "classification": "restricted-frontier-order-authority-calibration-not-agent-effectiveness-coverage-or-defect-result"
+}

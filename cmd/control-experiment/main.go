@@ -119,6 +119,14 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			ctx, *decisions, *policySeed, *agentKeyFile, *agentArtifacts, stdout,
 		)
 	}
+	if *strategy == etcdraftM523gStrategy {
+		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
+			*sourceBundleOut != "" || *methodOut != "" || *methodArtifacts != "" ||
+			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
+			return errors.New("M5.23g Agent pilot requires only -agent-key-file and -agent-artifacts")
+		}
+		return runEtcdraftM523gOptIn(ctx, *agentKeyFile, *agentArtifacts, stdout)
+	}
 	if *agentKeyFile != "" || *agentArtifacts != "" {
 		return errors.New("Agent flags require an explicit opt-in Agent strategy")
 	}

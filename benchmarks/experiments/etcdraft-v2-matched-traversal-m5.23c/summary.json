@@ -1,0 +1,124 @@
+{
+  "schema_version": "consensus-atlas/matched-stateless-traversal-summary/v1",
+  "stage": "M5.23c",
+  "date": "2026-08-12",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "root_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+  "root_decisions": 28,
+  "spec_digest": "9e3115aa6b1a09243d7b5e539ca67da72a2d99957efc41493ba93ea2487eb4d1",
+  "max_depth": 2,
+  "max_work_items": 6,
+  "max_work_units": 1000,
+  "same_root": true,
+  "same_limits": true,
+  "deterministic_repeats": true,
+  "distinct_orders": 4,
+  "states_expanded": 2,
+  "work_items": 6,
+  "stop_reason": "work-item-limit",
+  "search_work": {
+    "frontier_reconstruction": {
+      "setup_attempts": 2,
+      "runtime_initializations": 2,
+      "prepare_actions": 2,
+      "scheduler_decisions": 57,
+      "work_units": 61
+    },
+    "child_materialization": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "child_verification": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "total_work_units": 443
+  },
+  "methods": [
+    {
+      "id": "etcdraft-m5-23c-canonical",
+      "strategy": "canonical-action-id-depth-first/v1",
+      "method_digest": "3895abd77949d59dc8431ec87531078e6fe0fd74fdfd3b118a6b87737d717254",
+      "result_digest": "f5aba4db17f0c128481cf3f6754a1c54754be66dcd4cc6a133c33f96620daac7",
+      "search_digest": "dd459079120ac8b3e02a15146b9e3e22344548852126391e27e915ab0294cf93",
+      "action_order_digest": "bba2f2a2e2580e19e6812064e3cc4d435b8a89d40f9d53d5bb1475810b50b232",
+      "action_kinds": [
+        "deliver-message",
+        "fire-temporal-event",
+        "drop-message",
+        "crash",
+        "deliver-message",
+        "complete-effect"
+      ]
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-1",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "01",
+      "method_digest": "b2064fa87710369defec5c1d36ea25243cdfb780ed8ed7b173f8413ed791b67f",
+      "result_digest": "6dc784db527dfba8746d49098b4cc9e87caf05e2ba2956a71fe298b1591ca7fd",
+      "search_digest": "d6a4bca5024a1c5c5cffdc07abfd6b6f96e40836ec4a1d84f1f38d46ebcc03dd",
+      "action_order_digest": "17f21320cc73218b7879e57a59688d33c04aa6ef221514f229685f646084a502",
+      "action_kinds": [
+        "complete-effect",
+        "drop-message",
+        "fire-temporal-event",
+        "deliver-message",
+        "crash",
+        "duplicate-message"
+      ]
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-2",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "02",
+      "method_digest": "faaeb94033b8308347ff1954a03e33ec6c9b28c14c648b04ef7eeb5a10dbef8b",
+      "result_digest": "83bd9d36eca611fee57dbef7798b9ae090b799b646d587252faf8917949e1aca",
+      "search_digest": "ee19c521ffa27f2878c0d5a266ef67ef04c2a4dd2f74624bff7bccf533dd6847",
+      "action_order_digest": "4170413141c98ce2ecbcfb1ad6b2b50baf3b36a7bc2920fce02c8a966847f540",
+      "action_kinds": [
+        "fire-temporal-event",
+        "drop-message",
+        "duplicate-message",
+        "crash",
+        "deliver-message",
+        "duplicate-message"
+      ]
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-3",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "03",
+      "method_digest": "12b9519b617ea2c740b04d240d9bd59da35f4e86e05f2263a993fb292d4b86ed",
+      "result_digest": "cdc2a7cb028e901b1ed2fcba3ae0f3bd75e3aeb9f2745ad26708d6e6b2310412",
+      "search_digest": "555e4a04ef7c86af987d7c321233ac08bfe600fbf4327c19ebf106259857ac6f",
+      "action_order_digest": "9f2b24004fe1fdac4ad8e1186619b943a680a240b89cf8b438fbb396c9b50c14",
+      "action_kinds": [
+        "drop-message",
+        "crash",
+        "duplicate-message",
+        "deliver-message",
+        "fire-temporal-event",
+        "complete-effect"
+      ]
+    }
+  ],
+  "leaf_method_digest": "12b9519b617ea2c740b04d240d9bd59da35f4e86e05f2263a993fb292d4b86ed",
+  "leaf_ordinal": 6,
+  "leaf_prefix_digest": "5d9e95eaad3e55670dcdfd5bbed2659fc06f590b11b08c27f888fce696fbdd82",
+  "leaf_policy_digest": "7023527a8a2ab909e47224bab96b62407a426222d3415856bc33d41c311fee35",
+  "leaf_report_digest": "d638a5d7e9099f5848055fb8dbe6563d2f9d3d3323869a7859e089e06c1d1d2c",
+  "leaf_bundle_digest": "6247b01626fbbf453ef473e9d6833c9ce804562c468de91c4fe80ee8422fba47",
+  "leaf_execution_trace_digest": "4d23b23ec114525f06eb4c7ac2626c4b7a46cfda23e5448a27d939b465d77920",
+  "leaf_prefix_reproduced": true,
+  "leaf_replay_stable": true,
+  "model_calls": 0,
+  "classification": "matched-exact-prefix-traversal-calibration-not-method-effectiveness-or-agent-ranking"
+}

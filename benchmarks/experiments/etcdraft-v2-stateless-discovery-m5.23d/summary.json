@@ -1,0 +1,137 @@
+{
+  "schema_version": "consensus-atlas/stateless-discovery-calibration-summary/v1",
+  "stage": "M5.23d",
+  "date": "2026-08-12",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "root_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+  "root_decisions": 28,
+  "spec_digest": "9e3115aa6b1a09243d7b5e539ca67da72a2d99957efc41493ba93ea2487eb4d1",
+  "search_work": {
+    "frontier_reconstruction": {
+      "setup_attempts": 2,
+      "runtime_initializations": 2,
+      "prepare_actions": 2,
+      "scheduler_decisions": 57,
+      "work_units": 61
+    },
+    "child_materialization": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "child_verification": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "total_work_units": 443
+  },
+  "method_count": 4,
+  "work_items_per_method": 6,
+  "qualified_execution_attempts_per_method": 6,
+  "qualified_execution_work_per_method": {
+    "primary": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "replay": {
+      "setup_attempts": 6,
+      "runtime_initializations": 6,
+      "prepare_actions": 6,
+      "scheduler_decisions": 179,
+      "work_units": 191
+    },
+    "model": {
+      "calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "resources": {
+      "wall_time": "not-collected",
+      "cpu_time": "not-collected",
+      "peak_rss": "not-collected"
+    }
+  },
+  "total_evidence_work_units_per_method": 825,
+  "methods": [
+    {
+      "id": "etcdraft-m5-23c-canonical",
+      "strategy": "canonical-action-id-depth-first/v1",
+      "method_digest": "3895abd77949d59dc8431ec87531078e6fe0fd74fdfd3b118a6b87737d717254",
+      "search_digest": "dd459079120ac8b3e02a15146b9e3e22344548852126391e27e915ab0294cf93",
+      "discovery_digest": "3a33d464875b45d839f2b990395a177fece57d116a9c35008f21b170f5d034de",
+      "unique_trace_prefixes": 6,
+      "unique_final_child_pss_states": 6,
+      "unique_observed_pss_states": 25,
+      "unique_incremental_pss_states": 6,
+      "trace_prefix_set_digest": "000dec38a894762c8778521fd0c5627725da5c670d2060215e167e011b364d40",
+      "final_child_pss_set_digest": "fa83af62f8a0927b0b61407060e7c56def25028f61e0399e4f6ec86a04f762a1",
+      "observed_pss_set_digest": "49b79036fcc1f5d8b8e42d4abbd8bd1c55f33b148c6a143a673f77ed1c01fb2a",
+      "incremental_pss_set_digest": "fa83af62f8a0927b0b61407060e7c56def25028f61e0399e4f6ec86a04f762a1"
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-1",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "01",
+      "method_digest": "b2064fa87710369defec5c1d36ea25243cdfb780ed8ed7b173f8413ed791b67f",
+      "search_digest": "d6a4bca5024a1c5c5cffdc07abfd6b6f96e40836ec4a1d84f1f38d46ebcc03dd",
+      "discovery_digest": "7f2fdd783900fd1849389538b3e0f21785dfec23ed6f1e710ae83bb96234a2a7",
+      "unique_trace_prefixes": 6,
+      "unique_final_child_pss_states": 6,
+      "unique_observed_pss_states": 24,
+      "unique_incremental_pss_states": 5,
+      "trace_prefix_set_digest": "2732a0373a081a9cb7be13d6f9bb1c3853bc0eb31dfe3768e302d7d1fe77f50a",
+      "final_child_pss_set_digest": "8adb0b512890c1ccdcde0595d8e06a56dba2db9483de291c3f7ff91f25e481bf",
+      "observed_pss_set_digest": "0e0b86d35ad98883c09954b2492197a94857d2e9d32d3a2d03e0090175fa2688",
+      "incremental_pss_set_digest": "323e7cddcec2e4ac1f61144628aabba8912ab6ef6d990647f2d4fa428b5a00aa"
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-2",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "02",
+      "method_digest": "faaeb94033b8308347ff1954a03e33ec6c9b28c14c648b04ef7eeb5a10dbef8b",
+      "search_digest": "ee19c521ffa27f2878c0d5a266ef67ef04c2a4dd2f74624bff7bccf533dd6847",
+      "discovery_digest": "8a6171e887daa5d6a5faee56fe6ab3cd2f93f8345d16038dc189d2c13d4dfe2b",
+      "unique_trace_prefixes": 6,
+      "unique_final_child_pss_states": 6,
+      "unique_observed_pss_states": 25,
+      "unique_incremental_pss_states": 6,
+      "trace_prefix_set_digest": "0f5577b7abbfd92fd136508ed16c6ec60aeb5692717dae5f102ca2a3e4d9ae46",
+      "final_child_pss_set_digest": "84b44eccf809ca9ed3d95473c0660f021461b5258c8e5432814b62e4caf77d81",
+      "observed_pss_set_digest": "b22f1b53434a2d1c89f37039d634c9a3e58d3bb6b1aff52f09560db33772348c",
+      "incremental_pss_set_digest": "84b44eccf809ca9ed3d95473c0660f021461b5258c8e5432814b62e4caf77d81"
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-3",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "03",
+      "method_digest": "12b9519b617ea2c740b04d240d9bd59da35f4e86e05f2263a993fb292d4b86ed",
+      "search_digest": "555e4a04ef7c86af987d7c321233ac08bfe600fbf4327c19ebf106259857ac6f",
+      "discovery_digest": "a5180d35fc4322900c5c2d0e9bffd20f935e3de47ddbc200eed44fe65f019c85",
+      "unique_trace_prefixes": 6,
+      "unique_final_child_pss_states": 6,
+      "unique_observed_pss_states": 25,
+      "unique_incremental_pss_states": 6,
+      "trace_prefix_set_digest": "2e5d26716d5e0d4104b119f5f5678214e8127fb5a21cf9ece26dba3e321f91d3",
+      "final_child_pss_set_digest": "de3f80a7ab0d3b6bc1d424ffa2d7fa54568dc7a07302e7ef66d54f4ce2a2bf86",
+      "observed_pss_set_digest": "ba1e3ed9ab1accc9813b8cc18d5bf0fa76649222883158a6f8ba148118e3e4b7",
+      "incremental_pss_set_digest": "de3f80a7ab0d3b6bc1d424ffa2d7fa54568dc7a07302e7ef66d54f4ce2a2bf86"
+    }
+  ],
+  "root_pss_states": 19,
+  "root_pss_set_digest": "cadcc882f1354772bf822c99a1b5832b13f59d3d99063d3973f3be3cbbe73591",
+  "union_incremental_pss_states": 22,
+  "union_incremental_pss_set_digest": "7f3bb6efee1a745886a2f315307fca5e48be133d6f7983c38097195450bd7b7f",
+  "read_only_projection": true,
+  "model_calls": 0,
+  "classification": "post-search-qualified-bundle-discovery-calibration-not-coverage-defect-or-method-ranking"
+}

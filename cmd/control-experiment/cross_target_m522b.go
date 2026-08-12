@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"slices"
 
@@ -15,8 +16,9 @@ import (
 )
 
 const (
-	portableM522bRiskID  = "opaque-input-under-natural-progress"
-	portableM522bBackend = "bounded-action-class"
+	portableM522bRiskID         = "opaque-input-under-natural-progress"
+	portableM522bBackend        = "bounded-action-class"
+	portableM522eBackendUniform = "bounded-uniform"
 )
 
 type portableM522bInputs struct {
@@ -67,6 +69,18 @@ func planPortableM522bTargetsWithIntent(
 	inputs portableM522bInputs,
 	intent controlexperiment.GuardedTestIntent,
 ) (portableM522bPlanning, error) {
+	return planPortableTargetsWithIntent(inputs, intent, "m5-22b", 1)
+}
+
+func planPortableTargetsWithIntent(
+	inputs portableM522bInputs,
+	intent controlexperiment.GuardedTestIntent,
+	stageID string,
+	policySeed uint64,
+) (portableM522bPlanning, error) {
+	if stageID == "" {
+		return portableM522bPlanning{}, errors.New("CROSS_TARGET_PORTABLE_STAGE_REQUIRED")
+	}
 	if err := intent.Validate(); err != nil {
 		return portableM522bPlanning{}, err
 	}
@@ -97,13 +111,13 @@ func planPortableM522bTargetsWithIntent(
 		MaxReplayWorkUnits:   intent.Must.Decisions + 2,
 	}
 	etcdInstance, err := controlexperiment.NewIntentExecutionInstance(
-		"portable-etcd-target-m5-22b", etcdPlan, 1, budget,
+		"portable-etcd-target-"+stageID, etcdPlan, policySeed, budget,
 	)
 	if err != nil {
 		return portableM522bPlanning{}, err
 	}
 	omniInstance, err := controlexperiment.NewIntentExecutionInstance(
-		"portable-omni-target-m5-22b", omniPlan, 1, budget,
+		"portable-omni-target-"+stageID, omniPlan, policySeed, budget,
 	)
 	if err != nil {
 		return portableM522bPlanning{}, err
@@ -253,19 +267,34 @@ func portableM522bPolicy(
 	plan controlexperiment.CompiledIntentPlanV2,
 	instance controlexperiment.IntentExecutionInstance,
 	plumbing []control.ActionKind,
-) controlexperiment.Policy {
+) (controlexperiment.Policy, error) {
 	selectable := append([]control.ActionKind(nil), plan.RequiredActions...)
 	selectable = append(selectable, plumbing...)
 	slices.Sort(selectable)
 	selectable = slices.Compact(selectable)
 	priority := []control.ActionKind{control.ActionInvoke}
 	priority = append(priority, plumbing...)
-	priority = append(priority, control.ActionDeliverMessage)
-	return controlexperiment.Policy{
-		Version: controlexperiment.BoundedActionClassPolicyVersion,
-		ID:      targetID + "-bounded-action-class", SeedHex: randomPolicySeed(instance.PolicySeed, 1),
+	version := ""
+	switch plan.Strategy {
+	case portableM522bBackend:
+		version = controlexperiment.BoundedActionClassPolicyVersion
+		// Preserve the M5.22b-d progress-oriented backend exactly. It is a
+		// distinct executable backend, not a pure action-class methodology arm.
+		priority = append(priority, control.ActionDeliverMessage)
+	case portableM522eBackendUniform:
+		version = controlexperiment.BoundedUniformPolicyVersion
+	default:
+		return controlexperiment.Policy{}, errors.New("CROSS_TARGET_PORTABLE_STRATEGY_UNSUPPORTED")
+	}
+	policy := controlexperiment.Policy{
+		Version: version,
+		ID:      targetID + "-" + plan.Strategy, SeedHex: randomPolicySeed(instance.PolicySeed, 1),
 		Priority: priority, SelectableActions: selectable,
 	}
+	if err := policy.Validate(plan.Decisions); err != nil {
+		return controlexperiment.Policy{}, err
+	}
+	return policy, nil
 }
 
 func executePortableM522bEtcd(
@@ -276,6 +305,23 @@ func executePortableM522bEtcd(
 	instance controlexperiment.IntentExecutionInstance,
 	plumbing []control.ActionKind,
 ) (portableM522bTargetExecution, error) {
+	return executePortableEtcd(
+		ctx, inputs, intent, plan, instance, plumbing, "m5-22b",
+	)
+}
+
+func executePortableEtcd(
+	ctx context.Context,
+	inputs portableM522bInputs,
+	intent controlexperiment.GuardedTestIntent,
+	plan controlexperiment.CompiledIntentPlanV2,
+	instance controlexperiment.IntentExecutionInstance,
+	plumbing []control.ActionKind,
+	stageID string,
+) (portableM522bTargetExecution, error) {
+	if stageID == "" {
+		return portableM522bTargetExecution{}, errors.New("CROSS_TARGET_PORTABLE_STAGE_REQUIRED")
+	}
 	if err := plan.ValidateInputs(
 		inputs.EtcdView, inputs.Knowledge, inputs.Catalog,
 		inputs.EtcdQualification.Manifest, inputs.EtcdQualification.Qualification, intent,
@@ -291,8 +337,13 @@ func executePortableM522bEtcd(
 	if err != nil {
 		return portableM522bTargetExecution{}, err
 	}
+	policy, err := portableM522bPolicy("portable-etcd", plan, instance, plumbing)
+	if err != nil {
+		return portableM522bTargetExecution{}, err
+	}
+	requestID := "portable-request-" + stageID
 	payload, err := etcdraftv2.InputPayload(etcdraftv2.Input{
-		Operation: etcdraftv2.OperationPropose, RequestID: "portable-request-m5-22b", Value: []byte("portable-value"),
+		Operation: etcdraftv2.OperationPropose, RequestID: requestID, Value: []byte("portable-value"),
 	})
 	if err != nil {
 		return portableM522bTargetExecution{}, err
@@ -301,19 +352,19 @@ func executePortableM522bEtcd(
 		SchemaVersion: controlexperiment.WorkloadPlanVersion, ID: "portable-single-opaque-input",
 		TargetSelector: controlexperiment.TargetSingleCoordinatingMember,
 		Invocations: []controlexperiment.WorkloadInvocation{{
-			ID: "portable-request-m5-22b", Input: payload, ExpectedStatus: "committed",
+			ID: requestID, Input: payload, ExpectedStatus: "committed",
 		}},
 	}
 	envelope := plan.FaultEnvelope
 	config := controlexperiment.Config{
 		SchemaVersion: controlexperiment.SchemaVersionV2,
-		ID:            "portable-etcd-target-m5-22b", PSSID: etcdraftv2.CorePSSMappingID,
+		ID:            "portable-etcd-target-" + stageID, PSSID: etcdraftv2.CorePSSMappingID,
 		WorkloadRouterID: etcdraftv2.WorkloadRouterID,
 		Runtime:          etcdraftCampaignRuntimeConfig(), Admission: &admission, FaultEnvelope: &envelope,
 		DecisionsPerRun: plan.Decisions, RequireReplay: true,
 		Runs: []controlexperiment.RunPlan{{
 			Run: 1, StopAfterWorkload: true,
-			Policy:   portableM522bPolicy("portable-etcd", plan, instance, plumbing),
+			Policy:   policy,
 			Workload: &workload,
 		}},
 	}
@@ -329,7 +380,7 @@ func executePortableM522bEtcd(
 		return portableM522bTargetExecution{}, err
 	}
 	outcome, err := controlexperiment.NewIntentOutcome(
-		"portable-etcd-outcome-m5-22b", plan, instance, report, bundle,
+		"portable-etcd-outcome-"+stageID, plan, instance, report, bundle,
 	)
 	if err != nil {
 		return portableM522bTargetExecution{}, err
@@ -347,6 +398,20 @@ func executePortableM522bOmni(
 	plan controlexperiment.CompiledIntentPlanV2,
 	instance controlexperiment.IntentExecutionInstance,
 ) (portableM522bTargetExecution, error) {
+	return executePortableOmni(ctx, inputs, intent, plan, instance, "m5-22b")
+}
+
+func executePortableOmni(
+	ctx context.Context,
+	inputs portableM522bInputs,
+	intent controlexperiment.GuardedTestIntent,
+	plan controlexperiment.CompiledIntentPlanV2,
+	instance controlexperiment.IntentExecutionInstance,
+	stageID string,
+) (portableM522bTargetExecution, error) {
+	if stageID == "" {
+		return portableM522bTargetExecution{}, errors.New("CROSS_TARGET_PORTABLE_STAGE_REQUIRED")
+	}
 	if err := plan.ValidateInputs(
 		inputs.OmniView, inputs.Knowledge, inputs.Catalog,
 		inputs.OmniQualification.Manifest, inputs.OmniQualification.Qualification, intent,
@@ -360,8 +425,13 @@ func executePortableM522bOmni(
 	if err != nil {
 		return portableM522bTargetExecution{}, err
 	}
+	policy, err := portableM522bPolicy("portable-omni", plan, instance, nil)
+	if err != nil {
+		return portableM522bTargetExecution{}, err
+	}
+	requestID := "portable-request-" + stageID
 	payload, err := omniadapter.InputPayload(omniadapter.Input{
-		RequestID: "portable-request-m5-22b", Value: []byte("portable-value"),
+		RequestID: requestID, Value: []byte("portable-value"),
 	})
 	if err != nil {
 		return portableM522bTargetExecution{}, err
@@ -370,22 +440,25 @@ func executePortableM522bOmni(
 		SchemaVersion: controlexperiment.WorkloadPlanVersion, ID: "portable-single-opaque-input",
 		TargetSelector: controlexperiment.TargetSingleCoordinatingMember,
 		Invocations: []controlexperiment.WorkloadInvocation{{
-			ID: "portable-request-m5-22b", Input: payload, ExpectedStatus: "decided",
+			ID: requestID, Input: payload, ExpectedStatus: "decided",
 		}},
 	}
 	envelope := plan.FaultEnvelope
+	// The stage-bound seed keeps replays deterministic and preserves the
+	// frozen M5.22b-d identity (hex("portable-omni-m5-22b")).
+	omniRuntimeSeed := hex.EncodeToString([]byte("portable-omni-" + stageID))
 	config := controlexperiment.Config{
 		SchemaVersion: controlexperiment.SchemaVersionV2,
-		ID:            "portable-omni-target-m5-22b", PSSID: omniadapter.CorePSSMappingID,
+		ID:            "portable-omni-target-" + stageID, PSSID: omniadapter.CorePSSMappingID,
 		WorkloadRouterID: omniadapter.WorkloadRouterID,
 		Runtime: controlexperiment.RuntimeConfig{
-			SeedHex: "706f727461626c652d6f6d6e692d6d352d323262", MaxClones: 1,
+			SeedHex: omniRuntimeSeed, MaxClones: 1,
 		},
 		Admission: &admission, FaultEnvelope: &envelope,
 		DecisionsPerRun: plan.Decisions, RequireReplay: true,
 		Runs: []controlexperiment.RunPlan{{
 			Run: 1, StopAfterWorkload: true,
-			Policy: portableM522bPolicy("portable-omni", plan, instance, nil), Workload: &workload,
+			Policy: policy, Workload: &workload,
 		}},
 	}
 	var opened []*omniadapter.Adapter
@@ -412,7 +485,7 @@ func executePortableM522bOmni(
 		return portableM522bTargetExecution{}, err
 	}
 	outcome, err := controlexperiment.NewIntentOutcome(
-		"portable-omni-outcome-m5-22b", plan, instance, report, bundle,
+		"portable-omni-outcome-"+stageID, plan, instance, report, bundle,
 	)
 	if err != nil {
 		return portableM522bTargetExecution{}, err

@@ -1,0 +1,153 @@
+{
+  "schema_version": "consensus-atlas/stateless-root-corpus-calibration-summary/v1",
+  "stage": "M5.23e",
+  "date": "2026-08-12",
+  "corpus_digest": "e8c7393804463bb52c3313c0885ffcacb8ed19da335b05e8067d971b89ca9ed8",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
+  "shared_source_work": {
+    "primary": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 64, "work_units": 66},
+    "replay": {"setup_attempts": 1, "runtime_initializations": 1, "prepare_actions": 1, "scheduler_decisions": 64, "work_units": 66},
+    "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+  },
+  "shared_source_work_units": 132,
+  "root_count": 3,
+  "method_count": 4,
+  "max_depth": 2,
+  "max_work_items_per_root": 6,
+  "max_work_units_per_root": 1500,
+  "qualified_execution_attempts_per_method": 18,
+  "min_marginal_evidence_work_units": 2395,
+  "max_marginal_evidence_work_units": 2397,
+  "campaign_evidence_work_units": 9716,
+  "corpus_baseline_pss_states": 38,
+  "corpus_baseline_pss_set_digest": "59906308bd8ca5b154f89f08432a515b5108a7c17b6bb684bbde409c3eb23588",
+  "union_method_corpus_novel_pss_states": 39,
+  "union_method_corpus_novel_pss_set_digest": "3e34ab284bd8422e82ccec6051b9aef0125bb91bdce090c5d671ef65ab084d8d",
+  "root_selection_uses_method_output": false,
+  "read_only_projection": true,
+  "model_calls": 0,
+  "classification": "predeclared-multi-root-discovery-calibration-not-coverage-defect-significance-or-method-ranking",
+  "methods": [
+    {
+      "id": "etcdraft-m5-23c-canonical",
+      "strategy": "canonical-action-id-depth-first/v1",
+      "method_digest": "3895abd77949d59dc8431ec87531078e6fe0fd74fdfd3b118a6b87737d717254",
+      "discovery_digest": "913bde7f3d51ee6c52469fa06ca12c363cdff4db274d3963e9e77bf5796fee7d",
+      "local_incremental_pss_states": 17,
+      "local_incremental_pss_set_digest": "4722173b20c2176f0dd88fcd2079c88e49fd807b16923a456bc72daa8a34cb4d",
+      "corpus_novel_pss_states": 15,
+      "corpus_novel_pss_set_digest": "72af8a13354a68114cb1404b65875e3537b05936db0242c939c75dff1f55286f",
+      "search_work": {
+        "frontier_reconstruction": {"setup_attempts": 6, "runtime_initializations": 6, "prepare_actions": 4, "scheduler_decisions": 167, "work_units": 177},
+        "child_materialization": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "child_verification": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "total_work_units": 1287
+      },
+      "qualified_execution_work": {
+        "primary": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "replay": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+      },
+      "marginal_evidence_work_units": 2397,
+      "end_to_end_work_units_if_run_alone": 2529,
+      "roots": [
+        {"root_id": "initial", "root_pss_states": 1, "local_incremental_pss_states": 5, "search_work_units": 37, "primary_work_units": 17, "replay_work_units": 17, "discovery_digest": "5ac6c78285f42f7cfd4fe282ae60d728ebffaeb85c93ab70f6200343332d9a47"},
+        {"root_id": "invoked", "root_pss_states": 19, "local_incremental_pss_states": 6, "search_work_units": 443, "primary_work_units": 191, "replay_work_units": 191, "discovery_digest": "088a52320e122d9138ea0b38148448e22bc27681ac62512fa4d59dd7f36a9a64"},
+        {"root_id": "restarted", "root_pss_states": 38, "local_incremental_pss_states": 6, "search_work_units": 807, "primary_work_units": 347, "replay_work_units": 347, "discovery_digest": "9eefd799dec9f7ef08ae5625b44b724596d11fa149305e6bdb7ab4cf6470ac29"}
+      ]
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-1",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "01",
+      "method_digest": "b2064fa87710369defec5c1d36ea25243cdfb780ed8ed7b173f8413ed791b67f",
+      "discovery_digest": "028e1ae930e21acfb37cce37df60b93411f06901d1997a8f9b04b544420e441c",
+      "local_incremental_pss_states": 14,
+      "local_incremental_pss_set_digest": "4168f147256ca8663f084795ae74895b910fb759d702c9e3b6dabc5bc5a7400d",
+      "corpus_novel_pss_states": 13,
+      "corpus_novel_pss_set_digest": "3283d60d0df23109f18de3652a3a7b515d84a701d9a683021a77bb16986e22e8",
+      "search_work": {
+        "frontier_reconstruction": {"setup_attempts": 7, "runtime_initializations": 7, "prepare_actions": 4, "scheduler_decisions": 168, "work_units": 179},
+        "child_materialization": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "child_verification": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "total_work_units": 1287
+      },
+      "qualified_execution_work": {
+        "primary": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "replay": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+      },
+      "marginal_evidence_work_units": 2395,
+      "end_to_end_work_units_if_run_alone": 2527,
+      "roots": [
+        {"root_id": "initial", "root_pss_states": 1, "local_incremental_pss_states": 4, "search_work_units": 37, "primary_work_units": 16, "replay_work_units": 16, "discovery_digest": "18098417a17af1f33fb543e285923c7cce5360fa8e1a9f1fdaa40a2043594f74"},
+        {"root_id": "invoked", "root_pss_states": 19, "local_incremental_pss_states": 5, "search_work_units": 443, "primary_work_units": 191, "replay_work_units": 191, "discovery_digest": "0f05a48ebca052be37b740bb62e96e7bc88ad73c523972c862ae81a689902ab8"},
+        {"root_id": "restarted", "root_pss_states": 38, "local_incremental_pss_states": 5, "search_work_units": 807, "primary_work_units": 347, "replay_work_units": 347, "discovery_digest": "d0c81eb329fb2c64cf0f173c84d274005803dabf91bb6f8c397219b704365da3"}
+      ]
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-2",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "02",
+      "method_digest": "faaeb94033b8308347ff1954a03e33ec6c9b28c14c648b04ef7eeb5a10dbef8b",
+      "discovery_digest": "cab33305886724d4940122603cf340bc5fa3aab298bd67448a1691664ec7a1ee",
+      "local_incremental_pss_states": 15,
+      "local_incremental_pss_set_digest": "da960cba65175f2c9eb9cbd150323d4ac98998c8da9fdda9511745d7ccfc3bc0",
+      "corpus_novel_pss_states": 15,
+      "corpus_novel_pss_set_digest": "da960cba65175f2c9eb9cbd150323d4ac98998c8da9fdda9511745d7ccfc3bc0",
+      "search_work": {
+        "frontier_reconstruction": {"setup_attempts": 7, "runtime_initializations": 7, "prepare_actions": 4, "scheduler_decisions": 168, "work_units": 179},
+        "child_materialization": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "child_verification": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "total_work_units": 1287
+      },
+      "qualified_execution_work": {
+        "primary": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "replay": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 524, "work_units": 554},
+        "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+      },
+      "marginal_evidence_work_units": 2395,
+      "end_to_end_work_units_if_run_alone": 2527,
+      "roots": [
+        {"root_id": "initial", "root_pss_states": 1, "local_incremental_pss_states": 3, "search_work_units": 37, "primary_work_units": 16, "replay_work_units": 16, "discovery_digest": "37a09f6c699531c8e0b45e4e2ae62b17ebb9898800f4fe3e985f773318070162"},
+        {"root_id": "invoked", "root_pss_states": 19, "local_incremental_pss_states": 6, "search_work_units": 443, "primary_work_units": 191, "replay_work_units": 191, "discovery_digest": "574fadaf622267ec136dc50a0f6209fc472323d08ff1c3f25fa0475bebe13407"},
+        {"root_id": "restarted", "root_pss_states": 38, "local_incremental_pss_states": 6, "search_work_units": 807, "primary_work_units": 347, "replay_work_units": 347, "discovery_digest": "02d7d81e83035388d01cf0b3ae7ac681db9d166ef0ea2f1102a82b8ee9913b98"}
+      ]
+    },
+    {
+      "id": "etcdraft-m5-23c-uniform-seed-3",
+      "strategy": "seeded-uniform-frontier-depth-first/v1",
+      "seed_hex": "03",
+      "method_digest": "12b9519b617ea2c740b04d240d9bd59da35f4e86e05f2263a993fb292d4b86ed",
+      "discovery_digest": "c950a8dfcc63fb7c00c4c618a745d1bd2b9745477d968722ec353211d96a8f40",
+      "local_incremental_pss_states": 15,
+      "local_incremental_pss_set_digest": "4143ac7bbd0df4a5514417b63e736fc80640aba3a95c2f39a62763a5d3aaed77",
+      "corpus_novel_pss_states": 14,
+      "corpus_novel_pss_set_digest": "21500bc117d49789422478ec6d9e16dad426068092d726506bcdf260b139428f",
+      "search_work": {
+        "frontier_reconstruction": {"setup_attempts": 6, "runtime_initializations": 6, "prepare_actions": 4, "scheduler_decisions": 167, "work_units": 177},
+        "child_materialization": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "child_verification": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "total_work_units": 1287
+      },
+      "qualified_execution_work": {
+        "primary": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "replay": {"setup_attempts": 18, "runtime_initializations": 18, "prepare_actions": 12, "scheduler_decisions": 525, "work_units": 555},
+        "model": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "resources": {"wall_time": "not-collected", "cpu_time": "not-collected", "peak_rss": "not-collected"}
+      },
+      "marginal_evidence_work_units": 2397,
+      "end_to_end_work_units_if_run_alone": 2529,
+      "roots": [
+        {"root_id": "initial", "root_pss_states": 1, "local_incremental_pss_states": 4, "search_work_units": 37, "primary_work_units": 17, "replay_work_units": 17, "discovery_digest": "6ab1e1154ed558f738fb1d8270af7b49b78d3fc783c118e68c2b3b0bce0a907d"},
+        {"root_id": "invoked", "root_pss_states": 19, "local_incremental_pss_states": 6, "search_work_units": 443, "primary_work_units": 191, "replay_work_units": 191, "discovery_digest": "8d8053238b580f88d04e41085ed532dbf62efbffebfbea6b15a129d1198f4b74"},
+        {"root_id": "restarted", "root_pss_states": 38, "local_incremental_pss_states": 5, "search_work_units": 807, "primary_work_units": 347, "replay_work_units": 347, "discovery_digest": "d5ad060814eff1ed800a1f30a1ab3378a833e7cd8f04146dac69d780cafa7e3f"}
+      ]
+    }
+  ]
+}

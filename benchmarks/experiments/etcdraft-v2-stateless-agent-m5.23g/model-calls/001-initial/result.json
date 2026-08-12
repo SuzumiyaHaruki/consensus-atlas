@@ -1,0 +1,23 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "50ee712b1ce0638c1c318edc2384f9428fcb150888e5c0902aa248c9f4929029",
+  "status": "completed",
+  "content": "eyJzY2hlbWFfdmVyc2lvbiI6ImNvbnNlbnN1cy1hdGxhcy9zdGF0ZWxlc3MtZnJvbnRpZXItb3JkZXItcHJvcG9zYWwvdjEiLCJpZCI6ImV0Y2RyYWZ0LW01LTIzZy1kZWVwc2Vlay1yZXF1ZXN0LTEiLCJyZXF1ZXN0X2RpZ2VzdCI6IjgxMDlhMWVjZDI1YjdhYTQxNWU5YTQ2MDJiYmZiNWM2M2Y2MThiZGYxODkzMzdhOWM4NjM4NjQ2MTQwNzg3MjMiLCJ2aWV3X2RpZ2VzdCI6ImFjZjcxYWZjZjMwNWVlZjdlZWMwNmFlMjBlMjA0ZTNiNzhmY2FjYTRjZGU5MTIwNTk2N2M0YWUwZDA4NGNkZTEiLCJhY3Rpb25faWRzIjpbImFjdGlvbi0xYzA1MzhjMWYzYzUyMTZlZmI3YmVmOTZlN2Q5ZDU5ZGMxNjk0YmQxMzgxOWUwYjlkNDg2MWUzNDc5N2UyMTMzIiwiYWN0aW9uLTJmZjZiYzU2MDVlOWVlM2Q2ZDZmZWJkNzhlZWMwOGRjOWE1OGQxZjExOTZlMTllNWQzZmE4NGIzYTdmYThjNWQiLCJhY3Rpb24tNDc0N2RkMWVhNWViYWE2NDc0NDk3NTIxODY5ZDU4ZjUxM2FjM2ZiZjNiMWM1ZTY5YzUzMTk4NGFjZDcxODlkYSIsImFjdGlvbi05MTUzOTc3NTMyNzQzYjdiYzdlYzMxZTFmNjRjNGE3YTcxODIyMjJlZDhmMTk1YTg3OGE4MTNmY2FjMGY2ZDkzIiwiYWN0aW9uLWE1ZDM1NWQ5YjdjMThjMzdkNTBkNjk3ODE1YmQ2ZGVmMGYwODA3NGYwYjM0YWIzODE4NGMyZGY3YWU4M2U0YmMiLCJhY3Rpb24tYzc3MzcxZmJhNWVjMGMwZDA4MTRjYWNhNWNjM2E2YTJhMWQ4YjdjZWYyY2Y0MDdjNWY4NjM3ZGJlMDM3ODU4ZCJdLCJkaWdlc3QiOiIifQ==",
+  "content_digest": "6c219aa64059aa7625d4ffbca51d913590f9cc3ecd93d063d92c24fe7a8fedb8",
+  "proposal_digest": "6c219aa64059aa7625d4ffbca51d913590f9cc3ecd93d063d92c24fe7a8fedb8",
+  "response_digest": "e9ec0308f8c65744906f18b8e43126dc6c92c2bc9cf7dd22443076936b0dbcd7",
+  "response": {
+    "id": "4cb21715-aeec-4040-8321-7a8a29ffcc3c",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "fp_a18b46594c_prod0820_fp8_kvcache_20260402"
+  },
+  "duration_millis": 163,
+  "work": {
+    "calls": 1,
+    "input_tokens": 2677,
+    "output_tokens": 391,
+    "total_tokens": 3068
+  },
+  "digest": "8fe94df71cfcadfde41563b9d5172ae275894a9a0c6349d06519efd796f720c9"
+}

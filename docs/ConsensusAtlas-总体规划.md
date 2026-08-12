@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.57（M5.22d cross-target preference authority calibration 完成）
-> 日期：2026-08-11
+> 状态：Draft v1.66（M5.23g 真实 Agent multi-root pilot 完成，M5.23 关闭）
+> 日期：2026-08-12
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -93,6 +93,46 @@ Coverage Obligation 和 PSS 都是系统自己定义、并提供给 Agent 的内
 义务/PSS 只有在未参与设计的 holdout 缺陷上能够预测或提高缺陷检出时，才能成为
 论文的主要解释变量。没有发现新漏洞不构成失败；在隐藏缺陷上也不优于简单基线时，
 不得通过增加指标或 Agent 数量维持原有主张。
+
+### 1.5 与 Agora/Themis 的研究边界
+
+`LLM`、“多 Agent”或“面向分布式系统”本身都不是 ConsensusAtlas 的贡献。
+Themis 以 RPC 可达共享状态的冲突访问为 bug model，使用静态分析生成 race target，
+再由 LLM 构造状态准备/公开接口调用序列，directed fuzzing 调参并探索并发交错。
+ConsensusAtlas 不以共享变量 race 为必要前置，而以 epoch/quorum/proposal/decision/
+persistence/recovery 等共识语义关系为 Risk、PSS 和 Oracle 的对象。Themis 在已知问题
+benchmark 中排除 state-machine-related bugs 不应被扩大解读为“绝不可能检出共识
+实现中的 RPC race”；两者的稳定区分是 bug model、控制面和判定层，而不是项目名称。
+
+Agora 与本项目都面向共识语义问题，因此“protocol-aware Agent”也不足以区分。
+Agora 的主要搜索产物是 `bug hypothesis -> attack scenario -> repository-specific unit test`；
+Strategy/TestGen 可以根据仓库知识生成、执行并修复测试代码。ConsensusAtlas 的长期区分必须是：
+
+```text
+protocol knowledge + consensus semantic risk
+                    |
+                    v
+restricted semantic search guidance
+                    |
+                    v
+trusted systematic explorer enumerates exact-prefix WorkItems
+                    |
+                    v
+Runtime validates enabled ActionRef and executes
+                    |
+                    v
+independent Replay / consensus Oracle / evaluator
+```
+
+因此 Agent 不生成 enabled set，不伪造消息/状态，不修改当前 Oracle，不根据自己的文本
+解释确认缺陷。它可以选择冻结 Risk，并对 Runtime 真实重建的有界 `WorkItem/ActionRef`
+排序。提出测试的组件与判定测试成败的组件必须分离。
+
+`CrossTargetPlannerView` 的 target-blind 输入只作 portability/authority 校准与消融组；
+正式 Agent effectiveness 实验使用相同 schema、相同权限的 target-local
+`ProtocolKnowledgePack`，让 Agent 可以看到协议和消息阶段语义，但仍隐藏 candidate/control、
+root cause、patch 和 Oracle verdict。第一轮效果实验先使用单个 Search Agent 以保持
+因果可归因；只有实验证明职责混合造成具体漏检后才增加 Agent 角色。
 
 ---
 
@@ -2989,7 +3029,89 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      当前共同 Catalog 仅有一个 executable backend，Agent preference 没有实际执行权限，因而不得
      声称 Agent 已控制测试或优于 baseline。下一 gate 只允许复用已 admission 的现有策略，
      建立至少两个在两目标上都可执行且真实 trace 不同的共同 backend。若该 gate 失败，
-     停止 preference-only Agent 路线；若通过，再做一次真实 LLM 小预算校准后转入 holdout/mutant。
+     停止 preference-only Agent 路线；若通过，也只证明受限 preference 具有执行影响，不证明
+     Agent 推理有效。下一主线先在 v2 `exact prefix -> reconstructed frontier -> WorkItem`
+     边界上实现不做状态合并的 bounded stateless DFS，然后才接入 protocol-aware Search Agent
+     并进行强非 LLM baseline/hidden-root-cause 评价。target-blind cross-target Agent 保留为
+     portability/authority 消融，不作正式效果方法。
+139. M5.22e 不新增 Runtime、Action、schema、target 或搜索算法，只将已有 bounded action-class 与
+     bounded uniform 纳入新的双 backend 共同 Catalog。两个 backend 共享 6 项 validated capability、
+     Invoke/DeliverMessage/FireTemporal、96-decision ceiling、opaque workload 和预先固定 seeds 1/2/3；
+     etcd/raft 的 CompleteEffect 保持 target-local plumbing。12 次 primary 均完成 workload/Intent 并
+     stable Replay，6/6 个同 target/seed backend pair 的 trace 不同，M5.22b-d 冻结 identity 不漂移。
+     因此 preference 已有真实执行影响，但 224 与 323 的实际 decision 合计不能在没有 discovery/缺陷
+     结果时解释为方法优劣，更不能证明 Agent。M5.23a 固定为最小 bounded stateless DFS：WorkItem 只含
+     exact replay prefix 与重建 frontier，先不做状态合并、DPOR 或 LLM；通过确定性、Replay 和完整成本
+     门禁后，protocol-aware Search Agent 才能对同一批可信 WorkItem 排序。
+140. M5.23a 新增不含 RiskWitness/PSS 的协议无关 `ActionFrontierView` 和 bounded stateless DFS：每个
+     WorkItem 只绑定 exact prefix StateRef、fresh 重建的 admissible ActionRef、父 ordinal/depth 和 child
+     prefix；按 canonical ActionID 做 depth-first 顺序。每个分支分别计费父前缀重建、child 物化和独立
+     child Replay，不克隆 Adapter 状态、不用 PSS 恢复、不做状态合并/DPOR。etcd/raft 公开校准固定在
+     28-decision root、depth=2、items=6、work ceiling=1,000，实际扩展 2 个前缀并用 443 search work；
+     两次搜索逐字段一致，6/6 child Replay，叶路径经 exact Policy 进入原 qualified executor 后前 30 步
+     digest 一致且完整 64/64 primary/replay stable。该结果不证明完整枚举、DFS 方法优势、缺陷检出或
+     Agent 效果。M5.23b 必须保持通用 DFS API 不变，迁移至 OmniPaxos；隐藏协议耦合应报告为失败，
+     不得用 target 条件污染通用层。
+141. M5.23b 在 `internal/controlexperiment` DFS API 和实现零修改的前提下，复用 M5.22b 已资格化
+     的 OmniPaxos six-capability workload、Runtime seed、FaultEnvelope 和 qualified executor。从冻结真实
+     bundle 的 1-decision prefix 出发，depth=2、items=6、work ceiling=1,000 实际扩展 2 个前缀、
+     使用 51 search work；两次搜索逐字段一致，6/6 child fresh Replay，叶路径经原 qualified
+     executor 精确复现前 3 个 decisions 并完成 29/29 primary/replay stable。worker 子进程只由
+     target composition 管理生命周期，没有进入 Action/DFS 抽象。该门禁证明同一搜索 API 跨
+     embedded Go 与 process-backed Rust Adapter 可执行，不证明 DFS 方法优势。etcd/raft 的 28-decision
+     root 与 OmniPaxos 的 1-decision root 不匹配，443 与 51 不得横向排名。M5.23c 必须先建立 target
+     内 matched-root、matched-budget 的 no-model DFS/bounded-uniform 校准；如果 stochastic policy 不能从 exact
+     prefix 启动，应记录方法接口缺口，不得用不同起点冒充 matched comparison。
+142. M5.23c 确认现有 `BoundedUniformPolicyVersion` 与 exact decision rules 互斥，因此不能直接与
+     root-prefix DFS 做 matched comparison。本阶段不放宽 scheduler Policy，而是新增最小的 versioned
+     `StatelessTraversalMethod`/`Result`：方法只能对 Runtime 已提供的 trusted `FrontierActionRef`
+     排序，不能生成、删除或改写 Action。canonical 方法与旧 M5.23a DFS 逐字段一致；
+     seeded-uniform 用 seed、prefix digest 和 admissible digest 对 canonical frontier 做确定性 permutation。
+     etcd/raft 公开校准固定同一 28-decision root、depth=2、items=6、work ceiling=1,000；
+     canonical 和 uniform seeds 01/02/03 均扩展 2 个前缀、实际使用 443 work，4/4 order digest
+     不同且各自重复运行逐字段一致。uniform 叶路径返回原 qualified executor 后 exact prefix
+     复现且 strict Replay stable。该结果只资格化同起点、同实际成本的比较装置，尚未定义
+     discovery quality，不证明任何方法或 Agent 更优。M5.23d 必须先冻结只读、可重算、
+     不反向影响搜索的 discovery projection，再扩展到多 roots/seeds。
+143. M5.23d 固定 `StatelessTraversalDiscovery` 为搜索后只读投影。由于 WorkItem 不保存完整
+     trace/PSS，每个 WorkItem 必须编译为 exact Policy，经原 qualified executor 执行至 child decision 并
+     strict Replay 后才能进入 discovery。通用 projector 验证 WorkItem/bundle/trace/manifest/final state，
+     并调用已注册 SemanticMapper 从 trace/evidence 重投影 Core PSS，逐项核对 bundle 样本；不相信
+     bundle 自报或搜索内部状态。M5.23c 单 root 校准中，四种方法 search work 均为 443；各自
+     6 个 discovery bundles 另需 191 primary + 191 replay，所以每方法可信 evidence 总成本为 825。
+     common root 含 19 个 PSS states，canonical/uniform 01/02/03 在 root 之后分别新增 6/5/6/6，
+     联合增量为 22。该数据只证明投影可重算、成本匹配且不反向影响搜索，不是 Coverage、
+     正确性、缺陷或方法排名。M5.23e 必须事先冻结小型 strict-Replay root corpus，不得根据方法
+     结果反选 root，然后才可报告跨 root 增量集。
+144. M5.23e 新增方法执行前冻结的 `StatelessRootCorpus`：它将 M5.21p 同一
+     strict-Replay source bundle 的 0/28/54 decision anchors 绑定为 exact prefix identity，分别对应
+     source 初态、workload-invoked 和 old-coordinator-restarted 已冻结 milestone；phase 标签无执行
+     权限。通用 `StatelessCorpusDiscovery` 复用 M5.23d projection，并从各 root local incremental
+     union 中扣除全部 corpus root baseline，得到 corpus-novel PSS。四种方法的 corpus-novel
+     为 15/13/15/14，联合 39；该结果不是排名。同一 root/depth/items/work ceiling 下，
+     exact-prefix 长度使边际可信成本为 2,395–2,397，证明不能用 item 数冒充完全等成本；
+     系统保留实际差异，不通过空操作填充。M5.23f 只冻结 Search Agent 的 frontier permutation/
+     preference 权限与 validator，先做 no-model mock，不宣称 Agent 效果。
+145. M5.23f 冻结 `StatelessFrontierOrderRequest/Proposal/Record` 和
+     `ExploreBoundedStatelessDFSWithAgent`。可信 request 绑定 ProtocolKnowledgePack digest、当前
+     `ActionFrontierView` 和只含已完成结果的 history；proposal 唯一可变字段是 `action_ids`，
+     必须是当前 frontier ActionID 的完整 permutation。validator 映射回原 ActionRef，并拒绝
+     遗漏、额外、重复、虚构 Action 和未知 JSON 字段；离线验证还要求 WorkItem 顺序是已接受
+     proposal 的前缀。etcd/raft no-model reverse-frontier 校准中，planner 2 次调用/2 次接受，
+     6-item 顺序与 canonical 不同，search work 仍为 443，叶路径返回原 qualified executor 后
+     strict Replay stable。模型调用为 0，因而只证明权限链路可执行，不证明 Agent 效果。
+     M5.23g 在 M5.23e 预声明 corpus 上运行一次 opt-in 真实 Agent pilot，与 canonical/
+     fixed uniform seeds 按完整实际成本并列；完成后关闭 M5.23。
+146. M5.23g 在 M5.23e 预声明的 0/28/54-decision root corpus 上完成一次真实
+     DeepSeek v4 Flash pilot。每次调用先持久化 exact prompt/request intent，再写 dispatch，最后
+     写唯一 terminal result；调用预算为 6、retries 为 0。6/6 proposal 均通过当前 frontier
+     ActionID 完整 permutation 验证，三 root 共 18 个 WorkItem 返回原 qualified executor，全部
+     strict Replay 并只读重投影 PSS。实际模型成本为 24,876 input + 3,459 output = 28,335 tokens；
+     Agent corpus-novel PSS 为 15，与 canonical 的集合及三 root Action 顺序完全相同，fixed
+     uniform 01/02/03 为 13/15/14。这是真实负结果：Agent 闭环可执行且权限/计费可复核，
+     但当前 knowledge/prompt 在该小 corpus 上没有超越 canonical 的新增价值。M5.23 至此关闭；
+     M5.24 必须先冻结重复试验和非公开 candidate/control，不得通过事后调 prompt 或反选 root
+     消除该负结果。
 
 ---
 
@@ -3026,10 +3148,20 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 - 在没有控制随机性、网络和存储边界时仍声称严格确定性。
 
 总体判断：确定性控制、opaque input/result、保守 Core PSS、Agreement 和 partial capability admission
-已在 Raft 与 leader-based Sequence Paxos 上成立。下一个主要风险不再是 Adapter 能否连通，而是同一
-Campaign/Planner 和评测账本能否在两个目标上保持无 Raft 字段、共同预算与可重算结果。随后才考虑
-leaderless/BFT 目标。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 和协议 Oracle，但不应重写
-控制层或 Core ledger。真正的论文创新应集中在：
+已在 Raft 与 leader-based Sequence Paxos 上成立；同一 target-blind Planner/Campaign 也已在两目标上保持
+无 Raft 字段、共同预算和可重算账本。下一个主要风险已不是 Adapter 或 cross-target plumbing，
+而是如何证明 v2 系统搜索跨目标复用且能在完整成本下优于简单基线。M5.22e 已证明两个共同 backend 的
+preference 具有真实执行影响，M5.23a 已建立 etcd/raft 上的最小 bounded stateless DFS，M5.23b 又在不修改
+通用 API 的前提下通过 process-backed OmniPaxos 迁移门禁，M5.23c 进一步建立了 target 内同 exact
+root、同实际成本的 canonical/seeded-uniform 比较装置，M5.23d 又建立了从 qualified bundles 重算、
+与 common root baseline 分离且完整计费的只读 discovery，但仍没有证明方法质量。在事先冻结的多
+root/seed 校准已通过预声明 corpus 门，但实际成本差异证明后续比较必须用完整账本。
+受限 Search Agent 权限门和真实 multi-root pilot 均已完成，但真实 Agent 退化为 canonical：
+在完整实际成本下没有产生新的 Action 顺序或 PSS 集合。这使主要风险从“Agent 能否进入执行链”
+转变为“Agent/knowledge 能否在非公开重复试验中增加缺陷检出或单位成本发现”。在保守约简和
+protocol-aware guidance 效果门通过前，
+冻结新正式 target、Runtime/Trace 大版本和新 cross-target ledger。跨 CFT/BFT 的深层安全语义仍需要
+Extended PSS 和协议 Oracle，但不应重写控制层或 Core ledger。真正的论文创新应集中在：
 
 1. 固定 Core PSS IR + 薄 Mapping 如何以较低成本提供足够可靠的语义；
 2. 执行如何归约为保守、稳定、有意义的偏序场景；
@@ -3052,6 +3184,7 @@ leaderless/BFT 目标。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 
 - [Twins](https://arxiv.org/abs/2004.10617)
 - [Liveness Checking of the HotStuff Protocol Family](https://arxiv.org/abs/2310.09006)
 - [Agora](https://arxiv.org/html/2605.29910v1)
+- [Themis: RPC-Driven Race-Directed Test Generation and Fuzzing](https://www.usenix.org/conference/nsdi26/presentation/cao)
 
 ---
 
@@ -3059,7 +3192,7 @@ leaderless/BFT 目标。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 
 
 如果未来无法用下面这句话准确描述 ConsensusAtlas，项目就可能已经偏航：
 
-> ConsensusAtlas 以最小 Protocol Charter、固定 Core PSS IR 和可选协议扩展为信任根，让受限 Agent
-> 只生成薄 Execution Binding、Semantic Mapping 和测试计划，由确定性 Runtime、Replay、Conformance、
-> Oracle 与 Ledger 判定内部覆盖，并最终用 Agent 看不到的历史缺陷/语义 mutant 根因检出和正确
-> control 误报评价方法效果。
+> ConsensusAtlas 以最小 Protocol Charter、固定 Core PSS IR 和可选协议扩展为信任根，让受限、
+> 协议感知的 Agent 只为 Runtime 枚举的 exact-prefix WorkItem/ActionRef 提供语义搜索指导，
+> 由确定性 Runtime、Replay、Conformance、Oracle 与 Ledger 独立决定执行真相和结果，并最终
+> 用 Agent 看不到的历史缺陷/语义 mutant 根因检出和正确 control 误报评价方法效果。

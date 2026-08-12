@@ -454,10 +454,58 @@ attempt 的 `AttachPlanningWork` 重算 record work，因此 1 次模型调用�
 preference 没有 lowering 权限。后续不得再增加跨目标持久化层；必须先用已有策略证明至少两个共同 backend
 会产生不同 trace，否则 preference-only Agent 路线不具备可评价的测试控制力。
 
+M5.22e 不增加策略实现，只把已有 bounded action-class 与 bounded uniform 纳入新的双 backend 共同
+Catalog。两个 backend 共享 6 项 capability、3 类 common Action、96-decision ceiling、opaque workload
+和 seeds 1/2/3；etcd/raft 的 CompleteEffect 仍是 target-local plumbing。两个真实目标的 12 次 primary
+均完成 workload/Intent 并 stable Replay，6/6 个同 target/seed pair 的 trace 不同。该 gate 只证明
+preference 已有真实执行影响，不提供 Agent 或方法优势证据。下一层必须先建立 exact-prefix bounded
+stateless DFS；不得再增加跨目标账本或直接把真实模型调用当作搜索效果。
+
 M5.21q 已增加一条 no-model Risk Frontier authority gate：通用组合层只通过 strict prefix Replay
 重建下一步 enabled/admissible ActionRef，并将 exact ActionID choice 编译回既有 Policy。target
 projector 仍在 composition root，协议 evidence/payload 不进入通用视图。该边界证明选择会改变
 真实执行，但不会把 RiskWitness feedback、Agent proposal 或方法效果混成同一个结论。
+
+M5.23a 将该重建路径拆为不含 RiskWitness/PSS 的 `ActionFrontierView`，并增加 bounded stateless DFS。
+WorkItem 只绑定 exact prefix StateRef、当前 admissible ActionRef 和父/depth metadata；每个分支使用 fresh
+Adapter 重放父前缀、执行一个 Action，再用另一个 fresh Adapter 验证 child prefix。搜索按 canonical
+ActionID 做 depth-first 顺序，受 depth/item/work 三个独立上限约束，不克隆实现状态、不做状态合并或
+DPOR。M5.21q 继续在这一通用 view 上附加 target-owned RiskWitnessProgress，历史 identity 不变。
+
+M5.23b 保持上述通用 API 和实现零修改，将同一 DFS 接到 process-backed OmniPaxos。worker 生命周期由
+composition factory 记录并关闭，不进入 Action 或 Runtime 抽象。1-decision root、depth=2、items=6 的
+两次搜索逐字段一致，6/6 child fresh Replay，叶 exact Policy 经原 qualified executor 复现。因此当前
+DFS 已通过第二 Adapter/runtime topology 的迁移门禁；不同 target root 的搜索成本不得互相排名。
+
+M5.23c 在 DFS 上增加最小 versioned traversal method，方法权限只是对当前 trusted
+ActionRef 排序。canonical 与 seeded-uniform 共用同一 exact root、执行器、FaultEnvelope、
+depth/item/work 上限以及 child fresh Replay。etcd/raft 上的四个方法都使用 443 actual work，
+得到 4 个不同且可重复的有界遍历顺序。该层只资格化比较装置；discovery projection 与方法
+effectiveness 尚未冻结。
+
+M5.23d 将 discovery 固定为搜索后只读投影。WorkItem 必须通过原 qualified executor 重新
+执行为 exact child bundle；通用 projector 再用已注册 SemanticMapper 从 trace/evidence 重投影
+Core PSS，而不信任 bundle 自报或 DFS 内部状态。共同 root baseline 与 method incremental states
+分开，discovery execution/Replay 成本与 search work 分开记录。该投影没有 Action 选择、Coverage、
+Oracle 或 verdict 权限。
+
+M5.23e 新增方法执行前冻结的 `StatelessRootCorpus`。它只把一个 strict-Replay source bundle 的预声明
+decision anchors 转为 exact prefix identity；phase 标签不参与搜索。`StatelessCorpusDiscovery` 聚合各 root
+的 M5.23d 结果，并从 local incremental union 中扣除全部 corpus root baseline，形成 corpus-novel PSS 集。
+不同遍历即使共享 root/depth/item/work ceiling，也可能因 exact-prefix 长度产生小幅实际成本差异；账本
+保留该差异，不用填充动作伪造等成本。
+
+M5.23f 在 traversal orderer 上增加受限 Search Agent 边界。request 绑定 knowledge digest、
+`ActionFrontierView` 和已完成 history；proposal 只能提交 ActionID 完整 permutation。validator
+从原 view 取回 ActionRef，拒绝新增、遗漏、重复、虚构和未知 JSON 字段，并离线核对
+WorkItem 顺序确实来自已接受提案。该层不提供 Action 构造、root/budget 修改、PSS/Coverage
+写入或 verdict 权限。
+
+M5.23g 复用同一边界运行真实三 root pilot。每次 provider 调用先持久化 exact-byte intent，再持久化
+dispatch，最后写唯一 terminal result；调用一经 dispatch 即消费序号，预算 6 calls、0 retries。
+18 个 WorkItem 仍由原 qualified executor/strict Replay 执行并只读重投影 PSS。真实 Agent 使用
+28,335 tokens，三 root 顺序和 15-state corpus-novel set 均与 canonical 相同。这关闭了 M5.23 的可执行
+Agent 闭环，同时留下“当前 knowledge/prompt 无新增搜索价值”的负结果；M5.24 才进入外部有效性。
 
 - 真实非公开 holdout curator pack 与正式方法比较；
 - PSS-guided 的可执行性结构约束（只在评测缺口证明必要时增加）；

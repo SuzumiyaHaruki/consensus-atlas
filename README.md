@@ -6,14 +6,15 @@ ConsensusAtlas 是面向共识实现的确定性测试研究框架。当前已�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.22d 跨目标 preference 权限校准**。可信层从 etcd/raft 与 OmniPaxos 的
-target-bound view 机械求交，得到只含六项共同能力、Invoke/DeliverMessage/FireTemporal 和一个 bounded
-backend 的 Agent-facing view；其中没有协议、Adapter、PSS 或 Oracle 字段。
+当前阶段已完成 **M5.23g 真实 Agent multi-root pilot** 并关闭 M5.23。系统已建立
+exact-prefix bounded stateless search：可信层从当前 `ActionFrontierView` 产生 ActionRef，Agent 只能返回
+该 ActionID 集合的完整排列；root、预算、执行、Replay、PSS 和评价权限仍在可信代码中。
 
-同一父 Intent 已能经过 durable preference-only model call 投影到两个 target Campaign，模型成本只计一次。
-但离线 blind mock 与 deterministic baseline 的真实执行完全相同：共同 Catalog 只有一个 backend，当前
-preference 只能改变 proposal/plan identity，不能改变 Runtime 行为。因此下一步先建立第二个行为不同的
-共同 backend gate，不能据此宣称 Agent 已有测试优势。PSS 继续 target-local；`formal_ready=false`。
+在事先冻结的 etcd/raft 0/28/54-decision root corpus 上，6/6 次 DeepSeek v4 Flash proposal 通过权限
+校验，18 个 WorkItem 均经原 qualified executor 执行并 strict Replay。实验使用 28,335 model tokens，
+得到 15 个 corpus-novel PSS states；但三 root 顺序和 PSS 集合都与 canonical 完全相同。这是
+完整可复核的负结果，不宣称 Agent 优势、覆盖完备或缺陷发现。M5.24 将进入非公开、重复试验的
+外部有效性评估。`formal_ready=false`。
 完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环

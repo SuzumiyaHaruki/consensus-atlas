@@ -113,76 +113,33 @@ func ReconstructRiskFrontierView(
 	if err != nil {
 		return RiskFrontierView{}, PhaseWork{}, err
 	}
-	var work PhaseWork
-	chargeSetup(&work)
-	adapter, err := newAdapter()
-	if err != nil {
-		return RiskFrontierView{}, work, err
-	}
-	config, err := runtimeConfig.runtimeConfig()
-	if err != nil {
-		return RiskFrontierView{}, work, err
-	}
-	runtime, replay, err := controlruntime.ReplayWithProgress(ctx, adapter, config, prefix)
-	if replay.RuntimeInitialized {
-		chargeRuntimeInitialization(&work)
-	}
-	chargePrepareActions(&work, replay.PrepareActions)
-	chargeDecisions(&work, replay.Decisions)
-	if err != nil {
-		return RiskFrontierView{}, work, err
-	}
-	enabled, err := runtime.EnabledActions(ctx)
-	if err != nil {
-		return RiskFrontierView{}, work, err
-	}
-	selectable := admissibleActions(
-		faultEnvelope, faultUsageFromRecords(prefix.Records), enabled, runtime.Snapshot(),
+	frontier, work, err := ReconstructActionFrontierView(
+		ctx, id, trace, completedDecisions, runtimeConfig, faultEnvelope, newAdapter,
 	)
-	view, err := NewRiskFrontierView(
-		id, spec, progress, prefix, runtime.Snapshot(), enabled, selectable,
-	)
+	if err != nil {
+		return RiskFrontierView{}, work, err
+	}
+	view, err := newRiskFrontierView(id, spec, progress, frontier)
 	return view, work, err
 }
 
-func NewRiskFrontierView(
+func newRiskFrontierView(
 	id string,
 	spec semantic.RiskWitnessSpec,
 	progress semantic.RiskWitnessProgress,
-	prefix controlruntime.Trace,
-	snapshot controlruntime.Snapshot,
-	runtimeEnabled []control.Action,
-	admissible []control.Action,
+	frontier ActionFrontierView,
 ) (RiskFrontierView, error) {
-	if !validMethodToken(id) || progress.Validate(spec) != nil || prefix.Validate() != nil ||
-		progress.EvidencePrefixDigest != prefix.Digest || int(snapshot.Step) != len(prefix.Records) {
+	if !validMethodToken(id) || progress.Validate(spec) != nil || frontier.Validate() != nil ||
+		progress.EvidencePrefixDigest != frontier.PrefixTraceDigest || id != frontier.ID {
 		return RiskFrontierView{}, errors.New("EXPERIMENT_FRONTIER_VIEW_INPUT_INVALID")
-	}
-	runtimeDigest, err := control.CanonicalDigest(runtimeEnabled)
-	if err != nil {
-		return RiskFrontierView{}, err
-	}
-	admissibleDigest, err := control.CanonicalDigest(admissible)
-	if err != nil {
-		return RiskFrontierView{}, err
-	}
-	if !frontierSubset(runtimeEnabled, admissible) {
-		return RiskFrontierView{}, errors.New("EXPERIMENT_FRONTIER_ADMISSIBLE_NOT_SUBSET")
-	}
-	snapshotDigest, err := snapshot.Digest()
-	if err != nil {
-		return RiskFrontierView{}, err
-	}
-	actions, err := frontierActionRefs(admissible, snapshot)
-	if err != nil {
-		return RiskFrontierView{}, err
 	}
 	view := RiskFrontierView{
 		SchemaVersion: RiskFrontierViewSchemaVersion, ID: id, Progress: progress,
-		PrefixDecisions: len(prefix.Records), NextDecision: len(prefix.Records) + 1,
-		PrefixTraceDigest: prefix.Digest, SnapshotDigest: snapshotDigest,
-		RuntimeEnabledDigest: runtimeDigest, AdmissibleDigest: admissibleDigest,
-		RuntimeActionCount: len(runtimeEnabled), Actions: actions,
+		PrefixDecisions: frontier.PrefixDecisions, NextDecision: frontier.NextDecision,
+		PrefixTraceDigest: frontier.PrefixTraceDigest, SnapshotDigest: frontier.SnapshotDigest,
+		RuntimeEnabledDigest: frontier.RuntimeEnabledDigest, AdmissibleDigest: frontier.AdmissibleDigest,
+		RuntimeActionCount: frontier.RuntimeActionCount,
+		Actions:            append([]FrontierActionRef(nil), frontier.Actions...),
 	}
 	sealed, err := view.seal()
 	if err != nil {

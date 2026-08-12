@@ -1,60 +1,53 @@
 # 当前阶段
 
-日期：2026-08-11
+日期：2026-08-12
 
-阶段：M5.22d 跨目标 preference 权限校准已完成
+阶段：M5.23g 真实 Agent 多 root pilot 已完成，M5.23 已关闭
 
 ## 输入、如何处理、输出什么
 
-输入：同一个 target-blind `CrossTargetPlannerView`、preference-only contract、deterministic baseline parent
-Intent，以及一个使用 DeepSeek v4 Flash 冻结请求格式的离线 blind-model mock。
+输入：M5.23e 预声明的 0/28/54-decision root corpus、冻结 ProtocolKnowledgePack、当前 trusted
+`ActionFrontierView`、此前 root 已完成的 discovery history，以及固定 depth/item/work 上限。
 
-处理：baseline 与 mock 共享硬约束、96 decisions/98 primary/98 replay 的每目标上限。mock 只能修改
-`prefer.backend_ids` 与 `prefer.actions`；模型调用先持久化在 target-a Campaign，结果经可信 validator 接受
-后才投影为两个 target-local planned attempt。target-b 不重复模型调用或 token。两臂分别执行 etcd/raft
-与 OmniPaxos，并通过 M5.22c ledger 恢复和计费。
+处理：真实 DeepSeek planner 只返回 ActionID 数组；可信 validator 要求它是当前 frontier 的完整
+permutation。每次调用在 transport 前冻结 intent/dispatch，随后只写一次 terminal result，失败不重试。
+WorkItem 再经原 qualified executor、strict Replay 与只读 Core PSS 重投影。
 
-输出：两份 parent proposal、四份 target plan、四次真实执行、两个 composition ledger，以及一项关于当前
-Agent 权限是否影响执行的机械结论。
+输出：6 次真实模型调用账本、三 root Agent traversal、18 份资格化执行的只读 discovery、完整模型/执行
+成本，以及与 M5.23e canonical/fixed-uniform 的并列表。
 
-## 实际结果
+## etcd/raft 真实 Agent pilot
 
-| 指标 | baseline | blind mock |
-|---|---:|---:|
-| model calls/tokens | 0 / 0 | 1 / 7 |
-| execution primary/replay | 75 / 75 | 75 / 75 |
-| parent identity | `e0dce20…28cf5b9` | `301b117…ebe81e` |
-| etcd plan identity | `3de18bf…86707` | `3518f0a…fc129` |
-| OmniPaxos plan identity | `dcecf35…dee9` | `2bcab96…55a2d` |
+| 指标 | 结果 |
+|---|---:|
+| roots | 0 / 28 / 54 decisions |
+| depth / items / work ceiling per root | 2 / 6 / 1,500 |
+| model calls / accepted / retries | 6 / 6 / 0 |
+| model tokens | 28,335 |
+| qualified executions | 18 |
+| Agent corpus-novel PSS | 15 |
+| canonical / uniform 01/02/03 | 15 / 13 / 15 / 14 |
+| Agent order vs canonical | 3/3 root 相同 |
+| Agent novel set vs canonical | 相同 |
 
-尽管 proposal 和 plan identity 不同：
+这是一份完整闭环的负结果：真实 Agent 通过权限与执行链，但本次选择退化为 canonical，消耗模型成本却
+没有增加状态发现。它不证明 Agent 优势、Coverage 完备或缺陷检出。
 
-- etcd report/bundle/trace：完全相同；
-- OmniPaxos report/bundle/trace：完全相同；
-- workload、PSS、Action sequence 和 Oracle 输入：没有变化；
-- mock 只增加模型和 compiler accounting。
+## 下一阶段：M5.24 外部有效性
 
-原因是共同 Catalog 当前只有一个 executable backend。Preference 没有实际 lowering 选择权，所以当前不能
-宣称 Agent 控制了测试，更不能宣称 Agent 优于 baseline。
-
-本阶段没有读取 key、没有网络调用；它是权限与记账校准，不是真实 LLM 质量实验。
-
-## 下一阶段：M5.22e
-
-停止增加跨目标 request/ledger 结构。复用已有 bounded uniform 与 bounded action-class，实现第二个共同
-backend gate，并在两个真实目标上验证同 seed/budget 下确实产生不同 trace。如果没有行为差异，停止
-preference-only Agent 路线；如果有差异，再进行一次真实 LLM 与 deterministic baseline 的小预算实验，
-随后转入 holdout/mutant 评测。
+冻结重复试验设计和非公开 candidate/control，再扩大 root corpus，以缺陷检出、PSS/义务发现和完整实际
+成本评估 Agent/约简/基线的关系。本次负结果不得通过事后改 prompt 或反选 root 消除。
 
 ## 建议阅读顺序
 
-1. `docs/stage-m5.22d-cross-target-preference-authority.md`
-2. `benchmarks/experiments/cross-target-preference-authority-m5.22d/summary.json`
-3. `internal/controlexperiment/cross_target_intent.go`
-4. `cmd/control-experiment/cross_target_m522d_harness_test.go`
-5. `cmd/control-experiment/cross_target_m522d_test.go`
-6. `docs/stage-m5.22c-durable-cross-target-composition.md`
-7. `docs/architecture.md`
-8. `docs/ConsensusAtlas-总体规划.md`
+1. `docs/stage-m5.23g-real-agent-multi-root-pilot.md`
+2. `benchmarks/experiments/etcdraft-v2-stateless-agent-m5.23g/summary.json`
+3. `cmd/control-experiment/stateless_agent_m523g.go`
+4. `cmd/control-experiment/stateless_agent_call.go`
+5. `internal/controlexperiment/stateless_agent_order.go`
+6. `internal/controlexperiment/stateless_agent_call.go`
+7. `docs/stage-m5.23f-restricted-search-agent.md`
+8. `docs/stage-m5.23e-predeclared-root-corpus.md`
+9. `docs/ConsensusAtlas-总体规划.md`
 
 历史阶段不再复制进本文件；不可改写记录保留在 `docs/stage-*.md`。
