@@ -16,7 +16,6 @@ import (
 const (
 	etcdraftStatelessCanonicalCampaignStrategy = "campaign-etcdraft-stateless-canonical-v1"
 	etcdraftStatelessUniformCampaignStrategy   = "campaign-etcdraft-stateless-uniform-v1"
-	etcdraftStatelessAgentCampaignStrategy     = "campaign-etcdraft-stateless-agent-v1"
 
 	etcdraftStatelessCampaignMaxDepth      = 2
 	etcdraftStatelessCampaignItemsPerRoot  = 6
@@ -41,10 +40,6 @@ type etcdraftStatelessCampaignRunOptions struct {
 	FirstSeed              uint64
 	WallClockCeilingMillis int64
 	CorpusPath             string
-	AgentKeyFile           string
-	ModelTokensPerAttempt  int
-	Client                 deepSeekIntentClient
-	ReadKey                agentKeyReader
 }
 
 func runEtcdraftStatelessCampaign(
@@ -64,10 +59,7 @@ func runEtcdraftStatelessCampaign(
 	if stdout == nil || options.Attempts <= 0 || options.WallClockCeilingMillis <= 0 ||
 		options.CorpusPath == "" ||
 		(options.Strategy == etcdraftStatelessCanonicalCampaignStrategy && options.FirstSeed != 1) ||
-		(options.Strategy == etcdraftStatelessUniformCampaignStrategy && options.FirstSeed == 0) ||
-		(options.Strategy == etcdraftStatelessAgentCampaignStrategy &&
-			(options.AgentKeyFile == "" || options.ModelTokensPerAttempt <= 0 ||
-				options.Client.HTTP == nil || options.ReadKey == nil)) {
+		(options.Strategy == etcdraftStatelessUniformCampaignStrategy && options.FirstSeed == 0) {
 		return errors.New("ETCDRAFT_STATELESS_CAMPAIGN_OPTIONS_INVALID")
 	}
 	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, options.CorpusPath)
@@ -80,15 +72,13 @@ func runEtcdraftStatelessCampaign(
 	if err != nil {
 		return err
 	}
-	spec, err := newEtcdraftStatelessCampaignSpec(inputs, methods, options.ModelTokensPerAttempt)
+	spec, err := newEtcdraftStatelessCampaignSpec(inputs, methods)
 	if err != nil {
 		return err
 	}
 	campaignID := "etcdraft-stateless-canonical-campaign"
 	if options.Strategy == etcdraftStatelessUniformCampaignStrategy {
 		campaignID = "etcdraft-stateless-uniform-campaign"
-	} else if options.Strategy == etcdraftStatelessAgentCampaignStrategy {
-		campaignID = "etcdraft-stateless-agent-campaign"
 	}
 	config, err := controlexperiment.NewStatelessCampaignConfig(
 		campaignID, spec, options.WallClockCeilingMillis,
@@ -112,13 +102,7 @@ func runEtcdraftStatelessCampaign(
 		provider, providerErr := controlexperiment.NewStatelessCampaignAttemptProvider(
 			spec,
 			func(ctx context.Context, request controlexperiment.CampaignAttemptRequest) (controlexperiment.StatelessCampaignExecution, error) {
-				if options.Strategy != etcdraftStatelessAgentCampaignStrategy {
-					return executeEtcdraftStatelessCampaignAttempt(ctx, request, spec, inputs), nil
-				}
-				return executeEtcdraftStatelessAgentCampaignAttempt(
-					ctx, request, spec, inputs, directory, options.AgentKeyFile,
-					options.Client, options.ReadKey,
-				)
+				return executeEtcdraftStatelessCampaignAttempt(ctx, request, spec, inputs), nil
 			},
 		)
 		if providerErr != nil {
@@ -133,15 +117,13 @@ func runEtcdraftStatelessCampaign(
 		}
 	}
 	return finishEtcdraftStatelessCampaign(
-		&recovered, spec, directory, options.Client, summaryOut, observationOut, stdout, stageErr,
+		&recovered, spec, summaryOut, observationOut, stdout, stageErr,
 	)
 }
 
 func finishEtcdraftStatelessCampaign(
 	recovered *controlexperiment.CampaignRecovery,
 	spec controlexperiment.StatelessCampaignSpec,
-	campaignDirectory string,
-	agentClient deepSeekIntentClient,
 	summaryOut string,
 	observationOut string,
 	stdout io.Writer,
@@ -181,11 +163,6 @@ func finishEtcdraftStatelessCampaign(
 			ArtifactDigest: attempt.Record.ArtifactDigest, Request: request, Artifact: artifact,
 		})
 	}
-	if err := validateEtcdraftStatelessAgentCampaignSidecars(
-		campaignDirectory, spec, projections, agentClient,
-	); err != nil {
-		return err
-	}
 	observation, observationErr := controlexperiment.NewStatelessCampaignObservation(
 		summary, spec, projections,
 	)
@@ -212,42 +189,6 @@ func finishEtcdraftStatelessCampaign(
 	return stageErr
 }
 
-func validateEtcdraftStatelessAgentCampaignSidecars(
-	directory string,
-	spec controlexperiment.StatelessCampaignSpec,
-	projections []controlexperiment.StatelessCampaignArtifactProjection,
-	client deepSeekIntentClient,
-) error {
-	if spec.Methods[0].Strategy != controlexperiment.StatelessTraversalAgentOrder {
-		return nil
-	}
-	if client.HTTP == nil {
-		return errors.New("ETCDRAFT_STATELESS_AGENT_SIDECAR_CLIENT_INVALID")
-	}
-	for _, projection := range projections {
-		sidecar, err := controlexperiment.CampaignAttemptSidecarDirectory(
-			directory, "stateless-agent", projection.Request.Ordinal,
-		)
-		if err != nil {
-			return err
-		}
-		journal, err := recoverStatelessAgentCallJournal(sidecar, client)
-		if err != nil {
-			return err
-		}
-		audits, err := journal.Audits()
-		if err != nil || len(audits) != len(projection.Artifact.AgentCalls) {
-			return errors.New("ETCDRAFT_STATELESS_AGENT_SIDECAR_AUDIT_MISMATCH")
-		}
-		for index := range audits {
-			if audits[index] != projection.Artifact.AgentCalls[index] {
-				return errors.New("ETCDRAFT_STATELESS_AGENT_SIDECAR_AUDIT_MISMATCH")
-			}
-		}
-	}
-	return nil
-}
-
 func persistStatelessCampaignObservationNoReplace(
 	path string,
 	observation controlexperiment.StatelessCampaignObservation,
@@ -272,7 +213,7 @@ func loadEtcdraftStatelessCampaignInputs(
 		return etcdraftStatelessCampaignInputs{}, err
 	}
 	var corpus controlexperiment.StatelessRootCorpus
-	if err := readM523gJSON(corpusPath, 64<<10, &corpus, true); err != nil ||
+	if err := readStrictJSONFile(corpusPath, 64<<10, &corpus); err != nil ||
 		corpus.Validate(source) != nil {
 		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_CORPUS_INVALID")
 	}
@@ -295,14 +236,6 @@ func newEtcdraftStatelessCampaignMethods(
 		return nil, errors.New("ETCDRAFT_STATELESS_METHOD_COUNT_INVALID")
 	}
 	methods := make([]controlexperiment.StatelessTraversalMethod, 0, attempts)
-	var agentKnowledge controlexperiment.ProtocolKnowledgePack
-	if strategy == etcdraftStatelessAgentCampaignStrategy {
-		var err error
-		agentKnowledge, err = etcdraftStatelessAgentKnowledge()
-		if err != nil {
-			return nil, err
-		}
-	}
 	for ordinal := 1; ordinal <= attempts; ordinal++ {
 		var (
 			method controlexperiment.StatelessTraversalMethod
@@ -326,11 +259,6 @@ func newEtcdraftStatelessCampaignMethods(
 				fmt.Sprintf("etcdraft-stateless-uniform-%d", seed),
 				controlexperiment.StatelessTraversalSeededUniform, seedHex,
 			)
-		case etcdraftStatelessAgentCampaignStrategy:
-			method, err = controlexperiment.NewStatelessAgentTraversalMethod(
-				"etcdraft-stateless-agent",
-				"deepseek-v4-flash-frontier-order", agentKnowledge,
-			)
 		default:
 			return nil, errors.New("ETCDRAFT_STATELESS_CAMPAIGN_STRATEGY_INVALID")
 		}
@@ -345,7 +273,6 @@ func newEtcdraftStatelessCampaignMethods(
 func newEtcdraftStatelessCampaignSpec(
 	inputs etcdraftStatelessCampaignInputs,
 	methods []controlexperiment.StatelessTraversalMethod,
-	modelTokenBudget ...int,
 ) (controlexperiment.StatelessCampaignSpec, error) {
 	if len(methods) == 0 || inputs.source.Validate() != nil ||
 		inputs.corpus.Validate(inputs.source) != nil {
@@ -365,18 +292,6 @@ func newEtcdraftStatelessCampaignSpec(
 	primaryDecisionCeiling := inputs.source.Work.Primary.SchedulerDecisions +
 		searchWorkCeiling + qualifiedWorkCeiling
 	replayWorkCeiling := inputs.source.Work.Replay.WorkUnits + qualifiedWorkCeiling
-	modelCalls, modelTokens := 0, 0
-	if methods[0].Strategy == controlexperiment.StatelessTraversalAgentOrder {
-		modelCalls = statelessAgentMaxCalls
-		if len(modelTokenBudget) != 1 || modelTokenBudget[0] <= 0 {
-			return controlexperiment.StatelessCampaignSpec{},
-				errors.New("ETCDRAFT_STATELESS_AGENT_MODEL_BUDGET_INVALID")
-		}
-		modelTokens = modelTokenBudget[0]
-	} else if len(modelTokenBudget) > 0 && modelTokenBudget[0] != 0 {
-		return controlexperiment.StatelessCampaignSpec{},
-			errors.New("ETCDRAFT_STATELESS_NON_AGENT_MODEL_BUDGET_INVALID")
-	}
 	spec, err := controlexperiment.NewStatelessCampaignSpec(
 		controlexperiment.StatelessCampaignSpec{
 			ID: "etcdraft-stateless-campaign-spec", TargetID: etcdraftCampaignTargetID,
@@ -392,8 +307,8 @@ func newEtcdraftStatelessCampaignSpec(
 				MaxPrimarySchedulerDecisions: primaryDecisionCeiling,
 				MaxPrimaryWorkUnits:          primaryWorkCeiling,
 				MaxReplayWorkUnits:           replayWorkCeiling,
-				MaxModelCalls:                modelCalls,
-				MaxModelTokens:               modelTokens,
+				MaxModelCalls:                0,
+				MaxModelTokens:               0,
 			},
 		},
 	)

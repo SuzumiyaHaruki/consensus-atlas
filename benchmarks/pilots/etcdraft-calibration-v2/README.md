@@ -4,6 +4,9 @@
 它复用 v1 的官方 etcd/raft v3.6.0 control 与命令数据分歧 calibration、相同 Profile、
 Test Plan、预算和 Agreement monitor，但要求 evaluator 亲自重跑已验证 binary。
 
+架构收敛阶段已从 HEAD 删除两份重复完整 Campaign Trace；compact summary、资格、构建审计、manifest 和
+evaluator report 仍保留。完整 Trace 可从 Git commit `0106e2c` 恢复。
+
 ## 实际结果
 
 | opaque trial | evaluator 结果 | decisions | primary / replay work | Coverage |

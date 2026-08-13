@@ -11,12 +11,16 @@ const (
 	StatelessAgentCallDispatchVersion = "consensus-atlas/stateless-agent-call-dispatch/v1"
 	StatelessAgentCallResultVersion   = "consensus-atlas/stateless-agent-call-result/v1"
 	StatelessAgentCallCompleted       = "completed"
-	StatelessAgentCallFailed          = "failed"
-	StatelessAgentCallRejected        = "proposal-rejected"
-	StatelessAgentCallPrepared        = "prepared"
-	StatelessAgentCallAmbiguous       = "ambiguous"
-	StatelessAgentCallAuditVersion    = "consensus-atlas/stateless-agent-call-audit/v1"
-	statelessAgentCallMaxBytes        = 1 << 20
+	// StatelessAgentCallContentReady means that the provider response and its
+	// accounting evidence are durable, while acceptance of the response is
+	// deliberately delegated to a higher-level, typed planner contract.
+	StatelessAgentCallContentReady = "content-ready"
+	StatelessAgentCallFailed       = "failed"
+	StatelessAgentCallRejected     = "proposal-rejected"
+	StatelessAgentCallPrepared     = "prepared"
+	StatelessAgentCallAmbiguous    = "ambiguous"
+	StatelessAgentCallAuditVersion = "consensus-atlas/stateless-agent-call-audit/v1"
+	statelessAgentCallMaxBytes     = 1 << 20
 )
 
 // StatelessAgentCallAudit is the compact, secret-free evidence embedded in a
@@ -89,7 +93,8 @@ func (audit StatelessAgentCallAudit) Validate() error {
 			audit.Work != (ModelWork{Calls: 1}) {
 			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_AMBIGUOUS_INVALID")
 		}
-	case StatelessAgentCallCompleted, StatelessAgentCallRejected, StatelessAgentCallFailed:
+	case StatelessAgentCallCompleted, StatelessAgentCallContentReady,
+		StatelessAgentCallRejected, StatelessAgentCallFailed:
 		if !validSHA256(audit.DispatchDigest) || !validSHA256(audit.ResultDigest) || audit.Work.Calls > 1 {
 			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_TERMINAL_INVALID")
 		}
@@ -129,11 +134,14 @@ type StatelessAgentCallIntent struct {
 	Digest              string               `json:"digest"`
 }
 
-func NewStatelessAgentCallIntent(
+// NewPlanningAgentCallIntent is the protocol-neutral compatibility constructor
+// for the durable call journal. SearchRequestDigest retains its v1 JSON name so
+// existing frontier-call artifacts keep their exact canonical representation.
+func NewPlanningAgentCallIntent(
 	id string,
 	ordinal int,
 	rootID string,
-	request StatelessFrontierOrderRequest,
+	planningRequestDigest string,
 	transport AgentTransportFreeze,
 	prompt []byte,
 	payload []byte,
@@ -141,14 +149,14 @@ func NewStatelessAgentCallIntent(
 	intent := StatelessAgentCallIntent{
 		SchemaVersion: StatelessAgentCallIntentVersion,
 		ID:            id, Ordinal: ordinal, RootID: rootID,
-		SearchRequestDigest: request.Digest, Transport: transport,
+		SearchRequestDigest: planningRequestDigest, Transport: transport,
 		PromptBytes:   append([]byte(nil), prompt...),
 		PromptDigest:  AgentInvocationDigest(prompt),
 		RequestBytes:  append([]byte(nil), payload...),
 		RequestDigest: AgentInvocationDigest(payload),
 	}
 	sealed, err := intent.seal()
-	if err != nil || sealed.ValidateRequest(request) != nil {
+	if err != nil || sealed.ValidatePlanningRequestDigest(planningRequestDigest) != nil {
 		return StatelessAgentCallIntent{}, errors.New("EXPERIMENT_STATELESS_AGENT_CALL_INTENT_INPUT_INVALID")
 	}
 	return sealed, nil
@@ -171,9 +179,11 @@ func (intent StatelessAgentCallIntent) Validate() error {
 	return nil
 }
 
-func (intent StatelessAgentCallIntent) ValidateRequest(request StatelessFrontierOrderRequest) error {
-	if intent.Validate() != nil || request.Validate() != nil ||
-		intent.SearchRequestDigest != request.Digest {
+// ValidatePlanningRequestDigest binds a journal intent to any already sealed,
+// typed planning request without teaching the journal that request's schema.
+func (intent StatelessAgentCallIntent) ValidatePlanningRequestDigest(requestDigest string) error {
+	if intent.Validate() != nil || !validSHA256(requestDigest) ||
+		intent.SearchRequestDigest != requestDigest {
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_REQUEST_MISMATCH")
 	}
 	return nil
@@ -224,9 +234,10 @@ func (dispatch StatelessAgentCallDispatch) ValidateIntent(intent StatelessAgentC
 }
 
 // StatelessAgentCallResult is terminal. Completed means both provider output
-// and the strict frontier-permutation contract were accepted. Rejected keeps
-// the exact model content as negative evidence; failed records transport or
-// pre-transport failure without authorizing a retry.
+// and the strict frontier-permutation contract were accepted. ContentReady
+// means exact provider output is durable but a higher-level typed contract owns
+// acceptance. Rejected keeps exact negative evidence; failed records transport
+// or pre-transport failure without authorizing a retry.
 type StatelessAgentCallResult struct {
 	SchemaVersion  string                 `json:"schema_version"`
 	DispatchDigest string                 `json:"dispatch_digest"`
@@ -277,6 +288,13 @@ func (result StatelessAgentCallResult) ValidateInputs(
 			len(result.Content) == 0 || len(result.Content) > statelessAgentCallMaxBytes ||
 			AgentInvocationDigest(result.Content) != result.ContentDigest || !validSHA256(result.ProposalDigest) {
 			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_COMPLETED_INVALID")
+		}
+	case StatelessAgentCallContentReady:
+		if result.FailureCode != "" || result.Work.Calls != 1 || result.Work.TotalTokens <= 0 ||
+			result.Response == nil || !validSHA256(result.ResponseDigest) ||
+			len(result.Content) == 0 || len(result.Content) > statelessAgentCallMaxBytes ||
+			AgentInvocationDigest(result.Content) != result.ContentDigest || result.ProposalDigest != "" {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_CONTENT_READY_INVALID")
 		}
 	case StatelessAgentCallRejected:
 		if !validMethodToken(result.FailureCode) || result.Work.Calls != 1 || result.Work.TotalTokens <= 0 ||

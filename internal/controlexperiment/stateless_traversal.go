@@ -15,19 +15,16 @@ const (
 
 	StatelessTraversalCanonical     = "canonical-action-id-depth-first/v1"
 	StatelessTraversalSeededUniform = "seeded-uniform-frontier-depth-first/v1"
-	StatelessTraversalAgentOrder    = "validated-frontier-order/v1"
 )
 
 // StatelessTraversalMethod controls only the order in which already trusted
 // ActionRefs are visited. It cannot add, remove, or rewrite a frontier action.
 type StatelessTraversalMethod struct {
-	SchemaVersion   string `json:"schema_version"`
-	ID              string `json:"id"`
-	Strategy        string `json:"strategy"`
-	SeedHex         string `json:"seed_hex,omitempty"`
-	PlannerID       string `json:"planner_id,omitempty"`
-	KnowledgeDigest string `json:"knowledge_digest,omitempty"`
-	Digest          string `json:"digest"`
+	SchemaVersion string `json:"schema_version"`
+	ID            string `json:"id"`
+	Strategy      string `json:"strategy"`
+	SeedHex       string `json:"seed_hex,omitempty"`
+	Digest        string `json:"digest"`
 }
 
 // StatelessTraversalResult binds a traversal identity to the unchanged DFS
@@ -56,25 +53,6 @@ func NewStatelessTraversalMethod(
 	return method.seal()
 }
 
-func NewStatelessAgentTraversalMethod(
-	id string,
-	plannerID string,
-	knowledge ProtocolKnowledgePack,
-) (StatelessTraversalMethod, error) {
-	if knowledge.Validate() != nil {
-		return StatelessTraversalMethod{}, errors.New("EXPERIMENT_STATELESS_TRAVERSAL_KNOWLEDGE_INVALID")
-	}
-	method := StatelessTraversalMethod{
-		SchemaVersion: StatelessTraversalSchemaVersion, ID: id,
-		Strategy: StatelessTraversalAgentOrder, PlannerID: plannerID,
-		KnowledgeDigest: knowledge.Digest,
-	}
-	if err := method.validateInputs(); err != nil {
-		return StatelessTraversalMethod{}, err
-	}
-	return method.seal()
-}
-
 func (method StatelessTraversalMethod) Validate() error {
 	if err := method.validateInputs(); err != nil {
 		return err
@@ -92,18 +70,13 @@ func (method StatelessTraversalMethod) validateInputs() error {
 	}
 	switch method.Strategy {
 	case StatelessTraversalCanonical:
-		if method.SeedHex != "" || method.PlannerID != "" || method.KnowledgeDigest != "" {
+		if method.SeedHex != "" {
 			return errors.New("EXPERIMENT_STATELESS_TRAVERSAL_CANONICAL_SEED_INVALID")
 		}
 	case StatelessTraversalSeededUniform:
 		seed, err := hex.DecodeString(method.SeedHex)
-		if err != nil || len(seed) == 0 || method.PlannerID != "" || method.KnowledgeDigest != "" {
+		if err != nil || len(seed) == 0 {
 			return errors.New("EXPERIMENT_STATELESS_TRAVERSAL_SEED_INVALID")
-		}
-	case StatelessTraversalAgentOrder:
-		if method.SeedHex != "" || !validMethodToken(method.PlannerID) ||
-			!validSHA256(method.KnowledgeDigest) {
-			return errors.New("EXPERIMENT_STATELESS_TRAVERSAL_AGENT_INVALID")
 		}
 	default:
 		return errors.New("EXPERIMENT_STATELESS_TRAVERSAL_STRATEGY_INVALID")
@@ -123,12 +96,12 @@ func ExploreBoundedStatelessDFSWithMethod(
 	if err := method.Validate(); err != nil {
 		return StatelessTraversalResult{}, err
 	}
-	if method.Strategy == StatelessTraversalAgentOrder {
-		return StatelessTraversalResult{}, errors.New("EXPERIMENT_STATELESS_TRAVERSAL_AGENT_PLANNER_REQUIRED")
-	}
-	search, err := exploreBoundedStatelessDFS(ctx, spec, root, newAdapter, func(view ActionFrontierView) ([]FrontierActionRef, error) {
-		return orderStatelessTraversalActions(&method, view)
-	})
+	search, err := NewBoundedStatelessDFSAlgorithm().Explore(
+		ctx, spec, root, newAdapter,
+		StatelessGuidancePolicyFunc(func(view ActionFrontierView) ([]FrontierActionRef, error) {
+			return orderStatelessTraversalActions(&method, view)
+		}),
+	)
 	if err != nil {
 		return StatelessTraversalResult{}, err
 	}

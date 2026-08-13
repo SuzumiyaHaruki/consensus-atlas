@@ -15,6 +15,7 @@ const (
 	StatelessDFSSpecSchemaVersion     = "consensus-atlas/stateless-dfs-spec/v1"
 	StatelessDFSWorkItemSchemaVersion = "consensus-atlas/stateless-dfs-work-item/v1"
 	StatelessDFSResultSchemaVersion   = "consensus-atlas/stateless-dfs-result/v1"
+	StatelessSearchBoundedDepthFirst  = "bounded-exact-prefix-depth-first-v1"
 	StatelessDFSStopComplete          = "search-complete"
 	StatelessDFSStopItems             = "work-item-limit"
 	StatelessDFSStopWork              = "work-unit-limit"
@@ -199,19 +200,83 @@ func ExploreBoundedStatelessDFS(
 	root controlruntime.Trace,
 	newAdapter AdapterFactory,
 ) (StatelessDFSResult, error) {
-	return exploreBoundedStatelessDFS(ctx, spec, root, newAdapter, nil)
+	return NewBoundedStatelessDFSAlgorithm().Explore(
+		ctx, spec, root, newAdapter, NewCanonicalStatelessGuidancePolicy(),
+	)
 }
 
-type statelessTraversalOrderer func(ActionFrontierView) ([]FrontierActionRef, error)
+// StatelessGuidancePolicy may only reorder the complete, frozen ActionRef set
+// exposed by one exact-prefix frontier. The SearchAlgorithm validates that it
+// neither changes nor narrows that set.
+type StatelessGuidancePolicy interface {
+	Order(ActionFrontierView) ([]FrontierActionRef, error)
+}
+
+// StatelessGuidancePolicyFunc adapts a deterministic function to the bounded
+// guidance boundary. It is runtime composition and never enters a persisted
+// search identity or digest.
+type StatelessGuidancePolicyFunc func(ActionFrontierView) ([]FrontierActionRef, error)
+
+func (policy StatelessGuidancePolicyFunc) Order(
+	view ActionFrontierView,
+) ([]FrontierActionRef, error) {
+	if policy == nil {
+		return nil, errors.New("EXPERIMENT_STATELESS_GUIDANCE_REQUIRED")
+	}
+	return policy(view)
+}
+
+// StatelessSearchAlgorithm owns traversal, bounds, exact-prefix
+// reconstruction, child verification, and work accounting. Guidance owns only
+// ordering of already trusted candidates.
+type StatelessSearchAlgorithm interface {
+	ID() string
+	Explore(
+		context.Context,
+		StatelessDFSSpec,
+		controlruntime.Trace,
+		AdapterFactory,
+		StatelessGuidancePolicy,
+	) (StatelessDFSResult, error)
+}
+
+type boundedStatelessDFSAlgorithm struct{}
+
+func NewBoundedStatelessDFSAlgorithm() StatelessSearchAlgorithm {
+	return boundedStatelessDFSAlgorithm{}
+}
+
+func (boundedStatelessDFSAlgorithm) ID() string {
+	return StatelessSearchBoundedDepthFirst
+}
+
+func (boundedStatelessDFSAlgorithm) Explore(
+	ctx context.Context,
+	spec StatelessDFSSpec,
+	root controlruntime.Trace,
+	newAdapter AdapterFactory,
+	guidance StatelessGuidancePolicy,
+) (StatelessDFSResult, error) {
+	if guidance == nil {
+		return StatelessDFSResult{}, errors.New("EXPERIMENT_STATELESS_GUIDANCE_REQUIRED")
+	}
+	return exploreBoundedStatelessDFS(ctx, spec, root, newAdapter, guidance)
+}
+
+func NewCanonicalStatelessGuidancePolicy() StatelessGuidancePolicy {
+	return StatelessGuidancePolicyFunc(func(view ActionFrontierView) ([]FrontierActionRef, error) {
+		return append([]FrontierActionRef(nil), view.Actions...), nil
+	})
+}
 
 func exploreBoundedStatelessDFS(
 	ctx context.Context,
 	spec StatelessDFSSpec,
 	root controlruntime.Trace,
 	newAdapter AdapterFactory,
-	orderer statelessTraversalOrderer,
+	guidance StatelessGuidancePolicy,
 ) (StatelessDFSResult, error) {
-	if err := spec.Validate(root); err != nil || newAdapter == nil {
+	if err := spec.Validate(root); err != nil || newAdapter == nil || guidance == nil {
 		return StatelessDFSResult{}, errors.New("EXPERIMENT_STATELESS_DFS_INPUT_INVALID")
 	}
 	result := StatelessDFSResult{SchemaVersion: StatelessDFSResultSchemaVersion, Spec: spec}
@@ -239,10 +304,13 @@ func exploreBoundedStatelessDFS(
 		addDFSPhase(&result.Work.FrontierReconstruction, reconstruction)
 		result.Work.TotalWorkUnits += reconstruction.WorkUnits
 		result.StatesExpanded++
-		actions := append([]FrontierActionRef(nil), view.Actions...)
-		if orderer != nil {
-			actions, err = orderer(view)
+		guidanceView := view
+		guidanceView.Actions = append([]FrontierActionRef(nil), view.Actions...)
+		actions, err := guidance.Order(guidanceView)
+		if err != nil {
+			return err
 		}
+		actions, err = validateStatelessGuidanceOrder(view, actions)
 		if err != nil {
 			return err
 		}
@@ -312,6 +380,30 @@ func exploreBoundedStatelessDFS(
 		return StatelessDFSResult{}, err
 	}
 	return sealed, nil
+}
+
+func validateStatelessGuidanceOrder(
+	view ActionFrontierView,
+	ordered []FrontierActionRef,
+) ([]FrontierActionRef, error) {
+	if view.Validate() != nil || len(ordered) != len(view.Actions) {
+		return nil, errors.New("EXPERIMENT_STATELESS_GUIDANCE_SET_INVALID")
+	}
+	byID := make(map[control.ActionID]FrontierActionRef, len(view.Actions))
+	for _, action := range view.Actions {
+		byID[action.ActionID] = action
+	}
+	result := make([]FrontierActionRef, 0, len(ordered))
+	seen := make(map[control.ActionID]bool, len(ordered))
+	for _, action := range ordered {
+		trusted, ok := byID[action.ActionID]
+		if !ok || seen[action.ActionID] || !reflect.DeepEqual(action, trusted) {
+			return nil, errors.New("EXPERIMENT_STATELESS_GUIDANCE_SET_INVALID")
+		}
+		seen[action.ActionID] = true
+		result = append(result, trusted)
+	}
+	return result, nil
 }
 
 // CompileStatelessDFSPath converts the trusted root prefix and one root-to-item

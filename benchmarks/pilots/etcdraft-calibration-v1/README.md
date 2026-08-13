@@ -5,6 +5,9 @@
 Test Plan、Replay、Oracle 和 evaluator 完全相同。control 只添加不改变行为的源码注释；
 校准版本只在 raft 模块副本内让节点 3 对普通日志命令形成不同数据。
 
+架构收敛阶段已从 HEAD 删除两份重复完整 Campaign Trace；compact summary、资格、构建审计、manifest 和
+evaluator report 仍保留。完整 Trace 可从 Git commit `0106e2c` 恢复。
+
 ## 实际结果
 
 | opaque trial | 外部结果 | decisions | primary work | replay work | Coverage |

@@ -33,13 +33,14 @@ minimal protocol knowledge + thin Adapter
 Protocol/Hypothesis Agent -> Explorer Agent
                     ^                |
                     |                v
-             mechanical feedback + bounded episode proposal
+         PlanningFeedback + bounded episode proposal
                     ^                |
                     |                v
-          deterministic Runtime / Replay / Oracle
-                    |
-                    v
-semantic test progress + external defect effectiveness
+          deterministic Runtime / semantic projection
+                    |                \
+                    |                 +-> Replay / Oracle / evaluator
+                    v                              |
+          semantic test progress        terminal private outcome
 ```
 
 Maximize the work that Agents can propose or automate, but minimize their
@@ -65,7 +66,7 @@ decisions to an LLM:
 - defect-trial identity, budget validation, and result aggregation.
 
 Agents may propose protocol mappings, Driver code, witnesses, obligations,
-plans, schedules, and explanations. They may not:
+bounded plans, and explanations. They may not:
 
 - modify the active Profile denominator, weights, Oracle, or equivalence rules;
 - report their own observation as trusted evidence;
@@ -73,6 +74,24 @@ plans, schedules, and explanations. They may not:
 - weaken replay, conformance, identity, or evidence requirements;
 - classify a protocol result solely through natural-language agreement among
   Agents.
+
+For Agentic episodes, keep hypothesis, execution, and verdict authority
+separate:
+
+- `TestHypothesis` may name semantic targets, prerequisites, a fault-boundary
+  reference, and rationale. It must not contain an executable Oracle, expected
+  bug/verdict, trusted assertion, concrete Action sequence, or future absolute
+  decision number.
+- A1 `EpisodePlan` binds an existing risk and orders the current planning
+  candidates. The trusted search input owns the algorithm, root, fault
+  envelope, total budget, and stop rule. A2 may introduce an `EpisodeSpec` only
+  when a real consumer requires a separate identity.
+- `PlanningFeedback` may expose only pre-registered mechanical rejection,
+  prefix-bound progress, cost, and non-verdict public activation fields.
+  Candidate/control identities, private monitor evidence, Oracle verdicts,
+  known triggers, and root-cause mappings are evaluator-only terminal data.
+- Do not add a generic Blackboard, scoring DSL, operator catalog, budget DSL,
+  stop DSL, or second Ledger for the A1 vertical slice.
 
 ## Evaluation rules
 
@@ -138,6 +157,14 @@ different datasets.
 - Formal evaluation identities, exact source transformations, known triggers,
   and root-cause mappings must not be included in Agent prompts or public
   planning inputs before the experiment is frozen and completed.
+- Pre-register one source-exposure mode for the full method matrix. The primary
+  hidden evaluation uses `opaque-source`: every arm sees the same official/base
+  source, never the trial variant. A separate `code-aware-symmetric` study may
+  expose the current SUT source to every arm, but not the paired source, diff,
+  transformation metadata, label, stable variant identity, or cross-trial
+  private memory. Never mix modes across methods or candidate/control.
+- Formal online feedback must be variant-blind and field-allowlisted. Private
+  pass/fail labels are terminal evaluator output, not planner feedback.
 - Development, calibration, and holdout results must be reported separately.
 - A newly found upstream issue is a bonus case study, not a required project
   outcome.

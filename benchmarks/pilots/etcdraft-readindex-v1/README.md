@@ -5,6 +5,9 @@ candidate 是本地已有的官方 `go.etcd.io/raft/v3 v3.6.0` 未修改 module 
 `raft.go` 和 `read_only.go` 应用公开 `63903dd` 的五个精确源码替换。两者使用同一 Driver、
 Profile、Test Plan、trusted monitor 与完整执行预算。
 
+架构收敛阶段已从 HEAD 删除四份重复完整 Campaign Trace；compact summary、资格、构建审计、manifest 和
+evaluator report 仍保留。完整 Trace 可从 Git commit `0106e2c` 恢复。
+
 ## 结果
 
 | opaque trial | status | finding | primary / replay work | Coverage |
@@ -32,5 +35,4 @@ queue，因此为得到确认 heartbeat 使用合法的 ReadIndex retry；该差
 2. `qualification-report.json` 与 `capability-snapshot.json`；
 3. `../../../../plans/defectbench/etcdraft-63903dd-v1.json`；
 4. `build-input/`、最终 `build-audit/*-v2.json` / `*-v3.json`；
-5. `campaign/` 的同名最终报告；
-6. `evaluator/blind-manifest.json`、`submission.json`、`report.json`。
+5. `evaluator/blind-manifest.json`、`submission.json`、`report.json`。

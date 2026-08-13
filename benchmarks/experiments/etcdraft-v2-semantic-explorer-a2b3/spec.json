@@ -1,0 +1,37 @@
+{
+  "schema_version": "consensus-atlas/etcdraft-semantic-calibration-spec/v1",
+  "id": "etcdraft-public-semantic-explorer-a2b3",
+  "target_id": "etcdraft-v2",
+  "source_exposure": "public-calibration-official-source",
+  "classification": "public-calibration-not-agent-effectiveness-holdout-or-correctness",
+  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
+  "corpus_digest": "e8c7393804463bb52c3313c0885ffcacb8ed19da335b05e8067d971b89ca9ed8",
+  "root_id": "invoked",
+  "root_prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
+  "root_decisions": 28,
+  "root_frontier_digest": "1d8e7835afdda047038c884c2af84deb65ed20683b66f4c5b8c2661100909e14",
+  "root_frontier_actions": 15,
+  "risk_spec_digest": "9b7850f5cf1156165e4fb6241722e79f156686c1df6cde315f9e14b58ae174f3",
+  "knowledge_digest": "407a9eff26c21708e26ea7d63422e8c8bcc695ed1f96634875c2e51493858c08",
+  "hypothesis_digest": "966a89ce030870b3f4d14abca8bd84b19e4e3160f55dfa439c394fb803e73ceb",
+  "search_spec_digest": "25d86daf7c100cd8c8a622c990f4fdfbad422621617ba3cb1a281eb89a415784",
+  "baseline_guidance_id": "risk-progress-lexicographic-v1",
+  "explorer_guidance_id": "etcdraft-public-semantic-explorer-v1",
+  "projector_id": "official-etcdraft-v2-leader-change-prefix-v1",
+  "prompt_version": "semantic-explorer-permutation-v1",
+  "explorer_budget": {
+    "max_calls": 2,
+    "max_tokens": 16000
+  },
+  "transport": {
+    "provider": "deepseek",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "thinking": "disabled",
+    "temperature": 0,
+    "max_output_tokens": 1200,
+    "max_calls_per_arm": 1,
+    "max_retries": 0
+  },
+  "digest": "3ad09f8114184beae346aef2bc126ad8161744724536249b85db73ad496c28b7"
+}

@@ -61,7 +61,7 @@ func TestEtcdraftRiskWitnessProjectorRequiresOrderedSemanticEvidence(t *testing.
 	}
 	result, err := semantic.NewRiskWitnessResult(
 		"fixture-reached", spec, strings.Repeat("a", 64), strings.Repeat("b", 64),
-		etcdraftLeaderChangeRiskWitnessProjectorID, milestones,
+		etcdraftSemanticPrefixProjectorID, milestones,
 	)
 	if err != nil || result.Status != semantic.RiskWitnessReached {
 		t.Fatalf("ordered target evidence did not reach witness: %#v err=%v", result, err)

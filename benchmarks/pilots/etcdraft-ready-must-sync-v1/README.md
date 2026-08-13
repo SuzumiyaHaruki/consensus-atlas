@@ -5,6 +5,9 @@ candidate 对当前本地 `go.etcd.io/raft/v3 v3.6.0` module tree 做一处精�
 将当前 `Ready.MustSync` 判断恢复为基于 `rd.HardState` 的旧语义；control 是未修改的官方
 v3.6.0 module tree。两者使用相同 Driver、Profile、Test Plan、trusted monitor 和 evaluator。
 
+架构收敛阶段已从 HEAD 删除两份重复完整 Campaign Trace 和旧逐字节复验脚本；compact summary、资格、构建
+审计、manifest 和 evaluator report 仍保留。完整 Trace 与脚本可从 Git commit `0106e2c` 恢复。
+
 ## 结果
 
 | opaque trial | status | finding | primary / replay work | Coverage |
@@ -29,20 +32,6 @@ digest 绑定该模式时 Driver 才暴露 `conditional-ready-sync` 和 `ready-m
 
 本实验不是对 `0675f3d` 的完整历史 checkout 复刻。它证明的是：在当前官方 v3.6 module 上进行
 一处精确、可审计的语义反向转换后，现有评测链能区分旧 Ready.MustSync 语义和当前 control。
-
-## Fresh-clone 复验
-
-冻结工件绑定 `go1.25.8/linux/amd64`，并要求本地 module cache 已有
-`go.etcd.io/raft/v3@v3.6.0`。在干净 clone 中先完成通常的 Go 依赖准备，然后运行：
-
-```bash
-go mod download
-./benchmarks/pilots/etcdraft-ready-must-sync-v1/reproduce-fresh-clone.sh
-```
-
-脚本不覆盖已存在的 pilot binary；它在 `artifacts/` 下重建 candidate/control，使用临时目录
-重算 qualification、两份 Campaign 和 evaluator，并逐字节比较所有冻结 JSON 工件。通过时只会
-留下忽略的 binary 和一个打印出的临时目录。
 
 ## 阅读顺序
 

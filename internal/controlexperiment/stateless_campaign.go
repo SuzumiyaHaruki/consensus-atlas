@@ -90,15 +90,8 @@ func (budget StatelessCampaignAttemptBudget) validate(strategy string) error {
 	if budget.MaxPrimarySchedulerDecisions <= 0 || budget.MaxPrimaryWorkUnits <= 0 ||
 		budget.MaxPrimarySchedulerDecisions > budget.MaxPrimaryWorkUnits ||
 		budget.MaxReplayWorkUnits <= 0 || budget.MaxModelCalls < 0 || budget.MaxModelTokens < 0 ||
-		(budget.MaxModelCalls == 0) != (budget.MaxModelTokens == 0) {
+		budget.MaxModelCalls != 0 || budget.MaxModelTokens != 0 {
 		return errors.New("EXPERIMENT_STATELESS_CAMPAIGN_BUDGET_INVALID")
-	}
-	if strategy == StatelessTraversalAgentOrder {
-		if budget.MaxModelCalls == 0 {
-			return errors.New("EXPERIMENT_STATELESS_CAMPAIGN_AGENT_BUDGET_INVALID")
-		}
-	} else if budget.MaxModelCalls != 0 {
-		return errors.New("EXPERIMENT_STATELESS_CAMPAIGN_NO_MODEL_BUDGET_INVALID")
 	}
 	return nil
 }
@@ -278,11 +271,6 @@ func (artifact StatelessCampaignAttemptArtifact) ValidateInputs(request Campaign
 				return errors.New("EXPERIMENT_STATELESS_CAMPAIGN_ROOT_WORK_INVALID")
 			}
 		}
-		if artifact.Method.Strategy == StatelessTraversalAgentOrder &&
-			(artifact.ModelWork.Calls == 0 || artifact.ModelWork.TotalTokens == 0 ||
-				!allStatelessAgentCallsCompleted(artifact.AgentCalls)) {
-			return errors.New("EXPERIMENT_STATELESS_CAMPAIGN_AGENT_WORK_MISSING")
-		}
 	} else if artifact.Outcome == CampaignAttemptFailed {
 		if artifact.Discovery != nil || artifact.Failure == nil ||
 			artifact.Failure.Phase == "" || artifact.Failure.Code == "" ||
@@ -379,17 +367,7 @@ func validStatelessDFSWork(work StatelessDFSWork, ceiling int) bool {
 }
 
 func validStatelessCampaignModelWork(work ModelWork, spec StatelessCampaignSpec) bool {
-	if work.Calls < 0 || work.InputTokens < 0 || work.OutputTokens < 0 ||
-		work.TotalTokens != work.InputTokens+work.OutputTokens ||
-		work.Calls > spec.Budget.MaxModelCalls || work.TotalTokens > spec.Budget.MaxModelTokens {
-		return false
-	}
-	if spec.Methods[0].Strategy != StatelessTraversalAgentOrder {
-		return work == (ModelWork{})
-	}
-	// A pre-transport failure has zero calls. A dispatched call can fail before
-	// the provider returns usage, so calls > 0 does not imply token counts > 0.
-	return (work.Calls == 0 && work.TotalTokens == 0) || work.Calls > 0
+	return spec.Budget.MaxModelCalls == 0 && spec.Budget.MaxModelTokens == 0 && work == (ModelWork{})
 }
 
 func validStatelessCampaignAgentCalls(
@@ -397,32 +375,7 @@ func validStatelessCampaignAgentCalls(
 	model ModelWork,
 	method StatelessTraversalMethod,
 ) bool {
-	if method.Strategy != StatelessTraversalAgentOrder {
-		return len(calls) == 0 && model == (ModelWork{})
-	}
-	var total ModelWork
-	for index, call := range calls {
-		if call.Validate() != nil || call.Ordinal != index+1 {
-			return false
-		}
-		total.Calls += call.Work.Calls
-		total.InputTokens += call.Work.InputTokens
-		total.OutputTokens += call.Work.OutputTokens
-		total.TotalTokens += call.Work.TotalTokens
-	}
-	return total == model
-}
-
-func allStatelessAgentCallsCompleted(calls []StatelessAgentCallAudit) bool {
-	if len(calls) == 0 {
-		return false
-	}
-	for _, call := range calls {
-		if call.Status != StatelessAgentCallCompleted {
-			return false
-		}
-	}
-	return true
+	return method.Validate() == nil && len(calls) == 0 && model == (ModelWork{})
 }
 
 func cloneStatelessAgentCallAudits(calls []StatelessAgentCallAudit) []StatelessAgentCallAudit {

@@ -1,12 +1,7 @@
-# etcd/raft v2 root corpus calibration（M5.23e）
+# etcd/raft stateless root corpus
 
-该目录冻结一个在方法执行前声明的三 root corpus：同一 strict-Replay source 的 0/28/54 decision
-prefix，分别锚定 source 初态、workload invoked milestone 和 old coordinator restarted milestone。
-`phase_id` 只是说明，不参与 Action 选择或评价。
+`root-corpus.json` 是当前 deterministic baseline 与 Semantic Explorer 共用的公开输入。它包含同一可信
+source execution 的 0/28/54 decision prefix，分别表示初态、workload 已进入执行、旧 coordinator 已重启。
 
-四种方法使用相同 depth=2、items=6、每 root work ceiling=1,500。实际边际可信成本为
-2,395–2,397 work units，而不是完全相同；原因是不同路径长度使 execution/replay 相差 1 work unit。
-结果如实记账，不做填充。corpus baseline 为 38 个 PSS states，各方法扣除整个 baseline 后得到
-15/13/15/14 个 corpus-novel states，联合为 39。
-
-这是公开校准，不是 Coverage、缺陷检出、显著性或方法排名。
+文件在加载时由现有类型校验，并与 fresh source execution 对照；这里不再提交方法运行摘要，也不把历史
+digest 当成测试质量证明。该 corpus 只是可复现实验起点，不是 Coverage、缺陷检出或 Agent 优势结论。

@@ -41,7 +41,7 @@ func TestM523R3EtcdraftStatelessMethodSequencesArePredeclared(t *testing.T) {
 func TestM523R3EtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 360*time.Second)
 	defer cancel()
-	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, "../../"+m523gCorpusPath)
+	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, etcdraftTestRootCorpusPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestM523R3EtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *te
 func TestM523R3EtcdraftStatelessCLIResumesAndStrictlyReadsArtifacts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 360*time.Second)
 	defer cancel()
-	corpusPath := "../../" + m523gCorpusPath
+	corpusPath := etcdraftTestRootCorpusPath
 	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, corpusPath)
 	if err != nil {
 		t.Fatal(err)

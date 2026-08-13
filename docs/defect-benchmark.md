@@ -139,13 +139,11 @@ command-data calibration 根因；另外四组使用已退役格式，其中包�
 Ready.MustSync 语义重构。全部工件都可用于复验 monitor、构建和 evaluator 链，不能改标成非公开
 holdout，也不能评价 Random、DFS、专家或 Agent。
 
-`benchmarks/experiments/formal-holdout-readiness-m5.21k/report.json` 对七份 manifest 的文件 SHA、当前
-manifest digest、公开 root-cause/control 计数和 HashiCorp Raft qualification 做机械绑定。当前仓库虽有
-7 个公开 pair、3 个公开 root-cause label，但正式 eligible root cause/control 都是 0；HashiCorp Raft
-required strict 能力为 3/8，故 readiness 为 `false`。对应 Go 回归还验证 formal classification 会被
-当前合约拒绝、多 pair 会被 CLI 拒绝、退役 blind 命令没有 Go 源码。
+当前不再维护一个逐字冻结的 holdout-readiness 报告：Git、结构化输入类型、qualification 和 evaluator
+已经能表达可用证据，而旧报告只会把历史文件布局变成测试前置条件。仓库中的 pair 都是公开校准材料，
+不能改标成非公开 holdout，也不能评价 Random、DFS、专家或 Agent。
 
 该结果只覆盖当前仓库，不断言仓库外不存在私有样本；root-cause label 的因果独立性仍需在冻结前
-由 curator 审查。当前工程链已到真实输入边界：下一步应在仓库外准备至少 3 组人工复核的
-private matching pair 和真实 BuildAudit/binary，再运行 formal CLI。如果没有这些数据，必须报告
-benchmark-input gap，不应继续增加 evaluator schema 或用 synthetic pair 填充。
+由 curator 审查。真正进行隐藏评测时，应在仓库外准备人工复核的 private matching pair 和真实
+BuildAudit/binary，再运行 formal CLI；没有这些输入就明确报告 benchmark-input gap，不用 synthetic pair
+填数，也不为此继续增加 schema。

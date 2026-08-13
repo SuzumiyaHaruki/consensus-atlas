@@ -1,452 +1,119 @@
 # ConsensusAtlas
 
-ConsensusAtlas 是由协议感知 Agent 设计和修正测试、由统一控制层确定执行、由独立 Oracle 判定结果的
-共识测试研究系统。当前已验证范围是 leader-based CFT，
-包括 Raft 和 Sequence Paxos；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称已具备 BFT
-或 leaderless 协议适用性。主线已经收敛到一套协议无关的
-Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
-Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
+ConsensusAtlas 是一个面向分布式共识实现的 Agent 测试研究系统：Agent 决定“优先测试什么”，统一控制层
+决定“当前实际能执行什么”，Replay、语义投影和 Oracle 决定“执行中真实发生了什么”。
 
-当前开发线是 **A0 Agentic Consensus Testing 研究主线重置**，分支为
-`feature/agentic-consensus-testing`。它继承 M5.23R4b 的 exact-prefix search、qualified execution、
-Replay、PSS、Campaign 和 evaluator，但不再把“Agent 只排列当前 frontier”视为最终方法。
+当前分支：`feature/agentic-consensus-testing`。
 
-在事先冻结的 etcd/raft 0/28/54-decision root corpus 上，6/6 次 DeepSeek v4 Flash proposal 通过权限
-校验，18 个 WorkItem 均经原 qualified executor 执行并 strict Replay。实验使用 28,335 model tokens，
-得到 15 个 corpus-novel PSS states；但三 root 顺序和 PSS 集合都与 canonical 完全相同。这是
-完整可复核的负结果，不宣称 Agent 优势、覆盖完备或缺陷发现。该 restricted Agent 现在固定为
-Agent-v1 权限消融。新主线先实现公开的“协议假设—语义 episode—受控执行—机械反馈—计划修正—Replay”
-闭环，再冻结 Agent-v2 方法并进行非公开重复评测。`formal_ready=false`。
-
-M5.23R1–R4b 不改该结果，也没有再次调用模型。R1 将凭证读取、exact-byte request 和
-provider transport 提取为当前 Agent/Campaign 共享原语，退休 M5.18 one-shot、feedback/
-follow-up 和 B4 的 CLI 与生产实现；R2 冻结 `SearchMethod -> Campaign AttemptProvider`
-契约并退休无现行消费者的 Cross-target 生产闭包。R3 又把 canonical/seeded-uniform 接入同一真实
-etcd/raft target-local Campaign runner：显式冻结 corpus/method sequence，逐 attempt 执行 18 条
-qualified primary + strict Replay 路径，并输出可恢复 artifact、Campaign summary 和 denominator-free
-Stateless observation。R4a 退休已被替代的旧无模型 Campaign 入口，并把 intent-before-key、
-dispatch 后禁止歧义重试、terminal result 重放迁入 Stateless Agent call journal。R4b 将 method、
-6 次 call audit、18 次 qualified execution、discovery 和 model work 封入同一 durable attempt，并在
-恢复读 observation 前交叉核验 sidecar。旧 macro Planner/Intent/planned-attempt/model-call 及 M5.23g
-在线 pilot 入口已删除；Campaign durable core、formal evaluator、冻结 pilot 验证和当前 restricted Agent 保留。
-这些能力在新分支冻结为可信平台，不再继续扩建调用恢复和工件协议。Agent-v2 将负责提出测试假设、
-选择全局语义目标、调用冻结搜索工具并依据 PSS/Risk/义务反馈修正；Runtime 仍独占 enabled 与执行，
-Oracle/evaluator 仍独占正式结论。完整进度见 [当前阶段](docs/CURRENT_STAGE.md) 和
-[A0 路线](docs/stage-a0-agentic-research-reset.md)。
-
-## 已实现的可信执行闭环
+## 当前系统流程
 
 ```text
-qualified Adapter + opaque workload + bounded policy
+协议实现 + 薄 Adapter + 协议知识 + workload/fault/预算
                          |
                          v
-        one deterministic Control Runtime executor
-                         |
-          +--------------+----------------+
-          |              |                |
-      full Trace     Core PSS samples  client results
-          |              |                |
-          +--------------+----------------+
-                         v
-            ExecutionBundle v1/v2/v3
-          + optional OperationHistory v1
-                         |
-        target-owned DecisionProjector
+              Adapter qualification
                          |
                          v
-     TraceIntegrity + protocol-neutral Agreement
+       Protocol knowledge + TestHypothesis
                          |
                          v
- evaluator-owned fresh control/candidate ledger
+        Explorer 查看可信语义候选并排序
+                         |
+                         v
+     exact-prefix search + Control Runtime 执行
+                         |
+              Trace / Evidence / PSS / Risk
+                         |
+            +------------+-------------+
+            |                          |
+      机械反馈给 Explorer          fresh Replay
+                                       |
+                                       v
+                              Oracle / evaluator
 ```
 
-当前搜索入口位于该闭环之上：
+输入包括：
+
+- 被测共识实现及一个薄 Adapter；
+- 协议知识、风险目标和语义映射；
+- workload、允许的故障范围、搜索与模型预算；
+- 可选的模型访问，仅由显式 Agent 命令使用。
+
+处理包括：
+
+- Runtime 统一管理消息、自然时间、节点生命周期、持久化副作用和外部输入；
+- Explorer 只能排列可信内核给出的候选，不能创造 enabled Action 或修改 Oracle；
+- 执行产生 Trace/Evidence，可信代码计算 PSS、Risk progress 和成本；
+- fresh Replay 检查可复现性，Oracle/evaluator 独立给出正式结果。
+
+输出分三类：
+
+- finding：可重放的性质违反或候选检出结果；
+- testing evidence：PSS/义务/Risk 的发现与覆盖统计；
+- cost：决策数、执行工作量、模型调用与 token。
+
+Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替代正式 verdict。
+
+## 当前已实现到哪里
+
+- etcd/raft 可走完整统一 Runtime、qualified execution、fresh Replay、PSS 和 Agreement Oracle；
+- OmniPaxos 证明同一 Action/Runtime 不只适用于 Raft；
+- HashiCorp Raft 保留部分能力资格，明确表示统一 Action 不等于统一控制强度；
+- deterministic semantic best-first 和单 Explorer 已在真实 etcd/raft prefix 上连通；
+- 一次公开 DeepSeek 校准中，Explorer 改变了首个扩展，但没有达到完整 RiskWitness，因此不构成 Agent
+  优势证据；
+- 当前尚未把 Semantic Explorer 选中的路径重新送入完整 qualified bundle/PSS/Oracle 闭环，也尚未形成
+  配置时间内自动循环的最终用户流程。
+
+本轮 A2R 收敛删除了已经被替代的 trace/corpus/PSS 批处理搜索、Agent-v1 frontier campaign、未资格化的
+raft-rs 路径以及仓库中的重复大型轨迹。历史内容仍可从 Git 提交 `0106e2c` 恢复。
+
+## 核心目录
 
 ```text
-predeclared root corpus + SearchMethod sequence
-                         |
-                         v
-       StatelessCampaignSpec (same attempt contract)
-          +--------------+----------------+
-          |              |                |
-      canonical     seeded uniform   restricted Agent
-          +--------------+----------------+
-                         |
-                         v
-        exact-prefix search + qualified execution
-                         |
-                         v
-        read-only discovery + complete WorkLedger
-                         |
-                         v
-               durable Campaign attempt
+internal/control/              Action、Item、Adapter 基础类型
+internal/controlruntime/       唯一确定性执行与 Replay substrate
+internal/conformance/          Adapter 能力机械检查
+internal/controlexperiment/    qualified execution、搜索、episode、Campaign
+internal/psscore/              协议状态语义投影
+internal/semantic/             RiskWitness 等协议族语义
+internal/oracle/               独立运行结果检查
+internal/defectbench/          candidate/control 评价
+adapters/                      目标专用薄适配
+cmd/control-experiment/        etcd/raft 组合与 Agent 实验入口
+benchmarks/                    当前输入和紧凑结果；大型运行产物放 ignored artifacts/
+docs/                          当前设计与阶段总结
 ```
 
-上图是已经实现并保留的 Agent-v1/基线入口，不是新分支的最终 Agent 架构。A1–A4 目标闭环是：
+## 常用检查
 
-```text
-Protocol/Hypothesis Agent
-             |
-             | TestHypothesis
-             v
-Explorer Agent <---------------------------+
-             |                              |
-             | EpisodePlan                  | EpisodeReport
-             v                              |
-trusted Search Kernel + Control Runtime ----+
-             |
-             v
-Trace + PSS/Risk/obligation + Oracle
-             |
-             v
-fresh Replay + external evaluator
-```
-
-Agent 可以提出错误或不可达的假设，并依据机械反馈修正；但不能伪造 enabled Action、语义证据或 verdict。
-
-通用 Oracle 不解析 Raft 字段。etcd/raft 的可信 composition 提供
-`official-etcdraft-v2/applied-prefix-digest-v1` 投影，将 opaque Evidence 映射为
-`participant + decision position + exact value digest`；Oracle 只比较这个最小协议无关输入。
-
-## 已实现边界
-
-- 协议无关 Action/ProducedItem/Adapter 契约与唯一 Control Runtime；
-- Runtime-owned 消息保留、投递、丢弃、复制和分区；
-- 只执行最早已到期 temporal item 的自然时间模型；
-- incarnation、power-loss crash/restart、durable effect 和 application effect；
-- 分域确定性 entropy、完整随机 tape 与严格 replay；
-- 外部 Conformance Suite、版本化 Qualification 和 digest-bound Experiment admission；
-- 固定 Core PSS IR、可信在线采样和跨 run 状态发现；
-- opaque workload、Semantic Mapping guard、FaultEnvelope 和完整成本账本；
-- 可恢复多-attempt Campaign、target-owned durable sidecar、内容寻址 artifact、小型 Summary/reader
-  和 etcd/raft Stateless runner；
-- qualified fixed workload、action-class random 与 trace mutation policy；策略不能提交 enabled set；
-- 自包含 ExecutionBundle：完整 trace、preparation state transition、Evidence、最终 Snapshot、Core PSS、
-  client history、decision history、Qualification 和 work ledger；
-- TraceIntegrity 与 Agreement 两个 v2 trusted monitor；
-- source-bound 构建变体、build audit 和公开 calibration pair evaluator；
-- private/opaque formal contract、direct no-echo exposure audit 和 composition-aware multi-pair fresh evaluator；
-- Experiment v2 的共同 admissible frontier、三类显式终止、pending workload 和选择审计；
-- target-owned WorkloadRouter，以及 fresh replay 中对每次 Invoke 唯一目标的重算；
-- 有序 MutationSourceCorpus、occurrence-aware trace mutation v2、可信重投影 PSSFeedback；
-- 自包含小型 MethodLedger，强制记录 source/proposal/execution/失败和 primary/replay 成本；
-- 共同 method ceiling、method-level PSS measurement 与可重算 MethodObservation；
-- 按规范化 ActionID 在 admissible frontier 上采样的 qualified uniform random；
-- 只在 batch 边界消费可信 feedback 的 PSS-guided mutation choice；
-- digest-bound MethodSpec、非 SUT Config projection 和单执行方法预算；
-- ExecutionBundle v3 的冻结 WorkloadPlan 与可机械重建 invoke/return OperationHistory；
-- build-audit/binary-bound evaluator-owned fresh execution；
-- protocol knowledge、strict frontier-permutation parser 和 trusted ActionID validator；
-- freeze-before-key、dispatch-before-transport、0-retry 的 durable Agent call journal；
-- 有界 DeepSeek JSON transport、安全 key-file 读取和 digest-bound secret-free call audit；
-- Runtime-supported / Experiment-producible / backend-selectable 三层 Action surface；
-- 历史 Cross-target portability/authority 校准及冻结工件；该组合已从 HEAD 生产路径退休；
-- pre-call exact-byte request freeze、单份 proposal/baseline 校验与 1-call/0-retry 消融边界；
-- 按 ActionKind 再按成员均匀采样的确定性随机基线，以及 digest-bound FaultEnvelope selectable view；
-- 精确 source prefix、相邻 Action swap、显式 priority suffix 与不可执行变体记账的 trace mutation；
-- 官方 `go.etcd.io/raft/v3 v3.6.0` 的完整 strict 路径；
-- HashiCorp Raft v1.7.3 的部分资格，用于证明统一 Action 不等于统一控制强度。
-- raft-rs 0.7.0 的跨语言 Binding，已验证自然时间、Ready、消息及 opaque input→commit→result 严格重放；
-- Runtime→Adapter command wire contract 的多消费者共享实现，避免各 Adapter 复制 envelope/参数校验。
-
-## M5.16 公开校准结果
-
-两侧使用相同 workload、96 scheduler decisions 和 98 primary work units：
-
-| trial | build identity | TraceIntegrity | Agreement | 结果 |
-|---|---|---|---|---|
-| correct control | `go.etcd.io/raft/v3@v3.6.0` | pass | pass | `control-pass` |
-| source-bound calibration | `sut-c9811ab0ed8e2f39` | pass | step 55 conflict | `killed` |
-
-评测账本为 1 control、0 false positive、1 calibration candidate、1 killed root cause、0 invalid。
-这是公开链路校准，不是非公开 holdout，也不能证明 Agent 优于 Random、DFS 或专家策略。Coverage/PSS
-没有参与 verdict。
-
-## M5.17a 强基线结果
-
-action-class random 使用相同 single-write workload、FaultEnvelope、96 decisions 和 98 primary/replay
-work。冻结 seed 1 的 control 发现 83 个 Core PSS 状态并通过重放与两个 Oracle；同一公开 candidate 却
-`survived`。相比之下，M5.16 fixed policy 只发现 56 个状态但检出了它。
-
-这个负结果被原样保存，没有筛选 seed。它说明 PSS discovery 只能作为 coarse feedback，不能替代根因
-检出与正确 control 误报。单一公开 candidate 也不能支持 fixed/random 的一般优劣结论。
-
-## M5.17b Trace Mutation 结果
-
-公共 operator 按 source Trace 顺序选择第一对相邻 message deliveries（decisions 46/47），精确重放前缀、
-交换 pair，再使用 digest-bound priority suffix。official control 完成 96 decisions、workload 和 strict
-replay；mutation 与 source 都发现 56 个 Core PSS states、prefix area 3324，但 trace digest 不同。
-
-成功 mutation 自身为 98 primary / 98 replay；加上生成 source Trace 的 98/98，方法真实成本是 196/196。
-另一个依赖性失败校准以稳定 reason code 停在 decision 34，记录 35 primary work、0 replay，不静默
-fallback，也不算作 method trial。本阶段没有 candidate 或 defect verdict。
-
-## M5.17c0 Experiment 语义结果
-
-etcd/raft 使用同一 qualified single-write 输入时，96-decision 上限的 v2 运行在 42 个决策后
-完成 workload 并 `configured-stop`，发现 31 个 Core PSS states，primary/replay 各 44 work。
-1-decision 运行则合法保留 0 offered、1 pending 和 `no-candidate`，而不是变成执行错误。
-两者都通过 fresh replay 和 bundle 校验；这只验证实验语义，不是新的 defect verdict。
-
-## M5.17c1 Corpus 可信前提结果
-
-真实 etcd/raft corpus-mutation 见证使用一个 96-decision source，按公开 first-adjacent-delivery 规则
-生成 occurrence-aware proposal，并在同一 qualified executor 中完成 96 decisions 和 strict replay。
-mutation 产生 97 个 Core PSS samples、56 个状态；source 与 execution 各为 98 primary / 98 replay，
-MethodLedger 机械合计为 **196 / 196**。可信 feedback 从 Trace、最终 Snapshot 和 Evidence 重新投影，
-不接受调用方提供 state key。
-
-本阶段只完成搜索前的可审计数据面：公开 corpus 仍只有一个 fixed-workload source，没有 PSS-guided
-选择、uniform-random 对照、candidate verdict 或 holdout 结论。
-
-## M5.17c2 Batch PSS Guidance 结果
-
-uniform 方法使用 seeds 1/2/3，在 294 primary / 294 replay ceiling 内完成三条
-96-decision strict-replay bundle，分别发现 82/84/90 states，method-level union 为 238。
-
-PSS-guided 方法共享前两条 source，根据 exclusive states 和 batch-global visits 选中
-source 2、decision 65 的相邻消息交换。它在 decision 66 产生
-`EXPERIMENT_TRACE_MUTATION_ACTION_NOT_ENABLED`，最终记录 263 primary / 196 replay 和 157 个
-source states，没有 mutation bundle。这说明 PSS 稀有度不包含 Action 因果/可交换性。
-
-不能用 `238 > 157` 宣称 uniform 更优：两者实际完成度和消耗不同，且都没有
-candidate/control verdict。
-
-## M5.18a 可信方法评价校准
-
-公开 fixed MethodSpec 同时用于官方未修改 control 和 command-data calibration candidate。evaluator
-不接受 submitted bundle，而是验证 build audit/binary 后从已校验 bytes 创建临时可执行副本并亲自运行。
-两边均为 96 decisions、98/98 primary/replay，Config projection 和 OperationHistory digest 相同；
-control `control-pass`，candidate 在 applied-prefix position 5/step 55 被 Agreement 检出。
-
-OperationHistory 显示两边都在 step 28 invoke、step 42 返回 `committed`，因此 client history 本身没有
-制造 kill。最终账本为 1 control、0 false positive、1 killed public calibration root cause、0 invalid。
-这仍不是 private holdout，也没有比较任何 Agent 或搜索方法。
-
-## M5.18b0 Guarded TestIntent 见证
-
-首个人工 one-shot intent 引用 `leader-change-with-inflight-proposal` risk，不包含 ActionID 或未来
-decision number。它偏好一个不存在的 `dpor` backend；compiler 对 2 个 hard-eligible backend
-做机械检查，记录 preference miss 并使用冻结 fallback `action-class-random`。compiler work 为 4，
-与 Runtime primary/replay work 分开记录。
-
-执行后的真实 Trace 同时出现 invoke、message delivery、natural temporal、crash 和 restart，并通过
-strict replay。report/bundle identity 与 M5.17a 的 seed-1 action-class 运行相同，说明宏观
-compiler 只调用已有执行路径。本轮没有 LLM、batch feedback、private holdout 或新 defect verdict。
-
-## M5.18b1 真实 one-shot transport
-
-唯一真实调用使用 JSON output、thinking disabled、temperature 0、1200 output-token ceiling 和
-无重试。模型输出通过 strict parser/compile 后选择 `admissible-uniform`，执行 96 decisions、
-98/98 primary/replay，完成 1 个 workload 并发现 82 个 Core PSS states。模型成本为
-1568 input / 211 output / 1779 total tokens。
-
-但 accepted id、预算和 backend 与当时 prompt 的具体有效示例完全一致。该运行因此明确归类为
-`public-transport-calibration-only`。修正后的 fictional 结构示例尚未再调用。小型结果见
-[summary.json](benchmarks/experiments/etcdraft-v2-agent-one-shot-m5.18b1/summary.json)。
-
-## M5.18b2 Defect-blind batch feedback
-
-action-class random 和 admissible uniform 使用预先固定的 seeds 1/2/3，共同上限为
-3 attempts、294 primary 和 294 replay。action-class 完成 2 次、失败 1 次，实际成本
-294/196，发现 165 个粗粒度状态；uniform 完成 3 次，成本 294/294，发现 238 个状态。
-
-seed 3 的 workload 未在 decision 96 前完成，该 attempt 保留计费且不用替换 seed。Agent 只看到
-`execution-failed`，精确 failure code 仅保存在可验证账本中。`238 > 165` 不是方法效果结论。
-小型 Agent 可见工件见
-[feedback.json](benchmarks/experiments/etcdraft-v2-agent-feedback-m5.18b2/feedback.json)。
-
-后续复核发现，这个 v1 对比混用了两种 workload 终止语义：action-class 把预算内 pending 归为执行
-失败，uniform 则按 Experiment v2 保留为合法完整执行。因此上述 `2/1` 与 `3/0` 只能作为发现问题的
-历史校准，不能作为方法选择依据；原 digest 与工件不回写。
-
-## M5.18b3 Unseen follow-up baseline
-
-修正后的 feedback v2 让 action-class-v2 和 uniform 都使用 Experiment v2。两者在 seeds 1/2/3 上
-均为 3 次框架执行完成、2/3 workload 完成、294/294 work；分别发现 241 和 238 个 coarse PSS states。
-确定性规则在完全相同的 workload/execution 完成度下按 canonical backend ID 选中 action-class，并在
-冻结的未见 seed 4 上执行。
-
-seed 4 消耗 97/97 work、strict replay 稳定并发现 79 个状态，但 workload pending，且没有实际覆盖
-intent 的全部 hard ActionKind，所以结果原样记为计费的 `execution-failed`，不更换 backend 或 seed。
-每个 arm 连同 source 实际计费 685/685，模型调用数为 0。这不是缺陷 verdict 或方法优劣结论。小型工件见
-[summary.json](benchmarks/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json)。
-
-## M5.18b4-pre 可信边界修正
-
-新的 b4 catalog 不再把 Runtime 能表示、但当前 Experiment 没有 producer 的 Partition/Heal 声明成
-backend-selectable，并将对应 envelope 收紧为 0。`CompiledIntentPlan/v2` 不含 seed；可信
-`IntentExecutionInstance/v1` 单独绑定 seed 4 和 98/98 ceiling。
-
-该实例通过 qualified execution 和 strict replay，实际消耗 97/97 work、发现 79 states，但 Trace 缺少
-hard `invoke`。结果因此是 execution `valid`、intent `not-reached`、Oracle `not-evaluated`，而不是
-execution failure。它只校准可信边界，不是 RiskWitness、缺陷 verdict 或 Agent 效果结论。小型工件见
-[summary.json](benchmarks/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/summary.json)。
-
-## M5.18b4 Preference ablation request freeze
-
-两臂使用相同 system prompt、semantic view、risk、must、seed 4、98/98 execution ceiling 和
-transport 限制。no-feedback request 显式包含 `agent_batch_feedback: null`，with-feedback request
-包含可重算 feedback v2。精确 request digest 分别为 `562d3bda...31ce5c` 和
-`eb44d738...f6826f`；冻结对象为 `2591cf89...eed8c1`。
-
-未读取 key，模型调用数为 0。小型承诺工件见
-[freeze.json](benchmarks/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/freeze.json)。
-
-## 快速验证
+日常小修改先运行相关包：
 
 ```bash
-make test-fast
+go test ./internal/control ./internal/controlruntime
+go test ./internal/controlexperiment -run 'Semantic|Stateless'
+go test ./cmd/control-experiment -run 'A2b2|A2b3'
+```
+
+一个完整阶段结束时再运行：
+
+```bash
 make test
 go vet ./...
-make test-race-full
+git diff --check
 ```
 
-M5.18b4R 已将全部顶层重测试机械分入 exact-once race shards，完整门禁已通过；早期单进程
-20 分钟超时仍作为历史失败记录保留。M5.19d 的普通全仓测试通过，
-`cmd/control-experiment` 用时 103.970 秒；Summary/reader 与真实 runner 定向 race 分别以
-1.449/45.984 秒通过。本阶段没有无界重跑无关的全量 race。
+完整 race 检查只在明确的发布/里程碑检查中运行，不作为每次小改动的前置步骤。普通测试不会读取 key，
+也不会调用外部模型。
 
-重跑官方 bundle 和公开 calibration：
+## 阅读顺序
 
-```bash
-make experiment-etcdraft-v2-bundle
-make experiment-etcdraft-v2-semantics
-make experiment-etcdraft-v2-stateless-canonical-campaign
-make experiment-etcdraft-v2-stateless-uniform-campaign
-make experiment-etcdraft-v2-calibration
-make evaluate-etcdraft-v2-calibration
-make experiment-etcdraft-v2-action-class-random
-make experiment-etcdraft-v2-action-class-calibration
-make evaluate-etcdraft-v2-action-class-calibration
-make experiment-etcdraft-v2-trace-mutation
-make experiment-etcdraft-v2-corpus-mutation
-make experiment-etcdraft-v2-uniform-method
-make experiment-etcdraft-v2-pss-guided-method
-make experiment-etcdraft-v2-action-class-method
-make build-etcdraft-v2-method-evaluation
-make evaluate-etcdraft-v2-method-evaluation
-```
+1. [当前阶段](docs/CURRENT_STAGE.md)
+2. [总体规划](docs/ConsensusAtlas-总体规划.md)
+3. [架构](docs/architecture.md)
+4. [Control Runtime](docs/control-runtime-v2.md)
+5. [A2b3b 真实模型公开校准](docs/stage-a2b3b-etcdraft-real-model-calibration.md)
+6. [A2R 架构收敛与减负](docs/stage-a2r-architecture-convergence.md)
 
-模型调用始终是显式 opt-in，不属于任何测试目标：
-
-```bash
-AGENT_KEY_FILE=/secure/path/key.txt \
-AGENT_ARTIFACT_DIR=artifacts/experiments/new-stateless-agent \
-make experiment-etcdraft-v2-stateless-agent
-```
-
-`experiment-etcdraft-v2-calibration` 会从冻结的 source transform 构建本地二进制；二进制和完整
-约 1.9 MB bundle 写入被 Git 忽略的 `artifacts/`。仓库只保存小型 build input/audit、benchmark
-manifest 和 evaluator report，避免再次把重复 trace body 提交成超长 JSON。
-
-当前可执行模型入口仍是 Agent-v1 Stateless Search Agent：它只排列可信层提供的当前 frontier ActionID，
-并经过 exact request/dispatch/result 审计。它被保留为权限消融，不代表 Agent-v2 设计。A1 先定义
-Semantic Episode 契约和解耦 Search Kernel，A2 才增加 single Agent-v2；Guarded TestIntent
-one-shot/feedback/B4 仍是历史记录，不从 HEAD 恢复。
-
-## 当前目录
-
-```text
-adapters/                 目标专用薄接入与 Semantic/Decision Mapping
-  etcdraftv2/             官方 etcd/raft strict Adapter
-  hashicorpraftv2/        第二实现的部分资格 Adapter
-  raftrsv2/               raft-rs 最小 worker Binding；尚未 Qualification
-  fixture/                协议无关契约 fixture
-internal/
-  control/                Action、Item、Manifest 与 opaque envelope
-  controlruntime/         enabled、选择、状态机、trace 和 replay
-  controlentropy/         分域随机与 replay tape
-  conformance/            外部能力见证与 Qualification
-  controlexperiment/      admission、workload、policy、ExecutionBundle
-  psscore/                固定 Core PSS IR 与投影
-  protocolstate/          状态发现与跨 run 聚合
-  semantic/               协议无关 decision observation 与 RiskWitness validator
-  oracle/                 v2 trusted monitors
-  defectbench/            公开 evaluator + private/opaque formal contract
-  sutbuild/               source-bound 构建与审计
-cmd/                      资格、实验、构建和评测 composition roots
-qualifications/           两个真实 Adapter 的机械资格组合
-benchmarks/               冻结的公开工件；历史内容不等于当前 API
-docs/                     当前设计与不可改写的阶段记录
-```
-
-`agents/`、`drivers/`、`families/`、旧 Campaign/Coverage/Engine/Host，以及旧 Planner/model transport
-源码已经删除。新的 Raft RiskWitness 定义位于 `internal/semantic/raft`，不复活 v1 Family 路径。
-`make audit-no-v1` 和 `make audit-no-retired-experiment` 阻止可编译源码重新依赖退役路径。
-
-## 信任边界与限制
-
-- Agent 可理解冻结协议知识并提交当前 trusted frontier 的 ActionID 完整排列，但不能决定 enabled、执行、
-  PSS 真值、Oracle 或得分；
-- Adapter/DecisionProjector 属于目标接入信任根，必须通过独立 fixture、conformance 和 replay 检查；
-- Core PSS 用于 coarse discovery/feedback，不是状态等价证明，也不是正确性分数；
-- Coverage 是未来解释性内部指标，不能代替隐藏候选检出和正确 control 误报；
-- HashiCorp 当前缺少 strict natural-time/entropy/replay 资格，不能用于严格方法比较；
-- 当前只有公开 calibration，没有非公开 candidate/control holdout；
-- 当前没有证明 etcd/raft、其他协议或 ConsensusAtlas 正确、完备或无缺陷。
-
-M5.20 引入、M5.21b 升级的 `CampaignObservation/v2` 将 committed artifact 机械投影为跨 attempt 视图，分开展示
-outcome/work、Core PSS 并集/发现曲线、fault/workload 统计和 monitor 触发索引。
-v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不暴露 policy seed 或 instance。
-runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
-自定义“完备度分数”，monitor 零触发也不是正确性证明。
-
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[A0 Agentic 研究主线重置](docs/stage-a0-agentic-research-reset.md)、
-[总体规划](docs/ConsensusAtlas-总体规划.md)、[M5.23R4b Stateless Agent Campaign 基线](docs/stage-m5.23r4b-stateless-agent-campaign.md)、
-[M5.23R4a Stateless Agent 恢复底座](docs/stage-m5.23r4a-stateless-agent-recovery.md)、
-[M5.23R3 etcd/raft Stateless Campaign runner](docs/stage-m5.23r3-etcdraft-stateless-campaign-runner.md)、
-[M5.23R2 Stateless Campaign 契约](docs/stage-m5.23r2-stateless-campaign-contract.md)、
-[M5.23R1 主线收缩](docs/stage-m5.23r1-mainline-pruning.md)、[M5.22d cross-target preference authority](docs/stage-m5.22d-cross-target-preference-authority.md)、
-[M5.22c durable cross-target composition](docs/stage-m5.22c-durable-cross-target-composition.md)、
-[M5.22b cross-target portable intent](docs/stage-m5.22b-cross-target-portable-intent.md)、
-[M5.22a bounded stochastic admission](docs/stage-m5.22a-bounded-stochastic-admission.md)、
-[M5.21zR admission closure](docs/stage-m5.21zr-admission-closure.md)、
-[M5.21z OmniPaxos Qualification audit](docs/stage-m5.21z-omnipaxos-qualification-audit.md)、
-[M5.21y OmniPaxos Agreement](docs/stage-m5.21y-omnipaxos-agreement.md)、
-[M5.21x OmniPaxos Core PSS](docs/stage-m5.21x-omnipaxos-core-pss.md)、
-[M5.21w OmniPaxos workload](docs/stage-m5.21w-omnipaxos-opaque-workload.md)、
-[M5.21v OmniPaxos Binding](docs/stage-m5.21v-omnipaxos-minimal-binding.md)、
-[M5.21u OmniPaxos core probe](docs/stage-m5.21u-omnipaxos-core-probe.md)、
-[M5.21tA Binding cost audit](docs/stage-m5.21ta-marginal-binding-cost-audit.md)、
-[M5.21t opaque workload](docs/stage-m5.21t-raft-rs-opaque-workload.md)、
-[M5.21sR Binding contraction](docs/stage-m5.21sr-raft-rs-binding-contraction.md)、
-[M5.21s raft-rs Binding spike](docs/stage-m5.21s-raft-rs-binding-spike.md)、
-[M5.21r second-target candidate gate](docs/stage-m5.21r-second-target-candidate-gate.md)、
-[M5.21q Risk Frontier authority](docs/stage-m5.21q-risk-frontier-authority.md)、
-[M5.21p RiskWitness reachability](docs/stage-m5.21p-risk-witness-reachability.md)、
-[M5.21o formal multi-pair CLI](docs/stage-m5.21o-formal-multi-pair-cli.md)、
-[M5.21n formal fresh evaluator](docs/stage-m5.21n-formal-fresh-evaluator.md)、
-[M5.21m exposure audit](docs/stage-m5.21m-formal-exposure-audit.md)、
-[M5.21l formal contract](docs/stage-m5.21l-formal-benchmark-contract.md)、
-[M5.21k holdout readiness](docs/stage-m5.21k-holdout-readiness-gap.md)、
-[M5.21j RiskWitness](docs/stage-m5.21j-risk-witness.md)、
-[M5.21i method corpus](docs/stage-m5.21i-ordered-method-corpus.md)、
-[M5.21d4 terminal accounting](docs/stage-m5.21d4-pre-plan-terminal-accounting.md)、[M5.21d3 opt-in durable runner](docs/stage-m5.21d3-opt-in-durable-runner.md)、[M5.21d2 offline durable planner](docs/stage-m5.21d2-etcdraft-offline-model-planner.md)、[M5.21d1 durable model call](docs/stage-m5.21d1-durable-model-call.md)、
-[M5.21c durable planned attempt](docs/stage-m5.21c-durable-planned-attempt.md)、
-[M5.21b choice attribution](docs/stage-m5.21b-prior-choice-attribution.md)、
-[M5.21a Planner View](docs/stage-m5.21a-campaign-planner-view.md)、[M5.20 Campaign Observation](docs/stage-m5.20-campaign-observation.md)、
-[M5.19 Campaign foundation](docs/stage-m5.19-campaign-foundation.md)、
-[M5.19a persistence](docs/stage-m5.19a-campaign-persistence.md)、
-[M5.19b Coordinator](docs/stage-m5.19b-campaign-coordinator.md)、
-[M5.19c real provider](docs/stage-m5.19c-real-campaign-provider.md)、
-[M5.19d summary/runner](docs/stage-m5.19d-campaign-summary-runner.md)、
-[M5.18b4 runner](docs/stage-m5.18b4-pair-runner.md)、
-[M5.18b4 pair](docs/stage-m5.18b4-pair-ledger.md)、
-[M5.18b4 consumer](docs/stage-m5.18b4-request-consumer.md)、
-[M5.18b4 freeze](docs/stage-m5.18b4-request-freeze.md)、
-[M5.18b4-pre](docs/stage-m5.18b4-pre-trust-corrections.md)、
-[M5.18b3](docs/stage-m5.18b3-unseen-follow-up.md)、
-[M5.18b2](docs/stage-m5.18b2-defect-blind-batch-feedback.md)、
-[M5.18b1](docs/stage-m5.18b1-one-shot-agent-transport.md)、
-[M5.18b0](docs/stage-m5.18b0-guarded-intent-compiler.md)、
-[M5.18a](docs/stage-m5.18a-method-evaluation-prerequisites.md)、
-[M5.17c2](docs/stage-m5.17c2-batch-pss-guidance.md)、
-[M5.17c1](docs/stage-m5.17c1-corpus-trust-prerequisites.md)、
-[M5.17c0](docs/stage-m5.17c0-experiment-semantics.md)、
-[M5.17bR2](docs/stage-m5.17b-r2-experiment-path-pruning.md)、
-[M5.17b](docs/stage-m5.17b-trace-mutation.md)、
-[M5.17a](docs/stage-m5.17a-action-class-random.md)、
-[M5.16](docs/stage-m5.16-execution-bundle.md)、
-[M5.16R](docs/stage-m5.16r-legacy-removal.md)、[架构](docs/architecture.md)、
-[Control Runtime v2](docs/control-runtime-v2.md) 和 [总体规划](docs/ConsensusAtlas-总体规划.md)。
+历史阶段文档描述当时的实现，不应被当作当前 API。当前事实以 `CURRENT_STAGE.md`、总体规划和可编译代码
+为准。

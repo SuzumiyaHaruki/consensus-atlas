@@ -1,5 +1,8 @@
 # etcd/raft v2 真实 Search Agent 多 root pilot（M5.23g）
 
+HEAD 只保留紧凑 `summary.json`。逐调用请求/响应、逐 root 搜索与 discovery 工件已清理，可从 Git 提交
+`0106e2c` 恢复；它们不是当前 A2 执行路径的输入。
+
 本目录冻结 M5.23 的最后一次真实模型实验。它复用 M5.23e 在搜索前声明的 0/28/54-decision root corpus，
 每个 root 固定 depth=2、items=6、work ceiling=1,500；模型只能排列当前 trusted frontier 的全部 ActionID。
 

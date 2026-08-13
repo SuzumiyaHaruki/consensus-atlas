@@ -12,37 +12,6 @@ import (
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 )
 
-const etcdraftLeaderChangeRiskWitnessProjectorID = "official-etcdraft-v2/leader-change-with-inflight-proposal-v1"
-
-func newEtcdraftLeaderChangeRiskWitness(
-	id string,
-	bundle controlexperiment.ExecutionBundle,
-) (semantic.RiskWitnessResult, error) {
-	if err := bundle.Validate(); err != nil {
-		return semantic.RiskWitnessResult{}, err
-	}
-	if err := bundle.ValidateProjection(etcdraftv2.DecisionProjector{}); err != nil {
-		return semantic.RiskWitnessResult{}, err
-	}
-	if bundle.Run.Workload == nil || bundle.Run.Workload.Planned != 1 {
-		return semantic.RiskWitnessResult{}, errors.New("ETCDRAFT_RISK_WITNESS_WORKLOAD_REQUIRED")
-	}
-	spec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
-	if err != nil {
-		return semantic.RiskWitnessResult{}, err
-	}
-	milestones, err := projectEtcdraftLeaderChangeRiskMilestones(
-		bundle.Trace, bundle.ClientHistory, bundle.OperationHistory, bundle.Run.Workload.Planned,
-	)
-	if err != nil {
-		return semantic.RiskWitnessResult{}, err
-	}
-	return semantic.NewRiskWitnessResult(
-		id, spec, bundle.Identity.ManifestDigest, bundle.Digest,
-		etcdraftLeaderChangeRiskWitnessProjectorID, milestones,
-	)
-}
-
 func projectEtcdraftLeaderChangeRiskMilestones(
 	trace controlruntime.Trace,
 	clients []controlexperiment.ClientHistoryEntry,
