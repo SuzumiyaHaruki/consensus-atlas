@@ -102,6 +102,7 @@ func TestA2b2SemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t
 	hypothesis, err := controlexperiment.NewTestHypothesis(
 		"a2b2-hypothesis", knowledge, riskSpec,
 		"Compare bounded candidates using only public semantic progress.",
+		controlexperiment.SemanticBestFirstAlgorithmID,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +117,7 @@ func TestA2b2SemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t
 	var current controlexperiment.SemanticExplorerAgentView
 	views := make([]controlexperiment.SemanticExplorerAgentView, 0, 2)
 	transportCalls := 0
-	client := defaultDeepSeekIntentClient()
+	client := fixtureOpenRouterIntentClient()
 	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 		transportCalls++
 		if request.Header.Get("Authorization") != "Bearer fixture-key" {
@@ -137,7 +138,7 @@ func TestA2b2SemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t
 				t.Fatal(err)
 			}
 		}
-		response := a2b2DeepSeekResponse(t, transportCalls, content)
+		response := a2b2OpenRouterResponse(t, transportCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
 	directory := filepath.Join(t.TempDir(), "semantic-attempt")
@@ -204,7 +205,7 @@ func TestA2b2SemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t
 	}
 
 	failureCalls := 0
-	failingClient := defaultDeepSeekIntentClient()
+	failingClient := fixtureOpenRouterIntentClient()
 	failingClient.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		failureCalls++
 		return &http.Response{
@@ -237,10 +238,10 @@ func TestA2b2SemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t
 	}
 }
 
-func a2b2DeepSeekResponse(t *testing.T, ordinal int, content []byte) []byte {
+func a2b2OpenRouterResponse(t *testing.T, ordinal int, content []byte) []byte {
 	t.Helper()
 	encoded, err := json.Marshal(map[string]any{
-		"id": "a2b2-response-" + string(rune('0'+ordinal)), "model": deepSeekV4Flash,
+		"id": "a2b2-response-" + string(rune('0'+ordinal)), "model": openRouterFixtureModel,
 		"system_fingerprint": "fixture-a2b2", "choices": []any{map[string]any{
 			"index": 0, "message": map[string]any{"role": "assistant", "content": string(content)},
 			"finish_reason": "stop",

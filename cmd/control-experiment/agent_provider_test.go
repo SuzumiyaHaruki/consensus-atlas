@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -17,24 +18,30 @@ import (
 
 type agentHTTPDoerFunc func(*http.Request) (*http.Response, error)
 
+const openRouterFixtureModel = "fixture/model"
+
+func fixtureOpenRouterIntentClient() openRouterIntentClient {
+	return newOpenRouterIntentClient(openRouterFixtureModel)
+}
+
 func (function agentHTTPDoerFunc) Do(request *http.Request) (*http.Response, error) {
 	return function(request)
 }
 
-func TestDeepSeekProviderFreezesExactRequestAndChargesAcceptedResponse(t *testing.T) {
+func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *testing.T) {
 	const secret = "test-secret-never-persist"
 	responseJSON := []byte(`{
   "id":"mock-response",
-  "model":"deepseek-v4-flash",
+  "model":"fixture/model-20260813",
   "system_fingerprint":"mock-fingerprint",
   "choices":[{"index":0,"message":{"role":"assistant","content":"{\"action_ids\":[\"a\"]}"},"finish_reason":"stop"}],
   "usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}
 }`)
-	client := deepSeekIntentClient{
-		Endpoint: deepSeekChatEndpoint, Model: deepSeekV4Flash,
-		MaxOutputTokens: deepSeekDefaultTokens,
+	client := openRouterIntentClient{
+		Endpoint: openRouterChatEndpoint, Model: openRouterFixtureModel,
+		MaxOutputTokens: openRouterDefaultTokens,
 		HTTP: agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
-			if request.Method != http.MethodPost || request.URL.String() != deepSeekChatEndpoint ||
+			if request.Method != http.MethodPost || request.URL.String() != openRouterChatEndpoint ||
 				request.Header.Get("Authorization") != "Bearer "+secret ||
 				request.Header.Get("Content-Type") != "application/json" {
 				t.Fatalf("unexpected request metadata: %s %s", request.Method, request.URL)
@@ -45,6 +52,14 @@ func TestDeepSeekProviderFreezesExactRequestAndChargesAcceptedResponse(t *testin
 			}
 			if bytes.Contains(body, []byte(secret)) || !bytes.Contains(body, []byte("public-user")) {
 				t.Fatal("request leaked a credential or lost frozen public content")
+			}
+			var payload openRouterChatRequest
+			if err := json.Unmarshal(body, &payload); err != nil ||
+				payload.Model != openRouterFixtureModel ||
+				payload.MaxCompletionTokens != openRouterDefaultTokens ||
+				payload.Reasoning.Effort != openRouterReasoningDisabled ||
+				payload.ResponseFormat.Type != "json_object" {
+				t.Fatalf("unexpected OpenRouter payload: %#v/%v", payload, err)
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(responseJSON)),
@@ -70,6 +85,7 @@ func TestDeepSeekProviderFreezesExactRequestAndChargesAcceptedResponse(t *testin
 		t.Fatal(err)
 	}
 	if call.FailureCode != "" || call.Response == nil || call.Response.ID != "mock-response" ||
+		call.Response.Model != "fixture/model-20260813" ||
 		call.Response.FinishReason != "stop" || call.Work != (controlexperiment.ModelWork{
 		Calls: 1, InputTokens: 100, OutputTokens: 50, TotalTokens: 150,
 	}) || call.DurationMillis != 7 || string(call.Content) != `{"action_ids":["a"]}` {
@@ -77,10 +93,10 @@ func TestDeepSeekProviderFreezesExactRequestAndChargesAcceptedResponse(t *testin
 	}
 }
 
-func TestDeepSeekProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T) {
-	client := deepSeekIntentClient{
-		Endpoint: deepSeekChatEndpoint, Model: deepSeekV4Flash,
-		MaxOutputTokens: deepSeekDefaultTokens,
+func TestOpenRouterProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T) {
+	client := openRouterIntentClient{
+		Endpoint: openRouterChatEndpoint, Model: openRouterFixtureModel,
+		MaxOutputTokens: openRouterDefaultTokens,
 		HTTP: agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 			return nil, errors.New("provider diagnostic that must not be persisted")
 		}),
@@ -93,7 +109,7 @@ func TestDeepSeekProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if call.FailureCode != deepSeekFailureTransport || call.Work.Calls != 1 ||
+	if call.FailureCode != agentFailureTransport || call.Work.Calls != 1 ||
 		call.RequestDigest == "" || call.ResponseDigest != "" || call.Response != nil {
 		t.Fatalf("unexpected transport failure: %#v", call)
 	}
@@ -105,8 +121,89 @@ func TestDeepSeekProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if call.FailureCode != deepSeekFailureResponse || call.ResponseDigest != "" || call.Response != nil {
+	if call.FailureCode != agentFailureResponse || call.ResponseDigest != "" || call.Response != nil {
 		t.Fatalf("unexpected unreadable response: %#v", call)
+	}
+}
+
+func TestOpenRouterProviderRetriesOnlyTransientFailuresAndRecordsAttempts(t *testing.T) {
+	responseJSON := []byte(`{
+  "id":"retry-response",
+  "model":"fixture/model",
+  "system_fingerprint":"retry-fingerprint",
+  "choices":[{"index":0,"message":{"role":"assistant","content":"{\"id\":\"plan\",\"steps\":[{\"id\":\"step\",\"selector\":{\"kind\":\"crash\",\"node\":\"n1\"}}]}"},"finish_reason":"stop"}],
+  "usage":{"prompt_tokens":80,"completion_tokens":20,"total_tokens":100}
+}`)
+	attempts := 0
+	client := newOpenRouterIntentClient(openRouterFixtureModel)
+	client.MaxRetries = 2
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		switch attempts {
+		case 1:
+			return nil, errors.New("temporary connection reset")
+		case 2:
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":"temporary"}`))),
+			}, nil
+		default:
+			return &http.Response{
+				StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(responseJSON)),
+			}, nil
+		}
+	})
+	prepared, err := client.prepare("public-system", "public-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, err := client.invokePrepared(context.Background(), "test-secret", prepared)
+	if err != nil || call.FailureCode != "" || call.Response == nil ||
+		call.TransportAttempts != 3 || attempts != 3 || call.Work.Calls != 1 ||
+		call.Work.TotalTokens != 100 || openRouterTransportFreeze(client).MaxRetries != 2 {
+		t.Fatalf("transient retry did not preserve accounting: %#v attempts=%d err=%v", call, attempts, err)
+	}
+
+	attempts = 0
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		return &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":"unauthorized"}`))),
+		}, nil
+	})
+	call, err = client.invokePrepared(context.Background(), "test-secret", prepared)
+	if err != nil || call.FailureCode != agentFailureHTTP || call.TransportAttempts != 1 || attempts != 1 {
+		t.Fatalf("non-transient status was retried: %#v attempts=%d err=%v", call, attempts, err)
+	}
+}
+
+func TestOpenRouterModelSelectionUsesOneTransport(t *testing.T) {
+	for _, model := range []string{
+		"vendor-a/model-a",
+		"vendor-b/model-b.1",
+		"router/model-c:fast",
+	} {
+		client := newOpenRouterIntentClient(model)
+		prepared, err := client.prepare("public-system", "public-user")
+		if err != nil {
+			t.Fatalf("model %q was not accepted: %v", model, err)
+		}
+		var payload openRouterChatRequest
+		if err := json.Unmarshal(prepared.RequestBytes, &payload); err != nil ||
+			payload.Model != model || openRouterTransportFreeze(client).Validate() != nil {
+			t.Fatalf("model %q changed transport shape: %#v/%v", model, payload, err)
+		}
+	}
+
+	client := newOpenRouterIntentClient(openRouterFixtureModel)
+	client.Endpoint = "https://example.invalid/chat/completions"
+	if _, err := client.prepare("public-system", "public-user"); err == nil {
+		t.Fatal("non-OpenRouter endpoint was accepted")
+	}
+	client = newOpenRouterIntentClient("invalid model")
+	if _, err := client.prepare("public-system", "public-user"); err == nil {
+		t.Fatal("invalid OpenRouter model ID was accepted")
 	}
 }
 

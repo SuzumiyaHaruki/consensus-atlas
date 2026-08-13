@@ -50,8 +50,16 @@ type RiskFrontierView struct {
 }
 
 type FrontierActionSelector struct {
-	Kind control.ActionKind `json:"kind"`
-	Node control.NodeID     `json:"node,omitempty"`
+	ActionID      control.ActionID        `json:"action_id,omitempty"`
+	Kind          control.ActionKind      `json:"kind,omitempty"`
+	Node          control.NodeID          `json:"node,omitempty"`
+	ItemKind      control.ItemKind        `json:"item_kind,omitempty"`
+	Owner         control.NodeID          `json:"owner,omitempty"`
+	MessageSource control.NodeID          `json:"message_source,omitempty"`
+	MessageTarget control.NodeID          `json:"message_target,omitempty"`
+	TemporalKind  control.TemporalKind    `json:"temporal_kind,omitempty"`
+	EffectKind    string                  `json:"effect_kind,omitempty"`
+	Durability    control.DurabilityClass `json:"durability,omitempty"`
 }
 
 type FrontierChoice struct {
@@ -184,16 +192,57 @@ func ChooseFirstFrontierAction(
 		return FrontierChoice{}, errors.New("EXPERIMENT_FRONTIER_SELECTOR_INVALID")
 	}
 	for _, selector := range selectors {
-		if err := selector.Kind.Validate(); err != nil {
+		if err := selector.validate(); err != nil {
 			return FrontierChoice{}, err
 		}
 		for _, action := range view.Actions {
-			if action.Kind == selector.Kind && (selector.Node == "" || action.Node.Node == selector.Node) {
+			if selector.matches(action) {
 				return NewFrontierChoice(id, view, spec, action.ActionID)
 			}
 		}
 	}
 	return FrontierChoice{}, errors.New("EXPERIMENT_FRONTIER_SELECTOR_NO_MATCH")
+}
+
+func (selector FrontierActionSelector) validate() error {
+	if selector.ActionID != "" {
+		if selector.Kind != "" || selector.Node != "" || selector.ItemKind != "" || selector.Owner != "" ||
+			selector.MessageSource != "" || selector.MessageTarget != "" || selector.TemporalKind != "" ||
+			selector.EffectKind != "" || selector.Durability != "" {
+			return errors.New("EXPERIMENT_FRONTIER_SELECTOR_EXACT_MIXED")
+		}
+		return nil
+	}
+	if selector.Kind.Validate() != nil {
+		return errors.New("EXPERIMENT_FRONTIER_SELECTOR_KIND_INVALID")
+	}
+	if selector.ItemKind != "" && selector.ItemKind.Validate() != nil {
+		return errors.New("EXPERIMENT_FRONTIER_SELECTOR_ITEM_INVALID")
+	}
+	if selector.TemporalKind != "" && selector.TemporalKind.Validate() != nil {
+		return errors.New("EXPERIMENT_FRONTIER_SELECTOR_TEMPORAL_INVALID")
+	}
+	if selector.Durability != "" && selector.Durability != control.DurabilityVolatile &&
+		selector.Durability != control.DurabilityVisible && selector.Durability != control.DurabilityDurable &&
+		selector.Durability != control.DurabilityApplied {
+		return errors.New("EXPERIMENT_FRONTIER_SELECTOR_DURABILITY_INVALID")
+	}
+	return nil
+}
+
+func (selector FrontierActionSelector) matches(action FrontierActionRef) bool {
+	if selector.ActionID != "" {
+		return selector.ActionID == action.ActionID
+	}
+	return selector.Kind == action.Kind &&
+		(selector.Node == "" || selector.Node == action.Node.Node) &&
+		(selector.ItemKind == "" || selector.ItemKind == action.ItemKind) &&
+		(selector.Owner == "" || selector.Owner == action.Owner.Node) &&
+		(selector.MessageSource == "" || selector.MessageSource == action.MessageSource.Node) &&
+		(selector.MessageTarget == "" || selector.MessageTarget == action.MessageTarget) &&
+		(selector.TemporalKind == "" || selector.TemporalKind == action.TemporalKind) &&
+		(selector.EffectKind == "" || selector.EffectKind == action.EffectKind) &&
+		(selector.Durability == "" || selector.Durability == action.Durability)
 }
 
 func NewFrontierChoice(

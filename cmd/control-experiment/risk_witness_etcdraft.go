@@ -65,6 +65,7 @@ func projectEtcdraftLeaderChangeRiskMilestones(
 
 	var changed *controlruntime.ActionRecord
 	var newCoordinator control.NodeRef
+	oldCoordinatorStopped := false
 	for index := range trace.Records {
 		record := trace.Records[index]
 		if record.Step <= invoke.Step {
@@ -81,11 +82,15 @@ func projectEtcdraftLeaderChangeRiskMilestones(
 			return nil, err
 		}
 		old, oldPresent := etcdraftRiskWitnessNode(evidence, oldCoordinator)
-		if !oldPresent {
+		if oldPresent {
+			if old.Running && old.Role == "StateLeader" {
+				continue
+			}
+			oldCoordinatorStopped = !old.Running
+		} else if etcdraftRiskWitnessStoppedTransition(record, oldCoordinator) {
+			oldCoordinatorStopped = true
+		} else if !oldCoordinatorStopped {
 			return nil, errors.New("ETCDRAFT_RISK_WITNESS_OLD_COORDINATOR_EVIDENCE_MISSING")
-		}
-		if old.Running && old.Role == "StateLeader" {
-			continue
 		}
 		for _, node := range evidence.Nodes {
 			if node.Node == oldCoordinator.Node || !node.Running || node.Role != "StateLeader" ||
@@ -143,6 +148,20 @@ func projectEtcdraftLeaderChangeRiskMilestones(
 		}
 	}
 	return milestones, nil
+}
+
+func etcdraftRiskWitnessStoppedTransition(
+	record controlruntime.ActionRecord,
+	coordinator control.NodeRef,
+) bool {
+	for _, transition := range record.NodeTransitions {
+		if transition.Node == coordinator.Node && transition.Before.Ref == coordinator &&
+			transition.Before.Lifecycle == control.NodeRunning &&
+			transition.After.Lifecycle == control.NodeStopped {
+			return true
+		}
+	}
+	return false
 }
 
 func etcdraftRiskWitnessNode(

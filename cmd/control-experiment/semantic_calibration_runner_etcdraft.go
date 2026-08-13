@@ -15,12 +15,13 @@ import (
 )
 
 type etcdraftSemanticCalibrationRunOptions struct {
-	Directory    string
-	CorpusPath   string
-	Resume       bool
-	AgentKeyFile string
-	Client       deepSeekIntentClient
-	ReadKey      agentKeyReader
+	Directory         string
+	CorpusPath        string
+	SemanticInputPath string
+	Resume            bool
+	AgentKeyFile      string
+	Client            openRouterIntentClient
+	ReadKey           agentKeyReader
 }
 
 func runEtcdraftSemanticCalibration(
@@ -29,12 +30,15 @@ func runEtcdraftSemanticCalibration(
 ) (etcdraftSemanticCalibrationArtifact, error) {
 	clean := filepath.Clean(options.Directory)
 	if options.Directory == "" || clean == "." || clean == string(filepath.Separator) ||
-		options.CorpusPath == "" || !validateEtcdraftSemanticRunKeyName(options.AgentKeyFile) ||
+		options.CorpusPath == "" || options.SemanticInputPath == "" ||
+		!validateEtcdraftSemanticRunKeyName(options.AgentKeyFile) ||
 		options.Client.HTTP == nil ||
 		options.ReadKey == nil {
 		return etcdraftSemanticCalibrationArtifact{}, errors.New("ETCDRAFT_SEMANTIC_RUN_OPTIONS_INVALID")
 	}
-	inputs, err := prepareEtcdraftSemanticCalibration(ctx, options.CorpusPath, options.Client)
+	inputs, err := prepareEtcdraftSemanticCalibration(
+		ctx, options.CorpusPath, options.SemanticInputPath, options.Client,
+	)
 	if err != nil {
 		return etcdraftSemanticCalibrationArtifact{}, err
 	}
@@ -49,7 +53,7 @@ func runEtcdraftSemanticCalibration(
 			!reflect.DeepEqual(persisted, inputs.spec) {
 			return etcdraftSemanticCalibrationArtifact{}, errors.New("ETCDRAFT_SEMANTIC_RUN_SPEC_DRIFT")
 		}
-		journal, err = recoverSemanticExplorerCallJournal(providerDirectory, options.Client)
+		journal, err = recoverSemanticExplorerCallJournal(providerDirectory, inputs.client)
 	} else {
 		if err := os.MkdirAll(filepath.Dir(clean), 0o700); err != nil {
 			return etcdraftSemanticCalibrationArtifact{}, err
@@ -63,7 +67,7 @@ func runEtcdraftSemanticCalibration(
 		if err := writeStatelessAgentJSON(clean, "spec.json", inputs.spec); err != nil {
 			return etcdraftSemanticCalibrationArtifact{}, err
 		}
-		journal, err = newSemanticExplorerCallJournal(providerDirectory, options.Client, "")
+		journal, err = newSemanticExplorerCallJournal(providerDirectory, inputs.client, "")
 	}
 	if err != nil || journal.SetRoot(inputs.spec.RootID) != nil {
 		return etcdraftSemanticCalibrationArtifact{}, errors.New("ETCDRAFT_SEMANTIC_RUN_JOURNAL_INVALID")
@@ -83,7 +87,7 @@ func runEtcdraftSemanticCalibration(
 		}
 	}
 	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 	}
 	baseline, err := controlexperiment.ExploreBoundedSemanticBestFirst(
 		ctx, inputs.searchSpec, inputs.root, inputs.riskSpec, factory,
@@ -131,14 +135,20 @@ func runEtcdraftSemanticCalibration(
 	}
 	var artifact etcdraftSemanticCalibrationArtifact
 	if exploreErr == nil {
-		artifact, err = newEtcdraftSemanticCalibrationArtifact(inputs, baseline, &explorer, nil, audits)
+		testing, testingErr := executeEtcdraftSemanticTesting(ctx, inputs, explorer)
+		if testingErr != nil {
+			return etcdraftSemanticCalibrationArtifact{}, testingErr
+		}
+		artifact, err = newEtcdraftSemanticCalibrationArtifact(
+			inputs, baseline, &explorer, nil, audits, &testing,
+		)
 	} else {
 		var failure *controlexperiment.SemanticExplorerExecutionError
 		if !errors.As(exploreErr, &failure) {
 			return etcdraftSemanticCalibrationArtifact{}, exploreErr
 		}
 		artifact, err = newEtcdraftSemanticCalibrationArtifact(
-			inputs, baseline, nil, &failure.Failure, audits,
+			inputs, baseline, nil, &failure.Failure, audits, nil,
 		)
 	}
 	if err != nil || validateEtcdraftSemanticJournalEvidence(artifact, journal) != nil {

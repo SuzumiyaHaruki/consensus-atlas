@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	etcdraftSemanticCalibrationArtifactVersion = "consensus-atlas/etcdraft-semantic-calibration-artifact/v1"
+	etcdraftSemanticCalibrationArtifactVersion = "consensus-atlas/etcdraft-semantic-calibration-artifact/v2"
 	etcdraftSemanticCalibrationComparisonV1    = "consensus-atlas/etcdraft-semantic-comparison/v1"
 	etcdraftSemanticCalibrationSucceeded       = "completed"
 	etcdraftSemanticCalibrationFailed          = "failed"
@@ -45,6 +45,7 @@ type etcdraftSemanticCalibrationArtifact struct {
 	ProviderCalls []controlexperiment.StatelessAgentCallAudit `json:"provider_calls"`
 	ModelWork     controlexperiment.ModelWork                 `json:"model_work"`
 	Comparison    *etcdraftSemanticCalibrationComparison      `json:"comparison,omitempty"`
+	Testing       *etcdraftSemanticTestingResult              `json:"testing_result,omitempty"`
 	Digest        string                                      `json:"digest"`
 }
 
@@ -54,13 +55,14 @@ func newEtcdraftSemanticCalibrationArtifact(
 	explorer *controlexperiment.SemanticExplorerResult,
 	failure *controlexperiment.SemanticExplorerFailure,
 	audits []controlexperiment.StatelessAgentCallAudit,
+	testing *etcdraftSemanticTestingResult,
 ) (etcdraftSemanticCalibrationArtifact, error) {
 	artifact := etcdraftSemanticCalibrationArtifact{
 		SchemaVersion: etcdraftSemanticCalibrationArtifactVersion,
 		Spec:          inputs.spec, Baseline: baseline,
 		ProviderCalls: append([]controlexperiment.StatelessAgentCallAudit(nil), audits...),
 	}
-	if explorer != nil && failure == nil {
+	if explorer != nil && failure == nil && testing != nil {
 		comparison, err := newEtcdraftSemanticCalibrationComparison(baseline, *explorer)
 		if err != nil {
 			return etcdraftSemanticCalibrationArtifact{}, err
@@ -69,7 +71,9 @@ func newEtcdraftSemanticCalibrationArtifact(
 		artifact.Status, artifact.Explorer = etcdraftSemanticCalibrationSucceeded, &value
 		artifact.ModelWork = explorer.ModelWork
 		artifact.Comparison = &comparison
-	} else if failure != nil && explorer == nil {
+		testingValue := *testing
+		artifact.Testing = &testingValue
+	} else if failure != nil && explorer == nil && testing == nil {
 		value := *failure
 		artifact.Status, artifact.Failure = etcdraftSemanticCalibrationFailed, &value
 		artifact.ModelWork = failure.ModelWork
@@ -89,7 +93,7 @@ func (artifact etcdraftSemanticCalibrationArtifact) ValidateInputs(
 	if artifact.SchemaVersion != etcdraftSemanticCalibrationArtifactVersion ||
 		artifact.Spec.ValidateInputs(
 			inputs.campaign, inputs.root, inputs.frontier, inputs.riskSpec,
-			inputs.knowledge, inputs.hypothesis, inputs.searchSpec,
+			inputs.knowledge, inputs.hypothesis, inputs.experiment, inputs.searchSpec,
 		) != nil || artifact.Spec.Digest != inputs.spec.Digest ||
 		artifact.Baseline.Validate(inputs.root, inputs.riskSpec) != nil ||
 		artifact.Baseline.GuidanceID != artifact.Spec.BaselineGuidanceID ||
@@ -110,6 +114,7 @@ func (artifact etcdraftSemanticCalibrationArtifact) ValidateInputs(
 	switch artifact.Status {
 	case etcdraftSemanticCalibrationSucceeded:
 		if artifact.Explorer == nil || artifact.Failure != nil || artifact.Comparison == nil ||
+			artifact.Testing == nil || artifact.Testing.Validate(inputs, *artifact.Explorer) != nil ||
 			artifact.Explorer.Validate(inputs.root, inputs.riskSpec) != nil ||
 			artifact.Explorer.GuidanceID != artifact.Spec.ExplorerGuidanceID ||
 			artifact.Explorer.ModelWork != artifact.ModelWork ||
@@ -118,7 +123,7 @@ func (artifact etcdraftSemanticCalibrationArtifact) ValidateInputs(
 			return errors.New("ETCDRAFT_SEMANTIC_ARTIFACT_SUCCESS_INVALID")
 		}
 	case etcdraftSemanticCalibrationFailed:
-		if artifact.Explorer != nil || artifact.Failure == nil || artifact.Comparison != nil ||
+		if artifact.Explorer != nil || artifact.Failure == nil || artifact.Comparison != nil || artifact.Testing != nil ||
 			artifact.Failure.Validate() != nil || artifact.Failure.GuidanceID != artifact.Spec.ExplorerGuidanceID ||
 			artifact.Failure.ModelWork != artifact.ModelWork ||
 			!etcdraftSemanticCallsMatchAudits(
@@ -145,7 +150,7 @@ func (artifact etcdraftSemanticCalibrationArtifact) ValidateSources(
 		return errors.New("ETCDRAFT_SEMANTIC_ARTIFACT_SOURCE_INVALID")
 	}
 	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 	}
 	if artifact.Baseline.ValidateSources(
 		ctx, inputs.root, inputs.riskSpec, factory, etcdraftSemanticPrefixProjector{},
@@ -158,6 +163,9 @@ func (artifact etcdraftSemanticCalibrationArtifact) ValidateSources(
 		factory, etcdraftSemanticPrefixProjector{},
 	) != nil {
 		return errors.New("ETCDRAFT_SEMANTIC_ARTIFACT_EXPLORER_SOURCE_MISMATCH")
+	}
+	if artifact.Testing != nil && artifact.Testing.Validate(inputs, *artifact.Explorer) != nil {
+		return errors.New("ETCDRAFT_SEMANTIC_ARTIFACT_TESTING_SOURCE_MISMATCH")
 	}
 	return nil
 }

@@ -477,3 +477,34 @@ func jsonContains(data []byte, pattern []byte) bool {
 	}
 	return false
 }
+
+func assertJSONObjectKeys(t *testing.T, value any, allowed map[string]bool) {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	if len(object) != len(allowed) {
+		t.Fatalf("planner projection keys changed: got=%v want=%v", reflect.ValueOf(object).MapKeys(), allowed)
+	}
+	for key := range object {
+		if !allowed[key] {
+			t.Fatalf("planner projection contains non-allowlisted key %q", key)
+		}
+	}
+}
+
+func roundTripJSON(t *testing.T, source any, target any) {
+	t.Helper()
+	encoded, err := json.Marshal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, target); err != nil {
+		t.Fatal(err)
+	}
+}

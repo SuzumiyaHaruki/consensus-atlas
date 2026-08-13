@@ -197,7 +197,7 @@ func ExploreBoundedSemanticBestFirstWithExplorer(
 	planner SemanticExplorerPlanner,
 ) (SemanticExplorerResult, error) {
 	if !validMethodToken(guidanceID) || budget.Validate() != nil || planner == nil ||
-		hypothesis.ValidateForBackend(knowledge, riskSpec, SemanticBestFirstAlgorithmID) != nil {
+		hypothesis.Validate(knowledge, riskSpec, SemanticBestFirstAlgorithmID) != nil {
 		return SemanticExplorerResult{}, errors.New("EXPERIMENT_SEMANTIC_EXPLORER_INPUT_INVALID")
 	}
 	guidance := &semanticExplorerGuidance{
@@ -682,7 +682,7 @@ func (result SemanticExplorerResult) ValidateSources(
 	projector SemanticPrefixProjector,
 ) error {
 	if result.Validate(root, riskSpec) != nil ||
-		hypothesis.ValidateForBackend(knowledge, riskSpec, SemanticBestFirstAlgorithmID) != nil ||
+		hypothesis.Validate(knowledge, riskSpec, SemanticBestFirstAlgorithmID) != nil ||
 		knowledge.Digest != result.KnowledgeDigest || hypothesis.Digest != result.HypothesisDigest {
 		return errors.New("EXPERIMENT_SEMANTIC_EXPLORER_SOURCE_INVALID")
 	}
@@ -716,6 +716,13 @@ func semanticExplorerProposalReason(err error) string {
 func validSemanticExplorerReason(reason string) bool {
 	return reason == SemanticExplorerReasonJSON || reason == SemanticExplorerReasonBinding ||
 		reason == SemanticExplorerReasonCandidate
+}
+
+func validSearchWork(work StatelessDFSWork) bool {
+	return validDFSPhaseWork(work.FrontierReconstruction) &&
+		validDFSPhaseWork(work.ChildMaterialization) && validDFSPhaseWork(work.ChildVerification) &&
+		work.TotalWorkUnits == work.FrontierReconstruction.WorkUnits+
+			work.ChildMaterialization.WorkUnits+work.ChildVerification.WorkUnits
 }
 
 func addModelWork(total *ModelWork, current ModelWork) {

@@ -33,6 +33,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	bundleEvidenceVersion := flags.Int("bundle-evidence-version", 0, "optional trusted bundle evidence version (3 only)")
 	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
 	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
+	agentModel := flags.String("agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
+	semanticInput := flags.String("semantic-input", "", "editable protocol knowledge and hypothesis JSON for an Agent strategy")
 	campaignDirectory := flags.String("campaign-dir", "", "Campaign directory for an explicit Campaign strategy")
 	campaignObservationOut := flags.String("campaign-observation-out", "", "Campaign Observation output path")
 	campaignAttempts := flags.Int("campaign-attempts", 0, "attempt limit for an explicit Campaign strategy")
@@ -46,24 +48,94 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *strategy == etcdraftSemanticCalibrationStrategy {
-		if *campaignDirectory == "" || *statelessCorpus == "" || *agentKeyFile == "" ||
+	if *strategy == etcdraftScenarioSessionStrategy {
+		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
+			*agentKeyFile == "" || *agentModel == "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
 			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
-			return errors.New("semantic Explorer calibration requires only -campaign-dir, -stateless-corpus, -agent-key-file, and optional -campaign-resume")
+			return errors.New("OpenRouter Scenario session requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
+		}
+		summary, err := runEtcdraftScenarioSession(ctx, etcdraftScenarioSessionOptions{
+			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
+			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
+			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
+		})
+		if summary.Campaign.CampaignID != "" {
+			fmt.Fprintf(
+				stdout, "session=%s status=%s episodes=%d stop=%s primary_work=%d replay_work=%d model_calls=%d model_tokens=%d\n",
+				*campaignDirectory, summary.Campaign.Status, summary.Campaign.Sequence, summary.Campaign.StopReason,
+				summary.Campaign.Totals.Primary.WorkUnits, summary.Campaign.Totals.Replay.WorkUnits,
+				summary.Campaign.Totals.Model.Calls, summary.Campaign.Totals.Model.TotalTokens,
+			)
+			fmt.Fprintf(
+				stdout, "testing_episodes=%d replay_stable=%d pss_states=%d risk=%s oracle_violations=%d\n",
+				summary.TestingEpisodes, summary.ReplayStableEpisodes, summary.UniqueCorePSSStates,
+				summary.BestRiskStatus, summary.OracleViolations,
+			)
+		}
+		return err
+	}
+	if *strategy == etcdraftScenarioCalibrationStrategy {
+		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
+			*agentKeyFile == "" || *agentModel == "" ||
+			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
+			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
+			return errors.New("OpenRouter Scenario calibration requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
+		}
+		summary, err := runEtcdraftScenarioCalibration(ctx, etcdraftScenarioCalibrationRunOptions{
+			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
+			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
+			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
+		})
+		if summary.AgentStatus != "" {
+			if summary.Testing != nil {
+				fmt.Fprintf(
+					stdout, "summary=%s status=%s attempts=%d pss_states=%d replay=%t oracle_violations=%d model_calls=%d model_tokens=%d\n",
+					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus, summary.Attempts,
+					summary.Testing.UniqueCorePSSStates, summary.Testing.ReplayStable,
+					summary.Testing.OracleViolations, summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
+				)
+			} else {
+				fmt.Fprintf(
+					stdout, "summary=%s status=%s attempts=%d model_calls=%d model_tokens=%d\n",
+					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus,
+					summary.Attempts, summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
+				)
+			}
+		}
+		return err
+	}
+	if *strategy == etcdraftSemanticCalibrationStrategy {
+		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
+			*agentKeyFile == "" || *agentModel == "" ||
+			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
+			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
+			return errors.New("semantic Explorer calibration requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
 		}
 		artifact, err := runEtcdraftSemanticCalibration(ctx, etcdraftSemanticCalibrationRunOptions{
-			Directory: *campaignDirectory, CorpusPath: *statelessCorpus,
+			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
 			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			Client: defaultDeepSeekIntentClient(), ReadKey: readAgentKey,
+			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
 		})
 		if artifact.Digest != "" {
-			fmt.Fprintf(
-				stdout, "artifact=%s status=%s model_calls=%d model_tokens=%d digest=%s\n",
-				filepath.Join(*campaignDirectory, "artifact.json"), artifact.Status,
-				artifact.ModelWork.Calls, artifact.ModelWork.TotalTokens, artifact.Digest,
-			)
+			if artifact.Testing != nil {
+				fmt.Fprintf(
+					stdout, "artifact=%s status=%s selected=%s pss_states=%d replay=%t oracle_violations=%d model_calls=%d model_tokens=%d digest=%s\n",
+					filepath.Join(*campaignDirectory, "artifact.json"), artifact.Status,
+					artifact.Testing.SelectedCandidateID, artifact.Testing.UniqueCorePSSStates,
+					artifact.Testing.Replay.Stable, len(artifact.Testing.Oracle.Violations),
+					artifact.ModelWork.Calls, artifact.ModelWork.TotalTokens, artifact.Digest,
+				)
+			} else {
+				fmt.Fprintf(
+					stdout, "artifact=%s status=%s model_calls=%d model_tokens=%d digest=%s\n",
+					filepath.Join(*campaignDirectory, "artifact.json"), artifact.Status,
+					artifact.ModelWork.Calls, artifact.ModelWork.TotalTokens, artifact.Digest,
+				)
+			}
 		}
 		return err
 	}
@@ -72,7 +144,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		if *out == "" || *campaignObservationOut == "" || *campaignDirectory == "" ||
 			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *statelessCorpus == "" ||
 			*decisions != 96 || *bundleOut != "" || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *agentKeyFile != "" || *campaignModelTokens != 0 ||
+			*methodSpecDigest != "" || *agentKeyFile != "" || *agentModel != "" || *semanticInput != "" ||
+			*campaignModelTokens != 0 ||
 			(*strategy == etcdraftStatelessCanonicalCampaignStrategy && *policySeed != 1) {
 			return errors.New("Stateless Campaign strategy requires only -stateless-corpus, -out, Campaign, and uniform seed flags")
 		}
@@ -92,6 +165,12 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if *agentKeyFile != "" {
 		return errors.New("Agent flags require an explicit opt-in Agent strategy")
+	}
+	if *agentModel != "" {
+		return errors.New("-agent-model requires an explicit opt-in Agent strategy")
+	}
+	if *semanticInput != "" {
+		return errors.New("-semantic-input requires an explicit opt-in Agent strategy")
 	}
 	if *out == "" {
 		return errors.New("-out is required")
@@ -234,6 +313,20 @@ func etcdraftExecutionWithMethodSpec(
 	captureBundle bool,
 	methodSpecDigest string,
 ) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	return etcdraftExecutionConfigured(
+		ctx, strategy, decisions, policySeed, captureBundle, methodSpecDigest, nil,
+	)
+}
+
+func etcdraftExecutionConfigured(
+	ctx context.Context,
+	strategy string,
+	decisions int,
+	policySeed uint64,
+	captureBundle bool,
+	methodSpecDigest string,
+	workloadOverride *controlexperiment.WorkloadPlan,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
 	if methodSpecDigest != "" && !captureBundle {
 		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{},
 			errors.New("method spec requires bundle capture")
@@ -250,6 +343,12 @@ func etcdraftExecutionWithMethodSpec(
 		bundle, bound, workload, err := etcdraftQualifiedWorkload(ctx)
 		if err != nil {
 			return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+		}
+		if workloadOverride != nil {
+			if err := workloadOverride.Validate(); err != nil {
+				return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
+			}
+			workload = *workloadOverride
 		}
 		admission = &bound
 		qualificationReport = &bundle

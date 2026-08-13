@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -230,10 +231,30 @@ func TestEtcdraftM518aBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 }
 
 func TestRetiredUnqualifiedStrategiesStayUnavailable(t *testing.T) {
-	for _, strategy := range []string{"fixed", "random", "stub-planner", "deepseek-planner"} {
+	for _, strategy := range []string{"fixed", "random", "stub-planner"} {
 		_, err := etcdraftReport(context.Background(), strategy, 1, 1)
 		if err == nil || !strings.Contains(err.Error(), "unsupported -strategy") {
 			t.Fatalf("strategy %q error = %v, want unsupported", strategy, err)
+		}
+	}
+}
+
+func TestA5aAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
+	for _, strategy := range []string{
+		etcdraftSemanticCalibrationStrategy,
+		etcdraftScenarioCalibrationStrategy,
+		etcdraftScenarioSessionStrategy,
+	} {
+		output := &strings.Builder{}
+		err := run(context.Background(), []string{
+			"-strategy", strategy,
+			"-campaign-dir", filepath.Join(t.TempDir(), "agent-run"),
+			"-stateless-corpus", etcdraftTestRootCorpusPath,
+			"-agent-key-file", "fixture-key-source",
+			"-agent-model", openRouterFixtureModel,
+		}, output)
+		if err == nil || !strings.Contains(err.Error(), "-semantic-input") {
+			t.Fatalf("strategy %q accepted implicit semantic knowledge: %v", strategy, err)
 		}
 	}
 }

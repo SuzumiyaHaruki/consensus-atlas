@@ -251,7 +251,7 @@ func semanticExplorerKnowledgeAndHypothesis(
 	}
 	hypothesis, err := NewTestHypothesis(
 		"fixture-a2b-hypothesis", knowledge, spec,
-		"Compare semantic progress across the bounded global queue.",
+		"Compare semantic progress across the bounded global queue.", SemanticBestFirstAlgorithmID,
 	)
 	if err != nil {
 		t.Fatal(err)

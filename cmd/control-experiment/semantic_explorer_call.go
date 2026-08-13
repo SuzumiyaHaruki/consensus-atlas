@@ -20,7 +20,7 @@ type semanticExplorerCallJournal struct {
 
 func newSemanticExplorerCallJournal(
 	directory string,
-	client deepSeekIntentClient,
+	client openRouterIntentClient,
 	key string,
 ) (*semanticExplorerCallJournal, error) {
 	core, err := newStatelessAgentCallJournal(directory, client, key)
@@ -32,7 +32,7 @@ func newSemanticExplorerCallJournal(
 
 func recoverSemanticExplorerCallJournal(
 	directory string,
-	client deepSeekIntentClient,
+	client openRouterIntentClient,
 ) (*semanticExplorerCallJournal, error) {
 	core, err := recoverStatelessAgentCallJournal(directory, client)
 	if err != nil {

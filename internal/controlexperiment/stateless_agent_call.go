@@ -36,6 +36,7 @@ type StatelessAgentCallAudit struct {
 	ResultDigest        string    `json:"result_digest,omitempty"`
 	Status              string    `json:"status"`
 	Work                ModelWork `json:"work"`
+	TransportAttempts   int       `json:"transport_attempts,omitempty"`
 	Digest              string    `json:"digest"`
 }
 
@@ -67,6 +68,7 @@ func NewStatelessAgentCallAudit(
 		audit.ResultDigest = result.Digest
 		audit.Status = result.Status
 		audit.Work = result.Work
+		audit.TransportAttempts = result.TransportAttempts
 	}
 	sealed, err := audit.seal()
 	if err != nil || sealed.Validate() != nil {
@@ -79,18 +81,20 @@ func (audit StatelessAgentCallAudit) Validate() error {
 	if audit.SchemaVersion != StatelessAgentCallAuditVersion || audit.Ordinal <= 0 ||
 		!validMethodToken(audit.RootID) || !validSHA256(audit.SearchRequestDigest) ||
 		!validSHA256(audit.IntentDigest) || audit.Work.Calls < 0 || audit.Work.Calls > 1 ||
+		audit.TransportAttempts < 0 || audit.TransportAttempts > 3 ||
 		audit.Work.InputTokens < 0 || audit.Work.OutputTokens < 0 ||
 		audit.Work.TotalTokens != audit.Work.InputTokens+audit.Work.OutputTokens {
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_INVALID")
 	}
 	switch audit.Status {
 	case StatelessAgentCallPrepared:
-		if audit.DispatchDigest != "" || audit.ResultDigest != "" || audit.Work != (ModelWork{}) {
+		if audit.DispatchDigest != "" || audit.ResultDigest != "" || audit.Work != (ModelWork{}) ||
+			audit.TransportAttempts != 0 {
 			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_PREPARED_INVALID")
 		}
 	case StatelessAgentCallAmbiguous:
 		if !validSHA256(audit.DispatchDigest) || audit.ResultDigest != "" ||
-			audit.Work != (ModelWork{Calls: 1}) {
+			audit.Work != (ModelWork{Calls: 1}) || audit.TransportAttempts != 0 {
 			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_AMBIGUOUS_INVALID")
 		}
 	case StatelessAgentCallCompleted, StatelessAgentCallContentReady,
@@ -239,18 +243,19 @@ func (dispatch StatelessAgentCallDispatch) ValidateIntent(intent StatelessAgentC
 // acceptance. Rejected keeps exact negative evidence; failed records transport
 // or pre-transport failure without authorizing a retry.
 type StatelessAgentCallResult struct {
-	SchemaVersion  string                 `json:"schema_version"`
-	DispatchDigest string                 `json:"dispatch_digest"`
-	Status         string                 `json:"status"`
-	FailureCode    string                 `json:"failure_code,omitempty"`
-	Content        []byte                 `json:"content,omitempty"`
-	ContentDigest  string                 `json:"content_digest,omitempty"`
-	ProposalDigest string                 `json:"proposal_digest,omitempty"`
-	ResponseDigest string                 `json:"response_digest,omitempty"`
-	Response       *AgentResponseIdentity `json:"response,omitempty"`
-	DurationMillis int64                  `json:"duration_millis"`
-	Work           ModelWork              `json:"work"`
-	Digest         string                 `json:"digest"`
+	SchemaVersion     string                 `json:"schema_version"`
+	DispatchDigest    string                 `json:"dispatch_digest"`
+	Status            string                 `json:"status"`
+	FailureCode       string                 `json:"failure_code,omitempty"`
+	Content           []byte                 `json:"content,omitempty"`
+	ContentDigest     string                 `json:"content_digest,omitempty"`
+	ProposalDigest    string                 `json:"proposal_digest,omitempty"`
+	ResponseDigest    string                 `json:"response_digest,omitempty"`
+	Response          *AgentResponseIdentity `json:"response,omitempty"`
+	DurationMillis    int64                  `json:"duration_millis"`
+	Work              ModelWork              `json:"work"`
+	TransportAttempts int                    `json:"transport_attempts,omitempty"`
+	Digest            string                 `json:"digest"`
 }
 
 func NewStatelessAgentCallResult(
@@ -278,7 +283,8 @@ func (result StatelessAgentCallResult) ValidateInputs(
 	if dispatch.ValidateIntent(intent) != nil || result.SchemaVersion != StatelessAgentCallResultVersion ||
 		result.DispatchDigest != dispatch.Digest || result.DurationMillis < 0 ||
 		result.Work.Calls < 0 || result.Work.Calls > 1 || result.Work.InputTokens < 0 ||
-		result.Work.OutputTokens < 0 || result.Work.TotalTokens != result.Work.InputTokens+result.Work.OutputTokens {
+		result.Work.OutputTokens < 0 || result.Work.TotalTokens != result.Work.InputTokens+result.Work.OutputTokens ||
+		result.TransportAttempts < 0 || result.TransportAttempts > intent.Transport.MaxRetries+1 {
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_RESULT_INVALID")
 	}
 	switch result.Status {

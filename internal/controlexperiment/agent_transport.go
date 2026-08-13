@@ -1,6 +1,9 @@
 package controlexperiment
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // AgentTransportFreeze is the trusted, protocol-neutral description of one
 // bounded provider call. It contains no credential and grants no execution or
@@ -25,8 +28,23 @@ func (transport AgentTransportFreeze) Validate() error {
 
 func (transport AgentTransportFreeze) valid() bool {
 	return validMethodToken(transport.Provider) && transport.Endpoint != "" &&
-		validMethodToken(transport.Model) && transport.Thinking == "disabled" &&
+		validAgentModelID(transport.Model) && transport.Thinking == "disabled" &&
 		transport.Temperature == 0 && transport.MaxOutputTokens > 0 &&
 		transport.MaxOutputTokens <= 4096 && transport.MaxCallsPerArm == 1 &&
-		transport.MaxRetries == 0
+		transport.MaxRetries >= 0 && transport.MaxRetries <= 2
+}
+
+func validAgentModelID(model string) bool {
+	if model == "" || model != strings.TrimSpace(model) || strings.ToLower(model) != model || len(model) > 200 {
+		return false
+	}
+	for _, character := range model {
+		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.' || character == '/' ||
+			character == ':' || character == '~' {
+			continue
+		}
+		return false
+	}
+	return true
 }

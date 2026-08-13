@@ -27,9 +27,13 @@ func TestEtcdraftRiskWitnessProjectorRequiresOrderedSemanticEvidence(t *testing.
 			Step:   2,
 			Action: control.Action{ID: "crash-1", Kind: control.ActionCrash, Node: n1v1},
 			Evidence: etcdraftRiskWitnessFixtureEvidence(t, 2,
-				etcdraftRiskWitnessFixtureNode{"n1", 1, false, "StateStopped", 1},
 				etcdraftRiskWitnessFixtureNode{"n2", 1, true, "StateLeader", 2},
 			),
+			NodeTransitions: []controlruntime.NodeTransition{{
+				Node:   "n1",
+				Before: controlruntime.NodeSnapshot{Ref: n1v1, Lifecycle: control.NodeRunning},
+				After:  controlruntime.NodeSnapshot{Ref: n1v1, Lifecycle: control.NodeStopped},
+			}},
 		},
 		{
 			Step:   3,

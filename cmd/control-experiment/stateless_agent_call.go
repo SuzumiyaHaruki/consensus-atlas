@@ -22,7 +22,7 @@ var errStatelessAgentCallKeyRequired = errors.New("STATELESS_AGENT_CALL_KEY_REQU
 type statelessAgentCallJournal struct {
 	directory string
 	rootID    string
-	client    deepSeekIntentClient
+	client    openRouterIntentClient
 	key       string
 	transport controlexperiment.AgentTransportFreeze
 	next      int
@@ -42,7 +42,7 @@ type statelessAgentRecoveredCall struct {
 type planningAgentCallPlan struct {
 	intentID       string
 	requestDigest  string
-	prepared       deepSeekPreparedRequest
+	prepared       agentPreparedRequest
 	contentReady   bool
 	rejectionCode  string
 	validateOutput func([]byte) (string, error)
@@ -74,11 +74,11 @@ func (plan planningAgentCallPlan) validate() error {
 
 func newStatelessAgentCallJournal(
 	directory string,
-	client deepSeekIntentClient,
+	client openRouterIntentClient,
 	key string,
 ) (*statelessAgentCallJournal, error) {
 	clean := filepath.Clean(directory)
-	transport := deepSeekTransportFreeze(client)
+	transport := openRouterTransportFreeze(client)
 	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
 		client.HTTP == nil || transport.Validate() != nil {
 		return nil, errors.New("STATELESS_AGENT_CALL_JOURNAL_INPUT_INVALID")
@@ -109,10 +109,10 @@ func newStatelessAgentCallJournal(
 
 func recoverStatelessAgentCallJournal(
 	directory string,
-	client deepSeekIntentClient,
+	client openRouterIntentClient,
 ) (*statelessAgentCallJournal, error) {
 	clean := filepath.Clean(directory)
-	transport := deepSeekTransportFreeze(client)
+	transport := openRouterTransportFreeze(client)
 	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
 		client.HTTP == nil || transport.Validate() != nil {
 		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_INPUT_INVALID")
@@ -153,11 +153,11 @@ func recoverStatelessAgentCallJournal(
 	}, nil
 }
 
-func deepSeekTransportFreeze(client deepSeekIntentClient) controlexperiment.AgentTransportFreeze {
+func openRouterTransportFreeze(client openRouterIntentClient) controlexperiment.AgentTransportFreeze {
 	return controlexperiment.AgentTransportFreeze{
-		Provider: deepSeekProvider, Endpoint: client.Endpoint, Model: client.Model,
+		Provider: openRouterProvider, Endpoint: client.Endpoint, Model: client.Model,
 		Thinking: "disabled", Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
-		MaxCallsPerArm: 1, MaxRetries: 0,
+		MaxCallsPerArm: 1, MaxRetries: client.MaxRetries,
 	}
 }
 
@@ -353,12 +353,13 @@ func (journal *statelessAgentCallJournal) dispatch(
 		Status:  plan.successStatus(),
 		Content: call.Content, ResponseDigest: call.ResponseDigest, Response: call.Response,
 		DurationMillis: call.DurationMillis, Work: call.Work,
+		TransportAttempts: call.TransportAttempts,
 	}
 	var terminalErr error
 	if transportErr != nil || call.FailureCode != "" {
 		result.Status = controlexperiment.StatelessAgentCallFailed
 		result.FailureCode = "agent-transport-failed"
-		if transportErr == nil && call.FailureCode != deepSeekFailureTransport {
+		if transportErr == nil && call.FailureCode != agentFailureTransport {
 			result.FailureCode = "agent-response-rejected"
 		}
 		result.Content, result.Response = nil, nil

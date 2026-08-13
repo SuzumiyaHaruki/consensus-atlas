@@ -20,9 +20,6 @@ const (
 	etcdraftSemanticCalibrationRootID      = "invoked"
 	etcdraftSemanticCalibrationExposure    = "public-calibration-official-source"
 	etcdraftSemanticCalibrationClass       = "public-calibration-not-agent-effectiveness-holdout-or-correctness"
-	etcdraftSemanticCalibrationMaxCalls    = 2
-	etcdraftSemanticCalibrationMaxTokens   = 16000
-	etcdraftSemanticCalibrationSearchWork  = 12000
 	etcdraftSemanticPrefixProjectorID      = "official-etcdraft-v2-leader-change-prefix-v1"
 )
 
@@ -33,6 +30,8 @@ type etcdraftSemanticCalibrationInputs struct {
 	riskSpec   semantic.RiskWitnessSpec
 	knowledge  controlexperiment.ProtocolKnowledgePack
 	hypothesis controlexperiment.TestHypothesis
+	experiment etcdraftAgentExperimentConfig
+	client     openRouterIntentClient
 	searchSpec controlexperiment.StatelessDFSSpec
 	spec       etcdraftSemanticCalibrationSpec
 }
@@ -98,6 +97,7 @@ func newEtcdraftSemanticCalibrationSpec(
 	riskSpec semantic.RiskWitnessSpec,
 	knowledge controlexperiment.ProtocolKnowledgePack,
 	hypothesis controlexperiment.TestHypothesis,
+	experiment etcdraftAgentExperimentConfig,
 	searchSpec controlexperiment.StatelessDFSSpec,
 	transport controlexperiment.AgentTransportFreeze,
 ) (etcdraftSemanticCalibrationSpec, error) {
@@ -115,14 +115,12 @@ func newEtcdraftSemanticCalibrationSpec(
 		BaselineGuidanceID: controlexperiment.SemanticBestFirstGuidanceID,
 		ExplorerGuidanceID: "etcdraft-public-semantic-explorer-v1",
 		ProjectorID:        etcdraftSemanticPrefixProjector{}.ID(), PromptVersion: semanticExplorerPromptVersion,
-		ExplorerBudget: controlexperiment.SemanticExplorerBudget{
-			MaxCalls: etcdraftSemanticCalibrationMaxCalls, MaxTokens: etcdraftSemanticCalibrationMaxTokens,
-		},
-		Transport: transport,
+		ExplorerBudget: experiment.ExplorerBudget,
+		Transport:      transport,
 	}
 	sealed, err := spec.seal()
 	if err != nil || sealed.ValidateInputs(
-		inputs, root, frontier, riskSpec, knowledge, hypothesis, searchSpec,
+		inputs, root, frontier, riskSpec, knowledge, hypothesis, experiment, searchSpec,
 	) != nil {
 		return etcdraftSemanticCalibrationSpec{}, errors.New("ETCDRAFT_SEMANTIC_CALIBRATION_SPEC_INVALID")
 	}
@@ -132,9 +130,20 @@ func newEtcdraftSemanticCalibrationSpec(
 func prepareEtcdraftSemanticCalibration(
 	ctx context.Context,
 	corpusPath string,
-	client deepSeekIntentClient,
+	semanticInputPath string,
+	client openRouterIntentClient,
 ) (etcdraftSemanticCalibrationInputs, error) {
-	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, corpusPath)
+	riskSpec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
+	if err != nil {
+		return etcdraftSemanticCalibrationInputs{}, err
+	}
+	knowledge, hypothesis, experiment, workload, err := loadEtcdraftSemanticAuthoringSource(
+		semanticInputPath, riskSpec,
+	)
+	if err != nil {
+		return etcdraftSemanticCalibrationInputs{}, err
+	}
+	inputs, err := loadEtcdraftStatelessCampaignInputsWithWorkload(ctx, corpusPath, workload)
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
@@ -142,58 +151,41 @@ func prepareEtcdraftSemanticCalibration(
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
-	envelope := etcdraftSemanticCalibrationFaultEnvelope()
+	client.MaxOutputTokens = experiment.ModelMaxOutputTokens
+	client.MaxRetries = experiment.ModelMaxRetries
+	if openRouterTransportFreeze(client).Validate() != nil {
+		return etcdraftSemanticCalibrationInputs{}, errors.New("ETCDRAFT_SEMANTIC_TRANSPORT_CONFIG_INVALID")
+	}
+	envelope := experiment.faultEnvelope()
 	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+		return etcdraftv2.NewWithConfig(experiment.AdapterConfig)
 	}
 	frontier, _, err := controlexperiment.ReconstructActionFrontierView(
 		ctx, "etcdraft-public-semantic-root-frontier", root, len(root.Records),
-		etcdraftCampaignRuntimeConfig(), envelope, factory,
+		experiment.Runtime, envelope, factory,
 	)
 	if err != nil || len(frontier.Actions) < 2 {
 		return etcdraftSemanticCalibrationInputs{}, errors.New("ETCDRAFT_SEMANTIC_CALIBRATION_FRONTIER_INVALID")
 	}
-	riskSpec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
-	if err != nil {
-		return etcdraftSemanticCalibrationInputs{}, err
-	}
-	knowledge, err := etcdraftSemanticCalibrationKnowledge(riskSpec)
-	if err != nil {
-		return etcdraftSemanticCalibrationInputs{}, err
-	}
-	hypothesis, err := controlexperiment.NewTestHypothesisForBackend(
-		"etcdraft-public-semantic-hypothesis-a2b3", knowledge, riskSpec,
-		"Prefer exact prefixes that advance the frozen leader-change-with-inflight-proposal milestones.",
-		controlexperiment.SemanticBestFirstAlgorithmID,
-	)
-	if err != nil {
-		return etcdraftSemanticCalibrationInputs{}, err
-	}
 	searchSpec, err := controlexperiment.NewStatelessDFSSpec(
-		"etcdraft-public-semantic-search-a2b3", root, etcdraftCampaignRuntimeConfig(), envelope,
-		2, len(frontier.Actions)+1, etcdraftSemanticCalibrationSearchWork,
+		"etcdraft-public-semantic-search-a2b3", root, experiment.Runtime, envelope,
+		experiment.SearchMaxDepth, experiment.SearchMaxWorkItems, experiment.SearchMaxWorkUnits,
 	)
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
 	spec, err := newEtcdraftSemanticCalibrationSpec(
-		inputs, root, frontier, riskSpec, knowledge, hypothesis, searchSpec,
-		deepSeekTransportFreeze(client),
+		inputs, root, frontier, riskSpec, knowledge, hypothesis, experiment, searchSpec,
+		openRouterTransportFreeze(client),
 	)
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
 	return etcdraftSemanticCalibrationInputs{
 		campaign: inputs, root: root, frontier: frontier, riskSpec: riskSpec,
-		knowledge: knowledge, hypothesis: hypothesis, searchSpec: searchSpec, spec: spec,
+		knowledge: knowledge, hypothesis: hypothesis, experiment: experiment,
+		client: client, searchSpec: searchSpec, spec: spec,
 	}, nil
-}
-
-func etcdraftSemanticCalibrationFaultEnvelope() *controlexperiment.FaultEnvelope {
-	return &controlexperiment.FaultEnvelope{
-		MaxCrashes: 1, MaxConcurrentCrashes: 1, MaxMessageDrops: 2,
-		MaxMessageDuplicates: 1, MaxPartitions: 1, MaxActivePartitions: 1,
-	}
 }
 
 func (spec etcdraftSemanticCalibrationSpec) ValidateInputs(
@@ -203,14 +195,15 @@ func (spec etcdraftSemanticCalibrationSpec) ValidateInputs(
 	riskSpec semantic.RiskWitnessSpec,
 	knowledge controlexperiment.ProtocolKnowledgePack,
 	hypothesis controlexperiment.TestHypothesis,
+	experiment etcdraftAgentExperimentConfig,
 	searchSpec controlexperiment.StatelessDFSSpec,
 ) error {
 	if spec.SchemaVersion != etcdraftSemanticCalibrationSpecVersion || spec.ID != etcdraftSemanticCalibrationID ||
 		spec.TargetID != etcdraftCampaignTargetID || spec.SourceExposure != etcdraftSemanticCalibrationExposure ||
 		spec.Classification != etcdraftSemanticCalibrationClass || inputs.source.Validate() != nil ||
 		inputs.corpus.Validate(inputs.source) != nil || root.Validate() != nil || frontier.Validate() != nil ||
-		riskSpec.Validate() != nil || knowledge.Validate() != nil ||
-		hypothesis.ValidateForBackend(knowledge, riskSpec, controlexperiment.SemanticBestFirstAlgorithmID) != nil ||
+		riskSpec.Validate() != nil || knowledge.Validate() != nil || experiment.validate() != nil ||
+		hypothesis.Validate(knowledge, riskSpec, controlexperiment.SemanticBestFirstAlgorithmID) != nil ||
 		searchSpec.Validate(root) != nil || spec.SourceBundleDigest != inputs.source.Digest ||
 		spec.CorpusDigest != inputs.corpus.Digest || spec.RootID != etcdraftSemanticCalibrationRootID ||
 		spec.RootPrefixDigest != root.Digest || spec.RootDecisions != len(root.Records) ||
@@ -222,11 +215,16 @@ func (spec etcdraftSemanticCalibrationSpec) ValidateInputs(
 		spec.ExplorerGuidanceID != "etcdraft-public-semantic-explorer-v1" ||
 		spec.ProjectorID != (etcdraftSemanticPrefixProjector{}).ID() ||
 		spec.PromptVersion != semanticExplorerPromptVersion ||
-		spec.ExplorerBudget != (controlexperiment.SemanticExplorerBudget{
-			MaxCalls: etcdraftSemanticCalibrationMaxCalls, MaxTokens: etcdraftSemanticCalibrationMaxTokens,
-		}) || spec.Transport.Validate() != nil || spec.Transport.Provider != deepSeekProvider ||
-		spec.Transport.Model != deepSeekV4Flash || spec.Transport.MaxRetries != 0 ||
-		searchSpec.MaxDepth != 2 || searchSpec.MaxWorkItems != len(frontier.Actions)+1 {
+		spec.ExplorerBudget != experiment.ExplorerBudget || spec.Transport.Validate() != nil ||
+		spec.Transport.Provider != openRouterProvider ||
+		spec.Transport.Endpoint != openRouterChatEndpoint || !validOpenRouterModelID(spec.Transport.Model) ||
+		spec.Transport.MaxOutputTokens != experiment.ModelMaxOutputTokens ||
+		spec.Transport.MaxRetries != experiment.ModelMaxRetries ||
+		searchSpec.Runtime != experiment.Runtime || searchSpec.FaultEnvelope == nil ||
+		*searchSpec.FaultEnvelope != experiment.FaultEnvelope ||
+		searchSpec.MaxDepth != experiment.SearchMaxDepth ||
+		searchSpec.MaxWorkItems != experiment.SearchMaxWorkItems ||
+		searchSpec.MaxWorkUnits != experiment.SearchMaxWorkUnits {
 		return errors.New("ETCDRAFT_SEMANTIC_CALIBRATION_SPEC_INPUT_MISMATCH")
 	}
 	want, err := spec.seal()
@@ -241,31 +239,4 @@ func (spec etcdraftSemanticCalibrationSpec) seal() (etcdraftSemanticCalibrationS
 	digest, err := control.CanonicalDigest(spec)
 	spec.Digest = digest
 	return spec, err
-}
-
-func etcdraftSemanticCalibrationKnowledge(
-	riskSpec semantic.RiskWitnessSpec,
-) (controlexperiment.ProtocolKnowledgePack, error) {
-	if riskSpec.Validate() != nil || riskSpec.FamilyID != "raft" ||
-		riskSpec.RiskID != raftfamily.LeaderChangeWithInflightProposalRiskID {
-		return controlexperiment.ProtocolKnowledgePack{}, errors.New("ETCDRAFT_SEMANTIC_KNOWLEDGE_RISK_INVALID")
-	}
-	return controlexperiment.NewProtocolKnowledgePack(controlexperiment.ProtocolKnowledgePack{
-		ID: "etcdraft-public-semantic-knowledge-a2b3", Family: "raft", Protocol: "etcdraft",
-		Knowledge: []controlexperiment.KnowledgeStatement{
-			{ID: "inflight-change", Text: "A proposal may remain in flight while leadership changes; explore prefixes that preserve this ordering."},
-			{ID: "natural-progress", Text: "Leadership change and recovery arise through controlled message delivery, lifecycle events, and natural temporal progress."},
-			{ID: "semantic-queue-only", Text: "Choose only the complete Candidate ID set supplied by the current trusted semantic queue."},
-		},
-		Risks: []controlexperiment.ProtocolRisk{{
-			ID:                   riskSpec.RiskID,
-			Summary:              "Exercise a leader change while a client proposal is in flight, followed by old-leader recovery.",
-			RequiredCapabilities: []string{"runtime-owned-message-control", "strict-replay"},
-			RequiredActions: []control.ActionKind{
-				control.ActionCrash, control.ActionDeliverMessage, control.ActionFireTemporal,
-				control.ActionInvoke, control.ActionRestart,
-			},
-			AllowedBackendIDs: []string{controlexperiment.SemanticBestFirstAlgorithmID},
-		}},
-	})
 }

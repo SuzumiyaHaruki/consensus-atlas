@@ -203,11 +203,26 @@ func loadEtcdraftStatelessCampaignInputs(
 	ctx context.Context,
 	corpusPath string,
 ) (etcdraftStatelessCampaignInputs, error) {
+	workload, err := etcdraftCampaignWorkload()
+	if err != nil {
+		return etcdraftStatelessCampaignInputs{}, err
+	}
+	return loadEtcdraftStatelessCampaignInputsWithWorkload(ctx, corpusPath, workload)
+}
+
+func loadEtcdraftStatelessCampaignInputsWithWorkload(
+	ctx context.Context,
+	corpusPath string,
+	workload controlexperiment.WorkloadPlan,
+) (etcdraftStatelessCampaignInputs, error) {
 	if corpusPath == "" {
 		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_CORPUS_PATH_INVALID")
 	}
-	_, source, err := etcdraftExecution(
-		ctx, "workload-risk-witness-calibration", 64, 1, true,
+	if err := workload.Validate(); err != nil {
+		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_WORKLOAD_INVALID")
+	}
+	_, source, err := etcdraftExecutionConfigured(
+		ctx, "workload-risk-witness-calibration", 64, 1, true, "", &workload,
 	)
 	if err != nil {
 		return etcdraftStatelessCampaignInputs{}, err
@@ -217,7 +232,7 @@ func loadEtcdraftStatelessCampaignInputs(
 		corpus.Validate(source) != nil {
 		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_CORPUS_INVALID")
 	}
-	qualification, admission, workload, err := etcdraftQualifiedWorkload(ctx)
+	qualification, admission, _, err := etcdraftQualifiedWorkload(ctx)
 	if err != nil {
 		return etcdraftStatelessCampaignInputs{}, err
 	}
@@ -388,7 +403,8 @@ func executeEtcdraftStatelessCampaignAttempt(
 			_, bundle, err := executeEtcdraftStatelessPrefix(
 				ctx,
 				fmt.Sprintf("etcdraft-stateless-%s-%s-%d", method.ID, entry.ID, item.Ordinal),
-				result, root, item, envelope, inputs.qualification, inputs.admission, inputs.workload,
+				result.Search, root, item, etcdraftCampaignRuntimeConfig(), etcdraftv2.ThreeNodeConfig(),
+				envelope, inputs.qualification, inputs.admission, inputs.workload,
 			)
 			if err != nil {
 				decision := item.Path.Decision

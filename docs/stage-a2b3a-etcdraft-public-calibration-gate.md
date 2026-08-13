@@ -47,7 +47,8 @@ identity 改为符合通用 method-token 规则的稳定 ID，没有放宽 gener
 
 ## 4. Backend 契约修正
 
-真实组合暴露了一个通用缺口：`ValidateForBackend` 已存在，但旧 `NewTestHypothesis` 仍硬编码 DFS validation。
+当时的真实组合暴露了一个通用缺口：A1 构造路径仍默认 DFS，而 A2 使用 Semantic Best-first。
+A4r 已删除无消费者的 A1 episode 契约，并要求唯一 `TestHypothesis` 对实际 backend 显式验证。
 本阶段增加 `NewTestHypothesisForBackend`；旧构造器继续包装 DFS，旧 identity 和调用方行为不变。A2b3
 hypothesis 只声明 semantic-best-first 支持，没有为了通过构造而虚假加入未使用 backend。
 

@@ -33,7 +33,7 @@ minimal protocol knowledge + thin Adapter
 Protocol/Hypothesis Agent -> Explorer Agent
                     ^                |
                     |                v
-         PlanningFeedback + bounded episode proposal
+         mechanical feedback + bounded proposal
                     ^                |
                     |                v
           deterministic Runtime / semantic projection
@@ -82,16 +82,16 @@ separate:
   reference, and rationale. It must not contain an executable Oracle, expected
   bug/verdict, trusted assertion, concrete Action sequence, or future absolute
   decision number.
-- A1 `EpisodePlan` binds an existing risk and orders the current planning
-  candidates. The trusted search input owns the algorithm, root, fault
-  envelope, total budget, and stop rule. A2 may introduce an `EpisodeSpec` only
-  when a real consumer requires a separate identity.
-- `PlanningFeedback` may expose only pre-registered mechanical rejection,
-  prefix-bound progress, cost, and non-verdict public activation fields.
+- `SemanticExplorerProposal` may only order the current trusted semantic queue;
+  `ScenarioPlan` may only use current or mechanically exposed selectors. The
+  trusted search input owns the backend, root, fault envelope, total budget,
+  and stop rule.
+- Explorer/Scenario feedback may expose only pre-registered mechanical
+  rejection, prefix-bound progress, cost, and non-verdict public activation fields.
   Candidate/control identities, private monitor evidence, Oracle verdicts,
   known triggers, and root-cause mappings are evaluator-only terminal data.
 - Do not add a generic Blackboard, scoring DSL, operator catalog, budget DSL,
-  stop DSL, or second Ledger for the A1 vertical slice.
+  stop DSL, compatibility Episode contract, or second Ledger.
 
 ## Evaluation rules
 
