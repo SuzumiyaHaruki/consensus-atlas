@@ -1,8 +1,8 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.71（M5.23R4b Stateless Agent Campaign composition）
-> 日期：2026-08-12
+> 状态：Draft v1.72（Agentic Track A0 研究主线重置）
+> 日期：2026-08-13
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
 ---
@@ -45,19 +45,18 @@ ConsensusAtlas 的长期目标很容易在实现过程中退化成以下几类�
 
 项目固定采用以下主线：
 
-> **最小协议知识 + 薄 Execution Binding + 固定 Core PSS IR + 覆盖债务驱动的受限 Agent 测试闭环 + 确定性执行与 Oracle**
+> **协议感知 Agent 生成并修正测试假设 + 统一共识控制层确定执行 + 语义反馈驱动探索 + 独立 Replay/Oracle 评价**
 
-人工只提供协议实现、协议文档/形式化模型、核心安全与活性目标、故障模型和有界测试范围，或者选择已有的可选 Family 扩展。Knowledge/Obligation Agent 负责生成协议差异、Core PSS 映射和结构化覆盖义务；Onboarding Agent 负责生成薄 Execution Binding、Semantic Mapping 和基础见证；Planner/Scenario/Search/Critic Agent 围绕 Coverage Ledger 中的未覆盖债务持续产生和修复测试。所有 Agent 产物只能由确定性 Coordinator、Runtime、Evidence Matcher、Replay、Conformance 和 Oracle 接受。
+人工只提供协议实现、协议文档/形式化模型、核心安全与活性目标、故障模型、有界测试范围和薄 Adapter/Binding 所需的最小事实。Protocol/Hypothesis Agent 负责理解协议并提出风险假设，Explorer Agent 把假设转化为有界 episode 目标、调用可信搜索工具并依据机械反馈修正计划。是否拆出独立 Critic 或 Onboarding Agent 由消融实验决定，不再预建完整角色体系。所有 Agent 产物只能由确定性 Coordinator、Runtime、Evidence Matcher、Replay、Conformance 和 Oracle 接受。
 
 系统的总原则是：
 
-> **最大化 Agent 的工作量，最小化 Agent 的判定权。**
+> **扩大 Agent 的测试提议权和搜索权，保持 Agent 的事实权与最终判定权为零。**
 
-在搜索层吸收 Agentic Model Checking 的有限状态—动作方法：可信内核产生
-`EnabledActionSet`，Random/DFS/DPOR/Agent 只决定同一批合法 `ActionRef` 的搜索顺序。
-Agent 可以同时提供宏观 Test Plan 和微观动作排序，但不生成不存在的消息、
-不自行判定 enabled，也不决定状态等价。这一搜索增强不替代 Contract/PSS/Profile、
-强覆盖证据和隐藏缺陷外部评价。
+可信内核继续产生 `EnabledActionSet`，但 Agent 不再与 Random/DFS/DPOR 平级。Agent 可以提出协议级
+测试假设、选择语义目标、对全局候选 WorkItem 排序、调用冻结的局部搜索算子，并根据
+PSS/Risk/义务/不可达 finding 修正下一轮计划；Random、DFS、best-first 和未来 DPOR 是其可调用或
+可对照的搜索工具。Agent 不生成不存在的消息，不自行判定 enabled、PSS 真值、状态等价或缺陷结论。
 
 固定分母的义务覆盖率评价最终测试成果；无固定分母的 PSS 状态发现曲线评价搜索效率。PSS 是语义归一化和证据定位机制，不能单独成为最终完成百分比。
 
@@ -109,31 +108,41 @@ Agora 的主要搜索产物是 `bug hypothesis -> attack scenario -> repository-
 Strategy/TestGen 可以根据仓库知识生成、执行并修复测试代码。ConsensusAtlas 的长期区分必须是：
 
 ```text
-protocol knowledge + consensus semantic risk
-                    |
-                    v
-restricted semantic search guidance
-                    |
-                    v
-trusted systematic explorer enumerates exact-prefix WorkItems
-                    |
-                    v
-Runtime validates enabled ActionRef and executes
-                    |
-                    v
-independent Replay / consensus Oracle / evaluator
+protocol/code/knowledge
+          |
+          v
+Protocol/Hypothesis Agent -- TestHypothesis --> Explorer Agent
+          ^                                      |
+          |                                      v
+mechanical EpisodeReport <--- trusted search tools / Runtime
+          |                                      |
+          +--------------- repair loop ----------+
+                                                 |
+                                                 v
+                             independent Replay / Oracle / evaluator
 ```
 
-因此 Agent 不生成 enabled set，不伪造消息/状态，不修改当前 Oracle，不根据自己的文本
-解释确认缺陷。它可以选择冻结 Risk，并对 Runtime 真实重建的有界 `WorkItem/ActionRef`
-排序。提出测试的组件与判定测试成败的组件必须分离。
+因此 Agent 不生成 enabled set，不伪造消息/状态，不修改当前 Oracle，也不根据自己的文本解释确认缺陷；
+但它必须真实决定“测什么、优先探索哪里、如何根据反馈修正”，而不是只排列一个局部 frontier。
+提出测试的组件与判定测试成败的组件仍然分离。
 
 M5.22 `CrossTargetPlannerView` 的 target-blind 输入只作为已冻结的
 portability/authority 校准与消融记录；该生产组合已在 M5.23R2 从 HEAD 退休。
-正式 Agent effectiveness 实验使用相同 schema、相同权限的 target-local
-`ProtocolKnowledgePack`，让 Agent 可以看到协议和消息阶段语义，但仍隐藏 candidate/control、
-root cause、patch 和 Oracle verdict。第一轮效果实验先使用单个 Search Agent 以保持
-因果可归因；只有实验证明职责混合造成具体漏检后才增加 Agent 角色。
+正式 Agent effectiveness 实验让不同方法共享相同 Runtime、root、预算和外部评价，同时仍隐藏
+candidate/control、root cause、patch 和私有 Oracle verdict。单 Agent 是必须保留的对照；主方法从
+Protocol/Hypothesis 与 Explorer 两个职责开始，并在相同总 token/调用预算下做角色合并消融。
+
+### 1.6 2026-08 Agentic 研究主线重置
+
+M5.23g 已用真实模型证明“只排列当前 frontier”的 Agent 在三个公开 root 上退化为 canonical。该结果
+不证明 LLM 无法改善共识测试，却足以否定它作为最终 Agent 权限。自本版本起：
+
+- M5.23R4b 的 Runtime、Adapter、exact-prefix、Replay、Oracle、Campaign 和 WorkLedger 冻结为底座；
+- 不再以新增 digest、恢复状态、资格 schema 或 evaluator 层次作为默认进展；
+- Agent-v1 保留为最小权限消融，不再扩展；
+- 新主线先完成公开的“假设—episode—执行—语义反馈—修正—重放”闭环，再进行隐藏评测；
+- 允许 Agent 假设和计划出错，由可信层拒绝并反馈；不要求提议层在执行前机械证明全部语义；
+- 正式结论仍必须来自独立 Oracle、可重放真实轨迹、公平预算和 candidate/control 隔离。
 
 ---
 
@@ -231,22 +240,25 @@ Agent 可以生成语义草案、覆盖义务草案、Driver、Binding、测试�
 
 ### 2.10 测试生成也必须形成自动闭环
 
-接入成功并不等于完成测试。测试阶段必须维护只追加的 Coverage Ledger：
+接入成功并不等于完成测试。测试阶段以 Agent 假设与 episode 反馈形成闭环；Coverage Ledger 是其中一种
+可信解释输入，不是唯一目标：
 
 ```text
-Frozen Profile -> Coverage Debt -> Agent Plan -> Deterministic Concretizer
-       ^                                                |
-       |                                                v
-Score + Evidence <- Oracle/Replay/Conformance <- Runtime Trace
+Protocol Knowledge -> TestHypothesis -> EpisodePlan -> Trusted Search/Runtime
+       ^                                                       |
+       |                                                       v
+EpisodeReport + Coverage/PSS/Risk <- Oracle/Replay <- Runtime Trace
 ```
 
-Planner Agent 只能从冻结分母选择目标；Scenario Agent 只能输出受限 Test Plan DSL；Search Agent 只能通过 Runtime 暴露的 enabled events 调用 Random/DFS/DPOR/约束搜索；Critic Agent 只能依据机械 finding 提交新计划。Agent 不能直接写入 Ledger，不能自报 observation 取得覆盖，也不能在当前 campaign 中增加、删除或降权义务。
+Protocol/Hypothesis Agent 负责“测什么”，Explorer Agent 负责“优先探索哪里以及如何根据反馈修正”。
+它们只能通过 Runtime 暴露的 enabled events 和冻结搜索工具影响执行。Agent 不能直接写入 Ledger，
+不能自报 observation 取得覆盖，也不能在当前 campaign 中增加、删除或降权义务。
 
 ### 2.11 复杂度必须由外部收益支付
 
 项目设置显式“复杂度预算”：
 
-- 在隐藏缺陷 benchmark 建立前，不继续增加通用时序逻辑、复杂复合义务或更多 Agent；
+- 在 A2 single Agent-v2 公开闭环完成前，不继续增加通用时序逻辑、复杂复合义务或第三个 Agent；
 - 没有具体漏检根因时，不增加新的义务表达能力；
 - 现有 Matcher/DSL 能表达时，不新建抽象层；
 - 新义务、PSS 维度或 Agent 角色若不能改善 holdout 缺陷检出、降低成本或减少误报，
@@ -389,16 +401,18 @@ Minimal Protocol Charter + optional Family extension
 
 #### Agent 平面
 
-Agent 平面按产物和权限拆分，而不是用一个模型同时生成、执行和批准自己的结果：
+Agent 平面按产物和权限拆分，而不是用一个模型同时生成、执行和批准自己的结果。第一条可运行主线只包含：
 
-1. `Knowledge Agent`：从论文、文档、代码和形式化模型提取带来源的协议事实与差异草案；
-2. `Onboarding Agent`：生成薄 Execution Binding、Semantic Mapping 和基础见证；
-3. `Obligation Agent`：基于 Core/Extended PSS、协议差异和有界 Profile 生成结构化覆盖义务草案；
-4. `Coverage Planner Agent`：读取 Coverage Debt，选择下一批高价值目标；
-5. `Scenario Agent`：将目标细化为受限 Test Plan DSL；
-6. `Search Agent`：调用确定性 concretizer 及 Random/DFS/DPOR 等后端实现计划；
-7. `Critic/Repair Agent`：根据机械 finding 修复计划、场景或接入代码；
-8. `Failure Analyst`：最小化和解释反例，无权确认真实缺陷。
+1. `Protocol/Hypothesis Agent`：从协议文档、源码、能力清单和经验证语义投影中提出带来源的
+   `TestHypothesis`，说明风险、前置语义、目标现象和允许的故障边界；
+2. `Explorer Agent`：把假设转成有界 `EpisodePlan`，对全局候选状态和冻结搜索算子给出优先级，读取
+   `EpisodeReport` 后保留、修正或放弃计划；
+3. `Critic/Repair Agent`（条件加入）：只有两角色闭环的机械失败记录表明独立反思能改善缺陷检出或
+   降低 invalid proposal 时才拆出；
+4. `Onboarding Agent`（独立研究轨）：只评价接入成本，不与搜索效果实验同时扩张。
+
+Obligation、Coverage Planner、Scenario、Search 和 Failure Analyst 先作为上述角色内部的逻辑职责，
+不为了“多 Agent”数量预建独立进程。多 Agent 的贡献必须由与单 Agent 相同总模型预算的消融支持。
 
 Coordinator、Runtime、Evidence Matcher、Coverage Ledger、Replay、Conformance 和 Oracle 都是确定性程序，不是投票 Agent。Agent 可以读取共享 Blackboard 中的 `proposed/validated/rejected/superseded` 产物，只有 Coordinator 能写入 `validated`。
 
@@ -1310,7 +1324,10 @@ false-positive rate 和总成本。Agent 发现的新官方缺陷只作为额外
 
 冻结后的 Contract/PSS/Profile 是当次运行唯一语义真值边界。Agent 可以为下一版本提出候选事实和义务，但不能修改当前 digest、覆盖分母、等价关系、Oracle 或权重。系统不设置逐事实、逐测试的人工 Gate。
 
-### 15.2 Onboarding Agent
+### 15.2 Onboarding Agent（独立后续研究轨）
+
+Onboarding 不作为 A1–A5 搜索闭环的前置条件，也不与 Agent-v2 同阶段扩张。只有统一控制和 Agent 搜索
+主问题取得可解释结果后，才用以下边界单独评价自动接入成本。
 
 输入：
 
@@ -1351,40 +1368,32 @@ Generate proposal
 
 模型进程通过版本化 JSON stdin/stdout 边界运行，不继承父进程的任意凭据。Provider key 仅以受限文件路径传入专用客户端，并且不得进入 prompt、Binding、报告或错误文本。每轮记录 provider/model、API 参数、prompt/request/response digest、token、响应 identity、墙钟时间和机械验证结果。模型输出可以不稳定，但只有确定性验证器接受的 Profile 才能进入运行路径。
 
-### 15.4 Strategy Agent
+### 15.4 Protocol/Hypothesis 与 Explorer Agent
 
-输入已验证 Profile、冻结的 Protocol/Family Knowledge、覆盖债务、Core/Extended PSS 发现记录和历史
-机械反馈，输出协议级 `Guarded TestIntent`。Agent 可以理解 leader/epoch/log/QC 等 Family 语义，但
-不能读取 candidate/control 身份、补丁、根因、已知触发轨迹或私有 Oracle 结论；这一边界称为
-`protocol-aware, defect-blind`。确定性搜索器负责把 intent 在当前 enabled frontier 上解析成真实
-ActionID。Agent 不预测未来绝对 decision number，不直接修改 Runtime 状态，也不单独决定覆盖成立。
+`Protocol/Hypothesis Agent` 读取源码/文档摘要、冻结 Protocol Knowledge、validated capabilities、
+历史公开机械反馈和覆盖债务，输出 `TestHypothesis`。假设可以是错误或暂不可达的，但必须引用冻结的
+risk/obligation/capability ID，并声明预期语义阶段和可观察结果；自由文本只用于解释。
 
-`Guarded TestIntent` 至少区分两类约束：
+`Explorer Agent` 读取假设和可信生成的 `SemanticEpisodeView`，其中可以包含当前 prefix 绑定的 Core PSS、
+RiskWitness 进度、workload phase、fault usage、候选 WorkItem 和剩余预算。它可以：
 
-- `must`：fault envelope、预算、最终恢复条件和 capability 等硬约束；违反即机械拒绝；
-- `prefer`：在语义 guard 成立时优先选择某个 Action class/selector；当前未命中时记录 miss、计费并按
-  冻结 fallback 继续，而不是令整个 run 作废。
+- 选择当前 episode 的语义目标；
+- 对全局 WorkItem 或可信分桶排序，而不只排列当前 frontier；
+- 选择冻结目录中的 DFS、best-first、mutation 等局部搜索算子；
+- 请求执行一个当前 enabled ActionID，或提交由可信 concretizer 解析的 selector；
+- 根据 `EpisodeReport` 中的不可达、near-miss、PSS/义务变化和 Oracle 激活情况修正下一轮计划。
 
-Agent 不接触瞬时 ActionID。可信 compiler 每一步组合 `EnabledActions + Core/Extended semantic view +
-validated capability`，解析具体 ActionID 并保留完整选择证据。一次 Agent 调用应产生少量 intent，
-由 Random、mutation、PSS-guided 或以后加入的 DPOR 后端批量执行，再把聚合的 coverage debt、
-state discovery、near-miss 和无进展原因反馈给下一轮 Agent。
+它不能构造 Action、改变 enabled set、跨过更早 timer、修改 root corpus/总预算、写 PSS/Coverage/Defect
+Ledger，或读取 candidate/control 身份、补丁、根因、已知触发轨迹和私有 verdict。Runtime 机械拒绝
+非法提议并形成结构化 finding；提议失败是闭环输入，不自动使整个 trial invalid。
 
-与 Random/DFS/DPOR 比较时固定 scheduler-decision 预算与 measurement window，同时报告模型调用、token、墙钟时间和费用。无固定分母的 PSS 状态发现曲线评价搜索效率，固定 Contract/Profile 分数评价最终测试债务；两者不混合。
+模型输出不要求位级确定；正式实验通过冻结模型/提示/tool policy、重复运行和完整成本报告处理波动。
+被接受的具体执行仍必须形成 exact trace 并可 fresh Replay。普通公开探索只需保存请求、响应、digest、
+token 和执行引用，不再要求每个中间 Agent 思考步骤都具备生产级跨进程事务恢复。
 
-第一版只实现一个 Strategy Agent，不预建 Planner/Scenario/Search/Critic 多角色。只有 holdout 实验
-证明 hypothesis generation、预算分配或 feedback repair 的职责混合造成具体漏检后，才拆分角色。
-任何 Agent 都不能直接执行 SUT API、提交自由 payload 或写 Coverage/Defect Ledger。
-
-Strategy 能力按两级独立准入：
-
-- **宏观 intent**：选择风险假设、覆盖债务、工作负载、guard、fault envelope 和搜索后端；
-- **微观排序**：对 Runtime 已枚举的 `EnabledActionSet` 排序，只能返回其中的
-  `ActionRef`。
-
-两级必须分别与 baseline 比较，并设置 Agent 超时、非法输出率、重复率和
-无增益回退到确定性搜索器的停止条件。在 StateRef/ActionRef 和独立等预算实验完成前，
-不以“在线 Agentic Model Checking”作为已实现能力。
+与 Random、DFS 和确定性 semantic best-first 比较时固定完整 Runtime work 预算，同时报告模型调用、
+token、墙钟时间和费用。Agent-v1 frontier permutation 保留为权限消融；PSS/义务仅解释搜索行为，
+外部缺陷检出、correct-control 误报和 work-to-kill 决定主要结论。
 
 ### 15.5 Failure Analyst（可选）
 
@@ -1932,16 +1941,17 @@ Failure Analyst 在 M5 后半阶段实现，不作为自动接入闭环的前置
 
 ### 20.1 核心研究问题
 
-1. 在相同完整执行预算下，受限 Agent 是否比 Random、DFS 和专家固定计划发现更多隐藏独立缺陷根因？
-2. SCS 和 PSS state/transition discovery 是否能在 holdout 缺陷上预测缺陷检出，而不仅是被 Agent 优化？
-3. term 平移、节点/值重命名后，语义键是否保持不变？
-4. 保守偏序约简能节省多少执行，又是否遗漏已知/隐藏缺陷？
-5. Agent 是否提高覆盖增长速度和单位成本收益，而不改变最终判定？
-6. 语义/接入 Agent 是否在不降低 conformance 的前提下减少首次可控测试时间、人工 LOC 和审核成本？
-7. 固定 Core PSS IR 是否能在不改 schema/ledger 的情况下同时容纳 Raft 与非 Raft？
-8. 新协议只增加 Binding/Mapping 时的接入时间、目标专用 LOC、人工审核量和错误率是多少？
-9. 小版本升级后 Profile 分数和 canonical key 是否稳定？
-10. Capability 不足对最终分数和缺陷检出率有何影响？
+论文主问题只保留三个：
+
+1. **统一共识控制（RQ1）**：不同共识协议能否通过薄 Binding 暴露消息、自然超时、生命周期、
+   持久化和输入，而不为每个协议重写 Agent、搜索器、Replay 与 evaluator？
+2. **Agent 测试效果（RQ2）**：在相同完整 Runtime work 预算下，协议感知 Agent 是否比 seeded random、
+   DFS 和确定性 semantic best-first 检出更多独立隐藏根因，或获得更低 work-to-kill？
+3. **多 Agent 必要性（RQ3）**：在相同模型、token、调用和 Runtime work 预算下，Protocol/Hypothesis 与
+   Explorer 的角色分解是否比单 Agent 减少无效计划、提高跨协议迁移或提高缺陷检出？
+
+以下问题保留为解释性或后续研究，不再与主系统同时扩张：PSS/义务与缺陷检出的相关性、规范化稳定性、
+保守 DPOR、自动接入成本、版本升级稳定性、有限活性测试和 limited-BFT 扩展。
 
 ### 20.2 基线
 
@@ -2663,19 +2673,19 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 17. 正常接入不设置逐事实人工 Gate；是否通过只由 digest、编译、conformance、重放、Oracle 和 Contract 见证机械决定。
 18. Unsupported 不会从 Contract/Profile 分母中删除。
 19. Coordinator 是确定性程序，不是有权修改结论的 Agent。
-20. 最大化 Agent 的工作量，最小化 Agent 的判定权；Agent 只能提交 proposal，可信内核才能写入 validated。
+20. 扩大 Agent 的测试提议权和搜索权，保持其事实权与最终判定权为零；Agent 只能提交 proposal，可信内核才能写入 validated。
 21. 最终主百分比来自冻结 Coverage Obligation 分母；PSS 状态发现只用于搜索效率比较。
-22. Agent 测试生成以 Coverage Debt 为目标，经 Test Plan DSL、确定性 concretizer、Runtime 和 Evidence Matcher 形成闭环。
+22. Agent 测试经 `TestHypothesis -> SemanticEpisodeView -> EpisodePlan -> EpisodeReport` 形成反馈闭环；可信 concretizer、Runtime、Replay 和 Evidence/Oracle 决定真实执行与结果。
 23. 自动接入与覆盖驱动测试先分开验证，再组成端到端系统。
 24. Agent 方法的主要效果由隐藏历史缺陷和语义 mutant 外部评价；Coverage/PSS 不能自证有效。
 25. 发现官方未知缺陷是 bonus，不是预设成功条件。
 26. 完整执行预算必须计入每个 run 重复的 setup/prepare；scheduler decision 不能代表全部成本。
-27. 新义务、PSS 维度和 Agent 角色必须通过 holdout 缺陷收益支付复杂度，否则删除或降级为实验路径。
+27. 新义务、PSS 维度和第三个及以后 Agent 角色必须通过公开校准中的机械失败或正式消融收益支付复杂度，否则删除或降级为实验路径。
 28. Candidate 不保存人工资格状态；只有 typed requirements 与可信 CapabilitySnapshot 的纯集合判断可以产生 QualificationReport。
 29. 公开 calibration 与正式 holdout 严格分离；calibration 只能验证构建和评测管线，不能支持方法效果主张。
-30. Agentic Model Checking 只作为搜索内核增强；Contract/PSS/Profile、Coverage Ledger 和隐藏缺陷外部评价仍是主线。
+30. Agent 是测试假设、语义目标和反馈修正的主体；系统搜索是 Agent 可调用的可信工具和对照基线，不是 Agent 的同级替代品。
 31. `ExecutionFingerprint/StateRef/StructuralKey/PSSSemanticKey` 是不同身份；PSS 新颖度键不得未经证明地用于状态剪枝。
-32. 在线 Agent 只能排序可信 Runtime 已枚举的 `ActionRef`；enabled 判定、动作执行和 Frontier 身份属于确定性内核。
+32. 在线 Agent 可以提出 `TestHypothesis/EpisodePlan`、排序全局 WorkItem、选择冻结搜索算子并引用当前 `ActionRef`；enabled 判定、具体化、动作执行、语义真值和 Frontier 身份仍属于确定性内核。
 33. 未控制模型边界内全部非确定性、未完整枚举 enabled actions 或未证明剪枝保守时，不宣称完整 implementation-level model checking。
 34. 在线控制面不提供任意 `AdvanceTime(to)`；搜索器只能选择最早窗口内的 `TemporalID`，时钟推进是 `FireTemporalEvent` 的受审计子步骤。
 35. tick-based 协议把每次宿主 Tick 映射为一个 `PeriodicPulse`，未证明中间步骤不可观察前不批量快进。
@@ -2711,8 +2721,9 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
     动作集合，Provider、Agent 和搜索器不能在外部伪造 ActionID。
 57. Agent 默认是 protocol-aware、defect-blind：可读取冻结协议知识、Family semantic view 和批次级
     机械反馈，不可读取隐藏候选身份、补丁、根因、已知触发轨迹或私有 Oracle 结论。
-58. 第一版 Agent 输出 Guarded TestIntent 而非未来绝对 decision rule；hard constraint 不可降级，
-    preference miss 必须记录、计费并使用冻结 fallback。
+58. Agent-v1 的 frontier permutation/旧 Guarded TestIntent 只保留为历史与权限消融；Agent-v2 输出
+    TestHypothesis/EpisodePlan 而非未来绝对 decision rule，hard constraint 不可降级，拒绝与 miss 必须
+    记录、计费并进入可修正的 EpisodeReport。
 59. Core PSS 只用于 coarse feedback/discovery；具体因果身份被压缩时不得用于状态等价或剪枝，Family
     风险信息进入分开版本的 Extended PSS/semantic view。
 60. 不按目录蓝图预建 `evidence/search/intent/campaignv2` 等包；只有第一个真实消费者出现并证明重复
@@ -3221,26 +3232,20 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
 - 在没有控制随机性、网络和存储边界时仍声称严格确定性。
 
 总体判断：确定性控制、opaque input/result、保守 Core PSS、Agreement 和 partial capability admission
-已在 Raft 与 leader-based Sequence Paxos 上成立；同一 target-blind Planner/Campaign 也已在两目标上保持
-无 Raft 字段、共同预算和可重算账本。下一个主要风险已不是 Adapter 或 cross-target plumbing，
-而是如何证明 v2 系统搜索跨目标复用且能在完整成本下优于简单基线。M5.22e 已证明两个共同 backend 的
-preference 具有真实执行影响，M5.23a 已建立 etcd/raft 上的最小 bounded stateless DFS，M5.23b 又在不修改
-通用 API 的前提下通过 process-backed OmniPaxos 迁移门禁，M5.23c 进一步建立了 target 内同 exact
-root、同实际成本的 canonical/seeded-uniform 比较装置，M5.23d 又建立了从 qualified bundles 重算、
-与 common root baseline 分离且完整计费的只读 discovery，但仍没有证明方法质量。在事先冻结的多
-root/seed 校准已通过预声明 corpus 门，但实际成本差异证明后续比较必须用完整账本。
-受限 Search Agent 权限门和真实 multi-root pilot 均已完成，但真实 Agent 退化为 canonical：
-在完整实际成本下没有产生新的 Action 顺序或 PSS 集合。这使主要风险从“Agent 能否进入执行链”
-转变为“Agent/knowledge 能否在非公开重复试验中增加缺陷检出或单位成本发现”。在保守约简和
-protocol-aware guidance 效果门通过前，
-冻结新正式 target、Runtime/Trace 大版本和新 cross-target ledger。跨 CFT/BFT 的深层安全语义仍需要
-Extended PSS 和协议 Oracle，但不应重写控制层或 Core ledger。真正的论文创新应集中在：
+已在 Raft 与 leader-based Sequence Paxos 上成立；Runtime/Adapter/Replay/Oracle 足以支撑下一阶段研究，
+不再是默认扩建对象。M5.23 的 exact-prefix、共同成本和只读 discovery 提供了可靠搜索底座，但真实
+Agent-v1 在 6 次调用和 28,335 tokens 后退化为 canonical，没有产生新的 Action 顺序或 PSS 集合。
 
-1. 固定 Core PSS IR + 薄 Mapping 如何以较低成本提供足够可靠的语义；
-2. 执行如何归约为保守、稳定、有意义的偏序场景；
-3. SCS 是否经过隐藏缺陷/突变体实验验证，能够预测测试能力；
-4. Onboarding Agent 是否能从固定 Contract 自动产生 validated Profile，降低陌生系统接入成本且保持与专家实现相当的差分行为；
-5. 场景规划 Agent 是否只提高探索效率，而不损害可信性。
+这说明项目没有偏离“共识测试”，却已经阶段性偏离“以 Agent 为主体的共识测试”。下一个主要风险不是
+再增加一种工件身份或恢复状态，而是 Agent 是否能够提出测试假设、控制有意义的 episode 目标并根据
+真实语义反馈修正。跨 CFT/BFT 的深层安全语义仍需要 Extended PSS 和协议 Oracle，但不应重写控制层。
+真正的论文创新集中在：
+
+1. 协议感知 Agent 如何把源码/知识转成可执行、可修正的测试假设；
+2. Agent 如何经统一控制层指导真实共识执行，而不取得事实或 verdict 权限；
+3. PSS/Risk/义务反馈是否帮助 Agent 更快到达隐藏缺陷，而不是形成自我评价；
+4. 相同 Agent episode 接口能否在 etcd/raft 与 OmniPaxos 上复用；
+5. 两 Agent 职责分解是否在相同模型总预算下真正优于单 Agent。
 
 ---
 
@@ -3265,7 +3270,7 @@ Extended PSS 和协议 Oracle，但不应重写控制层或 Core ledger。真正
 
 如果未来无法用下面这句话准确描述 ConsensusAtlas，项目就可能已经偏航：
 
-> ConsensusAtlas 以最小 Protocol Charter、固定 Core PSS IR 和可选协议扩展为信任根，让受限、
-> 协议感知的 Agent 只为 Runtime 枚举的 exact-prefix WorkItem/ActionRef 提供语义搜索指导，
-> 由确定性 Runtime、Replay、Conformance、Oracle 与 Ledger 独立决定执行真相和结果，并最终
-> 用 Agent 看不到的历史缺陷/语义 mutant 根因检出和正确 control 误报评价方法效果。
+> ConsensusAtlas 让协议感知 Agent 形成并修正测试假设、选择语义 episode 目标并调用统一搜索工具，
+> 由共识 Control Runtime 将提议具体化为真实 enabled Action 并确定执行，由独立 Replay、Oracle 与
+> Ledger 决定事实和结果，最终用跨协议、Agent 看不到的 candidate 根因检出、正确 control 误报和
+> 完整成本评价单 Agent 与多 Agent 的测试效果。

@@ -1,31 +1,24 @@
 # 文档导航
 
-`CURRENT_STAGE.md`、README、架构和总体规划描述当前可运行系统。阶段总结是不可改写的历史记录，可能
+`CURRENT_STAGE.md`、README、架构和总体规划描述当前可运行系统。当前长期分支是
+`feature/agentic-consensus-testing`；M5.23R4b 及更早阶段总结是不可改写的历史记录，可能
 引用已经由 M5.16R 删除的源码路径；这不表示旧 API 仍然存在。
 
 ## 最新阶段阅读顺序
 
-1. [当前阶段：M5.23R4b Stateless Agent Campaign](CURRENT_STAGE.md)
-2. [M5.23R4b Stateless Agent 进入共同 Campaign](stage-m5.23r4b-stateless-agent-campaign.md)
-3. [M5.23R4a 旧无模型 Campaign 退休与 Stateless Agent 恢复底座](stage-m5.23r4a-stateless-agent-recovery.md)
-4. [M5.23R3 etcd/raft Stateless Campaign runner](stage-m5.23r3-etcdraft-stateless-campaign-runner.md)
-5. [M5.23R2 Stateless Campaign 方法契约](stage-m5.23r2-stateless-campaign-contract.md)
-6. [M5.23R1 主线收缩](stage-m5.23r1-mainline-pruning.md)
-7. [M5.23g 真实 Agent multi-root pilot](stage-m5.23g-real-agent-multi-root-pilot.md)
-8. [M5.23f 受限 Search Agent 权限协议](stage-m5.23f-restricted-search-agent.md)
-9. [M5.23e 预声明多 root discovery 校准](stage-m5.23e-predeclared-root-corpus.md)
-10. [M5.23d 搜索后只读 discovery projection](stage-m5.23d-read-only-discovery.md)
-11. [M5.23c 同起点、同成本的无状态遍历校准](stage-m5.23c-matched-stateless-traversal.md)
-12. [M5.23b OmniPaxos bounded stateless DFS](stage-m5.23b-omnipaxos-stateless-dfs.md)
-13. [M5.23a 有界无状态 DFS 基线](stage-m5.23a-bounded-stateless-dfs.md)
-14. [M5.22e 跨目标 backend 执行影响](stage-m5.22e-cross-target-backend-influence.md)
-15. [M5.21q Risk Frontier 精确执行权限](stage-m5.21q-risk-frontier-authority.md)
-16. [M5.21p RiskWitness 可达性校准](stage-m5.21p-risk-witness-reachability.md)
-17. [M5.21o Formal multi-pair CLI](stage-m5.21o-formal-multi-pair-cli.md)
-18. [M5.21n Formal fresh evaluator](stage-m5.21n-formal-fresh-evaluator.md)
-19. [M5.21m FormalExposureAudit](stage-m5.21m-formal-exposure-audit.md)
-20. [M5.21l FormalBenchmarkContract](stage-m5.21l-formal-benchmark-contract.md)
-21. [M5.21k Formal Holdout Readiness Gap](stage-m5.21k-holdout-readiness-gap.md)
+1. [当前阶段：A0 Agentic 研究主线重置](CURRENT_STAGE.md)
+2. [A0 详细设计与路线](stage-a0-agentic-research-reset.md)
+3. [总体规划 Draft v1.72](ConsensusAtlas-总体规划.md)
+4. [M5.23R4b Stateless Agent 进入共同 Campaign](stage-m5.23r4b-stateless-agent-campaign.md)
+5. [M5.23g 真实 Agent multi-root 负结果](stage-m5.23g-real-agent-multi-root-pilot.md)
+6. [M5.23f 受限 Search Agent 权限协议](stage-m5.23f-restricted-search-agent.md)
+7. [M5.23b OmniPaxos bounded stateless DFS](stage-m5.23b-omnipaxos-stateless-dfs.md)
+8. [M5.23a 有界无状态 DFS 基线](stage-m5.23a-bounded-stateless-dfs.md)
+9. [M5.21q Risk Frontier 精确执行权限](stage-m5.21q-risk-frontier-authority.md)
+10. [M5.21p RiskWitness 可达性校准](stage-m5.21p-risk-witness-reachability.md)
+
+旧 R4a/R3/R2/R1、formal evaluator 和更早阶段仍在本目录保留，可按 Git 历史或下面的较早主线索引查阅；
+它们不再构成 A1 的顺序前置阶段。
 
 ## 较早主线阅读顺序
 

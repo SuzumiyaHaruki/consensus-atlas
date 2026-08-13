@@ -1,88 +1,84 @@
 # 当前阶段
 
-日期：2026-08-12
+日期：2026-08-13
 
-阶段：M5.23R4b Stateless Agent Campaign composition 完成
+分支：`feature/agentic-consensus-testing`
+
+阶段：A0 Agentic Consensus Testing 研究主线重置完成
+
+## 一句话状态
+
+ConsensusAtlas 已完成共识控制、严格执行和可信评价底座，但现行 Agent 只是局部 frontier 排序器；
+本分支正式把研究重心转为“Agent 提出并修正测试假设，统一控制层确定执行，独立 Oracle 决定结果”。
 
 ## 输入什么
 
-- 显式冻结的 etcd/raft root corpus（当前为 0/28/54-decision 三个 exact prefix）；
-- 运行前预声明的 canonical repeat、seeded-uniform seed 序列或 restricted Agent method sequence；
-- attempt 数、逻辑预算、wall-clock 运维上限；Agent 另需显式 model-token allowance 和 key-file 路径；
-- qualified Adapter、opaque workload、Qualification、Core PSS Mapper 与 strict Replay 配置。
+本阶段输入是：
+
+- `feature/control-runtime-v2` 的已推送基线 commit `0106e2c`；
+- M5.23g/R4b 的真实负结果和可恢复 Campaign 产物；
+- 已有 etcd/raft、OmniPaxos、Runtime、Replay、PSS/Risk 和 evaluator 能力；
+- 对 Agora、MODIST 和当前实现主体性的重新审查。
 
 ## 如何处理
 
-三种方法共用同一 Stateless Campaign provider 和 target-local runner。每个 attempt 对 3 个 root 运行
-depth=2、每 root 6 items 的 exact-prefix bounded search；18 条路径进入原 qualified executor，执行
-primary + fresh strict Replay，再由可信 composition 只读重算 PSS discovery。
+本阶段只进行研究规划和文档修改：
 
-Agent 只在 search orderer 上工作：每次接收当前 Runtime 已枚举的 `ActionFrontierView`、冻结协议知识和
-已完成 history，只能返回全部现有 ActionID 的排列。exact request 在凭证读取前落盘；dispatch 后禁止
-盲重试；terminal result 的 digest/work 进入 call audit。attempt artifact 同时绑定 method、6 次 call audit、
-search、18 次执行、discovery 与完整 WorkLedger。恢复读 artifact 时还会重新读取 sidecar 交叉核验。
+1. 保留 Runtime、Adapter、exact-prefix、Replay、Oracle、Campaign 和完整成本账本；
+2. 将 Agent-v1 frontier permutation 固定为最小权限消融，不再当作最终 Agent；
+3. 把 Agent 权限重定义为协议假设、语义 episode、全局 WorkItem 优先级和反馈修正；
+4. 保持 Agent 无 enabled、语义真值、Oracle、分母和最终 verdict 权限；
+5. 将第一版多 Agent 收缩为 Protocol/Hypothesis 与 Explorer 两个职责；
+6. 用 single-vs-two-role 消融决定多 Agent 是否值得保留；
+7. 用公开闭环先验证行为权限，再冻结方法并进行隐藏 candidate/control 评价。
+
+本阶段没有修改任何 Go/Python/Rust 生产代码，没有调用模型，也没有读取凭据。
 
 ## 得到什么
 
-- 可恢复 `CampaignConfig/checkpoint` 与内容寻址 attempt artifact；
-- `CampaignSummary/v2`；
-- `StatelessCampaignObservation/v1`：每个方法的 outcome、PSS 集合、qualified execution 数、Agent call audit
-  以及 source/search/primary/replay/model 分栏成本；
-- prepared、completed、ambiguous、rejected/failed 的确定恢复语义；
-- 不包含 Coverage 百分比、正确性概率或 Agent 自报 verdict。
+- 新的长期开发分支 `feature/agentic-consensus-testing`；
+- 更新后的总体规划 Draft v1.72；
+- [A0 详细路线](stage-a0-agentic-research-reset.md)；
+- Agent 提议层、执行层和结论层的明确边界；
+- 三个主研究问题：统一共识控制、Agent 测试效果、多 Agent 必要性；
+- A1–A6 的增量实施和停止线。
 
-## 离线 R4b 结果
+## 继承的已验证底座
 
-mock provider 的完整 attempt 为 6 次调用、18 次 qualified execution，模型账本
-`6 calls / 24 input / 18 output / 42 total tokens`。prepared resume 只 dispatch 各调用一次；completed
-resume 为 0 provider/0 key read；dispatch-only 恢复为单个 failed attempt 且不重试；committed sidecar
-篡改在 observation 前被拒绝。没有读取真实 key 或调用真实模型。
-
-旧 `workload-stateless-agent-m5.23g` 在线入口及 macro Planner/Intent/planned-attempt/model-call 闭包已经
-删除；M5.23g 冻结公开工件和只读验证保留。旧 v3 非模型 Campaign 的空 legacy 目录可恢复，包含旧
-Planner 状态则明确拒绝。
-
-## 代码规模
-
-| 指标 | M5.23g 检查点 | R4a | R4b 当前 |
-|---|---:|---:|---:|
-| `cmd/control-experiment` + `internal/controlexperiment` Go LOC | 33,832 | 28,809 | 21,294 |
-| 相对 M5.23g | — | -5,023 | -12,538（-37.1%） |
-
-当前主线收缩为：Control Runtime/Adapter、qualified executor/Replay、Stateless Search、restricted Agent、
-Campaign durability、PSS discovery 与 formal evaluator。历史阶段文档中的已退休 API 不代表 HEAD 仍可用。
+- Runtime-owned 消息、自然时间、生命周期、持久化副作用和输入；
+- etcd/raft strict execution 与 OmniPaxos 跨协议执行证据；
+- exact-prefix bounded search、fresh Replay、PSS/Risk 投影；
+- Agreement/target Oracle、ExecutionBundle、Campaign 和 WorkLedger；
+- formal candidate/control evaluator 与公开/隐藏数据隔离边界。
 
 ## 尚未证明
 
-- 没有证明 Agent 优于 canonical、uniform、DFS 或专家方法；
-- M5.23g 的真实负结果仍然成立：Agent 与 canonical 的 Action 顺序和 15-state PSS 集合相同；
-- 没有非公开 candidate/control 的重复方法比较、缺陷检出或统计显著性；
-- PSS/义务 discovery 尚未证明能预测 root-cause kill；
-- deferred/restart 的进程运维成本尚未形成可跨进程累计的正式资源账本；
-- OmniPaxos 通过相同 Stateless Search API，但尚无 target-local Campaign/Agent composition。
+- 当前仍不是真正完成的多 Agent 测试系统；
+- Agent-v2、Semantic Episode 和反馈修正尚未实现；
+- 没有证明 Agent 或多 Agent 优于 random、DFS、semantic best-first 或专家计划；
+- 没有非公开 candidate/control 的重复方法结果；
+- 没有证明 PSS/义务能够预测缺陷检出；
+- BFT、leaderless 和自动接入仍不在当前已验证范围。
 
-## 验证状态
+## 下一阶段：A1
 
-- R4b 定向 create/resume/tamper/ambiguous、frozen evidence migration 和 legacy layout 测试：通过；
-- 完整 `make test`：通过；`cmd/control-experiment` 用时 231.550 秒；
-- `go vet ./...`、`audit-race-shards`、`audit-no-v1`、`audit-no-retired-experiment`、
-  `git diff --check`：通过；
-- `test-race-control-shards` 的 method 分片运行约 8 分钟仍未完成，期间无 race report 或 panic；按既定
-  停止线人工终止，execution/agent 分片未开始。因此本轮完整 race 状态是未知，不能写成通过，也不重跑。
+实现一个最小 Semantic Episode 纵向切片：
 
-## 下一阶段：M5.24a
+1. 行为不变地分离 `SearchAlgorithm` 与 `GuidancePolicy`；
+2. 最小定义 `TestHypothesis`、`SemanticEpisodeView`、`EpisodePlan`、`EpisodeReport`；
+3. 用 deterministic fixture 演示一次合法执行和一次拒绝—反馈—修正；
+4. 复用现有 Runtime/Trace/Replay/WorkLedger；
+5. 不调用真实模型，不实现 DPOR，不增加新 Oracle、target 或 Campaign 家族。
 
-冻结非公开方法评测协议：candidate/control curator pack、blind exposure、三臂 method spec、重复次数、
-完整 work-to-kill 和 invalid-trial 规则。PSS/义务只作为解释性指标；正式结论由 candidate root-cause kill、
-correct-control false positive 和成本共同决定。冻结完成前不进行新的真实 Agent 调用。
+A1 完成后再进入公开 single Agent-v2 闭环，而不是立即运行隐藏评测。
 
-## 建议阅读顺序
+## 当前建议阅读顺序
 
-1. `docs/stage-m5.23r4b-stateless-agent-campaign.md`
-2. `cmd/control-experiment/stateless_campaign_agent_etcdraft.go`
-3. `internal/controlexperiment/stateless_campaign.go`
-4. `cmd/control-experiment/stateless_agent_call.go`
-5. `internal/controlexperiment/stateless_campaign_observation.go`
-6. `docs/stage-m5.23g-real-agent-multi-root-pilot.md`
+1. [A0 Agentic 研究主线重置](stage-a0-agentic-research-reset.md)
+2. [总体规划](ConsensusAtlas-总体规划.md)
+3. [README](../README.md)
+4. [M5.23R4b 基础设施基线](stage-m5.23r4b-stateless-agent-campaign.md)
+5. [M5.23g 真实 Agent 负结果](stage-m5.23g-real-agent-multi-root-pilot.md)
+6. [Control Runtime v2](control-runtime-v2.md)
 
-历史阶段不复制进本文件；不可改写记录保留在 `docs/stage-*.md`。
+历史阶段文档保持不可改写；它们记录旧路线，不表示其下一阶段仍对当前分支生效。

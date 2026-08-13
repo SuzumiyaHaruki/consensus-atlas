@@ -1,16 +1,17 @@
 # ConsensusAtlas Control Runtime v2 设计与实现基线
 
-状态：`v2alpha1 / M5.18b4 request freeze complete`；控制内核冻结，两臂请求已在调用前冻结
+状态：`v2alpha1 / A0 inherited platform`；控制内核冻结，Agentic Track 只更新其上层工具边界
 
-分支：`feature/control-runtime-v2`
+当前分支：`feature/agentic-consensus-testing`
 
-基线：`checkpoint/control-plane-pivot` / `e0fe62c`
+继承基线：`feature/control-runtime-v2` / `0106e2c`
 
-日期：2026-08-07
+日期：2026-08-13
 
 ## 1. 文档目的
 
-本文只冻结 ConsensusAtlas 的控制层方向，不重写 Coverage、PSS、Agent 或 Defect Benchmark。
+本文主要冻结 ConsensusAtlas 的控制层方向；第 19 节另记录 Agentic Track 在该控制层之上的工具权限，
+不把 Agent 规划逻辑下沉进 Runtime，也不重写 Coverage、PSS 或 Defect Benchmark。
 它要先回答一个更基础的问题：
 
 > 对不同共识实现，如何用同一套确定性语义控制外部输入、消息、时间、生命周期和宿主副作用，
@@ -71,8 +72,8 @@ trace；需要保持的是可解释的研究结论、工件来源和严格重放
    `sleep` 或“等一会儿看看还有没有输出”。
 8. **能力由外部测试证明。** Adapter 的 Manifest 是声明，不是证据；Conformance Suite 才决定
    哪些能力可以进入 validated 状态。
-9. **Agent 没有额外权限。** Agent 只能引用 Runtime 已枚举的稳定 ID，不能直接调用 Adapter、
-   伪造观察或越过 enabled 判定。
+9. **Agent 没有旁路权限。** Agent 可以提出语义假设、episode 目标和搜索工具选择，但落到具体执行时
+   只能引用 Runtime 已枚举的稳定 ID，不能直接调用 Adapter、伪造观察或越过 enabled 判定。
 
 ## 4. 总体结构
 
@@ -643,25 +644,26 @@ Portable CFT Profile v2 把基础控制 witness 与 strict replay witness 分开
 
 ## 19. Agent 接口
 
-Agent 位于控制层上方，不获得 Adapter 对象或任意代码执行权。它可以接收：
+Agent 位于控制层上方，不获得 Adapter 对象或任意 SUT 代码执行权。Runtime 是 Agent 的受限工具，
+而不是与 Agent 平级的一种搜索方法。Agent 可以接收：
 
 - 冻结的协议/Family 知识投影；
 - Manifest 中已验证的能力、输入 schema 和 fault model；
-- Runtime 当前提供的 opaque/stable ActionRef；
-- PSS frontier、Coverage debt 和机械 finding 的受限投影；
+- Runtime 当前提供的 opaque/stable ActionRef 与全局候选 WorkItem；
+- 与精确 prefix 绑定的 PSS/Risk progress、workload phase、fault usage、Coverage debt 和机械 finding；
 - token、decision、primary work 和运行数预算。
 
-Agent 输出分两层：
+Agent 输出分三层：
 
-1. **宏观 Guarded TestIntent**：引用冻结的 intent/obligation/risk ID、semantic guard、fault envelope
-   和 Action class selector，解释文本不参与执行；
-2. **微观排序或计划**：只能引用当前 enabled ActionID 或受限 selector，由确定性 concretizer 解析。
+1. **TestHypothesis**：引用冻结的 obligation/risk/capability ID，提出可能错误但可验证的协议级测试假设；
+2. **EpisodePlan**：选择语义目标、全局 WorkItem 优先级和冻结搜索算子，由可信 Search Kernel 具体化；
+3. **微观选择**：只能引用当前 enabled ActionID 或受限 selector，由确定性 concretizer 解析。
 
-宏观 intent 不使用未来绝对 decision number。`must` 约束违反时机械拒绝；`prefer` 在当前 frontier
-未命中时记录 miss、计入预算并使用冻结 fallback。Agent 不需要预测瞬时 ActionID，可信 compiler
-在每一步从 `EnabledActions + Core/Extended semantic view` 解析具体动作。Agent 可以读取冻结的
-协议知识和批次级 PSS/Coverage/near-miss 反馈，但不能读取 candidate/control 身份、补丁、根因、
-已知触发轨迹或私有 Oracle 结论。
+假设和 plan 不使用未来绝对 decision number。违反 capability、fault envelope 或 enabled 约束时机械拒绝，
+形成计费的 `EpisodeReport`，允许 Agent 修正，而不是要求每个提议在执行前被证明正确。可信 compiler
+在每一步从 `EnabledActions + Core/Extended semantic view` 解析具体动作。Agent 可以读取冻结的协议知识
+和批次级 PSS/Coverage/near-miss 反馈，但不能读取 candidate/control 身份、补丁、根因、已知触发轨迹
+或私有 Oracle 结论。
 
 对时间，Agent 只能选择 Runtime 提供的 `FireTemporalEvent(TemporalID)`，不能提交 deadline 或 delta；
 对随机性，第一版只能选择预冻结 SUT seed 的 run，不能指定一次 RandomDraw 的返回值。
@@ -670,8 +672,9 @@ Agent 输出分两层：
 隐藏 monitor 或真实触发条件。Agent 不能新增 Action kind、绕过 capability、修改当前 Profile 分母，
 也不能声明 `covered=true`。
 
-这保留 Agora “让 Agent 承担协议理解和测试策略”的优点，同时把实际环境控制、重放和结果判定
-留在确定性可信路径中。
+这保留 Agora “让 Agent 承担协议理解、假设生成、测试策略和反馈修正”的主体性，同时把实际环境控制、
+重放和结果判定留在确定性可信路径中。当前生产实现仍只有 Agent-v1 frontier permutation；上述接口是
+`feature/agentic-consensus-testing` 的 A1–A4 目标，不得被误写为已实现能力。
 
 ## 20. 迁移路线
 
@@ -808,8 +811,9 @@ M5.13 的单调用 LLM smoke 已证明模型 transport、严格 proposal decoder
    先迁 TraceIntegrity/Agreement 和公开 calibration，不预建完整 evidence/campaign 目录树。
 4. **强 baseline**：先 action-class random、trace mutation、PSS-guided corpus；PCT/POS/DPOR 等有
    具体缺口后再加入。
-5. **Guarded TestIntent**：单个 protocol-aware、defect-blind Strategy Agent 生成少量 intent，本地
-   搜索器批量执行；多 Agent 只有 holdout 结果证明职责拆分必要时才增加。
+5. **Agentic Episode**：先以 deterministic fixture 建立 TestHypothesis/EpisodePlan/EpisodeReport，
+   再实现 single Explorer；随后用相同总模型预算比较 single Agent 与 Protocol/Hypothesis + Explorer，
+   由消融决定是否保留多 Agent。
 
 M5.14 已完成第 1 项，M5.15 已完成第 2 项。M5.16 又完成第 3 项：最小
 `ExecutionBundle` 绑定完整 trace、prepare transition、Evidence/client history、Core PSS、
@@ -954,7 +958,7 @@ M5.16R 已删除 v1 的 `internal/engine`、`internal/host`、`internal/driver` 
 | Control Port | 仅为薄 Adapter 内部可选构件 | 防止形成第二套 Runtime backend 或巨大公共接口 |
 | 可选能力 | 统一 Manifest/命令模型，不在 Runtime type assert | 防止实现类型渗入内核 |
 | Evidence/PSS | implementation -> fixed Core IR；Family/Extended 可选 | 换协议只增加映射，不重写通用 PSS |
-| Agent 动作 | 只能引用冻结 ID/当前 enabled ID | 利用语义能力，同时限制越权和刷分 |
+| Agent 权限 | 可提议 hypothesis/episode/搜索工具；具体动作只能引用冻结 ID/当前 enabled ID | 扩大测试主体性，同时限制执行越权和刷分 |
 | 通用性门槛 | 非 Raft 目标不修改 Runtime/Action/Core PSS schema | 直接检验协议与实现两类耦合 |
 
 上述初始决策已经用于 M5.1—M5.6d；M5.7 只收紧 Adapter 复用与 PSS 中间表示，不回写历史阶段结论。

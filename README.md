@@ -1,22 +1,22 @@
 # ConsensusAtlas
 
-ConsensusAtlas 是面向共识实现的确定性测试研究框架。当前已验证范围是 leader-based CFT，
+ConsensusAtlas 是由协议感知 Agent 设计和修正测试、由统一控制层确定执行、由独立 Oracle 判定结果的
+共识测试研究系统。当前已验证范围是 leader-based CFT，
 包括 Raft 和 Sequence Paxos；Control Runtime 保留 limited-BFT 扩展目标，但当前不声称已具备 BFT
 或 leaderless 协议适用性。主线已经收敛到一套协议无关的
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.23R4b Stateless Agent Campaign composition**。M5.23g 真实 Agent
-multi-root pilot 冻结在
-commit `3ec9237`；系统已建立
-exact-prefix bounded stateless search：可信层从当前 `ActionFrontierView` 产生 ActionRef，Agent 只能返回
-该 ActionID 集合的完整排列；root、预算、执行、Replay、PSS 和评价权限仍在可信代码中。
+当前开发线是 **A0 Agentic Consensus Testing 研究主线重置**，分支为
+`feature/agentic-consensus-testing`。它继承 M5.23R4b 的 exact-prefix search、qualified execution、
+Replay、PSS、Campaign 和 evaluator，但不再把“Agent 只排列当前 frontier”视为最终方法。
 
 在事先冻结的 etcd/raft 0/28/54-decision root corpus 上，6/6 次 DeepSeek v4 Flash proposal 通过权限
 校验，18 个 WorkItem 均经原 qualified executor 执行并 strict Replay。实验使用 28,335 model tokens，
 得到 15 个 corpus-novel PSS states；但三 root 顺序和 PSS 集合都与 canonical 完全相同。这是
-完整可复核的负结果，不宣称 Agent 优势、覆盖完备或缺陷发现。restricted Agent 现已作为第三种方法接入
-共同 Stateless Campaign；M5.24 才进入非公开、重复试验的外部有效性评估。`formal_ready=false`。
+完整可复核的负结果，不宣称 Agent 优势、覆盖完备或缺陷发现。该 restricted Agent 现在固定为
+Agent-v1 权限消融。新主线先实现公开的“协议假设—语义 episode—受控执行—机械反馈—计划修正—Replay”
+闭环，再冻结 Agent-v2 方法并进行非公开重复评测。`formal_ready=false`。
 
 M5.23R1–R4b 不改该结果，也没有再次调用模型。R1 将凭证读取、exact-byte request 和
 provider transport 提取为当前 Agent/Campaign 共享原语，退休 M5.18 one-shot、feedback/
@@ -29,9 +29,12 @@ dispatch 后禁止歧义重试、terminal result 重放迁入 Stateless Agent ca
 6 次 call audit、18 次 qualified execution、discovery 和 model work 封入同一 durable attempt，并在
 恢复读 observation 前交叉核验 sidecar。旧 macro Planner/Intent/planned-attempt/model-call 及 M5.23g
 在线 pilot 入口已删除；Campaign durable core、formal evaluator、冻结 pilot 验证和当前 restricted Agent 保留。
-完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
+这些能力在新分支冻结为可信平台，不再继续扩建调用恢复和工件协议。Agent-v2 将负责提出测试假设、
+选择全局语义目标、调用冻结搜索工具并依据 PSS/Risk/义务反馈修正；Runtime 仍独占 enabled 与执行，
+Oracle/evaluator 仍独占正式结论。完整进度见 [当前阶段](docs/CURRENT_STAGE.md) 和
+[A0 路线](docs/stage-a0-agentic-research-reset.md)。
 
-## 当前闭环
+## 已实现的可信执行闭环
 
 ```text
 qualified Adapter + opaque workload + bounded policy
@@ -78,6 +81,28 @@ predeclared root corpus + SearchMethod sequence
                          v
                durable Campaign attempt
 ```
+
+上图是已经实现并保留的 Agent-v1/基线入口，不是新分支的最终 Agent 架构。A1–A4 目标闭环是：
+
+```text
+Protocol/Hypothesis Agent
+             |
+             | TestHypothesis
+             v
+Explorer Agent <---------------------------+
+             |                              |
+             | EpisodePlan                  | EpisodeReport
+             v                              |
+trusted Search Kernel + Control Runtime ----+
+             |
+             v
+Trace + PSS/Risk/obligation + Oracle
+             |
+             v
+fresh Replay + external evaluator
+```
+
+Agent 可以提出错误或不可达的假设，并依据机械反馈修正；但不能伪造 enabled Action、语义证据或 verdict。
 
 通用 Oracle 不解析 Raft 字段。etcd/raft 的可信 composition 提供
 `official-etcdraft-v2/applied-prefix-digest-v1` 投影，将 opaque Evidence 映射为
@@ -315,9 +340,10 @@ make experiment-etcdraft-v2-stateless-agent
 约 1.9 MB bundle 写入被 Git 忽略的 `artifacts/`。仓库只保存小型 build input/audit、benchmark
 manifest 和 evaluator report，避免再次把重复 trace body 提交成超长 JSON。
 
-当前在线模型入口是受限 Stateless Search Agent：它只排列可信层提供的当前 frontier ActionID，
-并经过 exact request/dispatch/result 审计。Guarded TestIntent one-shot/feedback/B4 已是历史记录，
-不再从 HEAD 可执行。
+当前可执行模型入口仍是 Agent-v1 Stateless Search Agent：它只排列可信层提供的当前 frontier ActionID，
+并经过 exact request/dispatch/result 审计。它被保留为权限消融，不代表 Agent-v2 设计。A1 先定义
+Semantic Episode 契约和解耦 Search Kernel，A2 才增加 single Agent-v2；Guarded TestIntent
+one-shot/feedback/B4 仍是历史记录，不从 HEAD 恢复。
 
 ## 当前目录
 
@@ -366,7 +392,8 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.23R4b Stateless Agent Campaign](docs/stage-m5.23r4b-stateless-agent-campaign.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[A0 Agentic 研究主线重置](docs/stage-a0-agentic-research-reset.md)、
+[总体规划](docs/ConsensusAtlas-总体规划.md)、[M5.23R4b Stateless Agent Campaign 基线](docs/stage-m5.23r4b-stateless-agent-campaign.md)、
 [M5.23R4a Stateless Agent 恢复底座](docs/stage-m5.23r4a-stateless-agent-recovery.md)、
 [M5.23R3 etcd/raft Stateless Campaign runner](docs/stage-m5.23r3-etcdraft-stateless-campaign-runner.md)、
 [M5.23R2 Stateless Campaign 契约](docs/stage-m5.23r2-stateless-campaign-contract.md)、

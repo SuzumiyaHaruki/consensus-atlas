@@ -17,28 +17,38 @@ and protocol-independence constraint and report the conflict.
 
 ## Project objective
 
-ConsensusAtlas is a deterministic testing and evaluation framework for CFT and
-limited-BFT consensus implementations. It should support protocol onboarding,
-controlled scheduling, repeatable execution, semantic test generation, and
-auditable evaluation without becoming tied to one Raft implementation.
+ConsensusAtlas is an Agentic testing system for CFT and limited-BFT consensus
+implementations. Protocol-aware Agents should own hypothesis generation,
+semantic test planning, bounded search guidance, and feedback-driven repair;
+the deterministic control layer owns what can execute, Replay owns
+reproducibility, and independent Oracles/evaluators own accepted conclusions.
+The system must not become tied to one Raft implementation.
 
 The long-term structure is:
 
 ```text
-minimal protocol knowledge + reusable Family Pack
+minimal protocol knowledge + thin Adapter
                     |
                     v
-restricted Agent proposals
+Protocol/Hypothesis Agent -> Explorer Agent
+                    ^                |
+                    |                v
+             mechanical feedback + bounded episode proposal
+                    ^                |
+                    |                v
+          deterministic Runtime / Replay / Oracle
                     |
                     v
-deterministic validation and execution
-                    |
-                    v
-coverage/PSS explanation + external defect effectiveness
+semantic test progress + external defect effectiveness
 ```
 
 Maximize the work that Agents can propose or automate, but minimize their
-authority over accepted evidence and conclusions.
+authority over accepted evidence and conclusions. Do not turn this principle
+into minimal Agent influence: Agents may propose uncertain hypotheses, choose
+semantic objectives, rank global WorkItems, select frozen search operators,
+and revise plans after rejection. Invalid proposals are expected test-planning
+outcomes; they are not trusted facts and must be rejected or concretized by
+deterministic code.
 
 ## Trust boundary
 
@@ -140,11 +150,12 @@ model clients but must not own Runtime execution, Oracle decisions, or scoring.
 Generic packages under `internal/` must not import a concrete consensus
 implementation. In particular:
 
-- etcd/raft types stay in `drivers/etcdraft`, `families/raft`, or explicit CLI
-  composition roots;
-- `internal/engine`, `internal/host`, `internal/campaign`, and
-  `internal/defectbench` remain protocol-neutral;
-- a Driver calls official implementation APIs and translates outputs, but does
+- etcd/raft types stay in `adapters/etcdraftv2`, target-owned semantic
+  mappings, or explicit CLI composition roots;
+- `internal/control`, `internal/controlruntime`, `internal/controlexperiment`,
+  `internal/semantic`, `internal/oracle`, and `internal/defectbench` remain
+  protocol-neutral;
+- an Adapter calls official implementation APIs and translates outputs, but does
   not schedule, transport, drop, duplicate, or reorder messages;
 - unsupported behavior is explicit in the Driver Manifest and remains visible
   in evaluation.
@@ -230,9 +241,11 @@ Stage summaries must explicitly separate:
 - what was only a public calibration result;
 - what the next minimal decision-producing experiment is.
 
-Avoid increasing Agent count, PSS dimensions, obligation language, or generic
-abstraction layers without a concrete evaluation miss that requires the added
-complexity.
+The A0 plan admits Protocol/Hypothesis and Explorer as the first two cognitive
+roles. Avoid adding a third Agent, new PSS dimensions, obligation language, or
+generic abstraction layers without a concrete evaluation miss that requires
+the added complexity. Always compare the two-role method with a single Agent
+under the same total model and Runtime budget.
 
 ## Required validation
 
