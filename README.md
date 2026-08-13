@@ -6,15 +6,29 @@ ConsensusAtlas 是面向共识实现的确定性测试研究框架。当前已�
 Control Runtime：目标系统通过薄 Adapter 暴露消息、自然时间、生命周期、持久化副作用、外部输入和
 Evidence；可信 Go 内核负责动作资格、调度、重放、语义状态采样、Oracle 和评测账本。
 
-当前阶段已完成 **M5.23g 真实 Agent multi-root pilot** 并关闭 M5.23。系统已建立
+当前阶段已完成 **M5.23R4b Stateless Agent Campaign composition**。M5.23g 真实 Agent
+multi-root pilot 冻结在
+commit `3ec9237`；系统已建立
 exact-prefix bounded stateless search：可信层从当前 `ActionFrontierView` 产生 ActionRef，Agent 只能返回
 该 ActionID 集合的完整排列；root、预算、执行、Replay、PSS 和评价权限仍在可信代码中。
 
 在事先冻结的 etcd/raft 0/28/54-decision root corpus 上，6/6 次 DeepSeek v4 Flash proposal 通过权限
 校验，18 个 WorkItem 均经原 qualified executor 执行并 strict Replay。实验使用 28,335 model tokens，
 得到 15 个 corpus-novel PSS states；但三 root 顺序和 PSS 集合都与 canonical 完全相同。这是
-完整可复核的负结果，不宣称 Agent 优势、覆盖完备或缺陷发现。M5.24 将进入非公开、重复试验的
-外部有效性评估。`formal_ready=false`。
+完整可复核的负结果，不宣称 Agent 优势、覆盖完备或缺陷发现。restricted Agent 现已作为第三种方法接入
+共同 Stateless Campaign；M5.24 才进入非公开、重复试验的外部有效性评估。`formal_ready=false`。
+
+M5.23R1–R4b 不改该结果，也没有再次调用模型。R1 将凭证读取、exact-byte request 和
+provider transport 提取为当前 Agent/Campaign 共享原语，退休 M5.18 one-shot、feedback/
+follow-up 和 B4 的 CLI 与生产实现；R2 冻结 `SearchMethod -> Campaign AttemptProvider`
+契约并退休无现行消费者的 Cross-target 生产闭包。R3 又把 canonical/seeded-uniform 接入同一真实
+etcd/raft target-local Campaign runner：显式冻结 corpus/method sequence，逐 attempt 执行 18 条
+qualified primary + strict Replay 路径，并输出可恢复 artifact、Campaign summary 和 denominator-free
+Stateless observation。R4a 退休已被替代的旧无模型 Campaign 入口，并把 intent-before-key、
+dispatch 后禁止歧义重试、terminal result 重放迁入 Stateless Agent call journal。R4b 将 method、
+6 次 call audit、18 次 qualified execution、discovery 和 model work 封入同一 durable attempt，并在
+恢复读 observation 前交叉核验 sidecar。旧 macro Planner/Intent/planned-attempt/model-call 及 M5.23g
+在线 pilot 入口已删除；Campaign durable core、formal evaluator、冻结 pilot 验证和当前 restricted Agent 保留。
 完整进度见 [当前阶段](docs/CURRENT_STAGE.md)。
 
 ## 当前闭环
@@ -43,24 +57,26 @@ qualified Adapter + opaque workload + bounded policy
  evaluator-owned fresh control/candidate ledger
 ```
 
-新的宏观入口位于该闭环之上：
+当前搜索入口位于该闭环之上：
 
 ```text
-ProtocolKnowledgePack + Qualification -> AgentSemanticView
-                                               |
-                              target-view intersection
-                                               |
-                                CrossTargetPlannerView
-                                               |
-                                     GuardedTestIntent
-                                               |
-                              deterministic compiler/fallback
-                                               |
-                           target-local durable planned attempts
-                                               |
-                               existing qualified policy path
-                                               |
-                         reference-only cross-target ledger
+predeclared root corpus + SearchMethod sequence
+                         |
+                         v
+       StatelessCampaignSpec (same attempt contract)
+          +--------------+----------------+
+          |              |                |
+      canonical     seeded uniform   restricted Agent
+          +--------------+----------------+
+                         |
+                         v
+        exact-prefix search + qualified execution
+                         |
+                         v
+        read-only discovery + complete WorkLedger
+                         |
+                         v
+               durable Campaign attempt
 ```
 
 通用 Oracle 不解析 Raft 字段。etcd/raft 的可信 composition 提供
@@ -77,8 +93,8 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - 外部 Conformance Suite、版本化 Qualification 和 digest-bound Experiment admission；
 - 固定 Core PSS IR、可信在线采样和跨 run 状态发现；
 - opaque workload、Semantic Mapping guard、FaultEnvelope 和完整成本账本；
-- 可恢复多-attempt Campaign、durable planned-attempt、内容寻址 artifact、小型 Summary/reader
-  和 etcd/raft 离线 runner；
+- 可恢复多-attempt Campaign、target-owned durable sidecar、内容寻址 artifact、小型 Summary/reader
+  和 etcd/raft Stateless runner；
 - qualified fixed workload、action-class random 与 trace mutation policy；策略不能提交 enabled set；
 - 自包含 ExecutionBundle：完整 trace、preparation state transition、Evidence、最终 Snapshot、Core PSS、
   client history、decision history、Qualification 和 work ledger；
@@ -95,15 +111,11 @@ ProtocolKnowledgePack + Qualification -> AgentSemanticView
 - digest-bound MethodSpec、非 SUT Config projection 和单执行方法预算；
 - ExecutionBundle v3 的冻结 WorkloadPlan 与可机械重建 invoke/return OperationHistory；
 - build-audit/binary-bound evaluator-owned fresh execution；
-- build-blind AgentSemanticView、strict GuardedTestIntent parser 和 deterministic macro compiler；
-- hard capability/action/fault/budget 拒绝、preference miss/compiler work 与 Trace-backed hard Action 验证；
-- 有界 one-shot DeepSeek JSON transport、安全 key-file 读取和 digest-bound AgentInvocationAudit；
-- bundle-backed `AgentBatchFeedbackView`、敏感身份去除与 preference-only 消融边界；
-- freeze-before-key、typed-failure-before-return-persistence 的显式 opt-in pair runner；
-- execution/workload 分离的 feedback v2、冻结 source/unseen seed 与完整 per-arm 成本的 follow-up spec；
+- protocol knowledge、strict frontier-permutation parser 和 trusted ActionID validator；
+- freeze-before-key、dispatch-before-transport、0-retry 的 durable Agent call journal；
+- 有界 DeepSeek JSON transport、安全 key-file 读取和 digest-bound secret-free call audit；
 - Runtime-supported / Experiment-producible / backend-selectable 三层 Action surface；
-- seed-free CompiledIntentPlan v2、digest-bound execution instance 和独立 IntentOutcome；
-- opaque source digest 约束的 CrossTargetPlannerView、共同父 Intent 与 target-local lowering；
+- 历史 Cross-target portability/authority 校准及冻结工件；该组合已从 HEAD 生产路径退休；
 - pre-call exact-byte request freeze、单份 proposal/baseline 校验与 1-call/0-retry 消融边界；
 - 按 ActionKind 再按成员均匀采样的确定性随机基线，以及 digest-bound FaultEnvelope selectable view；
 - 精确 source prefix、相邻 Action swap、显式 priority suffix 与不可执行变体记账的 trace mutation；
@@ -275,9 +287,8 @@ M5.18b4R 已将全部顶层重测试机械分入 exact-once race shards，完整
 ```bash
 make experiment-etcdraft-v2-bundle
 make experiment-etcdraft-v2-semantics
-make experiment-etcdraft-v2-campaign
-# 仅用于上一进程未产生 summary 的 exact-config 恢复
-make experiment-etcdraft-v2-campaign-resume
+make experiment-etcdraft-v2-stateless-canonical-campaign
+make experiment-etcdraft-v2-stateless-uniform-campaign
 make experiment-etcdraft-v2-calibration
 make evaluate-etcdraft-v2-calibration
 make experiment-etcdraft-v2-action-class-random
@@ -288,10 +299,6 @@ make experiment-etcdraft-v2-corpus-mutation
 make experiment-etcdraft-v2-uniform-method
 make experiment-etcdraft-v2-pss-guided-method
 make experiment-etcdraft-v2-action-class-method
-make experiment-etcdraft-v2-agent-feedback-batch
-make experiment-etcdraft-v2-agent-follow-up-baseline
-make experiment-etcdraft-v2-agent-b4-preflight
-make experiment-etcdraft-v2-agent-b4-freeze
 make build-etcdraft-v2-method-evaluation
 make evaluate-etcdraft-v2-method-evaluation
 ```
@@ -300,17 +307,17 @@ make evaluate-etcdraft-v2-method-evaluation
 
 ```bash
 AGENT_KEY_FILE=/secure/path/key.txt \
-AGENT_ARTIFACT_DIR=artifacts/experiments/new-one-shot \
-make experiment-etcdraft-v2-agent-one-shot
+AGENT_ARTIFACT_DIR=artifacts/experiments/new-stateless-agent \
+make experiment-etcdraft-v2-stateless-agent
 ```
 
 `experiment-etcdraft-v2-calibration` 会从冻结的 source transform 构建本地二进制；二进制和完整
 约 1.9 MB bundle 写入被 Git 忽略的 `artifacts/`。仓库只保存小型 build input/audit、benchmark
 manifest 和 evaluator report，避免再次把重复 trace body 提交成超长 JSON。
 
-当前 Guarded TestIntent 已有真实在线模型入口，但只有一次受锚定的公开校准调用。M5.13 旧
-transport 仍是历史记录，已从可编译路径删除；当前入口才具备 admission/workload/
-FaultEnvelope/ExecutionBundle 和 progressive audit 边界。
+当前在线模型入口是受限 Stateless Search Agent：它只排列可信层提供的当前 frontier ActionID，
+并经过 exact request/dispatch/result 审计。Guarded TestIntent one-shot/feedback/B4 已是历史记录，
+不再从 HEAD 可执行。
 
 ## 当前目录
 
@@ -344,7 +351,8 @@ docs/                     当前设计与不可改写的阶段记录
 
 ## 信任边界与限制
 
-- 未来 Agent 可理解冻结协议知识并生成 Guarded TestIntent，但不能决定 enabled、执行、PSS 真值、Oracle 或得分；
+- Agent 可理解冻结协议知识并提交当前 trusted frontier 的 ActionID 完整排列，但不能决定 enabled、执行、
+  PSS 真值、Oracle 或得分；
 - Adapter/DecisionProjector 属于目标接入信任根，必须通过独立 fixture、conformance 和 replay 检查；
 - Core PSS 用于 coarse discovery/feedback，不是状态等价证明，也不是正确性分数；
 - Coverage 是未来解释性内部指标，不能代替隐藏候选检出和正确 control 误报；
@@ -358,7 +366,11 @@ v2 另将每个 attempt 绑定到已重验的 choice/intent/plan/backend，不�
 runner 现要求在 `-out` 之外显式提供 `-campaign-observation-out`。各栏仍不合成
 自定义“完备度分数”，monitor 零触发也不是正确性证明。
 
-阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.22d cross-target preference authority](docs/stage-m5.22d-cross-target-preference-authority.md)、
+阅读入口： [当前阶段](docs/CURRENT_STAGE.md)、[M5.23R4b Stateless Agent Campaign](docs/stage-m5.23r4b-stateless-agent-campaign.md)、
+[M5.23R4a Stateless Agent 恢复底座](docs/stage-m5.23r4a-stateless-agent-recovery.md)、
+[M5.23R3 etcd/raft Stateless Campaign runner](docs/stage-m5.23r3-etcdraft-stateless-campaign-runner.md)、
+[M5.23R2 Stateless Campaign 契约](docs/stage-m5.23r2-stateless-campaign-contract.md)、
+[M5.23R1 主线收缩](docs/stage-m5.23r1-mainline-pruning.md)、[M5.22d cross-target preference authority](docs/stage-m5.22d-cross-target-preference-authority.md)、
 [M5.22c durable cross-target composition](docs/stage-m5.22c-durable-cross-target-composition.md)、
 [M5.22b cross-target portable intent](docs/stage-m5.22b-cross-target-portable-intent.md)、
 [M5.22a bounded stochastic admission](docs/stage-m5.22a-bounded-stochastic-admission.md)、

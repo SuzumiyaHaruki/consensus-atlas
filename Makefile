@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment probe-raftrs-core probe-omnipaxos-core test-raftrs-binding test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-campaign experiment-etcdraft-v2-campaign-resume experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-agent-feedback-batch experiment-etcdraft-v2-agent-follow-up-baseline experiment-etcdraft-v2-agent-b4-preflight experiment-etcdraft-v2-agent-b4-freeze experiment-etcdraft-v2-pss-guided-method experiment-etcdraft-v2-agent-one-shot experiment-etcdraft-v2-agent-b4-pair build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 audit-no-retired-experiment probe-raftrs-core probe-omnipaxos-core test-raftrs-binding test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-workload experiment-etcdraft-v2-semantics experiment-etcdraft-v2-bundle experiment-etcdraft-v2-stateless-canonical-campaign experiment-etcdraft-v2-stateless-uniform-campaign experiment-etcdraft-v2-stateless-agent-campaign experiment-etcdraft-v2-action-class-random experiment-etcdraft-v2-trace-mutation experiment-etcdraft-v2-corpus-mutation experiment-etcdraft-v2-uniform-method experiment-etcdraft-v2-action-class-method experiment-etcdraft-v2-pss-guided-method build-etcdraft-v2-calibration experiment-etcdraft-v2-calibration evaluate-etcdraft-v2-calibration build-etcdraft-v2-action-class-calibration experiment-etcdraft-v2-action-class-calibration evaluate-etcdraft-v2-action-class-calibration build-etcdraft-v2-method-evaluation evaluate-etcdraft-v2-method-evaluation
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -77,7 +77,7 @@ audit-no-v1:
 # M5.17bR2 guard: historical artifacts may retain these identities, but the
 # pre-admission Planner and model transport must not return to compiled code.
 audit-no-retired-experiment:
-	@if rg -n 'ExecuteLegacy|PlannerProposalVersion|PlannerAttemptVersion|deepseek_control_planner|internal/modelcommand' \
+	@if rg -n 'ExecuteLegacy|PlannerProposalVersion|PlannerAttemptVersion|deepseek_control_planner|internal/modelcommand|CrossTargetPlannerView|CrossTargetCampaignLedger|AgentBatchFeedbackView|AgentFollowUpSpec|AgentPreferenceAblationFreeze|CampaignPlannerView|CampaignPlannedAttempt|CampaignModelCall|GuardedTestIntent|CompiledIntentPlan|AgentSemanticView|IntentCompilerCatalog|AgentInvocationAudit' \
 		--glob '*.go' .; then \
 		echo 'M5.17bR2 violation: compiled source references a retired experiment path' >&2; \
 		exit 1; \
@@ -161,21 +161,34 @@ experiment-etcdraft-v2-bundle:
 		-out artifacts/experiments/etcdraft-v2-bundle-m5.16/report.json \
 		-bundle-out artifacts/experiments/etcdraft-v2-bundle-m5.16/bundle.json
 
-experiment-etcdraft-v2-campaign:
-	go run ./cmd/control-experiment -strategy campaign-etcdraft-v1 \
-		-campaign-dir artifacts/experiments/etcdraft-v2-campaign-m5.19d/campaign \
+experiment-etcdraft-v2-stateless-canonical-campaign:
+	go run ./cmd/control-experiment -strategy campaign-etcdraft-stateless-canonical-v1 \
+		-stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
+		-campaign-dir artifacts/experiments/etcdraft-v2-stateless-canonical-m5.23r3/campaign \
 		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
-		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json \
-		-campaign-observation-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/observation.json
+		-out artifacts/experiments/etcdraft-v2-stateless-canonical-m5.23r3/summary.json \
+		-campaign-observation-out artifacts/experiments/etcdraft-v2-stateless-canonical-m5.23r3/observation.json
 
-experiment-etcdraft-v2-campaign-resume:
-	go run ./cmd/control-experiment -strategy campaign-etcdraft-v1 -campaign-resume \
-		-campaign-dir artifacts/experiments/etcdraft-v2-campaign-m5.19d/campaign \
-		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
-		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/summary.json \
-		-campaign-observation-out artifacts/experiments/etcdraft-v2-campaign-m5.19d/observation.json
+experiment-etcdraft-v2-stateless-uniform-campaign:
+	go run ./cmd/control-experiment -strategy campaign-etcdraft-stateless-uniform-v1 \
+		-stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
+		-campaign-dir artifacts/experiments/etcdraft-v2-stateless-uniform-m5.23r3/campaign \
+		-campaign-attempts 3 -campaign-wall-clock-ms 600000 -policy-seed 1 \
+		-out artifacts/experiments/etcdraft-v2-stateless-uniform-m5.23r3/summary.json \
+		-campaign-observation-out artifacts/experiments/etcdraft-v2-stateless-uniform-m5.23r3/observation.json
+
+# Explicit opt-in durable Agent Campaign. The artifact parent has no default so
+# an ordinary validation target cannot read a key or contact the provider.
+experiment-etcdraft-v2-stateless-agent-campaign:
+	@test -n "$(AGENT_KEY_FILE)" || (echo 'AGENT_KEY_FILE is required' >&2; exit 1)
+	@test -n "$(AGENT_ARTIFACT_DIR)" || (echo 'AGENT_ARTIFACT_DIR is required' >&2; exit 1)
+	go run ./cmd/control-experiment -strategy campaign-etcdraft-stateless-agent-v1 \
+		-stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
+		-campaign-dir "$(AGENT_ARTIFACT_DIR)/campaign" \
+		-campaign-attempts 1 -campaign-wall-clock-ms 600000 \
+		-campaign-model-tokens-per-attempt 36000 -agent-key-file "$(AGENT_KEY_FILE)" \
+		-out "$(AGENT_ARTIFACT_DIR)/summary.json" \
+		-campaign-observation-out "$(AGENT_ARTIFACT_DIR)/observation.json"
 
 experiment-etcdraft-v2-action-class-random:
 	go run ./cmd/control-experiment -strategy workload-action-class-random \
@@ -209,53 +222,11 @@ experiment-etcdraft-v2-action-class-method:
 		-out artifacts/experiments/etcdraft-v2-methods-m5.18b2/action-class-method.json \
 		-method-artifacts artifacts/experiments/etcdraft-v2-methods-m5.18b2/evidence
 
-experiment-etcdraft-v2-agent-feedback-batch:
-	go run ./cmd/control-experiment -strategy workload-agent-feedback-batch \
-		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-agent-feedback-m5.18b2/feedback.json \
-		-method-artifacts artifacts/experiments/etcdraft-v2-agent-feedback-m5.18b2/methods
-
-experiment-etcdraft-v2-agent-follow-up-baseline:
-	go run ./cmd/control-experiment -strategy workload-agent-follow-up-baseline \
-		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-agent-follow-up-m5.18b3/summary.json \
-		-method-artifacts artifacts/experiments/etcdraft-v2-agent-follow-up-m5.18b3/evidence
-
-experiment-etcdraft-v2-agent-b4-preflight:
-	go run ./cmd/control-experiment -strategy workload-agent-b4-preflight \
-		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/summary.json \
-		-method-artifacts artifacts/experiments/etcdraft-v2-agent-b4-preflight-m5.18b4-pre/evidence
-
-experiment-etcdraft-v2-agent-b4-freeze:
-	go run ./cmd/control-experiment -strategy workload-agent-b4-freeze \
-		-policy-seed 1 -decisions 96 \
-		-out artifacts/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/freeze.json \
-		-method-artifacts artifacts/experiments/etcdraft-v2-agent-b4-freeze-m5.18b4/evidence
-
 experiment-etcdraft-v2-pss-guided-method:
 	go run ./cmd/control-experiment -strategy workload-pss-guided-corpus \
 		-policy-seed 1 -decisions 96 \
 		-out artifacts/experiments/etcdraft-v2-methods-m5.17c2/pss-guided-method.json \
 		-method-artifacts artifacts/experiments/etcdraft-v2-methods-m5.17c2/evidence
-
-# Opt-in external call. Neither variable has a default, and this target is not
-# a dependency of any test or validation target.
-experiment-etcdraft-v2-agent-one-shot:
-	@test -n "$(AGENT_KEY_FILE)" || (echo 'AGENT_KEY_FILE is required' >&2; exit 1)
-	@test -n "$(AGENT_ARTIFACT_DIR)" || (echo 'AGENT_ARTIFACT_DIR is required' >&2; exit 1)
-	go run ./cmd/control-experiment -strategy workload-guarded-agent-one-shot \
-		-agent-key-file "$(AGENT_KEY_FILE)" -agent-artifacts "$(AGENT_ARTIFACT_DIR)"
-
-# Explicit opt-in external pair call. Freeze/source construction completes and
-# validates before the key file is read. This target is not a dependency of any
-# test or validation target.
-experiment-etcdraft-v2-agent-b4-pair:
-	@test -n "$(AGENT_KEY_FILE)" || (echo 'AGENT_KEY_FILE is required' >&2; exit 1)
-	@test -n "$(AGENT_ARTIFACT_DIR)" || (echo 'AGENT_ARTIFACT_DIR is required' >&2; exit 1)
-	go run ./cmd/control-experiment -strategy workload-agent-b4-pair \
-		-policy-seed 1 -decisions 96 \
-		-agent-key-file "$(AGENT_KEY_FILE)" -agent-artifacts "$(AGENT_ARTIFACT_DIR)"
 
 build-etcdraft-v2-calibration:
 	go run ./cmd/sut-build -repo . \

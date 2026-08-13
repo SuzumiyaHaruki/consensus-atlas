@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	omniadapter "github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	omniqualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/omnipaxosv2"
 )
 
 const m523bExperimentDirectory = "../../benchmarks/experiments/omnipaxos-v2-stateless-dfs-m5.23b"
@@ -18,26 +22,20 @@ const m523bExperimentDirectory = "../../benchmarks/experiments/omnipaxos-v2-stat
 func TestM523bOmniPaxosBoundedStatelessDFSIsDeterministicAndExecutable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
-	workerPath := buildPortableM522bWorker(t)
-	inputs, err := newPortableM522bInputs(ctx, workerPath)
+	workerPath := buildOmniWorkerM523b(t)
+	inputs, err := newStatelessOmniM523bInputs(ctx, workerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	planning, err := planPortableM522bTargets(inputs)
+	source, err := executeStatelessOmniSourceM523b(ctx, inputs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := executePortableM522bOmni(
-		ctx, inputs, planning.OmniIntent, planning.OmniPlan, planning.OmniInstance,
-	)
+	root, err := controlexperiment.ExecutionTracePrefix(source.Trace, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := controlexperiment.ExecutionTracePrefix(source.Bundle.Trace, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	envelope := planning.OmniPlan.FaultEnvelope
+	envelope := inputs.FaultEnvelope
 	runtimeConfig := omniRuntimeConfigM523b("m5-22b")
 	spec, err := controlexperiment.NewStatelessDFSSpec(
 		"omnipaxos-m5-23b", root, runtimeConfig, &envelope, 2, 6, 1000,
@@ -87,13 +85,13 @@ func TestM523bOmniPaxosBoundedStatelessDFSIsDeterministicAndExecutable(t *testin
 			control.ActionDeliverMessage,
 			control.ActionFireTemporal,
 		},
-		planning.OmniPlan.Decisions,
+		inputs.Decisions,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	report, bundle := executeOmniFrontierPolicyM523b(
-		t, ctx, inputs, planning, policy, runtimeConfig, &envelope,
+		t, ctx, inputs, policy, runtimeConfig, &envelope,
 	)
 	executedPrefix, err := controlexperiment.ExecutionTracePrefix(bundle.Trace, leaf.Path.Decision)
 	if err != nil {
@@ -107,7 +105,7 @@ func TestM523bOmniPaxosBoundedStatelessDFSIsDeterministicAndExecutable(t *testin
 	summary := statelessDFSCalibrationSummary{
 		SchemaVersion: "consensus-atlas/stateless-dfs-calibration-summary/v1",
 		Stage:         "M5.23b", Date: "2026-08-12",
-		SourceBundleDigest: source.Bundle.Digest, SourceTraceDigest: source.Bundle.Trace.Digest,
+		SourceBundleDigest: source.Digest, SourceTraceDigest: source.Trace.Digest,
 		RootPrefixDigest: root.Digest, RootDecisions: len(root.Records),
 		SpecDigest: spec.Digest, ResultDigest: first.Digest,
 		MaxDepth: spec.MaxDepth, MaxWorkItems: spec.MaxWorkItems, MaxWorkUnits: spec.MaxWorkUnits,
@@ -144,7 +142,7 @@ func TestM523bOmniPaxosBoundedStatelessDFSIsDeterministicAndExecutable(t *testin
 	}
 	t.Logf(
 		"source=%s/%s spec=%s result=%s root=%s items=%d states=%d stop=%s work=%#v leaf=%s/%s policy=%s report=%s bundle=%s execution=%s execution_work=%#v decisions=%d",
-		source.Bundle.Digest, source.Bundle.Trace.Digest,
+		source.Digest, source.Trace.Digest,
 		spec.Digest, first.Digest, root.Digest, len(first.Items), first.StatesExpanded,
 		first.StopReason, first.Work, leaf.Digest, leaf.ChildPrefixDigest,
 		mustPolicyDigest(t, policy), report.Digest, bundle.Digest, bundle.Trace.Digest,
@@ -157,6 +155,91 @@ func TestM523bOmniPaxosBoundedStatelessDFSIsDeterministicAndExecutable(t *testin
 	}
 }
 
+type statelessOmniM523bInputs struct {
+	Qualification        omniqualification.Bundle
+	WorkerPath           string
+	RequiredCapabilities []string
+	FaultEnvelope        controlexperiment.FaultEnvelope
+	Decisions            int
+}
+
+func newStatelessOmniM523bInputs(
+	ctx context.Context,
+	workerPath string,
+) (statelessOmniM523bInputs, error) {
+	qualified, err := omniqualification.Run(ctx, workerPath)
+	if err != nil {
+		return statelessOmniM523bInputs{}, err
+	}
+	return statelessOmniM523bInputs{
+		Qualification: qualified,
+		WorkerPath:    workerPath,
+		RequiredCapabilities: []string{
+			conformance.CapabilityNaturalTemporal,
+			conformance.CapabilityOpaqueInvokeBoundary,
+			conformance.CapabilityPureEnabledCheck,
+			conformance.CapabilityRuntimeOwnedMessage,
+			conformance.CapabilityStrictDecisionReplay,
+			conformance.CapabilityStrictYieldEvidence,
+		},
+		Decisions: 96,
+	}, nil
+}
+
+func executeStatelessOmniSourceM523b(
+	ctx context.Context,
+	inputs statelessOmniM523bInputs,
+) (controlexperiment.ExecutionBundle, error) {
+	policy := controlexperiment.Policy{
+		Version: controlexperiment.BoundedActionClassPolicyVersion,
+		ID:      "portable-omni-bounded-action-class",
+		SeedHex: randomPolicySeed(1, 1),
+		Priority: []control.ActionKind{
+			control.ActionInvoke,
+			control.ActionDeliverMessage,
+		},
+		SelectableActions: []control.ActionKind{
+			control.ActionDeliverMessage,
+			control.ActionFireTemporal,
+			control.ActionInvoke,
+		},
+	}
+	if err := policy.Validate(inputs.Decisions); err != nil {
+		return controlexperiment.ExecutionBundle{}, err
+	}
+	report, bundle, err := executeQualifiedOmniM523b(
+		ctx, inputs, "portable-omni-target-m5-22b", policy,
+		omniRuntimeConfigM523b("m5-22b"), &inputs.FaultEnvelope,
+	)
+	if err != nil {
+		return controlexperiment.ExecutionBundle{}, err
+	}
+	if report.Runs[0].Replay.Stable == false {
+		return controlexperiment.ExecutionBundle{}, context.Canceled
+	}
+	return bundle, nil
+}
+
+func buildOmniWorkerM523b(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("cargo"); err != nil {
+		t.Skip("cargo is required for the M5.23b OmniPaxos portability test")
+	}
+	manifest := filepath.Join("..", "..", "adapters", "omnipaxosv2", "worker", "Cargo.toml")
+	command := exec.Command("cargo", "build", "--locked", "--quiet", "--manifest-path", manifest)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build OmniPaxos worker: %v\n%s", err, output)
+	}
+	path, err := filepath.Abs(filepath.Join(
+		"..", "..", "adapters", "omnipaxosv2", "worker", "target", "debug",
+		"consensus-atlas-omnipaxos-worker",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func omniRuntimeConfigM523b(stageID string) controlexperiment.RuntimeConfig {
 	return controlexperiment.RuntimeConfig{
 		SeedHex:   hex.EncodeToString([]byte("portable-omni-" + stageID)),
@@ -167,26 +250,42 @@ func omniRuntimeConfigM523b(stageID string) controlexperiment.RuntimeConfig {
 func executeOmniFrontierPolicyM523b(
 	t *testing.T,
 	ctx context.Context,
-	inputs portableM522bInputs,
-	planning portableM522bPlanning,
+	inputs statelessOmniM523bInputs,
 	policy controlexperiment.Policy,
 	runtimeConfig controlexperiment.RuntimeConfig,
 	envelope *controlexperiment.FaultEnvelope,
 ) (controlexperiment.Report, controlexperiment.ExecutionBundle) {
 	t.Helper()
-	admission, err := controlexperiment.BindExecutionAdmission(
-		inputs.OmniQualification.Qualification,
-		controlexperiment.ExecutionRequirements{Capabilities: planning.OmniPlan.RequiredCapabilities},
+	report, bundle, err := executeQualifiedOmniM523b(
+		ctx, inputs, "portable-omni-target-m5-23b-dfs-leaf", policy, runtimeConfig, envelope,
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return report, bundle
+}
+
+func executeQualifiedOmniM523b(
+	ctx context.Context,
+	inputs statelessOmniM523bInputs,
+	configID string,
+	policy controlexperiment.Policy,
+	runtimeConfig controlexperiment.RuntimeConfig,
+	envelope *controlexperiment.FaultEnvelope,
+) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+	admission, err := controlexperiment.BindExecutionAdmission(
+		inputs.Qualification.Qualification,
+		controlexperiment.ExecutionRequirements{Capabilities: inputs.RequiredCapabilities},
+	)
+	if err != nil {
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
 	}
 	requestID := "portable-request-m5-22b"
 	payload, err := omniadapter.InputPayload(omniadapter.Input{
 		RequestID: requestID, Value: []byte("portable-value"),
 	})
 	if err != nil {
-		t.Fatal(err)
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
 	}
 	workload := controlexperiment.WorkloadPlan{
 		SchemaVersion:  controlexperiment.WorkloadPlanVersion,
@@ -198,13 +297,13 @@ func executeOmniFrontierPolicyM523b(
 	}
 	config := controlexperiment.Config{
 		SchemaVersion:    controlexperiment.SchemaVersionV2,
-		ID:               "portable-omni-target-m5-23b-dfs-leaf",
+		ID:               configID,
 		PSSID:            omniadapter.CorePSSMappingID,
 		WorkloadRouterID: omniadapter.WorkloadRouterID,
 		Runtime:          runtimeConfig,
 		Admission:        &admission,
 		FaultEnvelope:    envelope,
-		DecisionsPerRun:  planning.OmniPlan.Decisions,
+		DecisionsPerRun:  inputs.Decisions,
 		RequireReplay:    true,
 		Runs: []controlexperiment.RunPlan{{
 			Run: 1, StopAfterWorkload: true, Policy: policy, Workload: &workload,
@@ -212,7 +311,7 @@ func executeOmniFrontierPolicyM523b(
 	}
 	var opened []*omniadapter.Adapter
 	factory := func() (control.Adapter, error) {
-		adapter, factoryErr := omniadapter.New(omniadapter.Config{WorkerPath: inputs.OmniWorkerPath})
+		adapter, factoryErr := omniadapter.New(omniadapter.Config{WorkerPath: inputs.WorkerPath})
 		if factoryErr == nil {
 			opened = append(opened, adapter)
 		}
@@ -224,14 +323,14 @@ func executeOmniFrontierPolicyM523b(
 		}
 	}()
 	report, bundle, err := controlexperiment.ExecuteQualifiedBundle(
-		ctx, config, inputs.OmniQualification, factory,
+		ctx, config, inputs.Qualification, factory,
 		omniadapter.CorePSSMapper{}, omniadapter.DecisionProjector{}, omniadapter.WorkloadRouter{},
 	)
 	if err != nil {
-		t.Fatal(err)
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
 	}
 	if err := bundle.ValidateProjection(omniadapter.DecisionProjector{}); err != nil {
-		t.Fatal(err)
+		return controlexperiment.Report{}, controlexperiment.ExecutionBundle{}, err
 	}
-	return report, bundle
+	return report, bundle, nil
 }

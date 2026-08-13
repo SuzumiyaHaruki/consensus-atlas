@@ -5,10 +5,10 @@
 ```text
 untrusted / bounded                         trusted Go core
 
-single model call -> strict Guarded TestIntent -> deterministic macro compiler
+frontier permutation -> strict ActionID set validator -> exact-prefix search
                                                         |
                                                         v
-                                             qualified policy invocation
+                                             qualified policy execution
 
 Protocol docs ----> target Binding -----------------> Qualification
                      + Semantic Mapping                       |
@@ -36,7 +36,7 @@ opaque workload ------------------------------------------>|
                                                evaluation ledger
 ```
 
-未来 Agent/模型只能产生受 schema 约束的 Guarded TestIntent，且不能：
+当前 Agent/模型只能产生受 schema 约束的当前 frontier ActionID 完整排列，且不能：
 
 - 构造 enabled set 或任意 ActionID；
 - 直接调用 Adapter/SUT；
@@ -46,7 +46,7 @@ opaque workload ------------------------------------------>|
 目标专用信任根由薄 Adapter、Semantic Mapping 和 DecisionProjector 构成。它们可以理解协议 Evidence，
 但通用 Runtime、Experiment、Core PSS ledger、Oracle 和 evaluator 不导入协议类型。
 
-M5.18b0 实现宏观 compiler，不是在线 Action 排序器。`ProtocolKnowledgePack` 与 backend catalog
+M5.18b0 曾实现宏观 compiler，不是在线 Action 排序器。`ProtocolKnowledgePack` 与 backend catalog
 是 target-owned 冻结输入；`AgentSemanticView` 从它们和真实 Manifest/Qualification 重算，不包含
 BuildID、candidate/control、root cause 或 Oracle identity。Agent proposal 只能表达 risk ID、hard
 capability/ActionKind/fault/budget 和 backend/ActionKind preference。
@@ -85,7 +85,7 @@ messages/request bytes 及 digest；协议无关 `AgentPreferenceAblationFreeze`
 feedback、hard baseline、FollowUpSpec、transport 限制和两臂 commitment。key 只能在 freeze 验证后进入
 `invokePrepared`，不参与 request 生成或 identity。
 
-M5.18b4 pair runner 只在 etcd/raft composition root 组织上述对象。它先拒绝已存在的 artifact
+M5.18b4 pair runner 曾只在 etcd/raft composition root 组织上述对象。它先拒绝已存在的 artifact
 directory，完成 source construction 和 full freeze validation 后才读取 key，然后固定消费两臂。
 typed arm failure 作为数据先进入 pair ledger 和全新目录，再作为进程错误返回。runner 不是
 Campaign Coordinator，也不处理进程被强制终止时的中间 arm 恢复。
@@ -124,14 +124,14 @@ fault/workload 合计和 monitor 触发索引；Report、Bundle 和 Trace 仍只
 中保存一次。v2 额外投影已重验的 choice/intent/plan/backend，不暴露 seed 或
 instance。这些栏不合成单一分数，monitor 零触发不表示正确。
 
-M5.21c 在 Campaign provider 与 executor 之间增加协议无关 `CampaignPlannedAttempt/v1`
+M5.21c 曾在 Campaign provider 与 executor 之间增加协议无关 `CampaignPlannedAttempt/v1`
 持久化边界，但不把 Planner 放入通用 Coordinator。当前 `CampaignConfig/v3` 继续冻结 attempt input mode；
 planned mode 下，store 只允许一个 exact `head+1` envelope，并要求 artifact/checkpoint 绑定其
 digest。etcd/raft composition 负责从已验证 Observation 构造 Planner View、调用 preference-only
 planner、运行可信 compiler，然后将冻结 plan 交给原 qualified executor。通用 store 不解释
 etcd/raft、PSS 或策略语义。
 
-M5.21d1 在 planned attempt 之前增加通用 durable model-call write-ahead 边界。
+M5.21d1 曾在 planned attempt 之前增加通用 durable model-call write-ahead 边界。
 `CampaignConfig/v3` 将 planner mode 纳入 identity；`model-calls/N.intent.json` 保存不含秘钥的
 exact public bytes，`dispatch.json` 必须先于 transport，`result.json` 只能由创建 dispatch 的
 活跃 Recovery 提交。从磁盘恢复的 dispatch-only 状态没有活跃令牌，因此只能投影为
@@ -507,10 +507,44 @@ dispatch，最后写唯一 terminal result；调用一经 dispatch 即消费序�
 28,335 tokens，三 root 顺序和 15-state corpus-novel set 均与 canonical 相同。这关闭了 M5.23 的可执行
 Agent 闭环，同时留下“当前 knowledge/prompt 无新增搜索价值”的负结果；M5.24 才进入外部有效性。
 
+M5.23R2 将 canonical、seeded-uniform 和 restricted Agent 统一为预声明
+`StatelessTraversalMethod` 序列。`StatelessCampaignSpec/v1` 冻结 target/source/corpus、每个 attempt
+的方法、root/depth/item/search ceiling、strict Replay/read-only discovery 和完整预算；同一
+`CampaignAttemptProvider` 只接受 target composition 返回的 search work、qualified execution work、
+model work、typed failure 或 sealed discovery。source 构造成本对每个 attempt 完整计费，执行 evidence
+不得夹带 model cost，Agent 也不启用旧 Campaign Planner mode。Campaign 恢复后重新严格解码 attempt
+artifact，并核对 request/spec/method/discovery/work digest。
+
+机械引用审计确认 M5.22 Cross-target 组合没有当前 CLI、Stateless Search、Campaign durable core 或
+formal evaluator 消费者，因而其生产代码和仅服务该组合的测试已从 HEAD 退休；历史文档、冻结工件与
+Git 检查点继续保留。M5.23b 的 OmniPaxos 迁移见证改用 target-local fixture 后保持冻结 identity。
+上述 M5.18–M5.22 的宏观 Agent/Planner 组合是历史设计记录，不再属于 HEAD 生产架构。R4b 完成后，
+GuardedTestIntent、macro compiler、planned-attempt 和旧 Campaign model-call 已删除；Git 历史与冻结
+工件负责复现，不从文档中的旧类型推断当前 API。
+
+M5.23R3 增加首个真实 target-local Stateless Campaign runner。etcd/raft composition 显式读取并重验
+冻结 root corpus，在每个预声明 method attempt 内对 3 roots × 6 WorkItems 运行相同 exact-prefix Search、
+qualified execution 和 strict Replay；随后才把强验证的 read-only discovery 提交给 R2 通用 provider。
+`StatelessCampaignObservation/v1` 从恢复后重新严格解码的 artifact 机械投影方法 identity、PSS 集和完整
+成本，并拒绝未知 coverage/verdict 字段。canonical repeat 与 seeded-uniform seed sequence 使用相同
+Coordinator/store/artifact/observation。
+
+M5.23R4a 机械确认旧无模型 Campaign 入口已被 R3 替代并将其退休；旧 Agent Campaign 仍是旧 Planner
+闭包唯一现行消费者。Stateless Agent call journal 现在允许先在无 key 状态持久化 exact intent，再由恢复
+进程显式激活 key 完成一次 dispatch；completed 只重放保存结果，intent+dispatch 无 result 被永久视为
+ambiguous 而不重试。该调用级底座尚未等价于 attempt 级恢复；R4b 必须先把 6 次 frontier call、18 次
+qualified execution、discovery 与 model work 封入共同 Stateless Campaign artifact，才能删除旧闭包。
+
+M5.23R4b 将 restricted Agent 作为第三种 Stateless Campaign strategy。Agent method、knowledge digest、
+model allowance、6 次 secret-free call audit、18 次 qualified execution、discovery 和完整 work 进入同一
+attempt artifact。prepared call 不前移 Campaign head，也不占用终态输出路径；completed call 只重放保存
+结果；dispatch-only 形成 ambiguous terminal failure。恢复生成 observation 前重新读取 exact sidecar 并
+逐项比对 audit。旧 macro Agent/Campaign 闭包和 M5.23g 在线 pilot 入口由此从 HEAD 删除；冻结 M5.23g
+工件仍由只读测试验证。当前 Agent 没有 Action 构造、root/budget、PSS、Oracle 或 verdict 权限。
+
 - 真实非公开 holdout curator pack 与正式方法比较；
 - PSS-guided 的可执行性结构约束（只在评测缺口证明必要时增加）；
-- Guarded TestIntent batch feedback 与 one-shot/feedback/确定性 baseline 消融；
-- 修正后的非锚定 prompt 真实调用；
+- Stateless Search Agent 与 canonical/seeded-uniform 的冻结重复试验；
 - 第二个 strict deterministic target；
 - Coverage v2 的真实新消费者；
 - BFT 的有限 Byzantine action 与对应 target projector/Oracle。

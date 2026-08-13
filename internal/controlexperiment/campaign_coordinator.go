@@ -132,6 +132,36 @@ type CampaignAttemptProviderFunc func(
 	CampaignAttemptRequest,
 ) (CampaignAttemptResult, error)
 
+// CampaignAttemptDeferredError reports that a provider stopped before a
+// terminal attempt artifact existed. The Coordinator leaves the trusted head
+// unchanged; target-owned durable sidecars may make the exact request
+// resumable, but no work or outcome is invented in the Campaign ledger.
+type CampaignAttemptDeferredError struct {
+	code string
+	err  error
+}
+
+func NewCampaignAttemptDeferredError(code string, err error) error {
+	if code == "" || err == nil {
+		return errors.New("EXPERIMENT_CAMPAIGN_DEFERRED_INPUT_INVALID")
+	}
+	return &CampaignAttemptDeferredError{code: code, err: err}
+}
+
+func (deferred *CampaignAttemptDeferredError) Error() string {
+	if deferred == nil {
+		return "EXPERIMENT_CAMPAIGN_ATTEMPT_DEFERRED"
+	}
+	return fmt.Sprintf("EXPERIMENT_CAMPAIGN_ATTEMPT_DEFERRED[%s]: %v", deferred.code, deferred.err)
+}
+
+func (deferred *CampaignAttemptDeferredError) Unwrap() error {
+	if deferred == nil {
+		return nil
+	}
+	return deferred.err
+}
+
 func (provider CampaignAttemptProviderFunc) Attempt(
 	ctx context.Context,
 	request CampaignAttemptRequest,
@@ -214,9 +244,9 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 	result, providerErr := coordinator.provider.Attempt(attemptContext, request)
 	cancel()
 	if providerErr != nil {
-		var modelFailure *CampaignModelCallProviderFailure
-		if errors.As(providerErr, &modelFailure) {
-			return coordinator.failModelCallAttempt(request, providerErr, modelFailure.result)
+		var deferred *CampaignAttemptDeferredError
+		if errors.As(providerErr, &deferred) {
+			return coordinator.recovered.Head, providerErr
 		}
 		return coordinator.failAttempt(
 			request, CampaignFailureProvider,
@@ -266,20 +296,6 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 		return CampaignCheckpoint{}, err
 	}
 	return head, nil
-}
-
-func (coordinator *CampaignCoordinator) failModelCallAttempt(
-	request CampaignAttemptRequest,
-	cause error,
-	result CampaignModelCallResult,
-) (CampaignCheckpoint, error) {
-	coordinator.failed = true
-	if _, err := coordinator.recovered.FailAttemptWithModelCall(
-		request, CampaignFailureProvider, result,
-	); err != nil {
-		return CampaignCheckpoint{}, fmt.Errorf("%v; EXPERIMENT_CAMPAIGN_FAILURE_MARKER_FAILED: %w", cause, err)
-	}
-	return CampaignCheckpoint{}, cause
 }
 
 func (coordinator *CampaignCoordinator) failAttempt(

@@ -351,6 +351,74 @@ func (discovery StatelessCorpusDiscovery) Validate(
 	return nil
 }
 
+// ValidateStructure checks the sealed, self-contained discovery boundary used
+// by durable Campaign artifacts. Full evidence validation remains the stronger
+// Validate(corpus, source, evidence, mapper) path at the target composition.
+func (discovery StatelessCorpusDiscovery) ValidateStructure() error {
+	if discovery.SchemaVersion != StatelessCorpusDiscoveryVersion || !validMethodToken(discovery.ID) ||
+		!validSHA256(discovery.CorpusDigest) || !validSHA256(discovery.MethodDigest) ||
+		len(discovery.Roots) == 0 || discovery.CorpusBaselinePSSStates < 0 ||
+		discovery.LocalIncrementalPSSStates < 0 || discovery.CorpusNovelPSSStates < 0 ||
+		discovery.CorpusBaselinePSSStates != len(discovery.CorpusBaselinePSSKeys) ||
+		discovery.LocalIncrementalPSSStates != len(discovery.LocalIncrementalPSSKeys) ||
+		discovery.CorpusNovelPSSStates != len(discovery.CorpusNovelPSSKeys) ||
+		!validSHA256(discovery.CorpusBaselinePSSSetDigest) ||
+		!validSHA256(discovery.LocalIncrementalPSSSetDigest) ||
+		!validSHA256(discovery.CorpusNovelPSSSetDigest) ||
+		discovery.QualifiedExecutionAttempts <= 0 ||
+		discovery.QualifiedExecutionAttempts < len(discovery.Roots) ||
+		validateMethodWork(discovery.QualifiedExecutionWork) != nil ||
+		discovery.QualifiedExecutionWork.Model != (ModelWork{}) ||
+		!validStatelessDFSWork(discovery.SearchWork, int(^uint(0)>>1)) ||
+		discovery.MarginalEvidenceWorkUnits != discovery.SearchWork.TotalWorkUnits+
+			discovery.QualifiedExecutionWork.Primary.WorkUnits+
+			discovery.QualifiedExecutionWork.Replay.WorkUnits ||
+		!canonicalStrings(discovery.CorpusBaselinePSSKeys, false) ||
+		!canonicalStrings(discovery.LocalIncrementalPSSKeys, false) ||
+		!canonicalStrings(discovery.CorpusNovelPSSKeys, false) {
+		return errors.New("EXPERIMENT_STATELESS_CORPUS_DISCOVERY_INVALID")
+	}
+	var rootSearch StatelessDFSWork
+	rootExecution := emptyWork()
+	for _, root := range discovery.Roots {
+		if root.SchemaVersion != StatelessCorpusRootResultVersion || !validMethodToken(root.RootID) ||
+			!validSHA256(root.RootPrefixDigest) || !validSHA256(root.SearchDigest) ||
+			!validSHA256(root.DiscoveryDigest) || root.RootPSSStates < 0 ||
+			root.LocalIncrementalPSSStates < 0 ||
+			!validStatelessDFSWork(root.SearchWork, int(^uint(0)>>1)) ||
+			validateMethodWork(root.QualifiedExecutionWork) != nil ||
+			root.QualifiedExecutionWork.Model != (ModelWork{}) {
+			return errors.New("EXPERIMENT_STATELESS_CORPUS_ROOT_INVALID")
+		}
+		sealed, err := root.seal()
+		if err != nil || sealed.Digest != root.Digest {
+			return errors.New("EXPERIMENT_STATELESS_CORPUS_ROOT_DIGEST_MISMATCH")
+		}
+		addStatelessDFSWork(&rootSearch, root.SearchWork)
+		rootExecution = addWorkLedgers(rootExecution, root.QualifiedExecutionWork)
+	}
+	if rootSearch != discovery.SearchWork || rootExecution != discovery.QualifiedExecutionWork {
+		return errors.New("EXPERIMENT_STATELESS_CORPUS_WORK_MISMATCH")
+	}
+	wantBaseline, err := control.CanonicalDigest(discovery.CorpusBaselinePSSKeys)
+	if err != nil || wantBaseline != discovery.CorpusBaselinePSSSetDigest {
+		return errors.New("EXPERIMENT_STATELESS_CORPUS_BASELINE_DIGEST_MISMATCH")
+	}
+	wantLocal, err := control.CanonicalDigest(discovery.LocalIncrementalPSSKeys)
+	if err != nil || wantLocal != discovery.LocalIncrementalPSSSetDigest {
+		return errors.New("EXPERIMENT_STATELESS_CORPUS_LOCAL_DIGEST_MISMATCH")
+	}
+	wantNovel, err := control.CanonicalDigest(discovery.CorpusNovelPSSKeys)
+	if err != nil || wantNovel != discovery.CorpusNovelPSSSetDigest {
+		return errors.New("EXPERIMENT_STATELESS_CORPUS_NOVEL_DIGEST_MISMATCH")
+	}
+	want, err := discovery.seal()
+	if err != nil || !validSHA256(discovery.Digest) || want.Digest != discovery.Digest {
+		return errors.New("EXPERIMENT_STATELESS_CORPUS_DISCOVERY_DIGEST_MISMATCH")
+	}
+	return nil
+}
+
 func addStatelessDFSWork(total *StatelessDFSWork, delta StatelessDFSWork) {
 	addDFSPhase(&total.FrontierReconstruction, delta.FrontierReconstruction)
 	addDFSPhase(&total.ChildMaterialization, delta.ChildMaterialization)

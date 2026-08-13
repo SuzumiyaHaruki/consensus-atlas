@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -17,6 +18,8 @@ const (
 	statelessAgentMaxCalls      = 6
 )
 
+var errStatelessAgentCallKeyRequired = errors.New("STATELESS_AGENT_CALL_KEY_REQUIRED")
+
 type statelessAgentCallJournal struct {
 	directory string
 	rootID    string
@@ -24,6 +27,14 @@ type statelessAgentCallJournal struct {
 	key       string
 	transport controlexperiment.AgentTransportFreeze
 	next      int
+	maxCalls  int
+	recovered []statelessAgentRecoveredCall
+}
+
+type statelessAgentRecoveredCall struct {
+	intent   controlexperiment.StatelessAgentCallIntent
+	dispatch *controlexperiment.StatelessAgentCallDispatch
+	result   *controlexperiment.StatelessAgentCallResult
 }
 
 func newStatelessAgentCallJournal(
@@ -38,7 +49,7 @@ func newStatelessAgentCallJournal(
 		MaxCallsPerArm: 1, MaxRetries: 0,
 	}
 	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
-		client.HTTP == nil || strings.TrimSpace(key) == "" || transport.Validate() != nil {
+		client.HTTP == nil || transport.Validate() != nil {
 		return nil, errors.New("STATELESS_AGENT_CALL_JOURNAL_INPUT_INVALID")
 	}
 	if err := os.MkdirAll(filepath.Dir(clean), 0o700); err != nil {
@@ -60,8 +71,131 @@ func newStatelessAgentCallJournal(
 		return nil, err
 	}
 	return &statelessAgentCallJournal{
-		directory: clean, client: client, key: key, transport: transport,
+		directory: clean, client: client, key: strings.TrimSpace(key), transport: transport,
+		maxCalls: statelessAgentMaxCalls,
 	}, nil
+}
+
+func recoverStatelessAgentCallJournal(
+	directory string,
+	client deepSeekIntentClient,
+) (*statelessAgentCallJournal, error) {
+	clean := filepath.Clean(directory)
+	transport := controlexperiment.AgentTransportFreeze{
+		Provider: deepSeekProvider, Endpoint: client.Endpoint, Model: client.Model,
+		Thinking: "disabled", Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
+		MaxCallsPerArm: 1, MaxRetries: 0,
+	}
+	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
+		client.HTTP == nil || transport.Validate() != nil {
+		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_INPUT_INVALID")
+	}
+	info, err := os.Lstat(clean)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_DIRECTORY_INVALID")
+	}
+	callRoot := filepath.Join(clean, "model-calls")
+	callRootInfo, err := os.Lstat(callRoot)
+	if err != nil || !callRootInfo.IsDir() || callRootInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_LAYOUT_INVALID")
+	}
+	entries, err := os.ReadDir(callRoot)
+	if err != nil || len(entries) > statelessAgentMaxCalls {
+		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_LAYOUT_INVALID")
+	}
+	recovered := make([]statelessAgentRecoveredCall, 0, len(entries))
+	for index, entry := range entries {
+		ordinal, rootID, ok := parseStatelessAgentCallDirectory(entry.Name())
+		if !ok || ordinal != index+1 || entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+			return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_SEQUENCE_INVALID")
+		}
+		call, err := recoverStatelessAgentCall(
+			filepath.Join(callRoot, entry.Name()), ordinal, rootID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if index+1 < len(entries) &&
+			(call.result == nil || call.result.Status != controlexperiment.StatelessAgentCallCompleted) {
+			return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_TERMINAL_NOT_LAST")
+		}
+		recovered = append(recovered, call)
+	}
+	return &statelessAgentCallJournal{
+		directory: clean, client: client, transport: transport,
+		maxCalls: statelessAgentMaxCalls, recovered: recovered,
+	}, nil
+}
+
+func recoverStatelessAgentCall(
+	directory string,
+	ordinal int,
+	rootID string,
+) (statelessAgentRecoveredCall, error) {
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) == 0 || len(entries) > 3 {
+		return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_CALL_INVALID")
+	}
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() ||
+			(entry.Name() != "intent.json" && entry.Name() != "dispatch.json" && entry.Name() != "result.json") {
+			return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_FILE_INVALID")
+		}
+		seen[entry.Name()] = true
+	}
+	if !seen["intent.json"] {
+		return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_INTENT_MISSING")
+	}
+	var call statelessAgentRecoveredCall
+	if err := readM523gJSON(
+		filepath.Join(directory, "intent.json"), 128<<10, &call.intent, true,
+	); err != nil || call.intent.Validate() != nil || call.intent.Ordinal != ordinal || call.intent.RootID != rootID {
+		return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_INTENT_INVALID")
+	}
+	if seen["dispatch.json"] {
+		call.dispatch = new(controlexperiment.StatelessAgentCallDispatch)
+		if err := readM523gJSON(
+			filepath.Join(directory, "dispatch.json"), 16<<10, call.dispatch, true,
+		); err != nil || call.dispatch.ValidateIntent(call.intent) != nil {
+			return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_DISPATCH_INVALID")
+		}
+	}
+	if seen["result.json"] {
+		if call.dispatch == nil {
+			return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_RESULT_WITHOUT_DISPATCH")
+		}
+		call.result = new(controlexperiment.StatelessAgentCallResult)
+		if err := readM523gJSON(
+			filepath.Join(directory, "result.json"), 32<<10, call.result, true,
+		); err != nil || call.result.ValidateInputs(call.intent, *call.dispatch) != nil {
+			return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_RESULT_INVALID")
+		}
+	}
+	return call, nil
+}
+
+func parseStatelessAgentCallDirectory(name string) (int, string, bool) {
+	parts := strings.SplitN(name, "-", 2)
+	if len(parts) != 2 || len(parts[0]) != 3 || parts[1] == "" || filepath.Base(parts[1]) != parts[1] {
+		return 0, "", false
+	}
+	ordinal, err := strconv.Atoi(parts[0])
+	return ordinal, parts[1], err == nil && ordinal > 0
+}
+
+func (journal *statelessAgentCallJournal) ActivateKey(key string) error {
+	if journal == nil || strings.TrimSpace(key) == "" {
+		return errors.New("STATELESS_AGENT_CALL_KEY_INVALID")
+	}
+	journal.key = strings.TrimSpace(key)
+	return nil
+}
+
+func (journal *statelessAgentCallJournal) ClearKey() {
+	if journal != nil {
+		journal.key = ""
+	}
 }
 
 func (journal *statelessAgentCallJournal) SetRoot(rootID string) error {
@@ -79,11 +213,28 @@ func (journal *statelessAgentCallJournal) Calls() int {
 	return journal.next
 }
 
+func (journal *statelessAgentCallJournal) Audits() ([]controlexperiment.StatelessAgentCallAudit, error) {
+	if journal == nil {
+		return nil, errors.New("STATELESS_AGENT_CALL_JOURNAL_INVALID")
+	}
+	audits := make([]controlexperiment.StatelessAgentCallAudit, 0, len(journal.recovered))
+	for _, recovered := range journal.recovered {
+		audit, err := controlexperiment.NewStatelessAgentCallAudit(
+			recovered.intent, recovered.dispatch, recovered.result,
+		)
+		if err != nil {
+			return nil, err
+		}
+		audits = append(audits, audit)
+	}
+	return audits, nil
+}
+
 func (journal *statelessAgentCallJournal) Planner(
 	ctx context.Context,
 	view controlexperiment.StatelessSearchAgentView,
 ) ([]byte, controlexperiment.ModelWork, error) {
-	if journal == nil || journal.rootID == "" || journal.next >= statelessAgentMaxCalls {
+	if journal == nil || journal.rootID == "" || journal.next >= journal.maxCalls {
 		return nil, controlexperiment.ModelWork{}, errors.New("STATELESS_AGENT_CALL_BUDGET_EXHAUSTED")
 	}
 	system, user, err := statelessAgentFrontierPrompt(view)
@@ -96,11 +247,35 @@ func (journal *statelessAgentCallJournal) Planner(
 	}
 	ordinal := journal.next + 1
 	intent, err := controlexperiment.NewStatelessAgentCallIntent(
-		fmt.Sprintf("etcdraft-m5-23g-call-%d", ordinal), ordinal, journal.rootID,
+		fmt.Sprintf("stateless-agent-call-%d", ordinal), ordinal, journal.rootID,
 		view.Request, journal.transport, prepared.PromptBytes, prepared.RequestBytes,
 	)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
+	}
+	if ordinal <= len(journal.recovered) {
+		recovered := journal.recovered[ordinal-1]
+		if recovered.intent.Digest != intent.Digest {
+			return nil, controlexperiment.ModelWork{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_REQUEST_DRIFT")
+		}
+		if recovered.result != nil {
+			journal.next = ordinal
+			if recovered.result.Status != controlexperiment.StatelessAgentCallCompleted {
+				return nil, recovered.result.Work, errors.New("STATELESS_AGENT_CALL_RECOVERED_TERMINAL_FAILURE")
+			}
+			return append([]byte(nil), recovered.result.Content...), recovered.result.Work, nil
+		}
+		if recovered.dispatch != nil {
+			journal.next = ordinal
+			return nil, controlexperiment.ModelWork{Calls: 1},
+				errors.New("STATELESS_AGENT_CALL_RECOVERED_AMBIGUOUS")
+		}
+		if journal.key == "" {
+			return nil, controlexperiment.ModelWork{}, errStatelessAgentCallKeyRequired
+		}
+		return journal.dispatch(ctx, ordinal, recovered.intent,
+			prepared, view.Request,
+			filepath.Join(journal.directory, "model-calls", fmt.Sprintf("%03d-%s", ordinal, journal.rootID)))
 	}
 	callDirectory := filepath.Join(
 		journal.directory, "model-calls", fmt.Sprintf("%03d-%s", ordinal, journal.rootID),
@@ -114,6 +289,21 @@ func (journal *statelessAgentCallJournal) Planner(
 	if err := writeStatelessAgentJSON(callDirectory, "intent.json", intent); err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
+	if journal.key == "" {
+		journal.recovered = append(journal.recovered, statelessAgentRecoveredCall{intent: intent})
+		return nil, controlexperiment.ModelWork{}, errStatelessAgentCallKeyRequired
+	}
+	return journal.dispatch(ctx, ordinal, intent, prepared, view.Request, callDirectory)
+}
+
+func (journal *statelessAgentCallJournal) dispatch(
+	ctx context.Context,
+	ordinal int,
+	intent controlexperiment.StatelessAgentCallIntent,
+	prepared deepSeekPreparedRequest,
+	request controlexperiment.StatelessFrontierOrderRequest,
+	callDirectory string,
+) ([]byte, controlexperiment.ModelWork, error) {
 	dispatch, err := controlexperiment.NewStatelessAgentCallDispatch(intent)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
@@ -124,7 +314,9 @@ func (journal *statelessAgentCallJournal) Planner(
 	// The ordinal is consumed as soon as dispatch becomes durable. No caller can
 	// repeat an ambiguous or rejected provider call through this journal.
 	journal.next = ordinal
-	call, transportErr := journal.client.invokePrepared(ctx, journal.key, prepared)
+	activeKey := journal.key
+	journal.key = ""
+	call, transportErr := journal.client.invokePrepared(ctx, activeKey, prepared)
 	result := controlexperiment.StatelessAgentCallResult{
 		Status:  controlexperiment.StatelessAgentCallCompleted,
 		Content: call.Content, ResponseDigest: call.ResponseDigest, Response: call.Response,
@@ -142,7 +334,7 @@ func (journal *statelessAgentCallJournal) Planner(
 	} else {
 		proposal, parseErr := controlexperiment.ParseStatelessFrontierOrderProposal(call.Content)
 		if parseErr == nil {
-			_, parseErr = controlexperiment.ValidateStatelessFrontierOrderProposal(view.Request, proposal)
+			_, parseErr = controlexperiment.ValidateStatelessFrontierOrderProposal(request, proposal)
 		}
 		if parseErr != nil {
 			result.Status = controlexperiment.StatelessAgentCallRejected
@@ -158,6 +350,12 @@ func (journal *statelessAgentCallJournal) Planner(
 	}
 	if err := writeStatelessAgentJSON(callDirectory, "result.json", result); err != nil {
 		return nil, controlexperiment.ModelWork{}, err
+	}
+	recoveredCall := statelessAgentRecoveredCall{intent: intent, dispatch: &dispatch, result: &result}
+	if ordinal <= len(journal.recovered) {
+		journal.recovered[ordinal-1] = recoveredCall
+	} else {
+		journal.recovered = append(journal.recovered, recoveredCall)
 	}
 	if terminalErr != nil {
 		return nil, result.Work, terminalErr

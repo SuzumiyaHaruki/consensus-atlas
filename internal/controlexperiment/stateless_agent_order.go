@@ -228,7 +228,10 @@ func ExploreBoundedStatelessDFSWithAgent(
 		}
 		response, work, err := planner(ctx, StatelessSearchAgentView{Knowledge: knowledge, Request: request})
 		if err != nil || !validStatelessPlannerWork(work) {
-			return nil, errors.New("EXPERIMENT_STATELESS_AGENT_PLANNER_FAILED")
+			if err != nil {
+				return nil, fmt.Errorf("EXPERIMENT_STATELESS_AGENT_PLANNER_FAILED: %w", err)
+			}
+			return nil, errors.New("EXPERIMENT_STATELESS_AGENT_PLANNER_WORK_INVALID")
 		}
 		proposal, err := ParseStatelessFrontierOrderProposal(response)
 		if err != nil {

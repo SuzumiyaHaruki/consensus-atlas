@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +12,7 @@ import (
 )
 
 const (
-	etcdraftCampaignRunnerStrategy = "campaign-etcdraft-v1"
-	campaignOutputPendingPrefix    = ".campaign-output-pending-"
+	campaignOutputPendingPrefix = ".campaign-output-pending-"
 )
 
 type etcdraftCampaignRunOptions struct {
@@ -24,122 +21,7 @@ type etcdraftCampaignRunOptions struct {
 	ObservationOut         string
 	Resume                 bool
 	Attempts               int
-	DecisionsPerAttempt    int
-	FirstPolicySeed        uint64
 	WallClockCeilingMillis int64
-	ModelTokensPerAttempt  int
-}
-
-type etcdraftCampaignProviderFactory func(
-	context.Context,
-	etcdraftCampaignSpec,
-) (etcdraftCampaignProvider, error)
-
-func runEtcdraftCampaign(
-	ctx context.Context,
-	options etcdraftCampaignRunOptions,
-	stdout io.Writer,
-) error {
-	return runEtcdraftCampaignWithFactory(
-		ctx, options, stdout, newEtcdraftCampaignProvider,
-	)
-}
-
-func runEtcdraftCampaignWithFactory(
-	ctx context.Context,
-	options etcdraftCampaignRunOptions,
-	stdout io.Writer,
-	newProvider etcdraftCampaignProviderFactory,
-) error {
-	directory, summaryOut, observationOut, err := prepareEtcdraftCampaignPaths(options)
-	if err != nil {
-		return err
-	}
-	if stdout == nil || newProvider == nil || options.Attempts <= 0 ||
-		options.DecisionsPerAttempt <= 0 || options.FirstPolicySeed == 0 ||
-		options.WallClockCeilingMillis <= 0 || options.ModelTokensPerAttempt != 0 {
-		return errors.New("ETCDRAFT_CAMPAIGN_RUNNER_OPTIONS_INVALID")
-	}
-	spec, err := newEtcdraftCampaignSpec(
-		"etcdraft-offline-campaign-spec-v1",
-		options.DecisionsPerAttempt,
-		options.FirstPolicySeed,
-	)
-	if err != nil {
-		return err
-	}
-	provider, err := newProvider(ctx, spec)
-	if err != nil {
-		return err
-	}
-	config, err := provider.campaignConfig(
-		"etcdraft-offline-campaign-v1", options.Attempts, options.WallClockCeilingMillis,
-	)
-	if err != nil {
-		return err
-	}
-	var recovered controlexperiment.CampaignRecovery
-	if options.Resume {
-		recovered, err = controlexperiment.RecoverCampaignDirectory(directory, config)
-	} else {
-		recovered, err = controlexperiment.CreateCampaignDirectory(directory, config)
-	}
-	if err != nil {
-		return err
-	}
-	var stageErr error
-	if recovered.Failure != nil {
-		stageErr = errors.New("ETCDRAFT_CAMPAIGN_DURABLY_FAILED")
-	} else {
-		plannedProvider := newEtcdraftPlannedCampaignProvider(provider, &recovered)
-		coordinator, coordinatorErr := controlexperiment.NewCampaignCoordinator(&recovered, plannedProvider)
-		if coordinatorErr != nil {
-			stageErr = coordinatorErr
-		} else {
-			_, stageErr = coordinator.Run(ctx)
-		}
-	}
-	return finishEtcdraftCampaignRun(
-		&recovered, provider, summaryOut, observationOut, stdout, stageErr,
-	)
-}
-
-func finishEtcdraftCampaignRun(
-	recovered *controlexperiment.CampaignRecovery,
-	provider etcdraftCampaignProvider,
-	summaryOut string,
-	observationOut string,
-	stdout io.Writer,
-	stageErr error,
-) error {
-	summary, summaryErr := controlexperiment.NewCampaignSummary(recovered)
-	if summaryErr != nil {
-		if stageErr != nil {
-			return fmt.Errorf("%v; ETCDRAFT_CAMPAIGN_SUMMARY_FAILED: %w", stageErr, summaryErr)
-		}
-		return summaryErr
-	}
-	observation, observationErr := newEtcdraftCampaignObservation(recovered, provider)
-	if err := persistCampaignSummaryNoReplace(summaryOut, summary); err != nil {
-		return err
-	}
-	if observationErr != nil {
-		if stageErr != nil {
-			return fmt.Errorf("%v; ETCDRAFT_CAMPAIGN_OBSERVATION_FAILED: %w", stageErr, observationErr)
-		}
-		return observationErr
-	}
-	if err := persistCampaignObservationNoReplace(observationOut, observation); err != nil {
-		return err
-	}
-	fmt.Fprintf(
-		stdout, "wrote %s\nwrote %s\nstatus=%s attempts=%d primary=%d replay=%d model_calls=%d model_tokens=%d summary=%s observation=%s\n",
-		summaryOut, observationOut, summary.Status, summary.Sequence,
-		summary.Totals.Primary.WorkUnits, summary.Totals.Replay.WorkUnits,
-		summary.Totals.Model.Calls, summary.Totals.Model.TotalTokens,
-		summary.Digest, observation.Digest,
-	)
-	return stageErr
 }
 
 func prepareEtcdraftCampaignPaths(
@@ -211,16 +93,6 @@ func persistCampaignSummaryNoReplace(
 		return err
 	}
 	return persistCampaignOutputNoReplace(path, summary, "SUMMARY")
-}
-
-func persistCampaignObservationNoReplace(
-	path string,
-	observation controlexperiment.CampaignObservation,
-) error {
-	if err := observation.Validate(); err != nil {
-		return err
-	}
-	return persistCampaignOutputNoReplace(path, observation, "OBSERVATION")
 }
 
 func persistCampaignOutputNoReplace(path string, value any, kind string) error {

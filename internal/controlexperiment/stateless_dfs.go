@@ -96,6 +96,29 @@ type StatelessDFSResult struct {
 	Digest         string                 `json:"digest"`
 }
 
+// StatelessDFSExecutionError preserves work already performed before a
+// frontier/order/materialization failure. It grants no resumability and
+// carries no partial result identity; callers may only charge the work and
+// record a typed terminal failure.
+type StatelessDFSExecutionError struct {
+	Work  StatelessDFSWork
+	cause error
+}
+
+func (failure *StatelessDFSExecutionError) Error() string {
+	if failure == nil || failure.cause == nil {
+		return "EXPERIMENT_STATELESS_DFS_EXECUTION_FAILED"
+	}
+	return "EXPERIMENT_STATELESS_DFS_EXECUTION_FAILED: " + failure.cause.Error()
+}
+
+func (failure *StatelessDFSExecutionError) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
 func NewStatelessDFSSpec(
 	id string,
 	root controlruntime.Trace,
@@ -275,7 +298,7 @@ func exploreBoundedStatelessDFS(
 		return nil
 	}
 	if err := visit(root, 0, 0); err != nil {
-		return StatelessDFSResult{}, err
+		return StatelessDFSResult{}, &StatelessDFSExecutionError{Work: result.Work, cause: err}
 	}
 	if stop == "" {
 		stop = StatelessDFSStopComplete

@@ -36,146 +36,60 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	bundleEvidenceVersion := flags.Int("bundle-evidence-version", 0, "optional trusted bundle evidence version (3 only)")
 	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
 	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
-	agentArtifacts := flags.String("agent-artifacts", "", "new output directory for an explicit opt-in Agent strategy")
 	campaignDirectory := flags.String("campaign-dir", "", "Campaign directory for an explicit Campaign strategy")
 	campaignObservationOut := flags.String("campaign-observation-out", "", "Campaign Observation output path")
 	campaignAttempts := flags.Int("campaign-attempts", 0, "attempt limit for an explicit Campaign strategy")
 	campaignWallClock := flags.Int64("campaign-wall-clock-ms", 0, "wall-clock ceiling for an explicit Campaign strategy")
 	campaignModelTokens := flags.Int("campaign-model-tokens-per-attempt", 0, "model-token allowance per Agent Campaign attempt")
 	campaignResume := flags.Bool("campaign-resume", false, "resume an existing exact Campaign config")
+	statelessCorpus := flags.String("stateless-corpus", "", "frozen root corpus for a Stateless Campaign strategy")
 	strategy := flags.String("strategy", "workload", "qualified strategy, including explicit opt-in Agent strategies")
 	decisions := flags.Int("decisions", 96, "charged decisions per run")
 	policySeed := flags.Uint64("policy-seed", 1, "public random-policy seed")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *strategy == etcdraftCampaignModelRunnerStrategy {
+	if *strategy == etcdraftStatelessCanonicalCampaignStrategy ||
+		*strategy == etcdraftStatelessUniformCampaignStrategy ||
+		*strategy == etcdraftStatelessAgentCampaignStrategy {
+		isAgent := *strategy == etcdraftStatelessAgentCampaignStrategy
 		if *out == "" || *campaignObservationOut == "" || *campaignDirectory == "" ||
-			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *campaignModelTokens <= 0 ||
-			*agentKeyFile == "" || *bundleOut != "" || *sourceBundleOut != "" ||
+			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *statelessCorpus == "" ||
+			*decisions != 96 || *bundleOut != "" || *sourceBundleOut != "" ||
 			*methodOut != "" || *methodArtifacts != "" || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *agentArtifacts != "" {
-			return errors.New("Agent Campaign strategy requires only -agent-key-file, -out, Campaign, decision, and seed flags")
+			*methodSpecDigest != "" ||
+			(isAgent && (*agentKeyFile == "" || *campaignModelTokens <= 0)) ||
+			(!isAgent && (*agentKeyFile != "" || *campaignModelTokens != 0)) ||
+			((*strategy == etcdraftStatelessCanonicalCampaignStrategy || isAgent) && *policySeed != 1) {
+			return errors.New("Stateless Campaign strategy requires only -stateless-corpus, -out, Campaign, and uniform seed flags")
 		}
-		return runEtcdraftModelCampaignOptIn(ctx, etcdraftCampaignRunOptions{
+		client := deepSeekIntentClient{}
+		var keyReader agentKeyReader
+		if isAgent {
+			client = defaultDeepSeekIntentClient()
+			keyReader = readAgentKey
+		}
+		return runEtcdraftStatelessCampaign(ctx, etcdraftStatelessCampaignRunOptions{
 			Directory: *campaignDirectory, SummaryOut: *out,
 			ObservationOut: *campaignObservationOut, Resume: *campaignResume,
-			Attempts: *campaignAttempts, DecisionsPerAttempt: *decisions,
-			FirstPolicySeed: *policySeed, WallClockCeilingMillis: *campaignWallClock,
-			ModelTokensPerAttempt: *campaignModelTokens,
-		}, *agentKeyFile, stdout)
-	}
-	if *strategy == etcdraftCampaignRunnerStrategy {
-		if *out == "" || *campaignObservationOut == "" || *campaignDirectory == "" || *campaignAttempts <= 0 ||
-			*campaignWallClock <= 0 || *bundleOut != "" || *sourceBundleOut != "" ||
-			*methodOut != "" || *methodArtifacts != "" || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *agentKeyFile != "" || *agentArtifacts != "" ||
-			*campaignModelTokens != 0 {
-			return errors.New("Campaign strategy requires only -out, Campaign, decision, and seed flags")
-		}
-		return runEtcdraftCampaign(ctx, etcdraftCampaignRunOptions{
-			Directory: *campaignDirectory, SummaryOut: *out,
-			ObservationOut: *campaignObservationOut, Resume: *campaignResume,
-			Attempts: *campaignAttempts, DecisionsPerAttempt: *decisions,
-			FirstPolicySeed: *policySeed, WallClockCeilingMillis: *campaignWallClock,
+			Strategy: *strategy, Attempts: *campaignAttempts, FirstSeed: *policySeed,
+			WallClockCeilingMillis: *campaignWallClock, CorpusPath: *statelessCorpus,
+			AgentKeyFile: *agentKeyFile, ModelTokensPerAttempt: *campaignModelTokens,
+			Client: client, ReadKey: keyReader,
 		}, stdout)
 	}
 	if *campaignDirectory != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 		*campaignWallClock != 0 || *campaignModelTokens != 0 || *campaignResume {
 		return errors.New("Campaign flags require an explicit Campaign strategy")
 	}
-	if *strategy == "workload-guarded-agent-one-shot" {
-		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
-			*sourceBundleOut != "" || *methodOut != "" || *methodArtifacts != "" ||
-			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-			return errors.New("one-shot Agent strategy requires only -agent-key-file and -agent-artifacts")
-		}
-		if _, err := os.Stat(*agentArtifacts); err == nil || !os.IsNotExist(err) {
-			return errors.New("-agent-artifacts must name a new directory")
-		}
-		key, err := readAgentKey(*agentKeyFile)
-		if err != nil {
-			return err
-		}
-		result, stageErr := executeEtcdraftAgentOneShot(ctx, key, defaultDeepSeekIntentClient())
-		key = ""
-		if result.Audit.SchemaVersion == "" {
-			return stageErr
-		}
-		if err := persistEtcdraftAgentOneShot(*agentArtifacts, result); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "wrote %s\nstatus=%s model_calls=%d audit=%s\n",
-			*agentArtifacts, result.Audit.Status, result.Audit.Work.Model.Calls, result.Audit.Digest)
-		return stageErr
+	if *statelessCorpus != "" {
+		return errors.New("-stateless-corpus requires a Stateless Campaign strategy")
 	}
-	if *strategy == etcdraftAgentB4PairStrategy {
-		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
-			*sourceBundleOut != "" || *methodOut != "" || *methodArtifacts != "" ||
-			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-			return errors.New("Agent b4 pair strategy requires only -agent-key-file and -agent-artifacts")
-		}
-		return runEtcdraftAgentB4PairOptIn(
-			ctx, *decisions, *policySeed, *agentKeyFile, *agentArtifacts, stdout,
-		)
-	}
-	if *strategy == etcdraftM523gStrategy {
-		if *agentKeyFile == "" || *agentArtifacts == "" || *out != "" || *bundleOut != "" ||
-			*sourceBundleOut != "" || *methodOut != "" || *methodArtifacts != "" ||
-			*bundleEvidenceVersion != 0 || *methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
-			return errors.New("M5.23g Agent pilot requires only -agent-key-file and -agent-artifacts")
-		}
-		return runEtcdraftM523gOptIn(ctx, *agentKeyFile, *agentArtifacts, stdout)
-	}
-	if *agentKeyFile != "" || *agentArtifacts != "" {
+	if *agentKeyFile != "" {
 		return errors.New("Agent flags require an explicit opt-in Agent strategy")
 	}
 	if *out == "" {
 		return errors.New("-out is required")
-	}
-	if *strategy == "workload-agent-feedback-batch" {
-		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
-			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-			return errors.New("Agent feedback batch requires only -out and -method-artifacts")
-		}
-		batch, err := newEtcdraftAgentFeedbackBatch(ctx, *decisions, *policySeed)
-		if err != nil {
-			return err
-		}
-		return persistEtcdraftAgentFeedbackBatch(*out, *methodArtifacts, batch, stdout)
-	}
-	if *strategy == "workload-agent-follow-up-baseline" {
-		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
-			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-			return errors.New("Agent follow-up baseline requires only -out and -method-artifacts")
-		}
-		result, err := newEtcdraftAgentFollowUpBaseline(ctx, *decisions, *policySeed)
-		if err != nil {
-			return err
-		}
-		return persistEtcdraftAgentFollowUpBaseline(*out, *methodArtifacts, result, stdout)
-	}
-	if *strategy == "workload-agent-b4-preflight" {
-		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
-			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-			return errors.New("Agent b4 preflight requires only -out and -method-artifacts")
-		}
-		result, err := newEtcdraftAgentB4Preflight(ctx, *decisions, *policySeed)
-		if err != nil {
-			return err
-		}
-		return persistEtcdraftAgentB4Preflight(*out, *methodArtifacts, result, stdout)
-	}
-	if *strategy == "workload-agent-b4-freeze" {
-		if *methodArtifacts == "" || *bundleOut != "" || *sourceBundleOut != "" ||
-			*methodOut != "" || *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-			return errors.New("Agent b4 request freeze requires only -out and -method-artifacts")
-		}
-		result, err := newEtcdraftAgentB4RequestFreeze(ctx, *decisions, *policySeed)
-		if err != nil {
-			return err
-		}
-		return persistEtcdraftAgentB4RequestFreeze(*out, *methodArtifacts, result, stdout)
 	}
 	if *strategy == "workload-admissible-uniform-method" ||
 		*strategy == "workload-action-class-random-method" ||

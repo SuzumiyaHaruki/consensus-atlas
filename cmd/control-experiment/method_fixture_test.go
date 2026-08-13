@@ -25,10 +25,6 @@ var (
 	etcdraftActionV2FixtureOnce sync.Once
 	etcdraftActionV2Fixture     etcdraftMethodExecution
 	etcdraftActionV2FixtureErr  error
-
-	etcdraftB4InputsFixtureOnce sync.Once
-	etcdraftB4InputsFixture     etcdraftIntentInputs
-	etcdraftB4InputsFixtureErr  error
 )
 
 // sharedEtcdraftWorkloadBundleFixture avoids rebuilding the same immutable
@@ -102,17 +98,4 @@ func sharedEtcdraftActionV2MethodFixture(t *testing.T) etcdraftMethodExecution {
 		t.Fatal(etcdraftActionV2FixtureErr)
 	}
 	return etcdraftActionV2Fixture
-}
-
-func sharedEtcdraftB4IntentInputsFixture(t *testing.T) etcdraftIntentInputs {
-	t.Helper()
-	etcdraftB4InputsFixtureOnce.Do(func() {
-		etcdraftB4InputsFixture, etcdraftB4InputsFixtureErr = newEtcdraftB4IntentInputs(
-			context.Background(),
-		)
-	})
-	if etcdraftB4InputsFixtureErr != nil {
-		t.Fatal(etcdraftB4InputsFixtureErr)
-	}
-	return etcdraftB4InputsFixture
 }

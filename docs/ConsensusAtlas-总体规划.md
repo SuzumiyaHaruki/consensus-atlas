@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
 > 文档性质：项目方向约束、总体架构和阶段验收基线
-> 状态：Draft v1.66（M5.23g 真实 Agent multi-root pilot 完成，M5.23 关闭）
+> 状态：Draft v1.71（M5.23R4b Stateless Agent Campaign composition）
 > 日期：2026-08-12
 > 适用范围：`consensus-atlas` 仓库及围绕它开展的论文研究、实验和 Agent 系统
 
@@ -128,7 +128,8 @@ independent Replay / consensus Oracle / evaluator
 解释确认缺陷。它可以选择冻结 Risk，并对 Runtime 真实重建的有界 `WorkItem/ActionRef`
 排序。提出测试的组件与判定测试成败的组件必须分离。
 
-`CrossTargetPlannerView` 的 target-blind 输入只作 portability/authority 校准与消融组；
+M5.22 `CrossTargetPlannerView` 的 target-blind 输入只作为已冻结的
+portability/authority 校准与消融记录；该生产组合已在 M5.23R2 从 HEAD 退休。
 正式 Agent effectiveness 实验使用相同 schema、相同权限的 target-local
 `ProtocolKnowledgePack`，让 Agent 可以看到协议和消息阶段语义，但仍隐藏 candidate/control、
 root cause、patch 和 Oracle verdict。第一轮效果实验先使用单个 Search Agent 以保持
@@ -3112,6 +3113,78 @@ repair 已退出主线；当前依次推进 admission、workload/fault envelope�
      但当前 knowledge/prompt 在该小 corpus 上没有超越 canonical 的新增价值。M5.23 至此关闭；
      M5.24 必须先冻结重复试验和非公开 candidate/control，不得通过事后调 prompt 或反选 root
      消除该负结果。
+147. M5.23R 是 M5.24 前的有界收缩阶段，不改写 M5.23g 方法或实验结论。已推送提交
+     `3ec9237` 是 M5.23g 代码与必要冻结工件的不变检查点；本阶段不重新调用模型。HEAD 只继续
+     维护 `Stateless Search + restricted frontier-order Agent + Campaign durability + formal evaluation`
+     主线以及正式基线；Git history、阶段文档和冻结 summary 负责历史实验复现。M5.23R1
+     先提取当前 Search Agent/Campaign 仍需的 protocol-neutral transport freeze、provider request
+     和 key-file 读取原语，再退休 M5.18 one-shot、feedback/follow-up 和 B4 的生产文件、
+     CLI strategy 与仅服务该路径的测试。独有的 credential、exact-byte request、tamper、Replay
+     和 authority 负例必须迁移到保留原语的测试中，不得因删除阶段组合而丢失。
+     M5.22 Cross-target Planner、旧 Campaign Planner 与 macro Intent 本轮不删：先由 M5.24 方法契约
+     决定是否存在正式消费者。`campaign_model_call` 与 `stateless_agent_call` 也不先抽象；
+     若退休 Campaign Planner 后只剩一个正式消费者，应直接删除旧数据模型而非为死路径
+     增加公共抽象。本阶段的 identity 门禁是：所有保留主路径的 schema、digest、Trace、
+     strict Replay 和 M5.23g 冻结结果不变；历史 CLI 不再可执行是有意的界面收缩，不属于
+     identity 回归。M5.23R 不优化 exact-prefix reconstruction；M5.24 必须先报告
+     work-to-kill、wall time、explored branches 和 reconstruction work，证明其为主要瓶颈后
+     才能增加 checkpoint/snapshot 机制。
+148. M5.23R2 冻结 protocol-neutral `StatelessCampaignSpec/v1` 与
+     `StatelessCampaignAttempt/v1`：一个 Campaign attempt 精确绑定一个预声明
+     `StatelessTraversalMethod`，canonical 可重复，seeded-uniform 的 seed 序列须在运行前冻结，
+     Agent 使用相同 attempt 权限而不启用旧 Campaign Planner mode。Spec 同时绑定
+     target/source/corpus identity、root/depth/item/search ceiling、strict Replay、read-only
+     discovery 和 per-attempt 预算；source bundle 构造成本对每个 attempt 全额计费。
+     target composition 只能返回 sealed discovery 或 typed failure，search/qualified execution/model
+     work 分栏记录，execution evidence 不得夹带 model cost。Campaign 存储和恢复不引入
+     新 Coordinator，attempt artifact 必须重验 request/spec/method/discovery/work digest。
+     M5.23g 冻结 Agent evidence 已在零新 model call 下逐字段迁移到该契约。
+     机械引用审计证明 M5.22 Cross-target 生产组合没有当前 CLI、Stateless Search、
+     Campaign durable core 或 formal evaluator 消费者，因而其生产/测试闭包已从 HEAD
+     退休；历史阶段文档、冻结工件与 Git checkpoint 不改。M5.23b OmniPaxos 迁移
+     门禁改用 target-local fixture 并保持冻结 identity。旧 Campaign Planner 仍被两个现行
+     CLI 消费，须等 Stateless target runner 替换后再删除，不得先破坏可恢复 Campaign。
+149. M5.23R3 实现首个真实 target-local Stateless Campaign runner：输入必须显式给出
+     M5.23e 冻结 root corpus，canonical repeats 或 seeded-uniform seed sequence 在 Campaign 运行前
+     完整预声明。每个 attempt 在 0/28/54-decision 三个 root 上执行 depth=2、每 root
+     6 items 的 exact-prefix Search，18 条路径均进入原 etcd/raft qualified executor 并执行
+     primary + fresh strict Replay。target composition 强验证 discovery 后才通过 R2 通用
+     provider 提交 sealed artifact；Campaign 每次 terminal attempt 持久化 checkpoint，恢复后按原
+     request/spec/method 重新严格解码。新 `StatelessCampaignObservation/v1` 只报告方法
+     identity、PSS 集合、qualified execution 计数与 source/search/primary/replay/model 完整
+     WorkLedger，不生成 Coverage 百分比、完备度或 correctness verdict；strict reader 拒绝虚构
+     `coverage_percent` 字段。canonical 恢复集成和 uniform seed 01 真实执行均完成
+     18 次 qualified execution，无模型调用。预算由 source work、root 最大 decision、
+     depth/items/search ceiling 机械推导，不按结果反向调整。M5.23R4 先迁移并审计
+     `campaign-etcdraft-v1`/`campaign-etcdraft-agent-v1` 的真实消费者；只有旧入口无消费者后，
+     才能删除 planned-attempt/macro Intent/Campaign Planner 闭包。
+150. M5.23R4a 先完成旧消费者迁移的可独立验证切片。机械审计确认旧无模型
+     `campaign-etcdraft-v1` 的 create/resume/summary 能力已被 R3 canonical/uniform Stateless
+     runner 完整替代，因此退休其 CLI、Make 目标和专用 runner 测试。旧 Agent Campaign 仍保存
+     不可丢失的调用生命周期语义，故先将其迁到 `statelessAgentCallJournal`：journal 可在不读取
+     key 时创建并持久化 exact-byte intent；prepared 恢复后只有显式激活 key 才能 dispatch 一次；
+     completed 只重放已保存 content/work；intent+dispatch 无 result 永久按 ambiguous 终止，禁止
+     自动重试；rejected/failed 也保持 terminal。所有恢复均拒绝 symlink、未知文件、ordinal/root/
+     request drift 并重验 digest。该能力当前只是 call-level sidecar，不得冒充 attempt-level 恢复。
+     M5.23R4b 必须把 Agent method/knowledge/model budget、6 次 durable frontier call、18 次 qualified
+     execution、discovery 和 model work 封入 R2/R3 的共同 Campaign attempt artifact；只有 mock
+     create/resume/ambiguous 门禁通过后，才退休旧 Agent CLI 与 planned-attempt/macro Intent/Planner
+     闭包。该迁移不得读取真实 key、产生新模型调用或提前开始 M5.24 holdout。
+151. M5.23R4b 将 restricted Agent 实现为第三种 Stateless Campaign method，不再使用旧
+     Campaign Planner mode。一个 attempt 同时封存 Agent method/knowledge/model allowance、6 次
+     frontier call audit、18 次 qualified primary + strict Replay、read-only discovery 与完整
+     WorkLedger。exact request 在凭证读取前写 intent；prepared 不推进 Campaign head
+     也不占用终态输出路径；completed 只重放保存结果；dispatch-only 按 ambiguous
+     terminal failure 记录且禁止重试。已提交 artifact 在产生 observation 前重读 sidecar
+     exact intent/dispatch/result 并逐项比对 secret-free audit。旧 v3 非模型 Campaign 的空
+     legacy 目录可恢复，但存在旧 Planner 内容时 fail closed。离线 mock 恢复和篡改门禁
+     通过后，HEAD 删除 GuardedTestIntent、macro compiler、planned-attempt、旧 Campaign
+     model-call、feedback/follow-up/B4、无消费者 Cross-target Planner 和 M5.23g 在线 pilot
+     入口；冻结 M5.23g 工件只读验证保留。两个核心 composition 包 Go LOC 从 33,832
+     降至 21,294，净减 12,538（37.1%）。本阶段不读真实 key、不调用模型。
+     M5.24a 先冻结 private candidate/control curator pack、blind exposure、canonical/uniform/Agent
+     三臂 spec、重复次数、work-to-kill 与 invalid-trial 规则。deferred/restart 的运维开销在
+     可跨进程完整计费前不得进入单位成本排名；PSS/义务只作解释性诊断。
 
 ---
 

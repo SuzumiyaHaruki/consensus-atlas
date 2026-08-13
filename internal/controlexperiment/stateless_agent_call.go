@@ -13,8 +13,105 @@ const (
 	StatelessAgentCallCompleted       = "completed"
 	StatelessAgentCallFailed          = "failed"
 	StatelessAgentCallRejected        = "proposal-rejected"
+	StatelessAgentCallPrepared        = "prepared"
+	StatelessAgentCallAmbiguous       = "ambiguous"
+	StatelessAgentCallAuditVersion    = "consensus-atlas/stateless-agent-call-audit/v1"
 	statelessAgentCallMaxBytes        = 1 << 20
 )
+
+// StatelessAgentCallAudit is the compact, secret-free evidence embedded in a
+// Campaign attempt artifact. Exact prompt/request/result bytes remain in the
+// durable sidecar; their validated digests and charged work are sealed here.
+type StatelessAgentCallAudit struct {
+	SchemaVersion       string    `json:"schema_version"`
+	Ordinal             int       `json:"ordinal"`
+	RootID              string    `json:"root_id"`
+	SearchRequestDigest string    `json:"search_request_digest"`
+	IntentDigest        string    `json:"intent_digest"`
+	DispatchDigest      string    `json:"dispatch_digest,omitempty"`
+	ResultDigest        string    `json:"result_digest,omitempty"`
+	Status              string    `json:"status"`
+	Work                ModelWork `json:"work"`
+	Digest              string    `json:"digest"`
+}
+
+func NewStatelessAgentCallAudit(
+	intent StatelessAgentCallIntent,
+	dispatch *StatelessAgentCallDispatch,
+	result *StatelessAgentCallResult,
+) (StatelessAgentCallAudit, error) {
+	if intent.Validate() != nil {
+		return StatelessAgentCallAudit{}, errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_INTENT_INVALID")
+	}
+	audit := StatelessAgentCallAudit{
+		SchemaVersion: StatelessAgentCallAuditVersion, Ordinal: intent.Ordinal,
+		RootID: intent.RootID, SearchRequestDigest: intent.SearchRequestDigest,
+		IntentDigest: intent.Digest, Status: StatelessAgentCallPrepared,
+	}
+	if dispatch != nil {
+		if dispatch.ValidateIntent(intent) != nil {
+			return StatelessAgentCallAudit{}, errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_DISPATCH_INVALID")
+		}
+		audit.DispatchDigest = dispatch.Digest
+		audit.Status = StatelessAgentCallAmbiguous
+		audit.Work = ModelWork{Calls: 1}
+	}
+	if result != nil {
+		if dispatch == nil || result.ValidateInputs(intent, *dispatch) != nil {
+			return StatelessAgentCallAudit{}, errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_RESULT_INVALID")
+		}
+		audit.ResultDigest = result.Digest
+		audit.Status = result.Status
+		audit.Work = result.Work
+	}
+	sealed, err := audit.seal()
+	if err != nil || sealed.Validate() != nil {
+		return StatelessAgentCallAudit{}, errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_INVALID")
+	}
+	return sealed, nil
+}
+
+func (audit StatelessAgentCallAudit) Validate() error {
+	if audit.SchemaVersion != StatelessAgentCallAuditVersion || audit.Ordinal <= 0 ||
+		!validMethodToken(audit.RootID) || !validSHA256(audit.SearchRequestDigest) ||
+		!validSHA256(audit.IntentDigest) || audit.Work.Calls < 0 || audit.Work.Calls > 1 ||
+		audit.Work.InputTokens < 0 || audit.Work.OutputTokens < 0 ||
+		audit.Work.TotalTokens != audit.Work.InputTokens+audit.Work.OutputTokens {
+		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_INVALID")
+	}
+	switch audit.Status {
+	case StatelessAgentCallPrepared:
+		if audit.DispatchDigest != "" || audit.ResultDigest != "" || audit.Work != (ModelWork{}) {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_PREPARED_INVALID")
+		}
+	case StatelessAgentCallAmbiguous:
+		if !validSHA256(audit.DispatchDigest) || audit.ResultDigest != "" ||
+			audit.Work != (ModelWork{Calls: 1}) {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_AMBIGUOUS_INVALID")
+		}
+	case StatelessAgentCallCompleted, StatelessAgentCallRejected, StatelessAgentCallFailed:
+		if !validSHA256(audit.DispatchDigest) || !validSHA256(audit.ResultDigest) || audit.Work.Calls > 1 {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_TERMINAL_INVALID")
+		}
+		if audit.Status != StatelessAgentCallFailed && (audit.Work.Calls != 1 || audit.Work.TotalTokens <= 0) {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_TERMINAL_WORK_INVALID")
+		}
+	default:
+		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_STATUS_INVALID")
+	}
+	want, err := audit.seal()
+	if err != nil || !validSHA256(audit.Digest) || want.Digest != audit.Digest {
+		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_DIGEST_MISMATCH")
+	}
+	return nil
+}
+
+func (audit StatelessAgentCallAudit) seal() (StatelessAgentCallAudit, error) {
+	audit.Digest = ""
+	digest, err := control.CanonicalDigest(audit)
+	audit.Digest = digest
+	return audit, err
+}
 
 // StatelessAgentCallIntent freezes exact public request bytes before a
 // provider dispatch. It contains no credential or execution authority.

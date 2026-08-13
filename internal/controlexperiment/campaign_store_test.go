@@ -193,6 +193,42 @@ func TestCampaignDirectoryPersistsFailureMarkerAndRejectsFurtherWrites(t *testin
 	}
 }
 
+func TestCampaignDirectoryReadsEmptyLegacyLayoutAndAddsSidecarsLazily(t *testing.T) {
+	config, directory, _ := newCampaignStoreFixture(t, "legacy-layout")
+	if err := os.Remove(filepath.Join(directory, campaignSidecarsDir)); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{campaignLegacyPlansDir, campaignLegacyCallsDir} {
+		if err := os.Mkdir(filepath.Join(directory, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := RecoverCampaignDirectory(directory, config); err != nil {
+		t.Fatalf("empty pre-R4b layout did not recover: %v", err)
+	}
+	sidecar, err := CampaignAttemptSidecarDirectory(directory, "agent", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sidecar != filepath.Join(directory, campaignSidecarsDir, "agent-00000000000000000001") {
+		t.Fatalf("unexpected sidecar path: %s", sidecar)
+	}
+	info, err := os.Lstat(filepath.Join(directory, campaignSidecarsDir))
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("sidecar root was not safely created: %v %#v", err, info)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(directory, campaignLegacyPlansDir, "retired.json"), []byte("{}"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RecoverCampaignDirectory(directory, config); err == nil ||
+		!strings.Contains(err.Error(), "RETIRED_STATE_PRESENT") {
+		t.Fatalf("populated retired planner state was accepted: %v", err)
+	}
+}
+
 func TestCampaignDirectoryRejectsUntrustedDiskState(t *testing.T) {
 	t.Run("artifact-input-mismatch", func(t *testing.T) {
 		config, directory, recovered := newCampaignStoreFixture(t, "input-mismatch")

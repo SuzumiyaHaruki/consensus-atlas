@@ -40,6 +40,46 @@ func validSHA256(value string) bool {
 	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == value
 }
 
+func canonicalStrings(values []string, require bool) bool {
+	if require && len(values) == 0 {
+		return false
+	}
+	for index, value := range values {
+		if value == "" || (index > 0 && values[index-1] >= value) {
+			return false
+		}
+	}
+	return true
+}
+
+func canonicalActionKinds(values []control.ActionKind, require bool) bool {
+	if require && len(values) == 0 {
+		return false
+	}
+	for index, value := range values {
+		if value.Validate() != nil || (index > 0 && values[index-1] >= value) {
+			return false
+		}
+	}
+	return true
+}
+
+func stringSet(values []string) map[string]bool {
+	result := make(map[string]bool, len(values))
+	for _, value := range values {
+		result[value] = true
+	}
+	return result
+}
+
+func actionKindSet(values []control.ActionKind) map[control.ActionKind]bool {
+	result := make(map[control.ActionKind]bool, len(values))
+	for _, value := range values {
+		result[value] = true
+	}
+	return result
+}
+
 type RuntimeConfig struct {
 	SeedHex    string `json:"seed_hex"`
 	ClockError uint64 `json:"clock_error"`
