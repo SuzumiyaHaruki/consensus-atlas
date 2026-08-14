@@ -12,12 +12,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 )
 
-type etcdraftScenarioEpisodeResult struct {
-	Agent         controlexperiment.ScenarioAgentResult       `json:"agent"`
-	ProviderCalls []controlexperiment.StatelessAgentCallAudit `json:"provider_calls"`
-	FrontierWork  controlexperiment.PhaseWork                 `json:"frontier_work"`
-	Testing       *etcdraftScenarioTestingResult              `json:"testing,omitempty"`
-}
+type etcdraftScenarioEpisodeResult = scenarioAgentEpisodeResult
 
 type etcdraftScenarioTestingResult = scenarioTestingResult
 
@@ -30,76 +25,28 @@ func runEtcdraftScenarioAgentEpisode(
 	maxDecisions int,
 	activateKey func() error,
 ) (etcdraftScenarioEpisodeResult, error) {
-	if journal == nil || journal.core == nil || maxCalls <= 0 ||
-		maxCalls > controlexperiment.ScenarioAgentMaxCalls || maxPlanSteps <= 0 ||
-		maxPlanSteps > controlexperiment.ScenarioPlanMaxSteps || maxDecisions <= 0 ||
-		maxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
-		activateKey == nil || journal.SetRoot("invoked-scenario") != nil {
-		return etcdraftScenarioEpisodeResult{}, errors.New("ETCDRAFT_SCENARIO_EPISODE_INPUT_INVALID")
-	}
 	projector := etcdraftSemanticPrefixProjector{}
-	rootRisk, err := projector.Project("etcdraft-scenario-root-risk", inputs.riskSpec, inputs.root)
-	if err != nil {
-		return etcdraftScenarioEpisodeResult{}, err
-	}
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 	}
-	frontier, snapshot, frontierWork, err := controlexperiment.ReconstructRiskFrontierState(
-		ctx, "etcdraft-scenario-root-frontier", inputs.riskSpec, rootRisk,
-		inputs.root, len(inputs.root.Records), inputs.experiment.Runtime,
-		inputs.experiment.faultEnvelope(), factory,
-	)
-	if err != nil {
-		return etcdraftScenarioEpisodeResult{}, err
-	}
-	semantics, err := projectEtcdraftScenarioSemantics(
-		inputs.experiment.ScenarioSemanticExposure, inputs.root, frontier, snapshot,
-	)
-	if err != nil {
-		return etcdraftScenarioEpisodeResult{}, err
-	}
-	agent, err := controlexperiment.ExploreScenarioWithPlanner(
-		ctx, maxCalls, maxPlanSteps, maxDecisions,
-		inputs.knowledge, inputs.hypothesis, inputs.riskSpec, frontier, semantics, rootRisk, inputs.root,
-		inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector,
-		func(
-			trace controlruntime.Trace,
-			frontier controlexperiment.RiskFrontierView,
-			snapshot controlruntime.Snapshot,
-		) (controlexperiment.ScenarioSemanticExposure, error) {
+	result, err := runScenarioAgentEpisodeCore(ctx, scenarioEpisodeCoreInputs{
+		RootID: "invoked-scenario", Knowledge: inputs.knowledge, Hypothesis: inputs.hypothesis,
+		RiskSpec: inputs.riskSpec, Root: inputs.root, Runtime: inputs.experiment.Runtime,
+		FaultEnvelope:    inputs.experiment.faultEnvelope(),
+		SemanticExposure: inputs.experiment.ScenarioSemanticExposure,
+		NewAdapter:       factory, RiskProjector: projector,
+		SemanticProjector: func(trace controlruntime.Trace, frontier controlexperiment.RiskFrontierView,
+			snapshot controlruntime.Snapshot) (controlexperiment.ScenarioSemanticExposure, error) {
 			return projectEtcdraftScenarioSemantics(
 				inputs.experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
 			)
 		},
-		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
-			[]byte, controlexperiment.ModelWork, error,
-		) {
-			content, work, callErr := journal.Planner(ctx, inputs.riskSpec, view)
-			if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
-				return content, work, callErr
-			}
-			if err := activateKey(); err != nil {
-				return nil, work, err
-			}
-			return journal.Planner(ctx, inputs.riskSpec, view)
-		},
-	)
-	audits, auditErr := journal.Audits()
-	result := etcdraftScenarioEpisodeResult{
-		Agent: agent, ProviderCalls: audits, FrontierWork: frontierWork,
-	}
-	if auditErr != nil {
-		return result, auditErr
-	}
+	}, journal, maxCalls, maxPlanSteps, maxDecisions, activateKey)
 	if err != nil {
 		return result, err
 	}
-	if len(audits) != len(agent.Attempts) {
-		return etcdraftScenarioEpisodeResult{}, errors.New("ETCDRAFT_SCENARIO_EPISODE_AUDIT_INVALID")
-	}
-	if agent.Status == controlexperiment.ScenarioAgentCompleted {
-		testing, err := executeEtcdraftScenarioQualified(ctx, inputs, *agent.Execution)
+	if result.Agent.Status == controlexperiment.ScenarioAgentCompleted {
+		testing, err := executeEtcdraftScenarioQualified(ctx, inputs, *result.Agent.Execution)
 		if err != nil {
 			return etcdraftScenarioEpisodeResult{}, err
 		}
