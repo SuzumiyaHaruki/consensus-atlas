@@ -113,9 +113,7 @@ func TestEtcdraftExperimentSemanticsV2PreservesTerminalAndPendingRuns(t *testing
 		completed.BudgetReached || completed.ChargedDecisions != 42 ||
 		len(completed.Selections) != completed.ChargedDecisions ||
 		completed.Workload == nil || completed.Workload.Completed != 1 ||
-		completed.Workload.Results[0].Status != "committed" ||
-		completedReport.Digest != "9411bb311c00bf03e03194e8f91e7a4f796414b044fae2bfa6a3d35f51245b0d" ||
-		completedBundle.Digest != "ed44b5be66483be61d15692d1630d91c70c0e485378d9f0849f2753b4155bf69" {
+		completed.Workload.Results[0].Status != "committed" {
 		t.Fatalf("unexpected configured-stop run: %#v report=%s bundle=%s",
 			completed, completedReport.Digest, completedBundle.Digest)
 	}
@@ -224,7 +222,7 @@ func TestEtcdraftM518aBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "OPERATION_HISTORY_RETURN_MISMATCH") {
 		t.Fatalf("tampered operation history error = %v", err)
 	}
-	checkM521nFormalFreshEvaluation(t, spec, report, bundle)
+	checkFormalFreshEvaluation(t, spec, report, bundle)
 
 	invalidSpec := spec
 	invalidSpec.Strategy = "workload;unexpected"

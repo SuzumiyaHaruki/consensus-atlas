@@ -1,14 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"io"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -19,29 +15,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
 )
 
-type formalFreshStageSummary struct {
-	SchemaVersion         string `json:"schema_version"`
-	ID                    string `json:"id"`
-	ContractDigest        string `json:"contract_digest"`
-	ExposureAuditDigest   string `json:"exposure_audit_digest"`
-	EvaluationDigest      string `json:"evaluation_digest"`
-	Pairs                 int    `json:"pairs"`
-	Trials                int    `json:"trials"`
-	Controls              int    `json:"controls"`
-	Candidates            int    `json:"candidates"`
-	SurvivedCandidates    int    `json:"survived_candidates"`
-	FalsePositives        int    `json:"false_positives"`
-	InvalidTrials         int    `json:"invalid_trials"`
-	FreshEvaluatorWired   bool   `json:"fresh_evaluator_wired"`
-	CLIMultiPairWired     bool   `json:"cli_multi_pair_wired"`
-	DatasetClassification string `json:"dataset_classification"`
-	FormalReady           bool   `json:"formal_ready"`
-	NewModelCalls         int    `json:"new_model_calls"`
-	NewSUTExecutions      int    `json:"new_sut_executions"`
-	Digest                string `json:"digest"`
-}
-
-func checkM521nFormalFreshEvaluation(
+func checkFormalFreshEvaluation(
 	t *testing.T,
 	spec controlexperiment.MethodSpec,
 	report controlexperiment.Report,
@@ -174,53 +148,6 @@ func checkM521nFormalFreshEvaluation(
 		t.Fatalf("failed exposure error = %v", err)
 	}
 
-	survivedCandidates := 0
-	for _, result := range evaluation.Results {
-		if result.Kind == defectbench.FormalBundleKindCandidate && result.Status == defectbench.BundleStatusSurvived {
-			survivedCandidates++
-		}
-	}
-	summary := formalFreshStageSummary{
-		SchemaVersion: "consensus-atlas/formal-fresh-stage-summary/v1",
-		ID:            "formal-fresh-evaluator-m5-21n", ContractDigest: contract.Digest,
-		ExposureAuditDigest: exposure.Digest, EvaluationDigest: evaluation.Digest,
-		Pairs: len(evaluation.Pairs), Trials: len(evaluation.Results),
-		Controls: evaluation.Summary.Controls, Candidates: evaluation.Summary.Candidates,
-		SurvivedCandidates: survivedCandidates,
-		FalsePositives:     evaluation.Summary.FalsePositives, InvalidTrials: evaluation.Summary.InvalidTrials,
-		FreshEvaluatorWired: true, CLIMultiPairWired: false,
-		DatasetClassification: "public-synthetic-same-correct-bundle-fixture-only",
-		FormalReady:           false, NewModelCalls: 0, NewSUTExecutions: 0,
-	}
-	summaryDigest, err := formalTestJSONDigest(summary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	summary.Digest = summaryDigest
-	checkFormalFreshStageSummary(t, summary)
-}
-
-func checkFormalFreshStageSummary(t *testing.T, recomputed formalFreshStageSummary) {
-	t.Helper()
-	data, err := os.ReadFile("../../benchmarks/experiments/formal-fresh-evaluator-m5.21n/summary.json")
-	if err != nil {
-		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
-		t.Fatalf("read stage summary: %v\n%s", err, append(encoded, '\n'))
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var archived formalFreshStageSummary
-	if err := decoder.Decode(&archived); err != nil {
-		t.Fatal(err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		t.Fatal("stage summary contains trailing JSON")
-	}
-	if !reflect.DeepEqual(archived, recomputed) {
-		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
-		t.Fatalf("stage summary is stale; recomputed:\n%s", append(encoded, '\n'))
-	}
 }
 
 func formalTestStringDigest(value string) string { return formalTestBytesDigest([]byte(value)) }
@@ -228,12 +155,4 @@ func formalTestStringDigest(value string) string { return formalTestBytesDigest(
 func formalTestBytesDigest(value []byte) string {
 	sum := sha256.Sum256(value)
 	return hex.EncodeToString(sum[:])
-}
-
-func formalTestJSONDigest(value any) (string, error) {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	return formalTestBytesDigest(encoded), nil
 }

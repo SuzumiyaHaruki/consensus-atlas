@@ -196,9 +196,10 @@ ProtocolKnowledge 和 TestHypothesis 仍由代码构造。Scenario 完成后，�
 再用公共 exact-policy/Bundle executor 重跑。PSS mapper、Decision projector 和 Workload router 均复用 Adapter
 已有实现，Oracle 只运行通用 TraceIntegrity 与 Agreement。
 
-OpenRouter journal、Scenario episode core 和 compact summary 也已经有两个真实协议消费者。共享 core 不导入目标
-类型；目标 wrapper 提供 Root、Risk/Semantic projector、Adapter factory 和 qualified executor。当前 OmniPaxos
-入口是可恢复的单 episode run，多 episode Campaign 仍属于下一层编排。
+OpenRouter journal、Scenario episode/session core 和 compact summary 已经有两个真实协议消费者。共享 core
+不导入目标类型；target wrapper 提供 Root、Risk/Semantic projector、Adapter factory 和 qualified executor。
+OmniPaxos 已进入现有多 episode Campaign；当前仍需补完整 Bundle 持久化、成本分类、外部 worker 生命周期和
+方法身份，才能将该入口用于正式效果评价。
 
 ## 6. 规划确定性与执行确定性
 
@@ -210,7 +211,7 @@ OpenRouter journal、Scenario episode core 和 compact summary 也已经有两�
 
 因此，系统不要求 Agent 每次给出相同计划，但要求每个被接受的计划都能被机械解释、执行和复核。
 
-## 7. 当前 A3 组合边界
+## 7. Qualified testing 组合边界
 
 A3 不再新增抽象层，只闭合现有两条已验证路径：
 

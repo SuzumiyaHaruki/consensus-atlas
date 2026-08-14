@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7c 非 Raft Agent run 已可调用
+阶段：A7H0 A8 前证据与评测边界完善
 
 ## 一句话状态
 
-同一个 OpenRouter journal/Scenario episode core 现在同时服务 etcd/raft 和 OmniPaxos；OmniPaxos 已有独立 CLI
-strategy、持久化 compact summary 和无 provider/key 重访的恢复路径。
+同一个 Scenario episode/session core 已服务 etcd/raft 和 OmniPaxos；当前先恢复仓库验证、完整执行证据、成本
+分类、worker 生命周期和方法身份，再进入 A8 效果实验。
 
 ## 输入什么
 
@@ -49,8 +49,8 @@ strategy、持久化 compact summary 和无 provider/key 重访的恢复路径�
     `Invoke -> DropMessage -> natural progress -> decided`，随后由全新 worker 精确 Replay。
 19. A7b 从 `plans/agent/omnipaxos-message-loss-before-decision-v1.json` 构造可信输入；最终 Scenario 通过
     OmniPaxos 已验证的六项能力绑定 admission，再由唯一 Bundle executor 重新执行。
-20. A7c 的 OpenRouter journal 只提交当前可信 Action；成功响应进入同一 closure/qualified Bundle。运行目录只
-    保存 provider 调用审计与 compact summary，resume 重新构造执行结果但不再次读取 key 或访问 provider。
+20. A7d 已用同一 Campaign coordinator 运行两个独立 OmniPaxos episode；当前 artifact 仍只保存 provider 调用
+    审计与 compact summary，完整 Bundle 持久化与无 SUT 重访恢复属于 A7H 的明确缺口。
 
 ## 得到什么
 
@@ -82,7 +82,7 @@ strategy、持久化 compact summary 和无 provider/key 重访的恢复路径�
   TraceIntegrity 和 Agreement 得到 0 violation。尚未接 session CLI 或真实 OpenRouter。
 - A7c 本地 OpenRouter fixture 经正式运行入口调用 1 次，选择一条 replication message 执行 DropMessage；结果仍为
   31/28 PSS、Risk reached、Replay stable、0 Oracle violation。resume 得到字节等价 summary，provider/key 均未重访。
-- 当前入口是单 episode Agent run，不是多 episode Campaign，也没有进行真实付费模型实验。
+- 当前同时保留单 episode 校准入口和多 episode Campaign；OmniPaxos 尚未进行真实付费模型效果实验。
 - 对已完成目录执行 `-campaign-resume` 得到完全相同的 episode、work、token、PSS/Risk/Oracle 汇总，没有新增
   provider 调用。
 - A6e 首次配对校准使用同一 root、semantic input、`deepseek/deepseek-v4-flash` 和 session 预算。
@@ -388,7 +388,8 @@ execution admission、运行预算和 provider transport，防止输入改变后
 0 Oracle violation；停止原因为 attempt limit。恢复未再次读取 key 或访问 provider。该结果证明同一 Campaign
 机制能服务第二个非 Raft 目标，不证明两个相同 episode 带来额外覆盖，也不构成 Agent 效果比较。
 
-下一阶段进入 A8 前先固定最小实验问题、对照方法和共享预算，不继续增加会话基础设施。
+下一阶段先完成 A7H：恢复活动测试/race 清单，持久化完整 Bundle，修复成本与 worker 生命周期，显式绑定
+natural-progress 方法身份和恢复输入；不增加新协议或 Agent 类型。完成后再进入 A8。
 
 ## 阅读顺序
 

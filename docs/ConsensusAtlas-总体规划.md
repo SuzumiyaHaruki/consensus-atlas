@@ -570,6 +570,18 @@ attempt limit 停止。相同策略产生的状态并集不应被解释成 Agent
 
 完成判据已经满足：没有修改公共 Action/Runtime/episode 数据流即完成非 Raft 多 episode session。
 
+### A7H：A8 前完善
+
+不增加新协议、Agent 类型或通用 DSL。先完成四个直接影响正式实验可信度的闭环：
+
+1. 活动测试与 race shard 清单恢复绿色，当前文档入口与代码一致；
+2. Scenario attempt 持久化完整 ExecutionBundle，恢复时重新验证并派生 PSS/Risk/Oracle/summary；
+3. 修复 primary/replay 成本分类、超预算实际 work 和外部 worker 生命周期；
+4. 显式绑定 natural-progress policy、OmniPaxos root/method identity、termination reason 和 provider routing policy。
+
+只有对应具体恢复、成本或资源失败场景时才增加身份字段；不额外建立文件 digest、第二套 ledger、发布 gate 或
+Session Runtime。OmniPaxos 在补 target-local Oracle 和真实模型对照前只作为跨协议集成证据。
+
 ### A8：效果评测
 
 准备非公开 candidate/control，比较 deterministic baseline、单 Explorer 和多 Agent。预注册重复次数、预算、
