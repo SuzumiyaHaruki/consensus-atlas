@@ -24,6 +24,12 @@ var scenarioNaturalProgressPriority = []control.ActionKind{
 	control.ActionFireTemporal,
 }
 
+// ScenarioNaturalProgressPriority returns the exact trusted closure order for
+// experiment identity. The returned slice cannot mutate executor state.
+func ScenarioNaturalProgressPriority() []control.ActionKind {
+	return append([]control.ActionKind(nil), scenarioNaturalProgressPriority...)
+}
+
 type ScenarioProgressResult struct {
 	StopReason string            `json:"stop_reason"`
 	Execution  ScenarioExecution `json:"execution"`

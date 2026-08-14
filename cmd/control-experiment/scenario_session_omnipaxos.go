@@ -5,7 +5,6 @@ import (
 	"errors"
 	"path/filepath"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
@@ -121,8 +120,10 @@ func newOmnipaxosScenarioSessionConfig(
 	inputs omnipaxosScenarioInputs,
 	client openRouterIntentClient,
 ) (controlexperiment.CampaignConfig, error) {
-	if inputs.Knowledge.Validate() != nil || inputs.Experiment.validate() != nil ||
+	if inputs.Root.Validate() != nil || inputs.RiskSpec.Validate() != nil ||
+		inputs.Knowledge.Validate() != nil || inputs.Experiment.validate() != nil ||
 		inputs.Workload.Validate() != nil || inputs.Qualification.Admission.Validate() != nil ||
+		inputs.Qualification.Bundle.Validate() != nil ||
 		openRouterTransportFreeze(client).Validate() != nil {
 		return controlexperiment.CampaignConfig{}, errors.New("OMNIPAXOS_SCENARIO_SESSION_CONFIG_INPUT_INVALID")
 	}
@@ -133,18 +134,24 @@ func newOmnipaxosScenarioSessionConfig(
 	// A Campaign can reuse committed attempt artifacts without executing them.
 	// This digest prevents changed authoring/runtime/provider inputs from being
 	// mistaken for the original session during recovery.
-	experimentDigest, err := control.CanonicalDigest(struct {
-		KnowledgeDigest  string                                 `json:"knowledge_digest"`
-		HypothesisDigest string                                 `json:"hypothesis_digest"`
-		WorkloadDigest   string                                 `json:"workload_digest"`
-		AdmissionDigest  string                                 `json:"admission_digest"`
-		Experiment       omnipaxosScenarioExperimentConfig      `json:"experiment"`
-		Transport        controlexperiment.AgentTransportFreeze `json:"transport"`
+	experimentDigest, err := scenarioSessionExperimentDigest(struct {
+		RootDigest          string                                 `json:"root_digest"`
+		RiskSpecDigest      string                                 `json:"risk_spec_digest"`
+		KnowledgeDigest     string                                 `json:"knowledge_digest"`
+		HypothesisDigest    string                                 `json:"hypothesis_digest"`
+		WorkloadDigest      string                                 `json:"workload_digest"`
+		QualificationDigest string                                 `json:"qualification_digest"`
+		AdmissionDigest     string                                 `json:"admission_digest"`
+		Experiment          omnipaxosScenarioExperimentConfig      `json:"experiment"`
+		Transport           controlexperiment.AgentTransportFreeze `json:"transport"`
 	}{
+		RootDigest: inputs.Root.Digest, RiskSpecDigest: inputs.RiskSpec.Digest,
 		KnowledgeDigest: inputs.Knowledge.Digest, HypothesisDigest: inputs.Hypothesis.Digest,
-		WorkloadDigest: workloadDigest, AdmissionDigest: inputs.Qualification.Admission.Digest,
-		Experiment: inputs.Experiment, Transport: openRouterTransportFreeze(client),
-	})
+		WorkloadDigest: workloadDigest, QualificationDigest: inputs.Qualification.Bundle.Digest,
+		AdmissionDigest: inputs.Qualification.Admission.Digest,
+		Experiment:      inputs.Experiment, Transport: openRouterTransportFreeze(client),
+	}, inputs.Experiment.ScenarioMaxSteps, omnipaxosScenarioProjectorID,
+		omnipaxosScenarioSemanticProjectorID)
 	if err != nil {
 		return controlexperiment.CampaignConfig{}, err
 	}

@@ -11,6 +11,8 @@ import (
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 )
 
+const etcdraftScenarioSemanticProjectorID = "etcdraft-v2-scenario-semantics-v1"
+
 func projectEtcdraftScenarioSemantics(
 	mode controlexperiment.ScenarioSemanticExposureMode,
 	trace controlruntime.Trace,

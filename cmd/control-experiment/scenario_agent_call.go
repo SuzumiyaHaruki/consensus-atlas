@@ -11,7 +11,10 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const scenarioAgentPromptVersion = "scenario-agent-receding-horizon-v5"
+const (
+	scenarioAgentPromptVersion       = "scenario-agent-receding-horizon-v5"
+	scenarioPlanStructuredOutputName = "scenario_plan_v1"
+)
 
 type scenarioAgentCallJournal struct {
 	core *statelessAgentCallJournal
@@ -138,7 +141,7 @@ func scenarioPlanStructuredOutput(maxSteps int) (openRouterStructuredOutput, err
 	if err != nil {
 		return openRouterStructuredOutput{}, err
 	}
-	return openRouterStructuredOutput{Name: "scenario_plan_v1", Schema: encoded}, nil
+	return openRouterStructuredOutput{Name: scenarioPlanStructuredOutputName, Schema: encoded}, nil
 }
 
 func scenarioAgentPrompt(

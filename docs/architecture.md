@@ -204,8 +204,10 @@ episode 结束。conformance 与两个进程型 qualification 也已使用相同
 completed attempt 现在把完整 ExecutionBundle 放入既有 Campaign artifact；恢复先验证 Bundle，并从其 Core PSS
 样本派生 session 状态并集，不再信任平行键列表。完整 Risk/Oracle 也保存在同一 artifact，并由目标现有
 projector/monitor 从 Bundle 重算后核对 summary。终止 Campaign 可在不准备 SUT、不读取模型 key 的情况下从
-既有 config/checkpoint/artifact 恢复；运行中的 Campaign 仍要求独立构造 expected config。当前还需补方法身份，
-才能将该入口用于正式效果评价。
+既有 config/checkpoint/artifact 恢复；运行中的 Campaign 仍要求独立构造 expected config。现有实验摘要还绑定
+Scenario prompt、实际 structured-output schema、natural-progress 优先级及 Risk/Semantic projector ID；
+OmniPaxos 额外绑定 root、Risk spec 与 qualification bundle。终止策略由 Campaign config 的预算和 wall clock
+表达，实际 stop reason 是执行结果而不是预先声明的方法字段。
 
 ## 6. 规划确定性与执行确定性
 

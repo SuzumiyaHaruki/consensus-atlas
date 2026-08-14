@@ -9,6 +9,8 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 )
 
+const omnipaxosScenarioSemanticProjectorID = "omnipaxos-v2-scenario-semantics-v1"
+
 func projectOmnipaxosScenarioSemantics(
 	mode controlexperiment.ScenarioSemanticExposureMode,
 	trace controlruntime.Trace,

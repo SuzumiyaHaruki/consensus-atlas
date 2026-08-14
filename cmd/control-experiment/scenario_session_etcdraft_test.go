@@ -16,6 +16,44 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
+func TestScenarioSessionExperimentDigestBindsExecutionMethod(t *testing.T) {
+	base := struct {
+		ID string `json:"id"`
+	}{ID: "fixture-method-base"}
+	digest, err := scenarioSessionExperimentDigest(base, 2, "risk-v1", "semantic-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	variants := []struct {
+		steps    int
+		risk     string
+		semantic string
+	}{
+		{steps: 3, risk: "risk-v1", semantic: "semantic-v1"},
+		{steps: 2, risk: "risk-v2", semantic: "semantic-v1"},
+		{steps: 2, risk: "risk-v1", semantic: "semantic-v2"},
+	}
+	for _, variant := range variants {
+		changed, err := scenarioSessionExperimentDigest(
+			base, variant.steps, variant.risk, variant.semantic,
+		)
+		if err != nil || changed == digest {
+			t.Fatalf("execution-method change was not bound: %#v digest=%s err=%v", variant, changed, err)
+		}
+	}
+	method, err := newScenarioSessionMethodIdentity(2, "risk-v1", "semantic-v1")
+	if err != nil || method.PromptVersion != scenarioAgentPromptVersion ||
+		method.StructuredOutputName != scenarioPlanStructuredOutputName ||
+		!json.Valid(method.StructuredOutputSchema) ||
+		!reflect.DeepEqual(method.NaturalProgressPriority, []control.ActionKind{
+			control.ActionCompleteEffect,
+			control.ActionDeliverMessage,
+			control.ActionFireTemporal,
+		}) {
+		t.Fatalf("scenario method identity incomplete: %#v err=%v", method, err)
+	}
+}
+
 func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResumes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()

@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7H2 完整证据与无 SUT 重访恢复完成
+阶段：A7H3 Scenario 方法身份闭合完成
 
 ## 一句话状态
 
-同一个 Scenario episode/session core 已服务 etcd/raft 和 OmniPaxos；当前先恢复仓库验证、完整执行证据、成本
-分类、worker 生命周期和方法身份，再进入 A8 效果实验。
+同一个 Scenario episode/session core 已服务 etcd/raft 和 OmniPaxos；A8 前的仓库验证、完整执行证据、成本
+分类、worker 生命周期、无 SUT 恢复和方法身份已经闭合，下一阶段进入效果实验设计。
 
 ## 输入什么
 
@@ -63,6 +63,10 @@
     Bundle 重新计算 Risk、Oracle 和 outcome，再与 compact episode summary 核对，全程不执行 SUT。
 26. 已终止 Campaign 可从现有自验证 config/checkpoint/artifact 只读恢复；应用层仍核对固定 campaign/target ID、
     Bundle manifest 和所有测试判定。运行中的 Campaign 不走快速路径，继续使用独立构造的 expected config。
+27. 现有 `ExperimentSpecDigest` 的输入已包含 Scenario prompt 版本、实际 strict structured-output schema、
+    natural-progress 动作优先级、Risk/Scenario-semantic 投影器 ID；OmniPaxos 还绑定 root、Risk spec 和
+    qualification bundle。
+    Campaign config 已独立绑定 session 预算与 wall-clock 终止策略，实际 stop reason 仍作为运行结果保存。
 
 ## 得到什么
 
@@ -143,6 +147,9 @@
   testing evidence 重新派生 summary，模型和 SUT 不参与判定重算。
 - A7H2b2 在恢复测试中将 etcd/raft corpus/semantic 路径和 OmniPaxos worker/semantic 路径替换为不存在的路径，
   仍得到完全相同的终端 summary，且 provider/key 均未重访。
+- A7H3 扩展既有实验摘要的输入，不新增 Spec 文件、平行 hash 或 gate。改变 plan 最大步数会改变实际 JSON schema，
+  改变 prompt、natural-progress 顺序或任一 projector 版本也会得到不同实验身份；两个协议的真实双 episode
+  创建/恢复回归均通过。
 
 ## 已删除什么
 
@@ -187,6 +194,8 @@ Oracle 和 evaluator 安全边界没有删除。
 - 还没有非公开 candidate/control 方法效果实验；
 - 无 SUT 快速恢复只接受已终止且至少有一个 attempt artifact 的 Campaign；尚无 artifact 的 durable failure
   仍需要原输入才能补充目标上下文，本阶段不从空结果猜测语义 exposure；
+- projector identity 当前是与实现共同维护的显式版本 ID；若改变投影语义却不更新 ID，Git 仍可追溯代码变化，
+  但跨提交实验身份不会自动区分。A8 运行前应把目标提交号与 Campaign artifact 一起归档；本阶段不再新增代码 hash。
 - 还没有同预算多 Agent 消融；
 - 还没有证明 PSS/义务能预测隐藏根因检出；
 - 普通测试不读取 key，也不调用外部模型。
@@ -412,8 +421,7 @@ execution admission、运行预算和 provider transport，防止输入改变后
 0 Oracle violation；停止原因为 attempt limit。恢复未再次读取 key 或访问 provider。该结果证明同一 Campaign
 机制能服务第二个非 Raft 目标，不证明两个相同 episode 带来额外覆盖，也不构成 Agent 效果比较。
 
-下一阶段先完成 A7H：恢复活动测试/race 清单，持久化完整 Bundle，修复成本与 worker 生命周期，显式绑定
-natural-progress 方法身份和恢复输入；不增加新协议或 Agent 类型。完成后再进入 A8。
+下一阶段进入 A8：先写最小效果实验协议与预算表，再准备非公开 candidate/control；不增加新协议或 Agent 类型。
 
 ## 阅读顺序
 

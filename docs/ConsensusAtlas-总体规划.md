@@ -594,6 +594,13 @@ outcome 和 compact summary；Bundle、Risk 或 Oracle 篡改都会被拒绝。A
 campaign/target ID 与 Bundle manifest；不存在的 etcd/raft 输入路径和 OmniPaxos worker 路径不再阻止结果恢复。
 运行中的 Campaign 仍使用独立构造的 expected config 继续执行。A7H2 至此完成。
 
+A7H3 没有新增第二套 Spec/hash/gate，而是扩展现有 `ExperimentSpecDigest` 的规范输入：两目标共同绑定 Scenario
+prompt 版本、按当前 `scenario_max_steps` 生成的实际 strict structured-output schema、natural-progress 动作优先级、
+Risk projector ID 和 Semantic projector ID；OmniPaxos 还绑定 root digest、Risk spec 与 qualification bundle。
+Campaign config 已单独绑定 session budget 和 wall-clock ceiling，实际 stop reason 继续作为运行结果持久化。
+改变上述执行方法输入会得到不同实验身份，两协议的真实双 episode 创建与终端恢复回归均已通过。projector ID
+仍是与实现共同维护的显式版本；A8 归档必须同时记录 Git 提交，当前不增加代码 hash。
+
 ### A8：效果评测
 
 准备非公开 candidate/control，比较 deterministic baseline、单 Explorer 和多 Agent。预注册重复次数、预算、

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
@@ -25,6 +26,56 @@ type scenarioSessionEpisodeArtifact struct {
 }
 
 type scenarioTestingRevalidator func(scenarioTestingResult) error
+
+type scenarioSessionMethodIdentity struct {
+	PromptVersion           string               `json:"prompt_version"`
+	StructuredOutputName    string               `json:"structured_output_name"`
+	StructuredOutputSchema  json.RawMessage      `json:"structured_output_schema"`
+	NaturalProgressPriority []control.ActionKind `json:"natural_progress_priority"`
+	RiskProjectorID         string               `json:"risk_projector_id"`
+	SemanticProjectorID     string               `json:"semantic_projector_id"`
+}
+
+func newScenarioSessionMethodIdentity(
+	maxSteps int,
+	riskProjectorID string,
+	semanticProjectorID string,
+) (scenarioSessionMethodIdentity, error) {
+	if riskProjectorID == "" || semanticProjectorID == "" {
+		return scenarioSessionMethodIdentity{}, errors.New("SCENARIO_SESSION_METHOD_IDENTITY_INVALID")
+	}
+	output, err := scenarioPlanStructuredOutput(maxSteps)
+	if err != nil {
+		return scenarioSessionMethodIdentity{}, err
+	}
+	return scenarioSessionMethodIdentity{
+		PromptVersion:           scenarioAgentPromptVersion,
+		StructuredOutputName:    output.Name,
+		StructuredOutputSchema:  append(json.RawMessage(nil), output.Schema...),
+		NaturalProgressPriority: controlexperiment.ScenarioNaturalProgressPriority(),
+		RiskProjectorID:         riskProjectorID,
+		SemanticProjectorID:     semanticProjectorID,
+	}, nil
+}
+
+func scenarioSessionExperimentDigest(
+	base any,
+	maxSteps int,
+	riskProjectorID string,
+	semanticProjectorID string,
+) (string, error) {
+	if base == nil {
+		return "", errors.New("SCENARIO_SESSION_EXPERIMENT_BASE_REQUIRED")
+	}
+	method, err := newScenarioSessionMethodIdentity(maxSteps, riskProjectorID, semanticProjectorID)
+	if err != nil {
+		return "", err
+	}
+	return control.CanonicalDigest(struct {
+		Base   any                           `json:"base"`
+		Method scenarioSessionMethodIdentity `json:"scenario_method"`
+	}{Base: base, Method: method})
+}
 
 // scenarioSessionSummary is rebuilt from committed attempt artifacts. The
 // Campaign recovery ledger remains the source of truth.

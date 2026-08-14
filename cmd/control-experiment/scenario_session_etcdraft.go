@@ -94,7 +94,7 @@ func runEtcdraftScenarioSession(
 		request controlexperiment.CampaignAttemptRequest,
 	) (controlexperiment.CampaignAttemptResult, error) {
 		return executeEtcdraftScenarioSessionEpisode(
-			attemptContext, request, clean, inputs, options,
+			attemptContext, request, clean, config, inputs, options,
 		)
 	})
 	coordinator, err := controlexperiment.NewCampaignCoordinator(&recovered, provider)
@@ -131,9 +131,20 @@ func overrideEtcdraftScenarioSemanticExposure(
 func newEtcdraftScenarioSessionConfig(
 	inputs etcdraftSemanticCalibrationInputs,
 ) (controlexperiment.CampaignConfig, error) {
+	experimentDigest, err := scenarioSessionExperimentDigest(
+		struct {
+			BaseSpecDigest string `json:"base_spec_digest"`
+		}{BaseSpecDigest: inputs.spec.Digest},
+		inputs.experiment.ScenarioMaxSteps,
+		etcdraftSemanticPrefixProjectorID,
+		etcdraftScenarioSemanticProjectorID,
+	)
+	if err != nil {
+		return controlexperiment.CampaignConfig{}, err
+	}
 	return controlexperiment.NewCampaignConfig(
 		etcdraftScenarioSessionID, etcdraftCampaignTargetID,
-		inputs.campaign.source.Identity.ManifestDigest, inputs.spec.Digest,
+		inputs.campaign.source.Identity.ManifestDigest, experimentDigest,
 		inputs.experiment.SessionBudget, inputs.experiment.SessionWallClockMS,
 	)
 }
@@ -142,14 +153,15 @@ func executeEtcdraftScenarioSessionEpisode(
 	ctx context.Context,
 	request controlexperiment.CampaignAttemptRequest,
 	directory string,
+	config controlexperiment.CampaignConfig,
 	inputs etcdraftSemanticCalibrationInputs,
 	options etcdraftScenarioSessionOptions,
 ) (controlexperiment.CampaignAttemptResult, error) {
 	return executeScenarioSessionAttempt(ctx, request, scenarioSessionAttemptOptions{
 		Directory: directory, Sidecar: etcdraftScenarioSidecar,
 		CampaignID: etcdraftScenarioSessionID, TargetID: etcdraftCampaignTargetID,
-		TargetIdentityDigest: inputs.campaign.source.Identity.ManifestDigest,
-		ExperimentSpecDigest: inputs.spec.Digest,
+		TargetIdentityDigest: config.TargetIdentityDigest,
+		ExperimentSpecDigest: config.ExperimentSpecDigest,
 		Classification:       etcdraftScenarioCalibrationClass,
 		SemanticExposure:     inputs.experiment.ScenarioSemanticExposure,
 		Client:               options.Client, AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
