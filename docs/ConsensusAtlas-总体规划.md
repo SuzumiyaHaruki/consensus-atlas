@@ -548,6 +548,14 @@ samples、28 个唯一状态、stable Replay、TraceIntegrity/Agreement 零异�
 下一步 A7c 复用现有 provider/session 编排形成可调用的非 Raft session。该阶段不引入 A2 搜索、冻结 spec、
 新账本或新的覆盖率定义。
 
+A7c 已完成其中的 provider 与可调用单 episode run：共享 episode core 同时服务 etcd/raft 和 OmniPaxos，
+OpenRouter journal 的成功响应进入同一 closure 与 qualified Bundle；compact summary 持久化后可在不访问 provider、
+不读取 key 的情况下恢复。正式策略名为 `omnipaxos-openrouter-scenario-a7c`。本地 provider 结果为 1 次调用、
+31/28 PSS、Risk reached、Replay stable、0 Oracle violation。
+
+该结果尚不是多 episode session。A7d 只在确认现有 Campaign coordinator 可直接消费共享 episode artifact 后补
+session 编排；否则保留单 episode 入口并记录差异，不复制 etcd/raft Campaign 实现。
+
 完成判据：不修改公共 Action/Runtime/episode 数据流即可完成一次非 Raft session。
 
 ### A8：效果评测

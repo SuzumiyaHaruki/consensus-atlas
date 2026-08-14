@@ -196,6 +196,10 @@ ProtocolKnowledge 和 TestHypothesis 仍由代码构造。Scenario 完成后，�
 再用公共 exact-policy/Bundle executor 重跑。PSS mapper、Decision projector 和 Workload router 均复用 Adapter
 已有实现，Oracle 只运行通用 TraceIntegrity 与 Agreement。
 
+OpenRouter journal、Scenario episode core 和 compact summary 也已经有两个真实协议消费者。共享 core 不导入目标
+类型；目标 wrapper 提供 Root、Risk/Semantic projector、Adapter factory 和 qualified executor。当前 OmniPaxos
+入口是可恢复的单 episode run，多 episode Campaign 仍属于下一层编排。
+
 ## 6. 规划确定性与执行确定性
 
 两者必须分开描述：

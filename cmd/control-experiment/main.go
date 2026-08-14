@@ -34,6 +34,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
 	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
 	agentModel := flags.String("agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
+	workerPath := flags.String("worker", "", "target worker executable for a worker-backed Agent strategy")
 	semanticInput := flags.String("semantic-input", "", "editable protocol knowledge and hypothesis JSON for an Agent strategy")
 	scenarioSemanticExposure := flags.String("scenario-semantic-exposure", "", "optional full or masked Scenario semantic exposure")
 	campaignDirectory := flags.String("campaign-dir", "", "Campaign directory for an explicit Campaign strategy")
@@ -49,10 +50,43 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if *strategy == omnipaxosScenarioCalibrationStrategy {
+		if *campaignDirectory == "" || *workerPath == "" || *semanticInput == "" ||
+			*agentKeyFile == "" || *agentModel == "" || *out != "" || *bundleOut != "" ||
+			*statelessCorpus != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
+			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
+			*scenarioSemanticExposure != "" {
+			return errors.New("OmniPaxos Scenario requires -campaign-dir, -worker, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
+		}
+		summary, err := runOmnipaxosScenarioCalibration(ctx, omnipaxosScenarioCalibrationRunOptions{
+			Directory: *campaignDirectory, WorkerPath: *workerPath, SemanticInputPath: *semanticInput,
+			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
+			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
+		})
+		if summary.AgentStatus != "" {
+			if summary.Testing != nil {
+				fmt.Fprintf(
+					stdout, "summary=%s status=%s attempts=%d pss_states=%d risk=%s replay=%t oracle_violations=%d model_calls=%d model_tokens=%d\n",
+					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus, summary.Attempts,
+					summary.Testing.UniqueCorePSSStates, summary.Testing.RiskStatus,
+					summary.Testing.ReplayStable, summary.Testing.OracleViolations,
+					summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
+				)
+			} else {
+				fmt.Fprintf(
+					stdout, "summary=%s status=%s attempts=%d model_calls=%d model_tokens=%d\n",
+					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus,
+					summary.Attempts, summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
+				)
+			}
+		}
+		return err
+	}
 	if *strategy == etcdraftScenarioSessionStrategy {
 		exposure := controlexperiment.ScenarioSemanticExposureMode(*scenarioSemanticExposure)
 		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" ||
+			*agentKeyFile == "" || *agentModel == "" || *workerPath != "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
 			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
@@ -82,7 +116,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if *strategy == etcdraftScenarioCalibrationStrategy {
 		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" ||
+			*agentKeyFile == "" || *agentModel == "" || *workerPath != "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
 			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 || *scenarioSemanticExposure != "" {
@@ -113,7 +147,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if *strategy == etcdraftSemanticCalibrationStrategy {
 		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" ||
+			*agentKeyFile == "" || *agentModel == "" || *workerPath != "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
 			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 || *scenarioSemanticExposure != "" {
@@ -149,7 +183,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *statelessCorpus == "" ||
 			*decisions != 96 || *bundleOut != "" || *bundleEvidenceVersion != 0 ||
 			*methodSpecDigest != "" || *agentKeyFile != "" || *agentModel != "" || *semanticInput != "" ||
-			*scenarioSemanticExposure != "" ||
+			*scenarioSemanticExposure != "" || *workerPath != "" ||
 			*campaignModelTokens != 0 ||
 			(*strategy == etcdraftStatelessCanonicalCampaignStrategy && *policySeed != 1) {
 			return errors.New("Stateless Campaign strategy requires only -stateless-corpus, -out, Campaign, and uniform seed flags")
@@ -179,6 +213,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if *scenarioSemanticExposure != "" {
 		return errors.New("-scenario-semantic-exposure requires the Scenario session strategy")
+	}
+	if *workerPath != "" {
+		return errors.New("-worker requires a worker-backed Agent strategy")
 	}
 	if *out == "" {
 		return errors.New("-out is required")

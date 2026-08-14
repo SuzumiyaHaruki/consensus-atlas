@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7b 第二协议 qualified episode 已连通
+阶段：A7c 非 Raft Agent run 已可调用
 
 ## 一句话状态
 
-OmniPaxos 已从可编辑 JSON 读取知识、假设、workload 和运行预算，并将 Agent Scenario 的相同 Trace 交给
-qualification-bound executor 重跑，得到 Core PSS、fresh Replay 与独立 Oracle 结果。
+同一个 OpenRouter journal/Scenario episode core 现在同时服务 etcd/raft 和 OmniPaxos；OmniPaxos 已有独立 CLI
+strategy、持久化 compact summary 和无 provider/key 重访的恢复路径。
 
 ## 输入什么
 
@@ -49,6 +49,8 @@ qualification-bound executor 重跑，得到 Core PSS、fresh Replay 与独立 O
     `Invoke -> DropMessage -> natural progress -> decided`，随后由全新 worker 精确 Replay。
 19. A7b 从 `plans/agent/omnipaxos-message-loss-before-decision-v1.json` 构造可信输入；最终 Scenario 通过
     OmniPaxos 已验证的六项能力绑定 admission，再由唯一 Bundle executor 重新执行。
+20. A7c 的 OpenRouter journal 只提交当前可信 Action；成功响应进入同一 closure/qualified Bundle。运行目录只
+    保存 provider 调用审计与 compact summary，resume 重新构造执行结果但不再次读取 key 或访问 provider。
 
 ## 得到什么
 
@@ -78,6 +80,9 @@ qualification-bound executor 重跑，得到 Core PSS、fresh Replay 与独立 O
 - A7a 单独只证明第二协议复用最短闭环；当时尚无可编辑 JSON、qualification-bound Bundle 或 PSS/Oracle 汇总。
 - A7b 已补齐前三项：资格化执行产生 31 个 Core PSS samples、28 个唯一状态、stable Replay，并由
   TraceIntegrity 和 Agreement 得到 0 violation。尚未接 session CLI 或真实 OpenRouter。
+- A7c 本地 OpenRouter fixture 经正式运行入口调用 1 次，选择一条 replication message 执行 DropMessage；结果仍为
+  31/28 PSS、Risk reached、Replay stable、0 Oracle violation。resume 得到字节等价 summary，provider/key 均未重访。
+- 当前入口是单 episode Agent run，不是多 episode Campaign，也没有进行真实付费模型实验。
 - 对已完成目录执行 `-campaign-resume` 得到完全相同的 episode、work、token、PSS/Risk/Oracle 汇总，没有新增
   provider 调用。
 - A6e 首次配对校准使用同一 root、semantic input、`deepseek/deepseek-v4-flash` 和 session 预算。
@@ -354,8 +359,18 @@ decision replay 与 opaque invoke 六项能力。成功 Scenario 被编译为 ex
 `ExecuteQualifiedBundle`，结果包含同一 Trace、31 个 PSS samples、28 个唯一状态、stable Replay，以及
 TraceIntegrity/Agreement 零异常。etcd/raft 与 OmniPaxos 相同的结果外壳已合并；协议 Risk 和 monitor 未合并。
 
-下一步 A7c 只补最小 provider/session 组合和可调用入口，验证非 Raft session；不复制 A2 搜索、旧校准 spec 或
-etcd/raft 专用 Oracle。
+## 已完成：A7c OpenRouter 与可调用入口
+
+原 etcd/raft episode 中的 journal、Frontier/semantics 准备、Planner、closure 和 audit 组合已提为共享 core；
+etcd/raft wrapper 只保留目标 projector 与 qualified executor。OmniPaxos wrapper 复用该 core，并继续负责 worker、
+Risk、PSS/Decision projector 和 qualification。
+
+新策略 `omnipaxos-openrouter-scenario-a7c` 接受 `-campaign-dir`、`-worker`、`-semantic-input`、`-agent-key-file`
+和 `-agent-model`。虽然沿用现有目录参数名，但本阶段目录只承载单 episode journal 与 `summary.json`，不能被描述为
+多 episode Campaign。共享 compact summary 删除了 etcd/raft 与 OmniPaxos 的重复结果格式。
+
+下一步 A7d 再决定是否以同一 Campaign coordinator 组织多个独立 OmniPaxos episode，并核对预算/聚合是否能直接
+复用；在此之前不复制 etcd/raft session 文件。
 
 ## 阅读顺序
 

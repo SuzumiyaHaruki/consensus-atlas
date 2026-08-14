@@ -106,7 +106,7 @@ func (artifact etcdraftSemanticCalibrationArtifact) ValidateInputs(
 		if audit.Validate() != nil || audit.Ordinal != index+1 || audit.RootID != artifact.Spec.RootID {
 			return errors.New("ETCDRAFT_SEMANTIC_ARTIFACT_AUDIT_INVALID")
 		}
-		addEtcdraftSemanticModelWork(&auditWork, audit.Work)
+		addAgentModelWork(&auditWork, audit.Work)
 	}
 	if auditWork != artifact.ModelWork {
 		return errors.New("ETCDRAFT_SEMANTIC_ARTIFACT_MODEL_WORK_MISMATCH")
@@ -299,7 +299,7 @@ func etcdraftSemanticCallsMatchAudits(
 	return true
 }
 
-func addEtcdraftSemanticModelWork(total *controlexperiment.ModelWork, value controlexperiment.ModelWork) {
+func addAgentModelWork(total *controlexperiment.ModelWork, value controlexperiment.ModelWork) {
 	total.Calls += value.Calls
 	total.InputTokens += value.InputTokens
 	total.OutputTokens += value.OutputTokens

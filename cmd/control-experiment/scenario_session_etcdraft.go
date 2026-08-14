@@ -67,7 +67,7 @@ func runEtcdraftScenarioSession(
 	if options.Directory == "" || clean == "." || clean == string(filepath.Separator) ||
 		options.CorpusPath == "" || options.SemanticInputPath == "" ||
 		(options.SemanticExposure != "" && options.SemanticExposure.Validate() != nil) ||
-		!validateEtcdraftSemanticRunKeyName(options.AgentKeyFile) ||
+		!validateAgentKeyFileName(options.AgentKeyFile) ||
 		options.Client.HTTP == nil || options.ReadKey == nil ||
 		openRouterTransportFreeze(options.Client).Validate() != nil {
 		return etcdraftScenarioSessionSummary{}, errors.New("ETCDRAFT_SCENARIO_SESSION_OPTIONS_INVALID")
@@ -266,7 +266,7 @@ func (artifact etcdraftScenarioSessionEpisodeArtifact) validate() error {
 		if call.Validate() != nil {
 			return errors.New("ETCDRAFT_SCENARIO_SESSION_EPISODE_INVALID")
 		}
-		addEtcdraftSemanticModelWork(&modelWork, call.Work)
+		addAgentModelWork(&modelWork, call.Work)
 	}
 	if modelWork != episode.ModelWork {
 		return errors.New("ETCDRAFT_SCENARIO_SESSION_EPISODE_INVALID")
@@ -413,7 +413,7 @@ func etcdraftScenarioAuditedModelWork(
 		if audit.Validate() != nil || audit.Ordinal != index+1 {
 			return controlexperiment.ModelWork{}, errors.New("ETCDRAFT_SCENARIO_SESSION_CALL_AUDIT_INVALID")
 		}
-		addEtcdraftSemanticModelWork(&work, audit.Work)
+		addAgentModelWork(&work, audit.Work)
 	}
 	return work, nil
 }

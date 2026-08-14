@@ -58,6 +58,7 @@ Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替�
 
 - etcd/raft 可走完整统一 Runtime、qualified execution、fresh Replay、PSS 和 Agreement Oracle；
 - OmniPaxos 已从可编辑输入完成同一 Scenario/closure，并经 qualification-bound Bundle 得到 PSS/Replay/Oracle；
+- `omnipaxos-openrouter-scenario-a7c` 已提供可恢复的非 Raft 单 episode Agent 入口；
 - HashiCorp Raft 保留部分能力资格，明确表示统一 Action 不等于统一控制强度；
 - deterministic semantic best-first 和单 Explorer 已在真实 etcd/raft prefix 上连通；
 - Explorer 首个可信选择现在会进入同一 qualified executor，产出包含 Bundle、Core PSS、RiskWitness、

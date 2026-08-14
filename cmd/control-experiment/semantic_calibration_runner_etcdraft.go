@@ -31,7 +31,7 @@ func runEtcdraftSemanticCalibration(
 	clean := filepath.Clean(options.Directory)
 	if options.Directory == "" || clean == "." || clean == string(filepath.Separator) ||
 		options.CorpusPath == "" || options.SemanticInputPath == "" ||
-		!validateEtcdraftSemanticRunKeyName(options.AgentKeyFile) ||
+		!validateAgentKeyFileName(options.AgentKeyFile) ||
 		options.Client.HTTP == nil ||
 		options.ReadKey == nil {
 		return etcdraftSemanticCalibrationArtifact{}, errors.New("ETCDRAFT_SEMANTIC_RUN_OPTIONS_INVALID")
@@ -224,6 +224,6 @@ func validateEtcdraftSemanticJournalEvidence(
 	return nil
 }
 
-func validateEtcdraftSemanticRunKeyName(value string) bool {
+func validateAgentKeyFileName(value string) bool {
 	return strings.TrimSpace(value) != "" && !strings.ContainsAny(value, "\r\n\x00")
 }

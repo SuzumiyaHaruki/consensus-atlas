@@ -21,13 +21,6 @@ func TestA7cOpenRouterJournalDrivesQualifiedOmniPaxosEpisodeAndRecovers(t *testi
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
-	inputs, err := prepareOmnipaxosScenario(
-		ctx, workerPath,
-		"../../plans/agent/omnipaxos-message-loss-before-decision-v1.json",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	client := fixtureOpenRouterIntentClient()
 	providerCalls := 0
 	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
@@ -55,45 +48,46 @@ func TestA7cOpenRouterJournalDrivesQualifiedOmniPaxosEpisodeAndRecovers(t *testi
 		response := a2b2OpenRouterResponse(t, providerCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
-	journalDirectory := filepath.Join(t.TempDir(), "omnipaxos-provider")
-	journal, err := newScenarioAgentCallJournal(journalDirectory, client, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	directory := filepath.Join(t.TempDir(), "omnipaxos-a7c")
 	keyReads := 0
-	result, err := runOmnipaxosScenarioAgentEpisode(ctx, inputs, journal, func() error {
-		keyReads++
-		return journal.ActivateKey("fixture-key")
-	})
-	if err != nil || result.Agent.Status != controlexperiment.ScenarioAgentCompleted ||
-		result.Agent.Execution == nil || result.Testing == nil || len(result.ProviderCalls) != 1 ||
-		result.Testing.Outcome != scenarioTestingPassed ||
-		result.Testing.Bundle.Trace.Digest != result.Agent.Execution.FinalTrace.Digest ||
-		result.Testing.Risk.Status != semantic.RiskWitnessReached ||
-		result.Testing.CorePSSSamples == 0 || result.Testing.UniqueCorePSSStates == 0 ||
-		!result.Testing.Replay.Stable || len(result.Testing.Oracle.Violations) != 0 ||
-		!reflect.DeepEqual(result.Testing.Oracle.Checked, []string{"trace-integrity", "agreement"}) ||
+	options := omnipaxosScenarioCalibrationRunOptions{
+		Directory: directory, WorkerPath: workerPath,
+		SemanticInputPath: "../../plans/agent/omnipaxos-message-loss-before-decision-v1.json",
+		AgentKeyFile:      "fixture-key-source", Client: client,
+		ReadKey: func(string) (string, error) {
+			keyReads++
+			return "fixture-key", nil
+		},
+	}
+	summary, err := runOmnipaxosScenarioCalibration(ctx, options)
+	if err != nil || summary.AgentStatus != controlexperiment.ScenarioAgentCompleted ||
+		summary.Attempts != 1 || summary.Testing == nil || len(summary.ProviderCalls) != 1 ||
+		summary.Testing.Outcome != scenarioTestingPassed ||
+		summary.Testing.RiskStatus != semantic.RiskWitnessReached ||
+		summary.Testing.CorePSSSamples == 0 || summary.Testing.UniqueCorePSSStates == 0 ||
+		!summary.Testing.ReplayStable || summary.Testing.OracleViolations != 0 ||
 		providerCalls != 1 || keyReads != 1 {
-		t.Fatalf("OmniPaxos Agent episode incomplete: %#v calls=%d reads=%d err=%v",
-			result, providerCalls, keyReads, err)
+		t.Fatalf("OmniPaxos Agent run incomplete: %#v calls=%d reads=%d err=%v",
+			summary, providerCalls, keyReads, err)
 	}
-	recovered, err := recoverScenarioAgentCallJournal(journalDirectory, client)
-	if err != nil {
-		t.Fatal(err)
+	var persisted scenarioCalibrationSummary
+	if err := readStrictJSONFile(filepath.Join(directory, "summary.json"), 1<<20, &persisted); err != nil ||
+		!reflect.DeepEqual(persisted, summary) {
+		t.Fatalf("OmniPaxos compact summary did not persist: %#v/%v", persisted, err)
 	}
-	replayed, err := runOmnipaxosScenarioAgentEpisode(ctx, inputs, recovered, func() error {
+	options.Resume = true
+	options.ReadKey = func(string) (string, error) {
 		keyReads++
-		return errStatelessAgentCallKeyRequired
-	})
-	if err != nil || replayed.Testing == nil ||
-		replayed.Testing.Bundle.Digest != result.Testing.Bundle.Digest ||
-		providerCalls != 1 || keyReads != 1 {
-		t.Fatalf("OmniPaxos Agent recovery drifted or contacted provider: %#v calls=%d reads=%d err=%v",
-			replayed, providerCalls, keyReads, err)
+		return "unexpected-key-read", nil
 	}
-	t.Logf("root=%d extension=%d pss=%d/%d provider=%d replay=true recovery=true",
-		len(inputs.Root.Records), len(result.Agent.Execution.Steps), result.Testing.CorePSSSamples,
-		result.Testing.UniqueCorePSSStates, providerCalls)
+	recovered, err := runOmnipaxosScenarioCalibration(ctx, options)
+	if err != nil || !reflect.DeepEqual(recovered, summary) || providerCalls != 1 || keyReads != 1 {
+		t.Fatalf("OmniPaxos recovery drifted or contacted provider: %#v calls=%d reads=%d err=%v",
+			recovered, providerCalls, keyReads, err)
+	}
+	t.Logf("attempts=%d pss=%d/%d risk=%s provider=%d replay=true recovery=true",
+		summary.Attempts, summary.Testing.CorePSSSamples, summary.Testing.UniqueCorePSSStates,
+		summary.Testing.RiskStatus, providerCalls)
 }
 
 func buildOmnipaxosScenarioWorker(t *testing.T) string {

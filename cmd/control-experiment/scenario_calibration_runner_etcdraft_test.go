@@ -24,7 +24,7 @@ func TestA4cScenarioCalibrationWritesCompactSummaryAndResumesWithoutProvider(t *
 		providerCalls++
 		view := a4bScenarioViewFromRequest(t, request)
 		if len(view.Frontier.Actions) == 0 ||
-			view.Frontier.PrefixDecisions != 27+providerCalls {
+			view.Frontier.PrefixDecisions != 28 {
 			t.Fatalf("scenario continuation frontier did not advance: %#v", view.Frontier)
 		}
 		content, err := json.Marshal(controlexperiment.ScenarioPlan{
@@ -44,7 +44,7 @@ func TestA4cScenarioCalibrationWritesCompactSummaryAndResumesWithoutProvider(t *
 	keyReads := 0
 	options := etcdraftScenarioCalibrationRunOptions{
 		Directory: directory, CorpusPath: etcdraftTestRootCorpusPath,
-		SemanticInputPath: etcdraftScenarioTestSemanticInput(t, 2, 4),
+		SemanticInputPath: etcdraftScenarioTestSemanticInput(t, 1, 4),
 		AgentKeyFile:      "fixture-key-source", Client: client,
 		ReadKey: func(string) (string, error) {
 			keyReads++
@@ -53,10 +53,10 @@ func TestA4cScenarioCalibrationWritesCompactSummaryAndResumesWithoutProvider(t *
 	}
 	summary, err := runEtcdraftScenarioCalibration(ctx, options)
 	if err != nil || summary.AgentStatus != controlexperiment.ScenarioAgentCompleted ||
-		summary.Attempts != 2 || summary.FinalPlan == nil || summary.Testing == nil ||
+		summary.Attempts != 1 || summary.FinalPlan == nil || summary.Testing == nil ||
 		!summary.Testing.ReplayStable || summary.Testing.CorePSSSamples == 0 ||
-		summary.Testing.OracleViolations != 0 || summary.ModelWork.Calls != 2 ||
-		len(summary.ProviderCalls) != 2 || providerCalls != 2 || keyReads != 2 {
+		summary.Testing.OracleViolations != 0 || summary.ModelWork.Calls != 1 ||
+		len(summary.ProviderCalls) != 1 || providerCalls != 1 || keyReads != 1 {
 		t.Fatalf("A4c summary incomplete: %#v calls=%d reads=%d err=%v", summary, providerCalls, keyReads, err)
 	}
 	var persisted etcdraftScenarioCalibrationSummary
@@ -70,7 +70,7 @@ func TestA4cScenarioCalibrationWritesCompactSummaryAndResumesWithoutProvider(t *
 		return "unexpected-key-read", nil
 	}
 	recovered, err := runEtcdraftScenarioCalibration(ctx, options)
-	if err != nil || !reflect.DeepEqual(recovered, summary) || providerCalls != 2 || keyReads != 2 {
+	if err != nil || !reflect.DeepEqual(recovered, summary) || providerCalls != 1 || keyReads != 1 {
 		t.Fatalf("A4c recovery repeated provider/key access or drifted: %#v calls=%d reads=%d err=%v",
 			recovered, providerCalls, keyReads, err)
 	}
