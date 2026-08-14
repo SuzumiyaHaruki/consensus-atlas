@@ -273,8 +273,9 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 		return coordinator.failAttempt(request, CampaignFailureResult, err)
 	}
 	if !campaignWorkWithinAllowance(result.Work, request.Allowance) {
-		return coordinator.failAttempt(
-			request, CampaignFailureResult, errors.New("EXPERIMENT_CAMPAIGN_ALLOWANCE_EXCEEDED"),
+		return coordinator.failAttemptWithWork(
+			request, CampaignFailureResult, result.Work,
+			errors.New("EXPERIMENT_CAMPAIGN_ALLOWANCE_EXCEEDED"),
 		)
 	}
 	inputDigest := request.Digest

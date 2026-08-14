@@ -125,6 +125,7 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 		result        CampaignAttemptResult
 		providerError error
 		want          string
+		preserveWork  bool
 	}{
 		{
 			name: "provider-error", providerError: errors.New("fixture provider error"),
@@ -137,6 +138,7 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 			},
 			providerError: errors.New("fixture provider error after work"),
 			want:          "PROVIDER_FAILED",
+			preserveWork:  true,
 		},
 		{
 			name: "over-allowance",
@@ -144,7 +146,7 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 				Outcome: CampaignAttemptCompleted, Work: campaignTestWork(11, 5, 0, 0),
 				Artifact: []byte("over allowance"),
 			},
-			want: "ALLOWANCE_EXCEEDED",
+			want: "ALLOWANCE_EXCEEDED", preserveWork: true,
 		},
 		{
 			name: "empty-artifact",
@@ -209,7 +211,7 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 				t.Fatalf("durable failure code = %q, want %q", checked.Failure.Code, wantCode)
 			}
 			wantFailureWork := emptyWork()
-			if test.providerError != nil && validateMethodWork(test.result.Work) == nil {
+			if test.preserveWork && validateMethodWork(test.result.Work) == nil {
 				wantFailureWork = test.result.Work
 			}
 			if checked.Failure.Work != wantFailureWork {

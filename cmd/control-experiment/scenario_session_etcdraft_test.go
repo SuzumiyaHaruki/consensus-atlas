@@ -225,3 +225,19 @@ func TestA6eRScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 			recovered, transportAttempts, keyReads, err)
 	}
 }
+
+func TestScenarioSessionChargesChildVerificationAsReplay(t *testing.T) {
+	result := scenarioAgentEpisodeResult{
+		FrontierWork: controlexperiment.PhaseWork{SchedulerDecisions: 2},
+		Agent: controlexperiment.ScenarioAgentResult{ExecutionWork: controlexperiment.StatelessDFSWork{
+			FrontierReconstruction: controlexperiment.PhaseWork{SchedulerDecisions: 3},
+			ChildMaterialization:   controlexperiment.PhaseWork{SchedulerDecisions: 4},
+			ChildVerification:      controlexperiment.PhaseWork{SchedulerDecisions: 5},
+		}},
+	}
+	work := scenarioSessionWork(result, nil)
+	if work.Primary.SchedulerDecisions != 9 || work.Primary.WorkUnits != 9 ||
+		work.Replay.SchedulerDecisions != 5 || work.Replay.WorkUnits != 5 {
+		t.Fatalf("scenario verification work classification drifted: %#v", work)
+	}
+}

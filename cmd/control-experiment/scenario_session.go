@@ -296,7 +296,7 @@ func scenarioSessionWork(
 	addScenarioSessionPhase(&work.Primary, result.FrontierWork)
 	addScenarioSessionPhase(&work.Primary, result.Agent.ExecutionWork.FrontierReconstruction)
 	addScenarioSessionPhase(&work.Primary, result.Agent.ExecutionWork.ChildMaterialization)
-	addScenarioSessionPhase(&work.Primary, result.Agent.ExecutionWork.ChildVerification)
+	addScenarioSessionPhase(&work.Replay, result.Agent.ExecutionWork.ChildVerification)
 	if result.Testing != nil {
 		addScenarioSessionLedger(&work, result.Testing.Bundle.Work)
 	}
