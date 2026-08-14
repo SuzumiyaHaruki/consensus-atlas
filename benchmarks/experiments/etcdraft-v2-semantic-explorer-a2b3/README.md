@@ -17,7 +17,8 @@ The explicitly authorized A2b3b call completed on 2026-08-13. DeepSeek v4 Flash 
 first call, using 3,309 reported tokens. It moved the first expansion from message delivery to crashing `n1`, while
 both the baseline and Explorer reached zero complete risk candidates under the frozen depth/work-item bound. The
 large exact call artifact remains under ignored `artifacts/`; the non-sensitive result, digests, resume check, and
-limitations are recorded in `docs/stage-a2b3b-etcdraft-real-model-calibration.md`.
+limitations remain recoverable from Git history at the calibration commit; current boundaries are recorded in
+`docs/CURRENT_STAGE.md`.
 
 This remains a public single-sample calibration and cannot support a holdout, superiority, coverage-completeness, or
 correctness claim.

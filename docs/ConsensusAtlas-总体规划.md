@@ -601,6 +601,12 @@ Campaign config 已单独绑定 session budget 和 wall-clock ceiling，实际 s
 改变上述执行方法输入会得到不同实验身份，两协议的真实双 episode 创建与终端恢复回归均已通过。projector ID
 仍是与实现共同维护的显式版本；A8 归档必须同时记录 Git 提交，当前不增加代码 hash。
 
+A8 前减负不改变上述可信边界：删除已被 Session 的 `MaxAttempts=1` 覆盖的两套单 episode CLI，正式策略收敛为
+`etcdraft-agent-session-v1` 与 `omnipaxos-agent-session-v1`；公共 semantic authoring 校验与 Ready effect 构造去重，
+`control-experiment.run()` 只保留 flag 解析和四路显式分派。阶段编号测试改为行为名称，阶段流水账和无活动引用的
+feasibility/migration 产物从 HEAD 删除，历史仍由 Git 保存。Stateless baseline、Semantic Explorer、Scenario
+Session、qualified executor、Replay、Oracle、Defect Benchmark 和正式校准证据均保留。
+
 ### A8：效果评测
 
 准备非公开 candidate/control，比较 deterministic baseline、单 Explorer 和多 Agent。预注册重复次数、预算、

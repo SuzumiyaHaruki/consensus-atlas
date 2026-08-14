@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 probe-omnipaxos-core test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-stateless-canonical-campaign experiment-etcdraft-v2-stateless-uniform-campaign experiment-etcdraft-v2-semantic-explorer-calibration
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-stateless-canonical-campaign experiment-etcdraft-v2-stateless-uniform-campaign experiment-etcdraft-v2-semantic-explorer-calibration
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -73,15 +73,6 @@ audit-no-v1:
 		echo 'M5.16R violation: compiled source references the deleted v1 cone' >&2; \
 		exit 1; \
 	fi
-
-# M5.21u is a bounded non-Raft core probe. It may not change shared Actions,
-# Runtime, PSS, or upstream OmniPaxos source and does not imply qualification.
-probe-omnipaxos-core:
-	sha256sum -c benchmarks/feasibility/omnipaxos-m5.21u/inputs.sha256
-	cargo fmt --manifest-path probes/omnipaxos/Cargo.toml -- --check
-	cargo clippy --manifest-path probes/omnipaxos/Cargo.toml --locked --quiet -- -D warnings
-	cargo run --manifest-path probes/omnipaxos/Cargo.toml --locked --quiet | \
-		diff -u benchmarks/feasibility/omnipaxos-m5.21u/report.json -
 
 # Current OmniPaxos gate exercises the M5.21v control boundary, M5.21w workload,
 # M5.21x PSS, and M5.21y decided-prefix Agreement path. It is not Qualification.

@@ -1,20 +1,13 @@
-# 文档导航
+# 文档索引
 
-当前设计只认以下入口：
+当前事实只维护在少量活动文档中：
 
-1. [当前阶段](CURRENT_STAGE.md)：现在能做什么、不能做什么、下一步是什么；
-2. [总体规划](ConsensusAtlas-总体规划.md)：研究目标、完整流程和阶段路线；
-3. [架构](architecture.md)：代码模块、信任边界与数据流；
-4. [Control Runtime v2](control-runtime-v2.md)：Action、消息、时间、生命周期、持久化和 Replay；
-5. [A2R 架构收敛与减负](stage-a2r-architecture-convergence.md)：本轮删除内容与代码量变化。
+1. [当前阶段](CURRENT_STAGE.md)：当前输入、流程、输出、证据和下一步；
+2. [总体规划](ConsensusAtlas-总体规划.md)：研究目标、可信边界与 A8/A9 路线；
+3. [架构](architecture.md)：包边界、Adapter、Agent、Runtime 与评测数据流；
+4. [Control Runtime](control-runtime-v2.md)：统一 Action、虚拟时间、消息与生命周期语义；
+5. [指标](metrics.md)：PSS、义务、成本和外部 effectiveness；
+6. [Coverage Kernel](coverage-kernel.md)：固定义务证据模型；
+7. [Defect Benchmark](defect-benchmark.md)：candidate/control 与独立评测边界。
 
-当前 Agent 主线的证据顺序：
-
-1. [A2a Semantic Best-first](stage-a2a-deterministic-semantic-best-first.md)
-2. [A2b1 Single Explorer](stage-a2b1-single-explorer-contract.md)
-3. [A2b2 Durable Explorer Transport](stage-a2b2-durable-explorer-transport.md)
-4. [A2b3a etcd/raft 公开校准准备](stage-a2b3a-etcdraft-public-calibration-gate.md)
-5. [A2b3b 真实模型公开校准](stage-a2b3b-etcdraft-real-model-calibration.md)
-
-A2a–A2b3b 文件是当前主线的阶段证据，不定义新的现行接口；已经从 HEAD 移除的旧阶段日志、代码和大型
-工件可从 Git 历史恢复。新增文档应优先修改上述当前入口，避免再建立平行规划。
+已完成阶段的流水账不再保留在 HEAD；需要复核时使用 Git 历史。
