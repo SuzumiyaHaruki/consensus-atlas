@@ -9,8 +9,8 @@
 ## 一句话状态
 
 ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
-共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；下一步用真实 OpenRouter 做公开预跑，
-再把相同执行单位接到非公开 candidate/control。
+共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；真实 OpenRouter 公开预跑已经完成，
+下一步把相同执行单位接到非公开 candidate/control。
 
 ## 输入什么
 
@@ -102,6 +102,9 @@ Qualification 或 `cmd/control-experiment` 边界。
 - 2026-08-14 的 A8 入口预跑使用 `deepseek/deepseek-v4-flash` 完成两个 episode：4 次模型调用、30,772 tokens、
   Replay 全部稳定、Risk reached、Oracle 0 violation；但两个 episode 的 Trace 与 38 个 PSS 状态完全相同，
   因而它是可用性证据和重复性负证据，不是 Agent 效果证据；
+- A8b 真实同底座 paired preflight 使用同一 root 和一个 episode：deterministic 与 Agent 都消耗 2,443 primary、
+  1,253 replay work，得到相同 Trace、38 个 Core PSS 状态、Risk reached 和 0 Oracle violation；Agent 额外使用
+  2 次模型调用、15,418 tokens。该公开样本是可归因的负结果，不是 Agent 优势证据；
 - 两协议的 artifact 都保存完整 Bundle/Risk/Oracle，并能拒绝篡改；
 - deterministic canonical/uniform stateless Campaign 和 Semantic Explorer 仍可作为 A8 对照方法。
 
@@ -141,7 +144,9 @@ provider 或 key。fixture 配对实验中两 arm 得到相同 Trace、PSS/Risk/
 `duration=60002ms`、`transport_attempts=1` 和零 token；检查发现 etcd/raft Session 虽把 JSON 中
 `model_max_retries=2` 绑定进实验输入，执行时却误用了 CLI client 的默认 0。现已让执行端使用校验后的 authoring
 client，并用 Session/A8 回归测试确认 artifact 中实际 retry 上限为 2。失败目录保持不变，不能重命名为有效 trial；
-下一次真实预跑必须使用新目录。
+随后一次运行在请求 dispatch 后被外部中断，恢复按设计返回 `STATELESS_AGENT_CALL_RECOVERED_AMBIGUOUS`，没有
+不安全地重复发送可能已被服务端处理的调用。第三个全新目录中的真实 paired preflight 完成：两次调用均一次返回
+`content-ready`，最终结果与上面的 A8b 真实负结果一致。
 
 默认 etcd/raft authoring input 已从两个 episode 改为每 trial 一个 episode。多 episode coordinator 与恢复能力继续由
 显式测试覆盖；真实 A8 重复通过独立 trial 目录组织，避免同一 root 的重复 Trace 被算作独立状态发现。
@@ -200,8 +205,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步先运行一次真实 OpenRouter public paired preflight，再定义 paired trial 到现有 private evaluator 的最小
-衔接。在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
+下一小步定义 paired trial 到现有 private evaluator 的最小衔接。在预注册前不增加第三 Agent、通用 DSL、新 PSS
+维度或新的评分公式。
 
 ## 当前验证
 

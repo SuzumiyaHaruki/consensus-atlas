@@ -623,8 +623,10 @@ A8b 已完成该 runner：`etcdraft-a8-paired-scenario-v1` 在两个现有 Campa
 Agent episode，机械要求相同 primary/replay 上限，并从原 artifact 汇总 Trace、PSS、Risk、Oracle 和实际成本。
 Agent calls/tokens 单列，不假装 deterministic 也消耗模型额度。默认 etcd/raft authoring input 每个 trial 只运行一个
 episode；重复实验使用独立 trial，而不是把同一 root 上两个完全相同的 Trace 计为覆盖增长。fixture 配对结果中两 arm
-Trace 和测试证据相同，Agent 额外调用模型两次，证明结果格式可以诚实表达负证据。下一步先做真实 OpenRouter public
-preflight，再把同一 trial 单位接入 private candidate/control evaluator。
+Trace 和测试证据相同，Agent 额外调用模型两次，证明结果格式可以诚实表达负证据。真实 OpenRouter public
+preflight 也得到同样的负结果：两 arm 均为 2,443 primary、1,253 replay work、相同 Trace、38 个 Core PSS
+状态、Risk reached 和 0 Oracle violation；Agent 额外使用 2 calls、15,418 tokens。这是单个公开校准样本，不是
+效果或正确性结论。下一步把同一 trial 单位接入 private candidate/control evaluator。
 
 ### A9：多 Agent 消融
 
