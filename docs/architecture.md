@@ -201,7 +201,9 @@ OpenRouter journal、Scenario episode/session core 和 compact summary 已经有
 OmniPaxos 已进入现有多 episode Campaign。Runtime 现在接管 Adapter：初始化和 Replay 失败会自动释放，
 frontier 重建、Scenario 与 qualified execution 在每次临时使用后关闭 Runtime，不再把外部 worker 累积到
 episode 结束。conformance 与两个进程型 qualification 也已使用相同所有权，不再保留目标专用批量回收。
-当前仍需补完整 Bundle 持久化和方法身份，才能将该入口用于正式效果评价。
+completed attempt 现在把完整 ExecutionBundle 放入既有 Campaign artifact；恢复先验证 Bundle，并从其 Core PSS
+样本派生 session 状态并集，不再信任平行键列表。当前仍需补 Risk/Oracle 独立重算、无 SUT 重访恢复和方法身份，
+才能将该入口用于正式效果评价。
 
 ## 6. 规划确定性与执行确定性
 

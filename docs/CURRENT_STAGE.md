@@ -4,7 +4,7 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7H1 A8 前成本与执行资源生命周期完善完成
+阶段：A7H2a 完整 ExecutionBundle 持久化
 
 ## 一句话状态
 
@@ -57,6 +57,8 @@
     Runtime；OmniPaxos episode 不再把所有 worker 累积到 episode 结束。
 23. conformance manifest、raw Adapter case、各 Runtime 与 fresh Replay 也遵循相同所有权；HashiCorp Raft 和
     OmniPaxos qualification 已删除目标专用的批量回收 wrapper。
+24. completed Scenario attempt 直接在现有 Campaign artifact 中保存完整 `ExecutionBundle`；恢复首先执行
+    `Bundle.Validate()`，PSS 状态键与 session 并集从 Bundle 重新派生，不再持久化一份平行键列表。
 
 ## 得到什么
 
@@ -131,6 +133,8 @@
   Adapter 都在对应重建或 Replay 完成后关闭，而不是由目标 wrapper 延迟批量回收。
 - A7H1b 的通用 conformance 回归验证每个 factory Adapter 均被关闭；两套真实外部/进程型 qualification
   测试通过，不再需要目标 wrapper 兜底。
+- A7H2a 的 etcd/raft 与 OmniPaxos 双 episode 回归均通过；退出后仅凭 Campaign attempt artifact 已可检查完整
+  Trace、Replay、qualification、work、PSS、history 和 Bundle digest，并拒绝被修改的 Bundle。
 
 ## 已删除什么
 
@@ -173,6 +177,8 @@ Oracle 和 evaluator 安全边界没有删除。
 - token 统计只包含 provider 最终返回的 usage；无响应尝试是否已在 provider 端产生计费无法从本地确认，
   因此费用解释必须同时报告 `transport_attempts`；
 - 还没有非公开 candidate/control 方法效果实验；
+- attempt artifact 尚未保存完整 Risk/Oracle 结果，恢复目前只能核对其摘要，不能独立重跑 target-local
+  projector/monitor；resume 入口也仍会先准备目标输入，A7H2b 需要消除这两项 SUT 重访依赖；
 - 还没有同预算多 Agent 消融；
 - 还没有证明 PSS/义务能预测隐藏根因检出；
 - 普通测试不读取 key，也不调用外部模型。

@@ -18,8 +18,8 @@ import (
 // committed by a Campaign attempt. The PSS keys come only from the qualified
 // execution bundle and are never returned to a later planning episode.
 type scenarioSessionEpisodeArtifact struct {
-	Episode          scenarioCalibrationSummary `json:"episode"`
-	CorePSSStateKeys []string                   `json:"core_pss_state_keys,omitempty"`
+	Episode scenarioCalibrationSummary         `json:"episode"`
+	Bundle  *controlexperiment.ExecutionBundle `json:"execution_bundle,omitempty"`
 }
 
 // scenarioSessionSummary is rebuilt from committed attempt artifacts. The
@@ -144,15 +144,8 @@ func newScenarioSessionEpisodeArtifact(
 		Episode: summarizeScenarioCalibration(classification, client, result),
 	}
 	if result.Testing != nil {
-		seen := make(map[string]bool, result.Testing.UniqueCorePSSStates)
-		for _, sample := range result.Testing.Bundle.CorePSS {
-			seen[sample.Key] = true
-		}
-		artifact.CorePSSStateKeys = make([]string, 0, len(seen))
-		for key := range seen {
-			artifact.CorePSSStateKeys = append(artifact.CorePSSStateKeys, key)
-		}
-		sort.Strings(artifact.CorePSSStateKeys)
+		bundle := result.Testing.Bundle
+		artifact.Bundle = &bundle
 	}
 	if err := artifact.validate(classification); err != nil {
 		return scenarioSessionEpisodeArtifact{}, err
@@ -172,8 +165,13 @@ func (artifact scenarioSessionEpisodeArtifact) validate(classification string) e
 	}
 	switch episode.AgentStatus {
 	case controlexperiment.ScenarioAgentCompleted:
-		if episode.Testing == nil || episode.FinalPlan == nil || !episode.Testing.ReplayStable ||
-			episode.Testing.UniqueCorePSSStates != len(artifact.CorePSSStateKeys) ||
+		keys, bundleErr := scenarioBundleStateKeys(artifact.Bundle)
+		if bundleErr != nil || episode.Testing == nil || episode.FinalPlan == nil ||
+			episode.Testing.TraceDigest != artifact.Bundle.Trace.Digest ||
+			episode.Testing.BundleDigest != artifact.Bundle.Digest ||
+			episode.Testing.ReplayStable != artifact.Bundle.Run.Replay.Stable ||
+			episode.Testing.CorePSSSamples != len(artifact.Bundle.CorePSS) ||
+			episode.Testing.UniqueCorePSSStates != len(keys) || !episode.Testing.ReplayStable ||
 			episode.Testing.CorePSSSamples < episode.Testing.UniqueCorePSSStates ||
 			episode.Testing.OracleViolations < 0 ||
 			(episode.Testing.Outcome != scenarioTestingPassed &&
@@ -183,19 +181,35 @@ func (artifact scenarioSessionEpisodeArtifact) validate(classification string) e
 			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 		}
 	case controlexperiment.ScenarioAgentStopped:
-		if episode.Testing != nil || episode.FinalPlan != nil || len(artifact.CorePSSStateKeys) != 0 {
+		if episode.Testing != nil || episode.FinalPlan != nil || artifact.Bundle != nil {
 			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 		}
 	default:
 		return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 	}
-	for index, key := range artifact.CorePSSStateKeys {
+	return nil
+}
+
+func scenarioBundleStateKeys(bundle *controlexperiment.ExecutionBundle) ([]string, error) {
+	if bundle == nil || bundle.Validate() != nil {
+		return nil, errors.New("SCENARIO_SESSION_BUNDLE_INVALID")
+	}
+	seen := make(map[string]bool, len(bundle.CorePSS))
+	for _, sample := range bundle.CorePSS {
+		seen[sample.Key] = true
+	}
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for index, key := range keys {
 		decoded, err := hex.DecodeString(key)
-		if err != nil || len(decoded) != 32 || index > 0 && artifact.CorePSSStateKeys[index-1] >= key {
-			return errors.New("SCENARIO_SESSION_PSS_KEYS_INVALID")
+		if err != nil || len(decoded) != 32 || index > 0 && keys[index-1] >= key {
+			return nil, errors.New("SCENARIO_SESSION_PSS_KEYS_INVALID")
 		}
 	}
-	return nil
+	return keys, nil
 }
 
 func summarizeScenarioSession(
@@ -243,7 +257,11 @@ func summarizeScenarioSession(
 		}
 		summary.CorePSSSamples += testing.CorePSSSamples
 		summary.OracleViolations += testing.OracleViolations
-		for _, key := range artifact.CorePSSStateKeys {
+		keys, err := scenarioBundleStateKeys(artifact.Bundle)
+		if err != nil {
+			return scenarioSessionSummary{}, err
+		}
+		for _, key := range keys {
 			states[key] = true
 		}
 		if betterScenarioSessionRisk(summary, ordinal, testing) {

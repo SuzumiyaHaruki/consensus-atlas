@@ -132,10 +132,20 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 	var first etcdraftScenarioSessionEpisodeArtifact
 	if err := json.Unmarshal(firstBytes, &first); err != nil ||
 		first.validate(etcdraftScenarioCalibrationClass) != nil ||
-		first.Episode.Testing == nil ||
-		summary.CorePSSSamples != 2*first.Episode.Testing.CorePSSSamples ||
-		!reflect.DeepEqual(summary.CorePSSStateKeys, first.CorePSSStateKeys) {
+		first.Episode.Testing == nil || first.Bundle == nil || first.Bundle.Validate() != nil ||
+		summary.CorePSSSamples != 2*first.Episode.Testing.CorePSSSamples {
 		t.Fatalf("session PSS union was summed or cannot be audited: %#v/%v", first, err)
+	}
+	firstKeys, err := scenarioBundleStateKeys(first.Bundle)
+	if err != nil || !reflect.DeepEqual(summary.CorePSSStateKeys, firstKeys) {
+		t.Fatalf("session PSS union cannot be derived from persisted Bundle: %#v/%v", firstKeys, err)
+	}
+	tampered := first
+	bundle := *first.Bundle
+	bundle.Digest = ""
+	tampered.Bundle = &bundle
+	if tampered.validate(etcdraftScenarioCalibrationClass) == nil {
+		t.Fatal("session artifact accepted a tampered persisted Bundle")
 	}
 	options.Resume = true
 	options.ReadKey = func(string) (string, error) {
