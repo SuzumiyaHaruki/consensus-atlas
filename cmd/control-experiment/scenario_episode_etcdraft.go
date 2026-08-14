@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
@@ -26,26 +28,54 @@ func runEtcdraftScenarioAgentEpisode(
 	maxDecisions int,
 	activateKey func() error,
 ) (etcdraftScenarioEpisodeResult, error) {
-	projector := etcdraftSemanticPrefixProjector{}
-	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
+	result, err := runScenarioAgentEpisodeCore(ctx, etcdraftScenarioCoreInputs(inputs),
+		journal, maxCalls, maxPlanSteps, maxDecisions, activateKey)
+	if err != nil {
+		return result, err
 	}
-	result, err := runScenarioAgentEpisodeCore(ctx, scenarioEpisodeCoreInputs{
+	return finishEtcdraftScenarioEpisode(ctx, inputs, result)
+}
+
+func runEtcdraftDeterministicScenarioEpisode(
+	ctx context.Context,
+	inputs etcdraftSemanticCalibrationInputs,
+) (etcdraftScenarioEpisodeResult, error) {
+	result, err := runScenarioEpisodeCore(
+		ctx, etcdraftScenarioCoreInputs(inputs), inputs.experiment.ScenarioMaxCalls,
+		inputs.experiment.ScenarioMaxSteps, inputs.experiment.ScenarioMaxDecisions,
+		etcdraftDeterministicScenarioPlanner,
+	)
+	if err != nil {
+		return result, err
+	}
+	return finishEtcdraftScenarioEpisode(ctx, inputs, result)
+}
+
+func etcdraftScenarioCoreInputs(inputs etcdraftSemanticCalibrationInputs) scenarioEpisodeCoreInputs {
+	projector := etcdraftSemanticPrefixProjector{}
+	return scenarioEpisodeCoreInputs{
 		RootID: "invoked-scenario", Knowledge: inputs.knowledge, Hypothesis: inputs.hypothesis,
 		RiskSpec: inputs.riskSpec, Root: inputs.root, Runtime: inputs.experiment.Runtime,
 		FaultEnvelope:    inputs.experiment.faultEnvelope(),
 		SemanticExposure: inputs.experiment.ScenarioSemanticExposure,
-		NewAdapter:       factory, RiskProjector: projector,
+		NewAdapter: func() (control.Adapter, error) {
+			return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
+		},
+		RiskProjector: projector,
 		SemanticProjector: func(trace controlruntime.Trace, frontier controlexperiment.RiskFrontierView,
 			snapshot controlruntime.Snapshot) (controlexperiment.ScenarioSemanticExposure, error) {
 			return projectEtcdraftScenarioSemantics(
 				inputs.experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
 			)
 		},
-	}, journal, maxCalls, maxPlanSteps, maxDecisions, activateKey)
-	if err != nil {
-		return result, err
 	}
+}
+
+func finishEtcdraftScenarioEpisode(
+	ctx context.Context,
+	inputs etcdraftSemanticCalibrationInputs,
+	result etcdraftScenarioEpisodeResult,
+) (etcdraftScenarioEpisodeResult, error) {
 	if result.Agent.Status == controlexperiment.ScenarioAgentCompleted {
 		testing, err := executeEtcdraftScenarioQualified(ctx, inputs, *result.Agent.Execution)
 		if err != nil {
@@ -54,6 +84,72 @@ func runEtcdraftScenarioAgentEpisode(
 		result.Testing = &testing
 	}
 	return result, nil
+}
+
+func etcdraftDeterministicScenarioPlanner(
+	_ context.Context,
+	view controlexperiment.ScenarioAgentView,
+) ([]byte, controlexperiment.ModelWork, error) {
+	if view.Semantics.Mode != controlexperiment.ScenarioSemanticExposureFull ||
+		view.Semantics.Validate(view.Frontier) != nil {
+		return nil, controlexperiment.ModelWork{}, errors.New("ETCDRAFT_A8_BASELINE_SEMANTICS_INVALID")
+	}
+	wanted := control.ActionCrash
+	oldCoordinator := control.NodeID("")
+	switch view.Frontier.Progress.FirstMissingMilestone {
+	case raftfamily.MilestoneCoordinatorChangedInflight:
+	case raftfamily.MilestoneOldCoordinatorRestarted:
+		wanted = control.ActionRestart
+		if view.Prior == nil {
+			return nil, controlexperiment.ModelWork{}, errors.New("ETCDRAFT_A8_BASELINE_PRIOR_REQUIRED")
+		}
+		for _, step := range view.Prior.Steps {
+			if step.Choice != nil && step.Choice.Action.Kind == control.ActionCrash {
+				oldCoordinator = step.Choice.Action.Node.Node
+				break
+			}
+		}
+		if oldCoordinator == "" {
+			return nil, controlexperiment.ModelWork{}, errors.New("ETCDRAFT_A8_BASELINE_PRIOR_INVALID")
+		}
+	default:
+		return nil, controlexperiment.ModelWork{}, errors.New("ETCDRAFT_A8_BASELINE_RISK_UNSUPPORTED")
+	}
+	selected := -1
+	for index, action := range view.Frontier.Actions {
+		if action.Kind != wanted || wanted == control.ActionRestart && action.Node.Node != oldCoordinator {
+			continue
+		}
+		if wanted == control.ActionCrash {
+			hint := view.Semantics.ActionHints[index]
+			if hint.ActorRole != controlexperiment.ConsensusActorLeader ||
+				hint.OperationState != controlexperiment.ConsensusOperationInflight {
+				continue
+			}
+		}
+		if selected >= 0 {
+			return nil, controlexperiment.ModelWork{}, errors.New("ETCDRAFT_A8_BASELINE_ACTION_AMBIGUOUS")
+		}
+		selected = index
+	}
+	if selected < 0 {
+		return nil, controlexperiment.ModelWork{}, errors.New("ETCDRAFT_A8_BASELINE_ACTION_MISSING")
+	}
+	ordinal := 1
+	if view.Prior != nil {
+		ordinal = view.Prior.Attempt + 1
+	}
+	plan := controlexperiment.ScenarioPlan{
+		ID: fmt.Sprintf("etcdraft-a8-baseline-plan-%d", ordinal),
+		Steps: []controlexperiment.ScenarioStep{{
+			ID: fmt.Sprintf("etcdraft-a8-baseline-step-%d", ordinal),
+			Selector: controlexperiment.FrontierActionSelector{
+				ActionID: view.Frontier.Actions[selected].ActionID,
+			},
+		}},
+	}
+	encoded, err := json.Marshal(plan)
+	return encoded, controlexperiment.ModelWork{}, err
 }
 
 func executeEtcdraftScenarioQualified(

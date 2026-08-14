@@ -39,7 +39,52 @@ func runScenarioAgentEpisodeCore(
 	maxDecisions int,
 	activateKey func() error,
 ) (scenarioAgentEpisodeResult, error) {
-	if journal == nil || journal.core == nil || inputs.RootID == "" ||
+	if journal == nil || journal.core == nil || activateKey == nil ||
+		journal.SetRoot(inputs.RootID) != nil {
+		return scenarioAgentEpisodeResult{}, errors.New("SCENARIO_EPISODE_INPUT_INVALID")
+	}
+	result, runErr := runScenarioEpisodeCore(
+		ctx, inputs, maxCalls, maxPlanSteps, maxDecisions,
+		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
+			[]byte, controlexperiment.ModelWork, error,
+		) {
+			content, work, callErr := journal.Planner(ctx, inputs.RiskSpec, view)
+			if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
+				return content, work, callErr
+			}
+			if err := activateKey(); err != nil {
+				return nil, work, err
+			}
+			return journal.Planner(ctx, inputs.RiskSpec, view)
+		},
+	)
+	audits, auditErr := journal.Audits()
+	result.ProviderCalls = audits
+	if auditErr != nil {
+		return result, auditErr
+	}
+	if runErr != nil {
+		return result, runErr
+	}
+	if len(audits) != len(result.Agent.Attempts) {
+		return scenarioAgentEpisodeResult{}, errors.New("SCENARIO_EPISODE_AUDIT_INVALID")
+	}
+	return result, nil
+}
+
+// runScenarioEpisodeCore is the shared trusted execution substrate for A8.
+// A planner supplies only ScenarioPlan JSON and model accounting; frontier
+// reconstruction, concretization, natural progress, Replay and qualification
+// remain identical for deterministic and provider-backed planners.
+func runScenarioEpisodeCore(
+	ctx context.Context,
+	inputs scenarioEpisodeCoreInputs,
+	maxCalls int,
+	maxPlanSteps int,
+	maxDecisions int,
+	planner controlexperiment.ScenarioPlanner,
+) (scenarioAgentEpisodeResult, error) {
+	if inputs.RootID == "" ||
 		inputs.Knowledge.Validate() != nil || inputs.RiskSpec.Validate() != nil ||
 		inputs.Hypothesis.Validate(
 			inputs.Knowledge, inputs.RiskSpec, controlexperiment.ScenarioPlanningBackendID,
@@ -48,7 +93,7 @@ func runScenarioAgentEpisodeCore(
 		maxCalls <= 0 || maxCalls > controlexperiment.ScenarioAgentMaxCalls ||
 		maxPlanSteps <= 0 || maxPlanSteps > controlexperiment.ScenarioPlanMaxSteps ||
 		maxDecisions <= 0 || maxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
-		activateKey == nil || journal.SetRoot(inputs.RootID) != nil {
+		planner == nil {
 		return scenarioAgentEpisodeResult{}, errors.New("SCENARIO_EPISODE_INPUT_INVALID")
 	}
 	rootRisk, err := inputs.RiskProjector.Project(
@@ -73,32 +118,13 @@ func runScenarioAgentEpisodeCore(
 		ctx, maxCalls, maxPlanSteps, maxDecisions,
 		inputs.Knowledge, inputs.Hypothesis, inputs.RiskSpec, frontier, semantics,
 		rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.NewAdapter,
-		inputs.RiskProjector, inputs.SemanticProjector,
-		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
-			[]byte, controlexperiment.ModelWork, error,
-		) {
-			content, work, callErr := journal.Planner(ctx, inputs.RiskSpec, view)
-			if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
-				return content, work, callErr
-			}
-			if err := activateKey(); err != nil {
-				return nil, work, err
-			}
-			return journal.Planner(ctx, inputs.RiskSpec, view)
-		},
+		inputs.RiskProjector, inputs.SemanticProjector, planner,
 	)
-	audits, auditErr := journal.Audits()
 	result := scenarioAgentEpisodeResult{
-		Agent: agent, ProviderCalls: audits, FrontierWork: frontierWork,
-	}
-	if auditErr != nil {
-		return result, auditErr
+		Agent: agent, FrontierWork: frontierWork,
 	}
 	if err != nil {
 		return result, err
-	}
-	if len(audits) != len(agent.Attempts) {
-		return scenarioAgentEpisodeResult{}, errors.New("SCENARIO_EPISODE_AUDIT_INVALID")
 	}
 	return result, nil
 }

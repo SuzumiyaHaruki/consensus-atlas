@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8 前架构收敛与减负
+阶段：A8a 同执行底座效果对照
 
 ## 一句话状态
 
-ConsensusAtlas 已让 etcd/raft 与 OmniPaxos 复用同一受限 Scenario Agent、确定性 Runtime、Campaign、Replay、
-PSS/Risk 和 Oracle 闭环；当前代码路径已经收敛，下一步是设计并执行 A8 方法效果实验。
+ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 现在可以复用同一 root、Frontier、
+自然推进、qualified executor、Replay 和 Oracle；下一步把两者接入同预算 trial runner，再进入非公开配对实验。
 
 ## 输入什么
 
@@ -98,10 +98,30 @@ Qualification 或 `cmd/control-experiment` 边界。
 - OmniPaxos 已用同一 Campaign coordinator 完成两个 qualified episode，Risk reached、fresh Replay stable、
   Oracle 0 violation，并在终止恢复时不重访 worker/provider/key；
 - 真实 OpenRouter 校准证明 bounded retry、structured output、调用计费和 durable recovery 可用；
+- 2026-08-14 的 A8 入口预跑使用 `deepseek/deepseek-v4-flash` 完成两个 episode：4 次模型调用、30,772 tokens、
+  Replay 全部稳定、Risk reached、Oracle 0 violation；但两个 episode 的 Trace 与 38 个 PSS 状态完全相同，
+  因而它是可用性证据和重复性负证据，不是 Agent 效果证据；
 - 两协议的 artifact 都保存完整 Bundle/Risk/Oracle，并能拒绝篡改；
 - deterministic canonical/uniform stateless Campaign 和 Semantic Explorer 仍可作为 A8 对照方法。
 
 这些结果只证明闭环和证据边界可用，不证明 Agent 比 baseline 更有效，也不证明目标协议正确。
+
+## A8a：同执行底座对照
+
+原 stateless DFS 会在生成 PSS 汇总后丢弃完整 Bundle，而且它的遍历单位与 Scenario Agent 的单步干预加自然推进
+不同。直接比较两者会把搜索底座差异误记为 Agent 效果，也不能为每个 Scenario 产出同形的 Replay/Oracle 证据。
+
+A8a 因此没有新增另一套 Runtime、schema、hash、gate 或评分公式，而是：
+
+- 把 Scenario episode core 与 OpenRouter journal 解耦，planner 只提供 ScenarioPlan JSON 和模型成本；
+- 增加 target-local 的确定性 etcd/raft planner；
+- 该 planner 机械选择 `crash current coordinator`，经过相同可信 natural-progress closure 后选择
+  `restart old coordinator`；
+- 两种 planner 最终进入同一 `executeEtcdraftScenarioQualified`，得到同形 Bundle、Risk、PSS、Replay 和 Oracle；
+- 集成测试证明确定性路径不访问 provider、模型成本为 0，并达到相同三个 Risk milestones。
+
+增加该对照是为了解决“异构方法输出无法归因”的具体失败，不把它称为效果结果。当前尚未增加实验 CLI，
+也没有用公开 etcd/raft 校准宣称方法优劣。
 
 ## 本轮减负结果
 
@@ -116,21 +136,22 @@ Qualification 或 `cmd/control-experiment` 边界。
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模：
+当前 Go 规模（包含 A8a）：
 
-- 生产代码：32,823 行；
-- 测试代码：15,016 行；
-- 合计：47,839 行。
+- 生产代码：32,945 行；
+- 测试代码：15,048 行；
+- 合计：47,993 行。
 
-相对本轮开始净减少 647 行 Go；CLI 主入口的最高圈复杂度热点已经消除。测试仍占约 31%，这是确定性执行、
-恢复和反例验证的主要可信边界，不进行比例式删除。
+A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
+消除。测试约占 31%，这是确定性执行、恢复和反例验证的主要可信边界，不进行比例式删除。
 
 ## 当前边界
 
 尚未完成：
 
 - 非公开 candidate/control 正式效果实验；
-- deterministic baseline、单 Agent、双角色 Agent 的同预算比较；
+- deterministic Scenario 对照与单 Agent 的同预算 trial runner；
+- A9 的双角色 Agent 消融；
 - 多次重复实验与置信区间；
 - fixed Profile obligation coverage 接入当前 Session 汇总；
 - PSS/义务指标与隐藏根因检出的相关性验证；
@@ -150,12 +171,13 @@ A8 先形成一个最小、可预注册的配对实验：
 
 1. 准备非公开 candidate/control pair，并保持 Planner 输入对身份与 verdict 盲化；
 2. 固定模型、总 model calls/tokens、primary/replay work、wall clock 与 semantic exposure；
-3. 比较 deterministic baseline、单 Agent 和双角色 Agent；
+3. A8 先比较同底座 deterministic Scenario 与单 Scenario Agent；双角色 Agent 留在 A9；
 4. 主要指标为独立根因检出、正确 control false positive 与有效 trial 数；
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
+下一小步只接同预算 trial runner 和紧凑结果表。在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的
+评分公式。
 
 ## 当前验证
 
@@ -165,6 +187,7 @@ A8 先形成一个最小、可预注册的配对实验：
 - `go vet ./...`；
 - etcd/raft Adapter 全包；
 - etcd/raft 与 OmniPaxos 双 episode Session；
+- etcd/raft deterministic/Agent 共用 Scenario core 与 qualified testing 的集成测试；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

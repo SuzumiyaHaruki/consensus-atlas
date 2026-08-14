@@ -609,8 +609,15 @@ Session、qualified executor、Replay、Oracle、Defect Benchmark 和正式校�
 
 ### A8：效果评测
 
-准备非公开 candidate/control，比较 deterministic baseline、单 Explorer 和多 Agent。预注册重复次数、预算、
-exposure 和主要指标；PSS/义务只解释结果，不代替 finding。
+先比较同执行底座的 deterministic Scenario 与单 Scenario Agent，再准备非公开 candidate/control。两种方法必须
+复用同一 root、Frontier、natural-progress policy、qualified executor、Replay、Oracle 和执行预算；模型调用与
+token 作为 Agent 额外成本单列。预注册重复次数、预算、exposure 和主要指标；PSS/义务只解释结果，不代替 finding。
+
+A8a 已把 Scenario episode core 与 OpenRouter journal 解耦，并增加 target-local 的 etcd/raft 确定性 planner。
+它机械选择 `crash current coordinator -> trusted natural progress -> restart old coordinator`，最终与 Agent 进入
+同一 qualified testing。这样解决旧 stateless DFS 丢弃完整 Bundle且执行单位不同、无法把结果差异归因给 Agent
+的具体问题；Git、类型和普通测试只能验证两条旧路径各自有效，不能生成同形的 Replay/Oracle 证据。本节没有新增
+Runtime、Action、schema、hash、gate 或评分公式。下一步是把两种 planner 接入同预算 trial runner 和紧凑结果表。
 
 ### A9：多 Agent 消融
 

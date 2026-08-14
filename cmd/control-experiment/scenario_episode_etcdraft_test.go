@@ -13,6 +13,7 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 func TestScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *testing.T) {
@@ -117,6 +118,37 @@ func TestScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *testing
 		replayed.Testing.Bundle.Digest != result.Testing.Bundle.Digest || providerCalls != 2 {
 		t.Fatalf("recovered scenario calls changed execution or contacted provider: %#v calls=%d err=%v",
 			replayed, providerCalls, err)
+	}
+}
+
+func TestDeterministicScenarioUsesAgentExecutionSubstrateWithoutModelWork(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+	inputs, err := prepareEtcdraftSemanticCalibration(
+		ctx, etcdraftTestRootCorpusPath, etcdraftScenarioTestSemanticInput(t, 2, 32),
+		fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runEtcdraftDeterministicScenarioEpisode(ctx, inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Agent.Status != controlexperiment.ScenarioAgentCompleted ||
+		len(result.Agent.Attempts) != 2 || result.Agent.Execution == nil || result.Testing == nil ||
+		len(result.ProviderCalls) != 0 || result.Agent.ModelWork != (controlexperiment.ModelWork{}) ||
+		len(result.Agent.Attempts[0].Feedback.Steps) != 1 ||
+		result.Agent.Attempts[0].Feedback.Steps[0].Choice == nil ||
+		result.Agent.Attempts[0].Feedback.Steps[0].Choice.Action.Kind != control.ActionCrash ||
+		len(result.Agent.Attempts[0].Feedback.NaturalProgress) == 0 ||
+		len(result.Agent.Attempts[1].Feedback.Steps) != 1 ||
+		result.Agent.Attempts[1].Feedback.Steps[0].Choice == nil ||
+		result.Agent.Attempts[1].Feedback.Steps[0].Choice.Action.Kind != control.ActionRestart ||
+		result.Testing.Risk.Status != semantic.RiskWitnessReached || !result.Testing.Replay.Stable ||
+		len(result.Testing.Oracle.Violations) != 0 ||
+		result.Testing.Bundle.Trace.Digest != result.Agent.Execution.FinalTrace.Digest {
+		t.Fatalf("deterministic Scenario did not produce comparable qualified evidence: %#v", result)
 	}
 }
 
