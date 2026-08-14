@@ -4,13 +4,14 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8b 同预算配对 trial runner
+阶段：A8c evaluator 侧 paired Campaign evidence
 
 ## 一句话状态
 
 ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
 共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；真实 OpenRouter 公开预跑已经完成，
-下一步把相同执行单位接到非公开 candidate/control。
+evaluator 已能从该执行单位恢复两 arm 的 Bundle 和完整 Campaign 成本；下一步解决非公开
+candidate/control 不能直接复用官方 SUT root corpus 的身份绑定。
 
 ## 输入什么
 
@@ -151,6 +152,26 @@ client，并用 Session/A8 回归测试确认 artifact 中实际 retry 上限为
 默认 etcd/raft authoring input 已从两个 episode 改为每 trial 一个 episode。多 episode coordinator 与恢复能力继续由
 显式测试覆盖；真实 A8 重复通过独立 trial 目录组织，避免同一 root 的重复 Trace 被算作独立状态发现。
 
+## A8c：evaluator 侧 paired Campaign evidence
+
+`cmd/defect-eval` 现在能读取一个 paired trial 下的 `deterministic/` 与 `agent/` Campaign，并保留：
+
+- 各 arm 的完整 `ExecutionBundle`；
+- Campaign config/checkpoint 与 primary/replay/model 总成本；
+- planner 身份、target identity、terminal outcome 和 artifact 链接。
+
+读取器机械拒绝不同 SUT identity、不同 execution budget、未终止 Campaign、非 stable artifact 布局和
+不合理的模型成本。它没有把 deterministic 当作 control、也没有把 Agent 当作 candidate：前者是
+方法轴，后者是 SUT 版本轴。
+
+这个分离很重要：真实 A8b 中每 arm 的 Campaign 成本为 2,443/1,253，而嵌套 Bundle 的局部执行成本
+只有 56/56。直接把 Bundle 交给旧 `FreshBundleEvidence` 会漏记 root 构建、frontier 重建和规划成本。
+
+当前还不能运行真实 private pair：`root-corpus.json` 精确绑定官方 SUT 的 Manifest、source Bundle 和
+Trace，candidate binary 会在规划前被拒绝。下一小步应当使可信 evaluator 对每个 opaque SUT 用相同的
+root 选择规则构建 fresh source/root，两种 planner 再共享该 SUT 的同一 root。不能忽略 identity 校验，也不能
+把官方 root digest 强行应用到 candidate。
+
 ## 本轮减负结果
 
 本轮已完成：
@@ -164,11 +185,11 @@ client，并用 Session/A8 回归测试确认 artifact 中实际 retry 上限为
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8b）：
+当前 Go 规模（包含 A8c）：
 
-- 生产代码：33,287 行；
-- 测试代码：15,135 行；
-- 合计：48,422 行。
+- 生产代码：33,413 行；
+- 测试代码：15,235 行；
+- 合计：48,648 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
@@ -205,8 +226,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步定义 paired trial 到现有 private evaluator 的最小衔接。在预注册前不增加第三 Agent、通用 DSL、新 PSS
-维度或新的评分公式。
+下一小步实现 per-SUT fresh root，再把 paired evidence 交给现有 private candidate/control monitor 评测。
+在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
 
 ## 当前验证
 
@@ -218,6 +239,7 @@ A8 先形成一个最小、可预注册的配对实验：
 - etcd/raft 与 OmniPaxos 双 episode Session；
 - etcd/raft deterministic/Agent 共用 Scenario core 与 qualified testing 的集成测试；
 - A8 单 episode paired runner 的同预算、同 Trace 和无 provider/key 恢复测试；
+- evaluator 侧 paired Campaign 恢复、完整成本保留和 SUT identity 错配拒绝；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

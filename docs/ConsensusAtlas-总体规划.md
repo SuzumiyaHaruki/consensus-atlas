@@ -628,6 +628,16 @@ preflight 也得到同样的负结果：两 arm 均为 2,443 primary、1,253 rep
 状态、Risk reached 和 0 Oracle violation；Agent 额外使用 2 calls、15,418 tokens。这是单个公开校准样本，不是
 效果或正确性结论。下一步把同一 trial 单位接入 private candidate/control evaluator。
 
+A8c 先完成 evaluator 侧的最小 evidence reader：它从一个 opaque trial 的 deterministic/agent 两个已提交
+Campaign 中恢复完整 Bundle、Campaign config/checkpoint 与 primary/replay/model 总成本，并要求两 arm 共享
+SUT identity 和 execution budget。这不把方法轴误作 SUT 版本轴。必须保留 Campaign 成本：真实预跑中
+它为 2,443/1,253，而嵌套 Bundle 只有 56/56，直接复用旧 Bundle evaluator 会严重低估方法成本。
+
+下一个阻塞不在 monitor：当前 `root-corpus.json` 精确绑定官方 SUT 的 Manifest/source Bundle/Trace，
+candidate binary 会在 Agent 规划前被拒绝。private evaluator 必须对每个 opaque SUT 用相同 root 选择规则生成
+fresh source/root，然后让两 planner 共享该 SUT 内的同一 root；不放宽 identity 校验，不把官方 digest 强套给
+candidate。本阶段没有新增 schema、hash、gate 或评分公式。
+
 ### A9：多 Agent 消融
 
 在单 Agent 闭环稳定后比较单 Agent、双角色和三角色，并保持模型、总 token、调用次数和 Runtime work 一致。
