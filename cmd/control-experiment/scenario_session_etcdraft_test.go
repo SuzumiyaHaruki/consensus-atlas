@@ -131,21 +131,38 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 	}
 	var first etcdraftScenarioSessionEpisodeArtifact
 	if err := json.Unmarshal(firstBytes, &first); err != nil ||
-		first.validate(etcdraftScenarioCalibrationClass) != nil ||
-		first.Episode.Testing == nil || first.Bundle == nil || first.Bundle.Validate() != nil ||
+		first.validate(etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting) != nil ||
+		first.Episode.Testing == nil || first.Testing == nil || first.Testing.Bundle.Validate() != nil ||
 		summary.CorePSSSamples != 2*first.Episode.Testing.CorePSSSamples {
 		t.Fatalf("session PSS union was summed or cannot be audited: %#v/%v", first, err)
 	}
-	firstKeys, err := scenarioBundleStateKeys(first.Bundle)
+	firstKeys, err := scenarioBundleStateKeys(&first.Testing.Bundle)
 	if err != nil || !reflect.DeepEqual(summary.CorePSSStateKeys, firstKeys) {
 		t.Fatalf("session PSS union cannot be derived from persisted Bundle: %#v/%v", firstKeys, err)
 	}
 	tampered := first
-	bundle := *first.Bundle
+	testing := *first.Testing
+	bundle := testing.Bundle
 	bundle.Digest = ""
-	tampered.Bundle = &bundle
-	if tampered.validate(etcdraftScenarioCalibrationClass) == nil {
+	testing.Bundle = bundle
+	tampered.Testing = &testing
+	if tampered.validate(etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting) == nil {
 		t.Fatal("session artifact accepted a tampered persisted Bundle")
+	}
+	tampered = first
+	testing = *first.Testing
+	testing.Risk.Digest = ""
+	tampered.Testing = &testing
+	if tampered.validate(etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting) == nil {
+		t.Fatal("session artifact accepted a tampered persisted Risk result")
+	}
+	tampered = first
+	testing = *first.Testing
+	testing.Oracle.Checked = append([]string(nil), testing.Oracle.Checked...)
+	testing.Oracle.Checked[0] = "invented-monitor"
+	tampered.Testing = &testing
+	if tampered.validate(etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting) == nil {
+		t.Fatal("session artifact accepted a tampered persisted Oracle result")
 	}
 	options.Resume = true
 	options.ReadKey = func(string) (string, error) {

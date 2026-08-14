@@ -4,7 +4,7 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7H2a 完整 ExecutionBundle 持久化
+阶段：A7H2b1 Risk/Oracle 独立重算
 
 ## 一句话状态
 
@@ -59,6 +59,8 @@
     OmniPaxos qualification 已删除目标专用的批量回收 wrapper。
 24. completed Scenario attempt 直接在现有 Campaign artifact 中保存完整 `ExecutionBundle`；恢复首先执行
     `Bundle.Validate()`，PSS 状态键与 session 并集从 Bundle 重新派生，不再持久化一份平行键列表。
+25. attempt 同时保存完整 Risk/Oracle 判定；etcd/raft 与 OmniPaxos 各自用现有 projector 和 monitor 从持久化
+    Bundle 重新计算 Risk、Oracle 和 outcome，再与 compact episode summary 核对，全程不执行 SUT。
 
 ## 得到什么
 
@@ -135,6 +137,8 @@
   测试通过，不再需要目标 wrapper 兜底。
 - A7H2a 的 etcd/raft 与 OmniPaxos 双 episode 回归均通过；退出后仅凭 Campaign attempt artifact 已可检查完整
   Trace、Replay、qualification、work、PSS、history 和 Bundle digest，并拒绝被修改的 Bundle。
+- A7H2b1 进一步验证 Bundle、Risk 或 Oracle 任一处被修改都会使恢复失败；两协议正式 session 测试均从完整
+  testing evidence 重新派生 summary，模型和 SUT 不参与判定重算。
 
 ## 已删除什么
 
@@ -177,8 +181,8 @@ Oracle 和 evaluator 安全边界没有删除。
 - token 统计只包含 provider 最终返回的 usage；无响应尝试是否已在 provider 端产生计费无法从本地确认，
   因此费用解释必须同时报告 `transport_attempts`；
 - 还没有非公开 candidate/control 方法效果实验；
-- attempt artifact 尚未保存完整 Risk/Oracle 结果，恢复目前只能核对其摘要，不能独立重跑 target-local
-  projector/monitor；resume 入口也仍会先准备目标输入，A7H2b 需要消除这两项 SUT 重访依赖；
+- resume 入口仍会在读取 Campaign 前准备 root/qualification 等目标输入；虽然 artifact 判定重算不执行 SUT，
+  入口级恢复还不是无 SUT 重访，A7H2b2 需要调整恢复顺序；
 - 还没有同预算多 Agent 消融；
 - 还没有证明 PSS/义务能预测隐藏根因检出；
 - 普通测试不读取 key，也不调用外部模型。

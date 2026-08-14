@@ -10,6 +10,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 )
 
 type etcdraftScenarioEpisodeResult = scenarioAgentEpisodeResult
@@ -107,9 +108,40 @@ func executeEtcdraftScenarioQualified(
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingViolation
 	}
-	return etcdraftScenarioTestingResult{
+	result := etcdraftScenarioTestingResult{
 		PlanID: execution.PlanID, Bundle: bundle, Risk: risk,
 		CorePSSSamples: bundle.Run.CorePSSSamples, UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
 		Replay: bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
-	}, nil
+	}
+	if err := validateEtcdraftScenarioTesting(result); err != nil {
+		return etcdraftScenarioTestingResult{}, err
+	}
+	return result, nil
+}
+
+func validateEtcdraftScenarioTesting(result scenarioTestingResult) error {
+	spec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
+	if err != nil || result.validateExecutionStructure() != nil ||
+		result.Bundle.ValidateProjection(etcdraftv2.DecisionProjector{}) != nil {
+		return errors.New("ETCDRAFT_SCENARIO_TESTING_EXECUTION_INVALID")
+	}
+	risk, err := projectEtcdraftSemanticRisk(
+		result.Risk.ID, spec, result.Bundle.Trace,
+		result.Bundle.ClientHistory, result.Bundle.OperationHistory,
+	)
+	if err != nil || !reflect.DeepEqual(result.Risk, risk) {
+		return errors.New("ETCDRAFT_SCENARIO_TESTING_RISK_INVALID")
+	}
+	verdict := oracle.CheckBundle(
+		result.Bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{},
+		etcdraftLogProgressMonitor{}, etcdraftClientApplicationBindingMonitor{},
+	)
+	outcome := scenarioTestingPassed
+	if len(verdict.Violations) > 0 {
+		outcome = scenarioTestingViolation
+	}
+	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome {
+		return errors.New("ETCDRAFT_SCENARIO_TESTING_ORACLE_INVALID")
+	}
+	return nil
 }

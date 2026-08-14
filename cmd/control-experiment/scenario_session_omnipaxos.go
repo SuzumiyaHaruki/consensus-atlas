@@ -57,7 +57,7 @@ func runOmnipaxosScenarioSession(
 	if recovered.Failure != nil {
 		summary, summaryErr := summarizeScenarioSession(
 			&recovered, inputs.Experiment.ScenarioSemanticExposure,
-			omnipaxosScenarioCalibrationClass,
+			omnipaxosScenarioCalibrationClass, validateOmnipaxosScenarioTesting,
 		)
 		if summaryErr != nil {
 			return scenarioSessionSummary{}, summaryErr
@@ -83,6 +83,7 @@ func runOmnipaxosScenarioSession(
 			Work: func(result scenarioAgentEpisodeResult, _ bool) controlexperiment.WorkLedger {
 				return scenarioSessionWork(result, nil)
 			},
+			ValidateTesting: validateOmnipaxosScenarioTesting,
 		})
 	})
 	coordinator, err := controlexperiment.NewCampaignCoordinator(&recovered, provider)
@@ -92,7 +93,7 @@ func runOmnipaxosScenarioSession(
 	_, runErr := coordinator.Run(ctx)
 	summary, summaryErr := summarizeScenarioSession(
 		&recovered, inputs.Experiment.ScenarioSemanticExposure,
-		omnipaxosScenarioCalibrationClass,
+		omnipaxosScenarioCalibrationClass, validateOmnipaxosScenarioTesting,
 	)
 	if summaryErr != nil {
 		return scenarioSessionSummary{}, summaryErr

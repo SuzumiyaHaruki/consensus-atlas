@@ -588,7 +588,9 @@ Runtime 所有权：`New` 接管 Adapter，失败自动释放，成功后由 `Ru
 manifest、raw case、Runtime 和 Replay 也已使用同一所有权，HashiCorp Raft 与 OmniPaxos qualification 删除了
 目标专用批量回收 wrapper。A7H2a 已把完整 `ExecutionBundle` 直接写入现有 Campaign attempt artifact；
 恢复会执行 `Bundle.Validate()` 并从 Bundle 重新派生 PSS 状态键，不新增 sidecar、文件 hash 或平行 ledger。
-下一小步补 Risk/Oracle 的独立重算与无 SUT 重访恢复。
+A7H2b1 已进一步保存完整 Risk/Oracle，并由两目标现有 projector/monitor 从持久化 Bundle 重算 Risk、Oracle、
+outcome 和 compact summary；Bundle、Risk 或 Oracle 篡改都会被拒绝。下一小步只处理 resume 入口仍先准备 SUT
+输入的问题。
 
 ### A8：效果评测
 

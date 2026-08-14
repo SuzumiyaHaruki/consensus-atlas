@@ -265,10 +265,39 @@ func executeOmnipaxosScenarioQualified(
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingViolation
 	}
-	return scenarioTestingResult{
+	result := scenarioTestingResult{
 		PlanID: execution.PlanID, Bundle: bundle, Risk: risk,
 		CorePSSSamples:      bundle.Run.CorePSSSamples,
 		UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
 		Replay:              bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
-	}, nil
+	}
+	if err := validateOmnipaxosScenarioTesting(result); err != nil {
+		return scenarioTestingResult{}, err
+	}
+	return result, nil
+}
+
+func validateOmnipaxosScenarioTesting(result scenarioTestingResult) error {
+	spec, err := omnipaxosMessageLossWitness()
+	if err != nil || result.validateExecutionStructure() != nil ||
+		result.Bundle.ValidateProjection(omnipaxosv2.DecisionProjector{}) != nil {
+		return errors.New("OMNIPAXOS_SCENARIO_TESTING_EXECUTION_INVALID")
+	}
+	risk, err := (omnipaxosScenarioProjector{}).Project(
+		result.Risk.ID, spec, result.Bundle.Trace,
+	)
+	if err != nil || !reflect.DeepEqual(result.Risk, risk) {
+		return errors.New("OMNIPAXOS_SCENARIO_TESTING_RISK_INVALID")
+	}
+	verdict := oracle.CheckBundle(
+		result.Bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{},
+	)
+	outcome := scenarioTestingPassed
+	if len(verdict.Violations) > 0 {
+		outcome = scenarioTestingViolation
+	}
+	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome {
+		return errors.New("OMNIPAXOS_SCENARIO_TESTING_ORACLE_INVALID")
+	}
+	return nil
 }

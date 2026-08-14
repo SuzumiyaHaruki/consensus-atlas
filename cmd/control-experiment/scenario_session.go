@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -18,9 +19,11 @@ import (
 // committed by a Campaign attempt. The PSS keys come only from the qualified
 // execution bundle and are never returned to a later planning episode.
 type scenarioSessionEpisodeArtifact struct {
-	Episode scenarioCalibrationSummary         `json:"episode"`
-	Bundle  *controlexperiment.ExecutionBundle `json:"execution_bundle,omitempty"`
+	Episode scenarioCalibrationSummary `json:"episode"`
+	Testing *scenarioTestingResult     `json:"testing_evidence,omitempty"`
 }
+
+type scenarioTestingRevalidator func(scenarioTestingResult) error
 
 // scenarioSessionSummary is rebuilt from committed attempt artifacts. The
 // Campaign recovery ledger remains the source of truth.
@@ -55,6 +58,7 @@ type scenarioSessionAttemptOptions struct {
 	ScenarioMaxCalls     int
 	Run                  func(context.Context, *scenarioAgentCallJournal, int, func() error) (scenarioAgentEpisodeResult, error)
 	Work                 func(scenarioAgentEpisodeResult, bool) controlexperiment.WorkLedger
+	ValidateTesting      scenarioTestingRevalidator
 }
 
 func executeScenarioSessionAttempt(
@@ -68,7 +72,8 @@ func executeScenarioSessionAttempt(
 		request.ExperimentSpecDigest != options.ExperimentSpecDigest ||
 		options.Directory == "" || options.Sidecar == "" || options.Classification == "" ||
 		options.Client.HTTP == nil || !validateAgentKeyFileName(options.AgentKeyFile) ||
-		options.ReadKey == nil || options.ScenarioMaxCalls <= 0 || options.Run == nil || options.Work == nil {
+		options.ReadKey == nil || options.ScenarioMaxCalls <= 0 || options.Run == nil || options.Work == nil ||
+		options.ValidateTesting == nil {
 		return controlexperiment.CampaignAttemptResult{}, errors.New("SCENARIO_SESSION_REQUEST_INVALID")
 	}
 	providerDirectory, err := controlexperiment.CampaignAttemptSidecarDirectory(
@@ -119,7 +124,7 @@ func executeScenarioSessionAttempt(
 		}, err
 	}
 	artifactValue, err := newScenarioSessionEpisodeArtifact(
-		options.Classification, options.Client, result,
+		options.Classification, options.Client, result, options.ValidateTesting,
 	)
 	if err != nil {
 		return controlexperiment.CampaignAttemptResult{}, err
@@ -139,23 +144,27 @@ func newScenarioSessionEpisodeArtifact(
 	classification string,
 	client openRouterIntentClient,
 	result scenarioAgentEpisodeResult,
+	revalidate scenarioTestingRevalidator,
 ) (scenarioSessionEpisodeArtifact, error) {
 	artifact := scenarioSessionEpisodeArtifact{
 		Episode: summarizeScenarioCalibration(classification, client, result),
 	}
 	if result.Testing != nil {
-		bundle := result.Testing.Bundle
-		artifact.Bundle = &bundle
+		testing := *result.Testing
+		artifact.Testing = &testing
 	}
-	if err := artifact.validate(classification); err != nil {
+	if err := artifact.validate(classification, revalidate); err != nil {
 		return scenarioSessionEpisodeArtifact{}, err
 	}
 	return artifact, nil
 }
 
-func (artifact scenarioSessionEpisodeArtifact) validate(classification string) error {
+func (artifact scenarioSessionEpisodeArtifact) validate(
+	classification string,
+	revalidate scenarioTestingRevalidator,
+) error {
 	episode := artifact.Episode
-	if classification == "" || episode.Classification != classification ||
+	if classification == "" || revalidate == nil || episode.Classification != classification ||
 		len(episode.Feedback) != episode.Attempts || len(episode.ProviderCalls) != episode.Attempts {
 		return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 	}
@@ -165,13 +174,21 @@ func (artifact scenarioSessionEpisodeArtifact) validate(classification string) e
 	}
 	switch episode.AgentStatus {
 	case controlexperiment.ScenarioAgentCompleted:
-		keys, bundleErr := scenarioBundleStateKeys(artifact.Bundle)
+		if artifact.Testing == nil || revalidate(*artifact.Testing) != nil {
+			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
+		}
+		bundle := &artifact.Testing.Bundle
+		keys, bundleErr := scenarioBundleStateKeys(bundle)
 		if bundleErr != nil || episode.Testing == nil || episode.FinalPlan == nil ||
-			episode.Testing.TraceDigest != artifact.Bundle.Trace.Digest ||
-			episode.Testing.BundleDigest != artifact.Bundle.Digest ||
-			episode.Testing.ReplayStable != artifact.Bundle.Run.Replay.Stable ||
-			episode.Testing.CorePSSSamples != len(artifact.Bundle.CorePSS) ||
+			episode.Testing.TraceDigest != bundle.Trace.Digest ||
+			episode.Testing.BundleDigest != bundle.Digest ||
+			episode.Testing.ReplayStable != bundle.Run.Replay.Stable ||
+			episode.Testing.CorePSSSamples != len(bundle.CorePSS) ||
 			episode.Testing.UniqueCorePSSStates != len(keys) || !episode.Testing.ReplayStable ||
+			episode.Testing.RiskStatus != artifact.Testing.Risk.Status ||
+			!reflect.DeepEqual(episode.Testing.SatisfiedMilestones, artifact.Testing.Risk.SatisfiedMilestones) ||
+			episode.Testing.OracleViolations != len(artifact.Testing.Oracle.Violations) ||
+			episode.Testing.Outcome != artifact.Testing.Outcome ||
 			episode.Testing.CorePSSSamples < episode.Testing.UniqueCorePSSStates ||
 			episode.Testing.OracleViolations < 0 ||
 			(episode.Testing.Outcome != scenarioTestingPassed &&
@@ -180,8 +197,15 @@ func (artifact scenarioSessionEpisodeArtifact) validate(classification string) e
 				episode.Testing.RiskStatus != semantic.RiskWitnessNotReached) {
 			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 		}
+		firstMissing := ""
+		if len(artifact.Testing.Risk.MissingMilestones) > 0 {
+			firstMissing = artifact.Testing.Risk.MissingMilestones[0]
+		}
+		if episode.Testing.FirstMissing != firstMissing {
+			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
+		}
 	case controlexperiment.ScenarioAgentStopped:
-		if episode.Testing != nil || episode.FinalPlan != nil || artifact.Bundle != nil {
+		if episode.Testing != nil || episode.FinalPlan != nil || artifact.Testing != nil {
 			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 		}
 	default:
@@ -216,8 +240,9 @@ func summarizeScenarioSession(
 	recovered *controlexperiment.CampaignRecovery,
 	exposure controlexperiment.ScenarioSemanticExposureMode,
 	classification string,
+	revalidate scenarioTestingRevalidator,
 ) (scenarioSessionSummary, error) {
-	if exposure.Validate() != nil || classification == "" {
+	if exposure.Validate() != nil || classification == "" || revalidate == nil {
 		return scenarioSessionSummary{}, errors.New("SCENARIO_SESSION_SUMMARY_INPUT_INVALID")
 	}
 	campaign, err := controlexperiment.NewCampaignSummary(recovered)
@@ -234,7 +259,7 @@ func summarizeScenarioSession(
 		var artifact scenarioSessionEpisodeArtifact
 		decoder := json.NewDecoder(bytes.NewReader(encoded))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&artifact); err != nil || artifact.validate(classification) != nil {
+		if err := decoder.Decode(&artifact); err != nil || artifact.validate(classification, revalidate) != nil {
 			return scenarioSessionSummary{}, errors.New("SCENARIO_SESSION_ARTIFACT_INVALID")
 		}
 		var trailing any
@@ -257,7 +282,7 @@ func summarizeScenarioSession(
 		}
 		summary.CorePSSSamples += testing.CorePSSSamples
 		summary.OracleViolations += testing.OracleViolations
-		keys, err := scenarioBundleStateKeys(artifact.Bundle)
+		keys, err := scenarioBundleStateKeys(&artifact.Testing.Bundle)
 		if err != nil {
 			return scenarioSessionSummary{}, err
 		}

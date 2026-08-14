@@ -152,19 +152,15 @@ func executeEtcdraftScenarioSessionEpisode(
 			}
 			return scenarioSessionWork(result, base)
 		},
+		ValidateTesting: validateEtcdraftScenarioTesting,
 	})
-}
-
-func newEtcdraftScenarioSessionEpisodeArtifact(
-	client openRouterIntentClient,
-	result etcdraftScenarioEpisodeResult,
-) (etcdraftScenarioSessionEpisodeArtifact, error) {
-	return newScenarioSessionEpisodeArtifact(etcdraftScenarioCalibrationClass, client, result)
 }
 
 func summarizeEtcdraftScenarioSession(
 	recovered *controlexperiment.CampaignRecovery,
 	exposure controlexperiment.ScenarioSemanticExposureMode,
 ) (etcdraftScenarioSessionSummary, error) {
-	return summarizeScenarioSession(recovered, exposure, etcdraftScenarioCalibrationClass)
+	return summarizeScenarioSession(
+		recovered, exposure, etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting,
+	)
 }

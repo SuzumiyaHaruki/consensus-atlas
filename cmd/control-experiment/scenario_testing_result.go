@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
@@ -22,4 +24,17 @@ type scenarioTestingResult struct {
 	Replay              controlexperiment.ReplayResult    `json:"replay"`
 	Oracle              oracle.Result                     `json:"oracle"`
 	Outcome             string                            `json:"outcome"`
+}
+
+func (result scenarioTestingResult) validateExecutionStructure() error {
+	if result.PlanID == "" || result.Bundle.Validate() != nil ||
+		result.Risk.TargetIdentityDigest != result.Bundle.Trace.ManifestDigest ||
+		result.Risk.ExecutionDigest != result.Bundle.Trace.Digest ||
+		result.CorePSSSamples != result.Bundle.Run.CorePSSSamples ||
+		result.UniqueCorePSSStates != result.Bundle.Run.UniqueCoreStates ||
+		result.Replay != result.Bundle.Run.Replay || !result.Replay.Required || !result.Replay.Stable ||
+		(result.Outcome != scenarioTestingPassed && result.Outcome != scenarioTestingViolation) {
+		return errors.New("SCENARIO_TESTING_EXECUTION_INVALID")
+	}
+	return nil
 }
