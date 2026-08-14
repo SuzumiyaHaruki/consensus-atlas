@@ -16,13 +16,10 @@ func EvaluateIndependentControl(
 	factory Factory,
 	plan NaturalLifecyclePlan,
 ) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}
@@ -59,6 +56,7 @@ func checkIndependentTemporal(ctx context.Context, factory Factory, plan Natural
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	return selectIndependentTemporal(ctx, runtime, plan.DecisionBound)
 }
 
@@ -98,6 +96,7 @@ func checkIndependentMessage(ctx context.Context, factory Factory, plan NaturalL
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	first, err := driveToNaturalMessage(ctx, runtime, control.ItemEnabled, plan.DecisionBound)
 	if err != nil {
 		return err
@@ -140,6 +139,7 @@ func checkIndependentReplay(ctx context.Context, factory Factory, plan NaturalLi
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	if err := selectIndependentTemporal(ctx, runtime, plan.DecisionBound); err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func checkIndependentReplay(ctx context.Context, factory Factory, plan NaturalLi
 	if err != nil {
 		return err
 	}
-	_, err = controlruntime.Replay(ctx, factory(), controlruntime.Config{
+	err = replayAndClose(ctx, factory(), controlruntime.Config{
 		Seed: append([]byte(nil), plan.Seed...), ClockError: 0, MaxClones: 1,
 	}, trace)
 	return err

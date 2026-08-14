@@ -17,7 +17,7 @@ type closeCountingAdapter struct {
 }
 
 func (adapter *closeCountingAdapter) Close() error {
-	*adapter.closed++
+	*adapter.closed = *adapter.closed + 1
 	return nil
 }
 

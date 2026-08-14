@@ -34,13 +34,10 @@ func EvaluateNaturalLifecycle(
 	factory Factory,
 	plan NaturalLifecyclePlan,
 ) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}
@@ -79,13 +76,10 @@ func EvaluateReleasedMessageLifecycle(
 	factory Factory,
 	plan NaturalLifecyclePlan,
 ) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}
@@ -94,7 +88,11 @@ func EvaluateReleasedMessageLifecycle(
 		return Report{}, err
 	}
 	result := CaseResult{ID: "released-message-lifecycle", Passed: true}
-	if _, err := runReleasedMessageLifecycle(ctx, factory, plan); err != nil {
+	runtime, err := runReleasedMessageLifecycle(ctx, factory, plan)
+	if err != nil {
+		result.Passed = false
+		result.ReasonCode = stableReason(err)
+	} else if err := runtime.Close(); err != nil {
 		result.Passed = false
 		result.ReasonCode = stableReason(err)
 	}
@@ -117,6 +115,7 @@ func checkNaturalCrashCancelsCaptured(
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	message, err := driveToNaturalMessage(ctx, runtime, control.ItemBlocked, plan.DecisionBound)
 	if err != nil {
 		return err
@@ -151,6 +150,7 @@ func checkNaturalMessageRecovery(
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	trace, err := runtime.Trace()
 	if err != nil {
 		return err
@@ -172,11 +172,16 @@ func runReleasedMessageLifecycle(
 	ctx context.Context,
 	factory Factory,
 	plan NaturalLifecyclePlan,
-) (*controlruntime.Runtime, error) {
+) (_ *controlruntime.Runtime, err error) {
 	runtime, err := newNaturalRuntime(ctx, factory, plan)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+	}()
 	message, err := driveToNaturalMessage(ctx, runtime, control.ItemEnabled, plan.DecisionBound)
 	if err != nil {
 		return nil, err
@@ -342,7 +347,7 @@ func replayNatural(
 	if err != nil {
 		return err
 	}
-	_, err = controlruntime.Replay(ctx, factory(), controlruntime.Config{
+	err = replayAndClose(ctx, factory(), controlruntime.Config{
 		Seed: append([]byte(nil), plan.Seed...), ClockError: 0, MaxClones: 1,
 	}, trace)
 	return err

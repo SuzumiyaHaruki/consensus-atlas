@@ -584,8 +584,9 @@ Session Runtime。OmniPaxos 在补 target-local Oracle 和真实模型对照前�
 
 A7H0 已恢复全仓测试与 race shard 清单。A7H1 已先修正超预算 work 和 child verification 分类，并建立统一
 Runtime 所有权：`New` 接管 Adapter，失败自动释放，成功后由 `Runtime.Close` 幂等释放；高扇出的 frontier
-重建、child verification、Scenario 和 qualified Replay 不再把外部 worker 累积到 episode 结束。有限的
-conformance qualification 批量回收将在同阶段下一小步收敛，之后再进入完整 Bundle 持久化。
+重建、child verification、Scenario 和 qualified Replay 不再把外部 worker 累积到 episode 结束。conformance
+manifest、raw case、Runtime 和 Replay 也已使用同一所有权，HashiCorp Raft 与 OmniPaxos qualification 删除了
+目标专用批量回收 wrapper。下一步进入完整 Bundle 持久化。
 
 ### A8：效果评测
 

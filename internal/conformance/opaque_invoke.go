@@ -42,13 +42,10 @@ func EvaluateOpaqueInvoke(
 	factory Factory,
 	plan OpaqueInvokePlan,
 ) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}
@@ -76,13 +73,10 @@ func EvaluateOpaqueInvokeAccepted(
 	factory Factory,
 	plan OpaqueInvokePlan,
 ) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}
@@ -91,7 +85,11 @@ func EvaluateOpaqueInvokeAccepted(
 		return Report{}, err
 	}
 	result := CaseResult{ID: "opaque-invoke-accepted", Passed: true}
-	if _, err := runOpaqueInvoke(ctx, factory, plan, manifest); err != nil {
+	runtime, err := runOpaqueInvoke(ctx, factory, plan, manifest)
+	if err != nil {
+		result.Passed = false
+		result.ReasonCode = stableReason(err)
+	} else if err := runtime.Close(); err != nil {
 		result.Passed = false
 		result.ReasonCode = stableReason(err)
 	}
@@ -115,11 +113,12 @@ func checkOpaqueInvoke(
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	trace, err := runtime.Trace()
 	if err != nil {
 		return err
 	}
-	_, err = controlruntime.Replay(ctx, factory(), controlruntime.Config{
+	err = replayAndClose(ctx, factory(), controlruntime.Config{
 		Seed: append([]byte(nil), plan.Seed...), ClockError: 0, MaxClones: 1,
 	}, trace)
 	return err
@@ -130,7 +129,7 @@ func runOpaqueInvoke(
 	factory Factory,
 	plan OpaqueInvokePlan,
 	manifest control.AdapterManifest,
-) (*controlruntime.Runtime, error) {
+) (_ *controlruntime.Runtime, err error) {
 	if !manifestHasNode(manifest, plan.Node) {
 		return nil, errors.New("OPAQUE_INVOKE_NODE_NOT_DECLARED")
 	}
@@ -144,6 +143,11 @@ func runOpaqueInvoke(
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+	}()
 	for decision := 0; decision < plan.DecisionBound; decision++ {
 		offered, err := runtime.OfferInvoke(ctx, plan.Node, plan.Input)
 		if err == nil {

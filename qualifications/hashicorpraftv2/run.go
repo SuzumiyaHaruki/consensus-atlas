@@ -13,21 +13,17 @@ import (
 type Bundle = conformance.QualificationBundle
 
 func Run(ctx context.Context) (Bundle, error) {
-	var opened []*adapterv2.Adapter
 	factory := func() control.Adapter {
-		adapter := adapterv2.NewAdapter()
-		opened = append(opened, adapter)
-		return adapter
+		return adapterv2.NewAdapter()
 	}
-	defer func() {
-		for _, adapter := range opened {
-			_ = adapter.Close()
-		}
-	}()
-
-	manifest, err := factory().Manifest(ctx)
+	manifestAdapter := adapterv2.NewAdapter()
+	manifest, err := manifestAdapter.Manifest(ctx)
+	closeErr := manifestAdapter.Close()
 	if err != nil {
 		return Bundle{}, err
+	}
+	if closeErr != nil {
+		return Bundle{}, closeErr
 	}
 	profile, err := conformance.PortableCFTProfile()
 	if err != nil {

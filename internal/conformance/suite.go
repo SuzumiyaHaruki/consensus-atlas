@@ -136,13 +136,10 @@ func (report Report) Validate() error {
 }
 
 func Evaluate(ctx context.Context, factory Factory, plan WitnessPlan) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}
@@ -186,6 +183,7 @@ func Evaluate(ctx context.Context, factory Factory, plan WitnessPlan) (Report, e
 
 func checkCollectIdempotent(ctx context.Context, factory Factory, plan WitnessPlan) error {
 	adapter := factory()
+	defer closeAdapter(adapter)
 	if err := adapter.Reset(ctx, plan.Seed); err != nil {
 		return err
 	}
@@ -233,6 +231,7 @@ func checkEnabledPure(ctx context.Context, factory Factory, plan WitnessPlan) er
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	before, err := runtime.Snapshot().Digest()
 	if err != nil {
 		return err
@@ -262,6 +261,7 @@ func checkEarliestTemporal(ctx context.Context, factory Factory, plan WitnessPla
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	actions, err := runtime.EnabledActions(ctx)
 	if err != nil {
 		return err
@@ -294,6 +294,7 @@ func checkSleepBlockedByEarlier(ctx context.Context, factory Factory, plan Witne
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	before := itemIDs(runtime.Snapshot())
 	invokeID, err := runtime.OfferInvoke(ctx, plan.Source, plan.SleepInput)
 	if err != nil {
@@ -329,6 +330,7 @@ func checkOneShotCompletes(ctx context.Context, factory Factory, plan WitnessPla
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	item, err := invokeAndFind(ctx, runtime, plan.Source, plan.OneShotInput, control.ItemTemporal)
 	if err != nil {
 		return err
@@ -373,6 +375,7 @@ func checkCallbackCompletes(ctx context.Context, factory Factory, plan WitnessPl
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	item, err := invokeAndFind(ctx, runtime, plan.Source, plan.CallbackInput, control.ItemCallback)
 	if err != nil {
 		return err
@@ -401,6 +404,7 @@ func checkMessageCrashRetention(ctx context.Context, factory Factory, plan Witne
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	message, err := invokeAndFind(ctx, runtime, plan.Source, plan.MessageInput, control.ItemMessage)
 	if err != nil {
 		return err
@@ -451,6 +455,7 @@ func checkDuplicateLineage(ctx context.Context, factory Factory, plan WitnessPla
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	message, err := invokeAndFind(ctx, runtime, plan.Source, plan.MessageInput, control.ItemMessage)
 	if err != nil {
 		return err
@@ -490,6 +495,7 @@ func checkPartitionRetention(ctx context.Context, factory Factory, plan WitnessP
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	message, err := invokeAndFind(ctx, runtime, plan.Source, plan.MessageInput, control.ItemMessage)
 	if err != nil {
 		return err
@@ -530,6 +536,7 @@ func checkEffectRelease(ctx context.Context, factory Factory, plan WitnessPlan) 
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	before := itemIDs(runtime.Snapshot())
 	invokeID, err := runtime.OfferInvoke(ctx, plan.Source, plan.DurableMessageInput)
 	if err != nil {
@@ -564,6 +571,7 @@ func checkCrashCancelsCaptured(ctx context.Context, factory Factory, plan Witnes
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	before := itemIDs(runtime.Snapshot())
 	invokeID, err := runtime.OfferInvoke(ctx, plan.Source, plan.DurableMessageInput)
 	if err != nil {
@@ -591,6 +599,7 @@ func checkFreshReplay(ctx context.Context, factory Factory, plan WitnessPlan) er
 	if err != nil {
 		return err
 	}
+	defer runtime.Close()
 	message, err := invokeAndFind(ctx, runtime, plan.Source, plan.MessageInput, control.ItemMessage)
 	if err != nil {
 		return err
@@ -610,7 +619,7 @@ func checkFreshReplay(ctx context.Context, factory Factory, plan WitnessPlan) er
 	if err != nil {
 		return err
 	}
-	_, err = controlruntime.Replay(ctx, factory(), runtimeConfig(plan), trace)
+	err = replayAndClose(ctx, factory(), runtimeConfig(plan), trace)
 	return err
 }
 
@@ -619,10 +628,12 @@ func checkEntropyStable(ctx context.Context, factory Factory, plan WitnessPlan) 
 	if err != nil {
 		return err
 	}
+	defer left.Close()
 	right, err := newRuntime(ctx, factory, plan)
 	if err != nil {
 		return err
 	}
+	defer right.Close()
 	leftTrace, err := left.Trace()
 	if err != nil {
 		return err

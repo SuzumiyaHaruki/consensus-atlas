@@ -37,13 +37,10 @@ func (plan CorePlan) Validate() error {
 // EvaluateCore validates stable yield/evidence, pure enabled checks, and
 // deterministic audited entropy without knowing any adapted operation.
 func EvaluateCore(ctx context.Context, factory Factory, plan CorePlan) (Report, error) {
-	if factory == nil || factory() == nil {
-		return Report{}, errors.New("CONFORMANCE_FACTORY_REQUIRED")
-	}
 	if err := plan.Validate(); err != nil {
 		return Report{}, err
 	}
-	manifest, err := factory().Manifest(ctx)
+	manifest, err := readFactoryManifest(ctx, factory)
 	if err != nil {
 		return Report{}, err
 	}

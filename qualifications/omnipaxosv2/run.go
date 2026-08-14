@@ -18,24 +18,24 @@ func Run(ctx context.Context, workerPath string) (Bundle, error) {
 	if workerPath == "" {
 		return Bundle{}, errors.New("OMNIPAXOS_QUALIFICATION_WORKER_PATH_REQUIRED")
 	}
-	var opened []*adapterv2.Adapter
 	factory := func() control.Adapter {
 		adapter, err := adapterv2.New(adapterv2.Config{WorkerPath: workerPath})
 		if err != nil {
 			panic(err)
 		}
-		opened = append(opened, adapter)
 		return adapter
 	}
-	defer func() {
-		for _, adapter := range opened {
-			_ = adapter.Close()
-		}
-	}()
-
-	manifest, err := factory().Manifest(ctx)
+	manifestAdapter, err := adapterv2.New(adapterv2.Config{WorkerPath: workerPath})
 	if err != nil {
 		return Bundle{}, err
+	}
+	manifest, err := manifestAdapter.Manifest(ctx)
+	closeErr := manifestAdapter.Close()
+	if err != nil {
+		return Bundle{}, err
+	}
+	if closeErr != nil {
+		return Bundle{}, closeErr
 	}
 	profile, err := conformance.PortableCFTProfileV3()
 	if err != nil {
