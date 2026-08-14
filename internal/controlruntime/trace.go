@@ -86,6 +86,121 @@ func (trace Trace) Validate() error {
 	if sealed.Digest != trace.Digest {
 		return fmt.Errorf("TRACE_DIGEST_MISMATCH")
 	}
+	if trace.ManifestDigest == "" || trace.SeedDigest == "" || trace.InitialStateDigest == "" ||
+		trace.FinalStateDigest == "" || trace.InitialEmissionDigest == "" {
+		return fmt.Errorf("TRACE_IDENTITY_INCOMPLETE")
+	}
+	if trace.InitialYield.ID == "" || trace.InitialYield.Kind != control.YieldStable ||
+		trace.InitialYield.StateDigest == "" {
+		return fmt.Errorf("TRACE_INITIAL_YIELD_INVALID")
+	}
+	if trace.InitialEvidence.Yield != trace.InitialYield.ID {
+		return fmt.Errorf("TRACE_INITIAL_EVIDENCE_YIELD_MISMATCH")
+	}
+	if err := trace.InitialEvidence.Payload.Validate(); err != nil {
+		return fmt.Errorf("TRACE_INITIAL_EVIDENCE_INVALID: %w", err)
+	}
+	evidenceDigest, err := control.CanonicalDigest(trace.InitialEvidence)
+	if err != nil || evidenceDigest != trace.InitialEvidenceDigest {
+		return fmt.Errorf("TRACE_INITIAL_EVIDENCE_DIGEST_MISMATCH")
+	}
+	if trace.InitialEntropy.Yield != trace.InitialYield.ID || trace.InitialEntropy.Algorithm == "" ||
+		trace.InitialEntropy.SeedDigest != trace.SeedDigest ||
+		trace.InitialEntropy.TapeDigest != trace.InitialEntropyDigest {
+		return fmt.Errorf("TRACE_INITIAL_ENTROPY_INVALID")
+	}
+	if err := trace.InitialEntropy.Tape.Validate(); err != nil {
+		return fmt.Errorf("TRACE_INITIAL_ENTROPY_TAPE_INVALID: %w", err)
+	}
+	logicalTime := uint64(0)
+	for index := range trace.Records {
+		if err := trace.Records[index].validate(index+1, trace.SeedDigest, logicalTime); err != nil {
+			return err
+		}
+		logicalTime = trace.Records[index].LogicalTime
+	}
+	wantFinal := trace.InitialStateDigest
+	if len(trace.Records) > 0 {
+		wantFinal = trace.Records[len(trace.Records)-1].AfterStateDigest
+	}
+	if trace.FinalStateDigest != wantFinal {
+		return fmt.Errorf("TRACE_FINAL_STATE_MISMATCH")
+	}
+	return nil
+}
+
+func (record ActionRecord) validate(step int, seedDigest string, previousLogicalTime uint64) error {
+	if record.Step != uint64(step) {
+		return fmt.Errorf("TRACE_STEP_NONCONTIGUOUS: %d", step)
+	}
+	if record.LogicalTime < previousLogicalTime {
+		return fmt.Errorf("TRACE_LOGICAL_TIME_REGRESSION: %d", step)
+	}
+	if record.Action.ID == "" || record.Action.Kind.Validate() != nil {
+		return fmt.Errorf("TRACE_ACTION_INVALID: %d", step)
+	}
+	if record.EnabledSetDigest == "" || record.BeforeStateDigest == "" || record.AfterStateDigest == "" ||
+		record.Outcome != "applied" {
+		return fmt.Errorf("TRACE_RECORD_INCOMPLETE: %d", step)
+	}
+	if (record.Command == nil) != (record.Yield == nil) {
+		return fmt.Errorf("TRACE_ADAPTER_CYCLE_INCOMPLETE: %d", step)
+	}
+	if record.Command != nil {
+		if record.Command.ID == "" || record.Command.Action != record.Action.ID ||
+			record.Command.Kind != record.Action.Kind || record.Command.Node != record.Action.Node ||
+			record.Command.Item != record.Action.Item {
+			return fmt.Errorf("TRACE_COMMAND_ACTION_MISMATCH: %d", step)
+		}
+		if err := record.Command.Payload.Validate(); err != nil {
+			return fmt.Errorf("TRACE_COMMAND_PAYLOAD_INVALID: %d: %w", step, err)
+		}
+		if record.Yield.ID == "" || record.Yield.StateDigest == "" ||
+			(record.Yield.Kind != control.YieldStable && record.Yield.Kind != control.YieldTerminal) ||
+			record.EmissionDigest == "" || record.Evidence == nil || record.Entropy == nil {
+			return fmt.Errorf("TRACE_ADAPTER_CYCLE_INCOMPLETE: %d", step)
+		}
+	} else if record.EmissionDigest != "" || record.Evidence != nil || record.Entropy != nil {
+		return fmt.Errorf("TRACE_NATIVE_RECORD_HAS_ADAPTER_CYCLE: %d", step)
+	}
+	if record.Evidence == nil {
+		if record.EvidenceDigest != "" {
+			return fmt.Errorf("TRACE_EVIDENCE_WITHOUT_PAYLOAD: %d", step)
+		}
+	} else {
+		if record.Evidence.Yield != record.Yield.ID {
+			return fmt.Errorf("TRACE_EVIDENCE_YIELD_MISMATCH: %d", step)
+		}
+		if err := record.Evidence.Payload.Validate(); err != nil {
+			return fmt.Errorf("TRACE_EVIDENCE_INVALID: %d: %w", step, err)
+		}
+		digest, err := control.CanonicalDigest(*record.Evidence)
+		if err != nil || digest != record.EvidenceDigest {
+			return fmt.Errorf("TRACE_EVIDENCE_DIGEST_MISMATCH: %d", step)
+		}
+	}
+	if record.Entropy == nil {
+		if record.EntropyTapeDigest != "" {
+			return fmt.Errorf("TRACE_ENTROPY_WITHOUT_PAYLOAD: %d", step)
+		}
+	} else {
+		if record.Entropy.Yield != record.Yield.ID || record.Entropy.Algorithm == "" ||
+			record.Entropy.SeedDigest != seedDigest ||
+			record.EntropyTapeDigest != record.Entropy.TapeDigest {
+			return fmt.Errorf("TRACE_ENTROPY_BINDING_INVALID: %d", step)
+		}
+		if err := record.Entropy.Tape.Validate(); err != nil {
+			return fmt.Errorf("TRACE_ENTROPY_TAPE_INVALID: %d: %w", step, err)
+		}
+	}
+	if record.Action.Kind == control.ActionFireTemporal {
+		if record.ClockAdvance == nil || record.ClockAdvance.Temporal == "" ||
+			record.ClockAdvance.To < record.ClockAdvance.From || record.LogicalTime != record.ClockAdvance.To {
+			return fmt.Errorf("TRACE_CLOCK_ADVANCE_INVALID: %d", step)
+		}
+	} else if record.ClockAdvance != nil {
+		return fmt.Errorf("TRACE_CLOCK_ADVANCE_UNEXPECTED: %d", step)
+	}
 	return nil
 }
 

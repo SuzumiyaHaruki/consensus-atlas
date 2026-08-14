@@ -20,6 +20,25 @@ import (
 
 const etcdraftTestSemanticInputPath = "../../plans/agent/etcdraft-leader-change-inflight-v1.json"
 
+func etcdraftScenarioTestSemanticInput(t *testing.T, calls int, decisions int) string {
+	t.Helper()
+	var source etcdraftSemanticAuthoringSource
+	if err := readStrictJSONFile(etcdraftTestSemanticInputPath, etcdraftSemanticInputLimit, &source); err != nil {
+		t.Fatal(err)
+	}
+	source.Experiment.ScenarioMaxCalls = calls
+	source.Experiment.ScenarioMaxDecisions = decisions
+	encoded, err := json.MarshalIndent(source, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "scenario-semantic-input.json")
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestA2b3EtcdraftPublicSemanticCalibrationInputsAreValidAndSourceBound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
@@ -37,6 +56,11 @@ func TestA2b3EtcdraftPublicSemanticCalibrationInputsAreValidAndSourceBound(t *te
 		inputs.spec.RootFrontierActions < 2 || inputs.spec.ExplorerBudget.MaxCalls != 2 ||
 		inputs.spec.Transport.Provider != openRouterProvider ||
 		inputs.spec.Transport.Model != openRouterFixtureModel || inputs.spec.Transport.MaxRetries != 2 ||
+		inputs.spec.ScenarioPromptVersion != scenarioAgentPromptVersion ||
+		inputs.spec.ScenarioMaxCalls != inputs.experiment.ScenarioMaxCalls ||
+		inputs.spec.ScenarioMaxPlanSteps != inputs.experiment.ScenarioMaxSteps ||
+		inputs.spec.ScenarioMaxDecisions != inputs.experiment.ScenarioMaxDecisions ||
+		inputs.spec.ScenarioSemanticExposure != controlexperiment.ScenarioSemanticExposureFull ||
 		inputs.client.MaxOutputTokens != inputs.experiment.ModelMaxOutputTokens ||
 		inputs.searchSpec.Runtime != inputs.experiment.Runtime || inputs.searchSpec.FaultEnvelope == nil ||
 		*inputs.searchSpec.FaultEnvelope != inputs.experiment.FaultEnvelope ||
@@ -73,6 +97,45 @@ func TestA2b3EtcdraftPublicSemanticCalibrationInputsAreValidAndSourceBound(t *te
 	rootRisk, err := projector.Project("etcdraft-a4-root-risk", inputs.riskSpec, inputs.root)
 	if err != nil {
 		t.Fatal(err)
+	}
+	riskFrontier, snapshot, _, err := controlexperiment.ReconstructRiskFrontierState(
+		ctx, "etcdraft-a6e-semantics", inputs.riskSpec, rootRisk, inputs.root,
+		len(inputs.root.Records), inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullSemantics, err := projectEtcdraftScenarioSemantics(
+		controlexperiment.ScenarioSemanticExposureFull, inputs.root, riskFrontier, snapshot,
+	)
+	if err != nil || fullSemantics.Validate(riskFrontier) != nil {
+		t.Fatalf("full etcd/raft semantics invalid: %#v/%v", fullSemantics, err)
+	}
+	maskedSemantics, err := projectEtcdraftScenarioSemantics(
+		controlexperiment.ScenarioSemanticExposureMasked, inputs.root, riskFrontier, snapshot,
+	)
+	if err != nil || maskedSemantics.Validate(riskFrontier) != nil ||
+		len(maskedSemantics.ActionHints) != len(fullSemantics.ActionHints) {
+		t.Fatalf("masked etcd/raft semantics invalid: %#v/%v", maskedSemantics, err)
+	}
+	informative := false
+	for index := range fullSemantics.ActionHints {
+		full, masked := fullSemantics.ActionHints[index], maskedSemantics.ActionHints[index]
+		if full.ActorRole != controlexperiment.ConsensusSemanticUnknown ||
+			full.MessageClass != controlexperiment.ConsensusSemanticUnknown ||
+			full.EpochRelation != controlexperiment.ConsensusSemanticUnknown {
+			informative = true
+		}
+		if full.ActionID != masked.ActionID || full.ActionDigest != masked.ActionDigest ||
+			masked.ActorRole != controlexperiment.ConsensusSemanticUnknown ||
+			masked.MessageClass != controlexperiment.ConsensusSemanticUnknown ||
+			masked.EpochRelation != controlexperiment.ConsensusSemanticUnknown ||
+			masked.OperationState != controlexperiment.ConsensusSemanticUnknown {
+			t.Fatalf("masked semantics changed action identity or retained meaning: %#v/%#v", full, masked)
+		}
+	}
+	if !informative {
+		t.Fatal("full etcd/raft semantics classified no current Action")
 	}
 	scenario, err := controlexperiment.ExecuteBoundedScenarioPlan(
 		ctx, "etcdraft-a4-crash-restart",

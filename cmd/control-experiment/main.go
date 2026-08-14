@@ -35,6 +35,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
 	agentModel := flags.String("agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
 	semanticInput := flags.String("semantic-input", "", "editable protocol knowledge and hypothesis JSON for an Agent strategy")
+	scenarioSemanticExposure := flags.String("scenario-semantic-exposure", "", "optional full or masked Scenario semantic exposure")
 	campaignDirectory := flags.String("campaign-dir", "", "Campaign directory for an explicit Campaign strategy")
 	campaignObservationOut := flags.String("campaign-observation-out", "", "Campaign Observation output path")
 	campaignAttempts := flags.Int("campaign-attempts", 0, "attempt limit for an explicit Campaign strategy")
@@ -49,22 +50,25 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	if *strategy == etcdraftScenarioSessionStrategy {
+		exposure := controlexperiment.ScenarioSemanticExposureMode(*scenarioSemanticExposure)
 		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
 			*agentKeyFile == "" || *agentModel == "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
+			(*scenarioSemanticExposure != "" && exposure.Validate() != nil) {
 			return errors.New("OpenRouter Scenario session requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
 		}
 		summary, err := runEtcdraftScenarioSession(ctx, etcdraftScenarioSessionOptions{
 			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
 			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
+			SemanticExposure: exposure,
+			Client:           newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
 		})
 		if summary.Campaign.CampaignID != "" {
 			fmt.Fprintf(
-				stdout, "session=%s status=%s episodes=%d stop=%s primary_work=%d replay_work=%d model_calls=%d model_tokens=%d\n",
-				*campaignDirectory, summary.Campaign.Status, summary.Campaign.Sequence, summary.Campaign.StopReason,
+				stdout, "session=%s semantics=%s status=%s episodes=%d stop=%s primary_work=%d replay_work=%d model_calls=%d model_tokens=%d\n",
+				*campaignDirectory, summary.SemanticExposure, summary.Campaign.Status, summary.Campaign.Sequence, summary.Campaign.StopReason,
 				summary.Campaign.Totals.Primary.WorkUnits, summary.Campaign.Totals.Replay.WorkUnits,
 				summary.Campaign.Totals.Model.Calls, summary.Campaign.Totals.Model.TotalTokens,
 			)
@@ -81,7 +85,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			*agentKeyFile == "" || *agentModel == "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 || *scenarioSemanticExposure != "" {
 			return errors.New("OpenRouter Scenario calibration requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
 		}
 		summary, err := runEtcdraftScenarioCalibration(ctx, etcdraftScenarioCalibrationRunOptions{
@@ -112,7 +116,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			*agentKeyFile == "" || *agentModel == "" ||
 			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
 			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 {
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 || *scenarioSemanticExposure != "" {
 			return errors.New("semantic Explorer calibration requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
 		}
 		artifact, err := runEtcdraftSemanticCalibration(ctx, etcdraftSemanticCalibrationRunOptions{
@@ -145,6 +149,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *statelessCorpus == "" ||
 			*decisions != 96 || *bundleOut != "" || *bundleEvidenceVersion != 0 ||
 			*methodSpecDigest != "" || *agentKeyFile != "" || *agentModel != "" || *semanticInput != "" ||
+			*scenarioSemanticExposure != "" ||
 			*campaignModelTokens != 0 ||
 			(*strategy == etcdraftStatelessCanonicalCampaignStrategy && *policySeed != 1) {
 			return errors.New("Stateless Campaign strategy requires only -stateless-corpus, -out, Campaign, and uniform seed flags")
@@ -171,6 +176,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if *semanticInput != "" {
 		return errors.New("-semantic-input requires an explicit opt-in Agent strategy")
+	}
+	if *scenarioSemanticExposure != "" {
+		return errors.New("-scenario-semantic-exposure requires the Scenario session strategy")
 	}
 	if *out == "" {
 		return errors.New("-out is required")

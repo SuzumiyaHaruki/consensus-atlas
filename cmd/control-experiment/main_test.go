@@ -26,8 +26,13 @@ func TestEtcdraftExecutionBundleClosesTrustedV2Boundary(t *testing.T) {
 		len(bundle.Decisions.Observations) == 0 {
 		t.Fatalf("incomplete execution bundle: %#v", bundle.Identity)
 	}
-	checked := oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
-	if len(checked.Violations) != 0 {
+	checked := oracle.CheckBundle(
+		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
+		etcdraftClientApplicationBindingMonitor{},
+	)
+	if len(checked.Violations) != 0 || len(checked.Checked) != 4 ||
+		checked.Checked[2] != etcdraftLogProgressMonitorID ||
+		checked.Checked[3] != etcdraftClientApplicationBindingMonitorID {
 		t.Fatalf("official bundle violations: %#v", checked.Violations)
 	}
 

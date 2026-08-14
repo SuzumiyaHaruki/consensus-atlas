@@ -26,6 +26,9 @@ func TestA5cEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 		hypothesis.Validate(knowledge, riskSpec, controlexperiment.ScenarioPlanningBackendID) != nil ||
 		experiment.validate() != nil || len(experiment.AdapterConfig.Nodes) != 3 ||
 		experiment.SearchMaxWorkItems != 16 || experiment.ModelMaxOutputTokens != 1200 ||
+		experiment.ScenarioMaxCalls != 8 || experiment.ScenarioMaxSteps != 4 ||
+		experiment.ScenarioMaxDecisions != 32 ||
+		experiment.ScenarioSemanticExposure != controlexperiment.ScenarioSemanticExposureFull ||
 		workload.Validate() != nil || workload.ID != "single-write-v1" ||
 		len(workload.Invocations) != 1 || workload.Invocations[0].ID != "m5.15-write-1" {
 		t.Fatalf("editable semantic input did not build trusted values: %#v/%#v/%#v/%#v/%v",
@@ -51,7 +54,7 @@ func TestA5cEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 	}
 
 	source.Knowledge.Digest = ""
-	source.Experiment.ScenarioMaxAttempts = controlexperiment.ScenarioAgentMaxAttempts + 1
+	source.Experiment.ScenarioMaxCalls = controlexperiment.ScenarioAgentMaxCalls + 1
 	encoded, err = json.Marshal(source)
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +65,20 @@ func TestA5cEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 	if _, _, _, _, err := loadEtcdraftSemanticAuthoringSource(path, riskSpec); err == nil ||
 		!strings.Contains(err.Error(), "EXPERIMENT_INVALID") {
 		t.Fatalf("out-of-bound runtime config was accepted: %v", err)
+	}
+
+	source.Experiment.ScenarioMaxCalls = 2
+	source.Experiment.ScenarioSemanticExposure = "unbounded-detail"
+	encoded, err = json.Marshal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := loadEtcdraftSemanticAuthoringSource(path, riskSpec); err == nil ||
+		!strings.Contains(err.Error(), "EXPERIMENT_INVALID") {
+		t.Fatalf("unknown semantic exposure mode was accepted: %v", err)
 	}
 }
 

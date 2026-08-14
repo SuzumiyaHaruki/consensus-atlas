@@ -1,16 +1,15 @@
 # 当前阶段
 
-日期：2026-08-13
+日期：2026-08-14
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A6c 真实 OpenRouter session 校准（完成）
+阶段：A6f 最小共识 Oracle 闭环完成
 
 ## 一句话状态
 
-ConsensusAtlas 已用真实 `deepseek/deepseek-v4-flash` 完成两 episode session：后一轮消费前一轮机械反馈，
-两轮都进入 qualified execution、fresh Replay、PSS/Risk 和 Oracle；瞬时 OpenRouter 连接失败会在同一逻辑调用内
-有界重试并记录实际传输次数。
+A6f 现在有两个独立 target-local Oracle：检查 etcd/raft commit/applied frontier，以及 Invoke、
+applied command 和成功 ClientResult 的双向绑定。无来源命令和同 request 多日志位置也已进入反例测试。
 
 ## 输入什么
 
@@ -28,7 +27,8 @@ ConsensusAtlas 已用真实 `deepseek/deepseek-v4-flash` 完成两 episode sessi
 4. Trace/Evidence 由可信代码映射为 PSS/Risk；
 5. fresh Replay、Oracle 和 evaluator 独立验证结果；
 6. Campaign 以 episode、work、model token 和 wall clock 上限组织多 episode session。
-7. ScenarioPlan 每一步重新构造可信 RiskFrontier，唯一匹配后使用原 stateless materializer 执行并 fresh Replay。
+7. ScenarioPlan 每一步重新构造可信 RiskFrontier，唯一匹配后使用原 stateless materializer 执行并 fresh Replay；
+   一个短计划完成但 Risk 未达到时，从其已验证 FinalTrace/FinalRisk 重建下一轮 frontier 和语义视图。
 8. Scenario Agent 通过现有 durable journal 调用 OpenRouter；恢复时复用精确响应，不再次访问 provider。
 9. DeepSeek、Claude、GPT 等模型只改变 `model_id`，不改变 Planner、journal、Runtime 或 evaluator。
 10. A4c CLI 将 episode 派生为紧凑 summary；恢复会重建并核对结果，不重复终止调用。
@@ -36,12 +36,14 @@ ConsensusAtlas 已用真实 `deepseek/deepseek-v4-flash` 完成两 episode sessi
 12. `-semantic-input` 严格读取可编辑 JSON，再交给现有构造器生成 schema/digest 并验证 A2/A4 backend。
 13. Adapter factory、Runtime、FaultEnvelope、DFS/Explorer/Scenario 预算和 OpenRouter 输出上限都使用
     JSON 值；与 root corpus/qualification 不一致时由现有 manifest/Replay 拒绝。
-14. A6a 把每个现有 Scenario episode 作为一个 Campaign attempt；下一 episode 只读取前一个紧凑 artifact
-    的最后一条 `ScenarioAgentFeedback`，不会读取其 Oracle/PSS/testing 字段。
+14. A6a 把每个 Scenario episode 作为一个 Campaign attempt；episode 内按 receding horizon 推进，下一 episode
+    仍从统一 Campaign root 独立开始，只读取前一个紧凑 artifact 的最后一条机械 feedback。
 15. A6b 从 qualified bundle 提取规范 Core PSS 状态键，在 session 结束或恢复时跨 episode 去重；Risk 最佳进展
     按 reached 优先、否则已满足里程碑数更多选择，Oracle 只汇总独立检查结果。
 16. OpenRouter 对无响应的传输错误、HTTP 408/429/5xx 最多重试 2 次；401、合法 HTTP 响应中的非法模型内容、
     非法计划和预算终止不重试。`model_calls` 统计逻辑调用，`transport_attempts` 单独保留实际网络尝试数。
+17. etcd/raft qualified Bundle 在 TraceIntegrity 和 Agreement 之后运行 target-local `etcdraft-log-progress`；
+    它只解码 Adapter-owned Evidence，不读取 Agent、PSS 或 Risk 结论。
 
 ## 得到什么
 
@@ -66,6 +68,37 @@ ConsensusAtlas 已用真实 `deepseek/deepseek-v4-flash` 完成两 episode sessi
   两轮 Replay 都稳定，0 Oracle violation，Risk 都只满足 workload 初始里程碑，仍为 `not-reached`。
 - 对已完成目录执行 `-campaign-resume` 得到完全相同的 episode、work、token、PSS/Risk/Oracle 汇总，没有新增
   provider 调用。
+- A6e 首次配对校准使用同一 root、semantic input、`deepseek/deepseek-v4-flash` 和 session 预算。
+  `full` 的 2 个 episode 均一次生成合法的相同 4 步计划，共 2 calls、17,593 tokens、966 primary work；
+  `masked` 的首个 episode 经历一次 `no-match` 后修正，第二个只执行 1 步，共 3 calls、
+  28,312 tokens、987 primary work。
+- 两组都得到 2 个 qualified testing episode、2/2 stable Replay、0 Oracle violation，session 并集都是
+  23 个 Core PSS 状态，Risk 都只满足初始 workload milestone。对两个完成目录的恢复产生完全相同的
+  汇总，没有新模型调用。
+- A6eR 从相同 28-decision root 立即中止旧 leader，然后只选择正常 effect completion、消息投递和
+  自然 temporal event，在新 leader 出现后重启旧 leader。这条 26-decision extension 达到全部三个
+  Risk milestones，新 leader 出现前没有客户端返回，最终 Trace 可 fresh Replay。
+- A6eR 执行器在每次最多 4 步的模型输出后提交已验证前缀，并从该前缀继续规划；当前 JSON 允许每 episode
+  最多 8 次逻辑调用、32 个累计决策。失败短计划不会污染已提交前缀，合法短计划可累计编译为一个 qualified
+  execution。真实 Adapter 的本地 provider 测试已验证两轮 continuation、Campaign episode 隔离和恢复。
+- planning prefix 缺少 operation history 时，etcd/raft projector 会以 Adapter application-command 增长作为
+  保守 terminal 事实；最终 qualified Risk 仍使用完整 OperationHistory，避免把“没有传入返回历史”当成
+  “请求仍在途”。
+- 首次真实 A6eR 单 episode 使用 `deepseek/deepseek-v4-flash` 完成 8 次逻辑调用且每次只有 1 次
+  transport attempt，共 44,443 tokens。5 个合法短计划各提交 1 个决策，正式 prefix 从 28 增至 33；另外 3 个
+  计划以 `no-match` 停止，其部分执行均按设计回滚。最终 qualified testing 产生 34 个 Core PSS samples、24 个唯一
+  状态、stable Replay 和 0 Oracle violation，Risk 仍只满足 workload 初始里程碑。恢复没有新增模型调用。
+- 在该成功运行前，一次 A6 session 被旧 journal 的 6-call 内部上限截断。sidecar 实际保存 6 个成功响应、
+  42,664 tokens，但 Campaign failure marker 报告 0 calls/0 tokens。journal 上限已与 Scenario 全局上限对齐；
+  Campaign 现在会把 provider error 返回的合法 WorkLedger 写入已有 failure marker，session 该成本由 durable
+  call audit 机械汇总。本地故障回归得到 2 calls 且恢复不重复 provider。
+- A6f `etcdraft-log-progress` 已在真实 Adapter 产生的 qualified Bundle 上通过。受控 Evidence 变异能在
+  step 2 分别检出 commit frontier 从 2 回退到 1，以及 applied 3 超过 commit 2；结果不依赖 PSS 覆盖。
+- `ready-advanced` 现在只携带当次 yield 的 applied-command witness，没有新增 item/Action 或在每个
+  Evidence 快照重复历史。`etcdraft-client-application-binding` 在真实 Bundle 上通过；返回 value 变异
+  被判为与 Invoke 不匹配，command witness 变异被判为缺少唯一精确见证。
+- 反向检查要求每个 applied command 都匹配一个更早的 Invoke，同 request 在不同副本上的 `(index, term)`
+  必须一致。将 witness request 改成未调用 ID、或为同 request 添加第二日志位置，均会在确切 step 报告 violation。
 
 ## 已删除什么
 
@@ -81,17 +114,31 @@ ConsensusAtlas 已用真实 `deepseek/deepseek-v4-flash` 完成两 episode sessi
 历史仍可从 Git 提交 `0106e2c` 恢复。当前保留的调用持久化、qualification、Runtime 校验、strict Replay、
 Oracle 和 evaluator 安全边界没有删除。
 
-当前规模为：Go 生产 30,236 行、Go 测试 13,874 行、Markdown 3,977 行、JSON 10,346 行。A6c 相对 A6b
-净增 38 行 Go 生产代码、59 行测试、41 行 Markdown 和 1 行 JSON。增量只包含 OpenRouter 有界重试、传输次数审计、
-配置字段和当前文档；没有新增 package、Runtime、评分公式或平行 session ledger。完整真实工件位于 ignored
-`artifacts/agentic/`，不进入 Git。
+当前规模为：Go 生产 31,325 行、Go 测试 14,620 行、Markdown 4,264 行、JSON 10,348 行。A6f 相对 A6eR
+净增 320 行 Go 生产代码、286 行测试和 66 行 Markdown，JSON 不变。增量是两个 target-local monitor、
+一份 yield-local command witness、qualified Bundle 接线和受控反例测试；没有新增 package、Runtime、Action、
+评分公式、契约层或平行 ledger。完整真实工件
+位于 ignored `artifacts/agentic/`，不进入 Git。
 
 ## 当前边界
 
 - A6b 汇总的是当前单一 RiskWitness 和 Core PSS；固定 Profile 义务覆盖尚未进入该 session 视图；
 - session 终端视图目前在运行/恢复时派生并通过 CLI 输出，没有另存一份会与 Campaign 漂移的 summary 文件；
-- 第二轮计划更长且 PSS 状态更多只是一次公开观察；由于没有重复 trial 和同预算 baseline，不能归因于反馈或
-  Agent 能力，23 个状态也不是覆盖百分比；
+- A6e 只有一组、每组 2 episode 的公开配对；`full` 的无修正和低成本是正向观察，但它两次重复同一计划且没有
+  改善 Risk/PSS，因此不能宣称协议语义已稳定提高 Agent 效果，23 个状态也不是覆盖百分比；
+- 26 步是当前确定专家调度的长度，不是经过穷尽证明的最短 witness；它已足以证明“只给 Agent 四步且完成后立即终止”
+  不适合当前正常控制路径，但不宣称所有更短路径均不存在；
+- planning projector 的 application-command fallback 只适用于当前单 proposal workload；多并发请求仍必须依赖
+  OperationHistory 或更精确的 target-local operation identity，不能用命令总数推断某个请求的终态；
+- A6eR 真实运行证明 continuation 机制可用，但 3/8 次计划因模型为未来步骤复制短命 ActionID 而 `no-match`。
+  当前 v3 prompt 已明确限制 exact ID 只来自当前 frontier，要求后续步骤省略 `action_id`并使用列明的
+  semantic selector fields；该修复已本地验证，尚未再次付费校准。
+- 成功运行的 24 个 PSS 状态只比旧 A6e 的 23 多 1，输入、prompt 和时域已经变化，不能把这一个状态差
+  解释为 Agent 优势；
+- provider/local episode error 发生在 Campaign attempt 提交前时，现在会记录已发生且可验证的 provider Work；
+  其他无法从 durable audit 确认的 primary 部分仍不应被推测或补写；
+- log-progress 当前按 `NodeRef(node, incarnation)` 分段，不把 crash 后未持久的 volatile commit 回退误判为跨重启违例；
+  持久化边界的跨 incarnation 检查需要独立 storage Evidence，本阶段不猜测；
 - token 统计只包含 provider 最终返回的 usage；无响应尝试是否已在 provider 端产生计费无法从本地确认，
   因此费用解释必须同时报告 `transport_attempts`；
 - 还没有非公开 candidate/control 方法效果实验；
@@ -211,11 +258,69 @@ Risk 进展、Oracle violation 总数，以及原 CampaignSummary 的 work/model
 669 primary work 和 131 replay work，得到 23 个 Core PSS 状态并集、稳定 Replay、0 Oracle violation；
 RiskWitness 未达到。恢复未重新读取 key 或调用 provider。
 
-## 下一步：A7a 第二协议 session 接入差距
+## 已完成：A6d 可信执行边界修复
 
-先以现有 OmniPaxos strict Adapter 为对象，列出 A6 组合入口中仍属 etcd/raft 的 Binding、Evidence projector、
-Risk/Oracle 和 authoring 输入，随后只提取确实被两个目标共同消费的最小接口。目标是在不修改公共 Action、
-Control Runtime 和 ScenarioPlan 的前提下跑通一个非 Raft 本地 provider session；真实模型比较留到该路径合格后。
+本阶段按以下顺序落地：
+
+1. Replay 对 invoke/partition 使用正常 Offer API 重建，拒绝未知节点、不可接受输入和 Action 不一致；
+2. `Trace.Validate` 验证记录内部结构，`ExecutionBundle` 结合 preparations 验证完整状态链；
+3. native Action 改为 `validate -> Adapter apply -> Runtime commit`；
+4. 新增重新封装的断步 Trace 与未知 partition 节点 Replay 回归测试。
+
+实现后，Bundle 接受与 TraceIntegrity monitor 使用同一个 preparation-aware 状态链规则，不再出现 Bundle 先接受、
+monitor 再以另一套规则判无效。`go test ./...` 已覆盖 etcd/raft、OmniPaxos、HashiCorp Raft、qualification 和
+control-experiment 主路径。这里证明的是两个已知伪造路径被机械拒绝，并不代表 Trace 验证已经形式化完备。
+
+## 已完成：A6e 协议语义提示接入
+
+- 新增独立 `action_semantics`，不污染公共 `FrontierActionRef`，因此 A2/DFS 输入未扩大；
+- 语义只允许 leader/replica/contender、vote/proposal/replication/heartbeat/recovery、stale/current/future、
+  none/inflight/decided-not-applied 及 `unknown`；
+- etcd/raft target projector 从可信 Evidence、消息 TypeHint/metadata 和 Risk progress 生成分类；
+- 提示绑定当前 prefix、snapshot、ActionID 与 ActionDigest；
+- masked 保留相同 Action 顺序和身份，只隐藏四个语义值；
+- exposure mode 已绑定现有 run spec，修改模式不能恢复旧 Campaign；
+- A6 session CLI 可用 `-scenario-semantic-exposure full|masked` 覆盖 JSON 输入，便于同一输入在两个独立目录
+  运行配对校准；它复用现有 session、spec 和 summary，不增加配对 ledger；
+- 本地测试验证提示不包含原生 `StateLeader`、`MsgApp`、payload、Oracle 或 verdict。
+
+## 已完成：A6eR 短计划连续执行
+
+每次模型输出仍最多 4 步；合法完成且 Risk 未达到时，系统提交该短计划的已验证 FinalTrace/FinalRisk，重建
+当下 RiskFrontier、Snapshot 和 target-local 语义后继续调用 Planner。当前配置把整个 episode 限制为最多
+8 calls、32 decisions，Campaign 继续限制 primary/replay work、token 和 wall time。非法或执行中止的短计划
+只产生机械反馈，并从最近已提交前缀修正；不会把部分失败执行混入最终 qualified Trace。
+
+现有 semantic calibration spec 绑定 prompt version、calls、plan steps 和 decisions，防止同一运行目录在这些
+作者输入改变后错误恢复。这里复用已有 spec；没有新增账本、评分、Runtime、hash 层或 gate。
+
+本地 provider/真实 Adapter 集成测试验证了两次短计划的 prefix 从 28 增至 29、Campaign 下一 episode 重置为
+28，以及恢复不重复访问 provider。独立可达性测试验证 26-decision expert witness。首次真实模型运行累计提交
+5 个 extension decisions，证明 receding horizon 已真实工作，但尚未证明模型能自行生成完整 witness。
+
+## 已完成：A6f 第一个最小共识 Oracle
+
+`etcdraft-log-progress` 顺序读取 Trace 中的 Adapter Evidence，对每个 `NodeRef` 保留上一个 commit/applied
+frontier。它检出 `Applied > Commit`、commit 回退和 applied 回退，并将首个反例绑定到确切 Trace step。
+监视器保留在 etcd/raft composition；在第二个协议出现相同真实消费者前，不提前下沉公共抽象。
+
+## 已完成：A6f applied-command witness
+
+复用 etcd/raft Adapter 已有的 `ready-advanced` typed observation，只在该 yield 真正应用命令时输出
+命令见证。monitor 通过已有 item transition 将见证、ClientResult 和实际 Invoke 绑到同一 return step。
+不新增 Action、
+全量命令快照、通用 linearizability DSL 或另一套记录。
+
+## 已完成：A6f proposal/workload validity
+
+在同一 command witness 上做反向检查：每个 applied user command 必须对应一个更早的实际 Invoke，且
+request/origin/value 一致。这不要求命令已经产生 ClientResult，因此与当前“从成功返回找应用见证”
+的方向独立。
+
+## 下一步：A7 第二协议复用审查
+
+以现有 OmniPaxos strict Adapter 为对象，先盘点 A6 episode/session 组合中哪些是 etcd/raft 专用，
+哪些能直接复用。在第二个真实消费者出现前不下沉新公共接口。
 
 ## 阅读顺序
 

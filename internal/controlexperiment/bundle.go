@@ -258,9 +258,6 @@ func (bundle ExecutionBundle) Validate() error {
 		bundle.Run.ManifestDigest != bundle.Identity.ManifestDigest {
 		return errors.New("EXECUTION_BUNDLE_QUALIFICATION_MISMATCH")
 	}
-	if err := bundle.Trace.Validate(); err != nil {
-		return err
-	}
 	if bundle.Run.TraceDigest != bundle.Trace.Digest || bundle.Run.TraceSchemaVersion != bundle.Trace.SchemaVersion ||
 		bundle.Run.ChargedDecisions != len(bundle.Trace.Records) || !bundle.Run.Replay.Required ||
 		!bundle.Run.Replay.Stable || bundle.Run.Replay.Decisions != len(bundle.Trace.Records) ||
@@ -270,21 +267,8 @@ func (bundle ExecutionBundle) Validate() error {
 	if err := bundle.validateRunAndWork(); err != nil {
 		return err
 	}
-	if len(bundle.Preparations) != bundle.Work.Primary.PrepareActions {
-		return errors.New("EXECUTION_BUNDLE_PREPARATION_COUNT_MISMATCH")
-	}
-	for index, preparation := range bundle.Preparations {
-		if err := preparation.Validate(); err != nil {
-			return err
-		}
-		if preparation.Ordinal != index+1 || preparation.BeforeDecision > len(bundle.Trace.Records) {
-			return errors.New("EXECUTION_BUNDLE_PREPARATION_ORDER_INVALID")
-		}
-	}
-	snapshotDigest, err := bundle.FinalSnapshot.Digest()
-	if err != nil || snapshotDigest != bundle.Trace.FinalStateDigest ||
-		bundle.FinalSnapshot.Step != uint64(len(bundle.Trace.Records)) {
-		return errors.New("EXECUTION_BUNDLE_FINAL_SNAPSHOT_MISMATCH")
+	if err := bundle.ValidateTraceIntegrity(); err != nil {
+		return err
 	}
 	if len(bundle.CorePSS) != len(bundle.Trace.Records)+1 || bundle.Run.CorePSSSamples != len(bundle.CorePSS) {
 		return errors.New("EXECUTION_BUNDLE_CORE_PSS_COUNT_MISMATCH")
@@ -325,6 +309,52 @@ func (bundle ExecutionBundle) Validate() error {
 	}
 	if !validSHA256(bundle.Digest) || sealed.Digest != bundle.Digest {
 		return errors.New("EXECUTION_BUNDLE_DIGEST_MISMATCH")
+	}
+	return nil
+}
+
+// ValidateTraceIntegrity combines Trace-local validation with preparation
+// records, which are the only legitimate state transitions between decisions.
+// Both bundle acceptance and the independent integrity monitor use this path.
+func (bundle ExecutionBundle) ValidateTraceIntegrity() error {
+	if err := bundle.Trace.Validate(); err != nil {
+		return err
+	}
+	if len(bundle.Preparations) != bundle.Work.Primary.PrepareActions {
+		return errors.New("EXECUTION_BUNDLE_PREPARATION_COUNT_MISMATCH")
+	}
+	previous := bundle.Trace.InitialStateDigest
+	prepareIndex := 0
+	for index, record := range bundle.Trace.Records {
+		step := index + 1
+		for prepareIndex < len(bundle.Preparations) &&
+			bundle.Preparations[prepareIndex].BeforeDecision == step {
+			preparation := bundle.Preparations[prepareIndex]
+			if err := preparation.Validate(); err != nil {
+				return err
+			}
+			if preparation.Ordinal != prepareIndex+1 || preparation.BeforeStateDigest != previous {
+				return errors.New("EXECUTION_BUNDLE_PREPARATION_ORDER_INVALID")
+			}
+			previous = preparation.AfterStateDigest
+			prepareIndex++
+		}
+		if record.BeforeStateDigest != previous {
+			return fmt.Errorf("EXECUTION_BUNDLE_TRACE_CHAIN_BROKEN: %d", step)
+		}
+		if prepareIndex > 0 && bundle.Preparations[prepareIndex-1].BeforeDecision == step &&
+			bundle.Preparations[prepareIndex-1].Action.ID != record.Action.ID {
+			return fmt.Errorf("EXECUTION_BUNDLE_PREPARED_ACTION_NOT_SELECTED: %d", step)
+		}
+		previous = record.AfterStateDigest
+	}
+	if prepareIndex != len(bundle.Preparations) || previous != bundle.Trace.FinalStateDigest {
+		return errors.New("EXECUTION_BUNDLE_TRACE_CHAIN_INCOMPLETE")
+	}
+	snapshotDigest, err := bundle.FinalSnapshot.Digest()
+	if err != nil || snapshotDigest != bundle.Trace.FinalStateDigest ||
+		bundle.FinalSnapshot.Step != uint64(len(bundle.Trace.Records)) {
+		return errors.New("EXECUTION_BUNDLE_FINAL_SNAPSHOT_MISMATCH")
 	}
 	return nil
 }

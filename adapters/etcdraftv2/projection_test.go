@@ -52,4 +52,24 @@ func TestPublicProjectionReadsEvidenceAndCommittedResult(t *testing.T) {
 		result.Index == 0 || result.Term == 0 {
 		t.Fatalf("projected result = %+v", result)
 	}
+	commandWitnessed := false
+	for _, snapshotItem := range runtime.Snapshot().Items {
+		if snapshotItem.Kind != control.ItemObservation || snapshotItem.Value.Observation == nil ||
+			snapshotItem.Value.Observation.Kind != etcdraftv2.ReadyAdvancedObservationKind {
+			continue
+		}
+		advanced, err := etcdraftv2.ProjectReadyAdvancedObservation(*snapshotItem.Value.Observation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, command := range advanced.Commands {
+			if command.RequestID == result.RequestID && command.Index == result.Index &&
+				command.Term == result.Term && string(command.Value) == "projected" {
+				commandWitnessed = true
+			}
+		}
+	}
+	if !commandWitnessed {
+		t.Fatal("committed result has no projected ready-advanced command witness")
+	}
 }

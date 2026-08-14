@@ -275,8 +275,7 @@ func (marker CampaignFailureMarker) Validate() error {
 	if err := validateMethodWork(marker.Work); err != nil {
 		return err
 	}
-	if marker.Work != emptyWork() || marker.EvidenceKind != "" || marker.EvidenceDigest != "" ||
-		marker.BudgetExceeded {
+	if marker.EvidenceKind != "" || marker.EvidenceDigest != "" {
 		return errors.New("EXPERIMENT_CAMPAIGN_FAILURE_EVIDENCE_INVALID")
 	}
 	sealed, err := marker.seal()

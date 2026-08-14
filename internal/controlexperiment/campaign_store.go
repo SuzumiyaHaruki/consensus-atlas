@@ -167,9 +167,8 @@ func (recovered *CampaignRecovery) CommitAttempt(
 	return recovered.Head, nil
 }
 
-// FailAttempt durably closes the exact next request without inventing an
-// artifact or WorkLedger. It is only for provider/coordinator failures whose
-// executed cost cannot be represented as a terminal attempt result.
+// FailAttempt durably closes the exact next request when no executed work was
+// returned by the provider.
 func (recovered *CampaignRecovery) FailAttempt(
 	request CampaignAttemptRequest,
 	code string,
@@ -181,14 +180,22 @@ func (recovered *CampaignRecovery) failAttempt(
 	request CampaignAttemptRequest,
 	code string,
 ) (CampaignFailureMarker, error) {
+	return recovered.failAttemptWithWork(request, code, emptyWork())
+}
+
+func (recovered *CampaignRecovery) failAttemptWithWork(
+	request CampaignAttemptRequest,
+	code string,
+	work WorkLedger,
+) (CampaignFailureMarker, error) {
 	if recovered == nil || recovered.directory == "" || recovered.Failure != nil ||
 		recovered.validatedFailureDigest != "" ||
 		recovered.Config.Digest != recovered.validatedConfigDigest ||
-		recovered.Head.Digest != recovered.validatedHeadDigest {
+		recovered.Head.Digest != recovered.validatedHeadDigest || validateMethodWork(work) != nil {
 		return CampaignFailureMarker{}, errors.New("EXPERIMENT_CAMPAIGN_STORE_RECOVERY_TOKEN_INVALID")
 	}
 	marker, err := newCampaignFailureMarker(
-		recovered.Config, recovered.Head, request, code, emptyWork(), "", "",
+		recovered.Config, recovered.Head, request, code, work, "", "",
 	)
 	if err != nil {
 		return CampaignFailureMarker{}, err

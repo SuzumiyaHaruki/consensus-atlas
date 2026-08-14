@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.8（A6 真实多 episode session 已完成，下一阶段 A7a 第二协议接入差距）
-> 日期：2026-08-13
+> 状态：Draft v2.15（A6f 最小共识 Oracle 闭环完成）
+> 日期：2026-08-14
 > 适用分支：`feature/agentic-consensus-testing`
 
 ## 0. 一句话目标
@@ -385,6 +385,127 @@ HTTP 408/429/5xx 最多重试 2 次，并分开记录 `model_calls` 与 `transpo
 优于 baseline。
 
 完成判据：用户给定目标、知识、Adapter、workload 和时长后，系统自动运行并输出 finding/coverage/cost。
+
+### A6d：可信执行边界修复
+
+状态：已完成。
+
+在复制 A6 session 到第二协议前，先修复审计确认的三处通用边界问题：
+
+1. Replay 不再把保存的 invoke/partition Action 直接写入 Runtime 内部队列，而是重新经过正常 Offer 路径，
+   并核对重建 Action 与保存 Action 一致；
+2. `Trace.Validate` 验证记录步号、Action/Command 绑定、Evidence/entropy 绑定和自身首尾状态，
+   `ExecutionBundle` 再结合 preparation 记录验证完整状态链；
+3. Runtime native Action 先完成无副作用校验，再调用 Adapter actuation，最后提交 Runtime 状态，避免外部状态已变
+   而内部校验才失败。
+
+这些修复对应可构造的失败场景：重新封装的 partition Trace 可以引用 Manifest 中不存在的节点并绕过
+`OfferPartition`；重新封装的断链 Trace 只要总摘要正确就能通过浅层 `Trace.Validate`。Git、版本号、类型和普通
+对象摘要只能证明保存了什么，不能证明 Replay 重新走过合法入口或记录之间形成合法执行链。因此本阶段增强现有
+验证函数和回归测试，不增加新 Ledger、schema、冻结 contract 或持久化 gate。
+
+Conformance 输入绑定和 entropy tape 体积本阶段不改：前者当前由同一流程即时生成并消费，没有外部报告复用的
+活动失败路径；后者只有渐进复杂度风险，尚无测量证据证明是当前瓶颈。
+
+实现结果：Replay 已通过正常 Offer API 重建 invoke/partition；Runtime native Action 已改为
+`prepare/validate -> Adapter apply -> commit`；`Trace.Validate` 与 `ExecutionBundle.ValidateTraceIntegrity` 分别承担
+记录内部验证和 preparation-aware 状态链验证，TraceIntegrity monitor 复用同一规则。回归测试覆盖未知 partition
+节点和重新封装的非连续 Trace，全仓测试通过。该结果证明已知绕过被拒绝，不证明所有 Trace 伪造或 Adapter 故障
+都已穷尽。
+
+### A6e：协议感知 Agent 输入
+
+状态：代码接入和首次公开配对校准完成，尚无稳定效果结论。
+
+只在 A4/A6 Scenario 主路径为当前 enabled Action 增加一个封闭、target-local 生成的共识语义提示：节点角色、
+消息类别、epoch 关系和操作阶段；无法可靠判断时必须为 `unknown`。提示绑定当前可信 frontier，不暴露绝对 term、
+原始消息载荷、未来事实、candidate/control 身份或 Oracle verdict。用 full/masked semantics 消融判断它是否真正
+提高计划质量；A2 的 LLM queue permutation 不再扩展，只保留 deterministic semantic best-first 基线。
+
+当前实现把提示作为 `ScenarioAgentView.action_semantics` 的独立只读部分，不修改公共 Action、
+`FrontierActionRef`、DFS 或 A2。每条提示只包含 `actor_role`、`message_class`、`epoch_relation` 和
+`operation_state` 四个封闭分类，并绑定已有 prefix、snapshot、ActionID 和 ActionDigest。etcd/raft projector 只读取
+Adapter 已验证的 Evidence 与 ProducedItem metadata，不向模型输出原生角色/消息名、绝对 term 或 payload。
+`full` 与 `masked` 使用完全相同的 Action 集和绑定；masked 只把四个语义值改为 `unknown`。
+
+语义暴露模式进入 editable experiment config 和现有 session spec，是因为如果它不参与恢复身份，已完成的 full
+session 可以在用户把配置改成 masked 后被错误复用。Git、代码版本和类型无法区分同一提交下的两份运行输入；
+这里复用现有 spec/request identity，不创建新 hash、contract 或 gate。
+
+现有 A6 session CLI 支持 `-scenario-semantic-exposure full|masked`，可在不复制 semantic input 文件的
+情况下用同一 root、模型、prompt 和预算运行两个独立 Campaign 目录。它复用普通 session 工件和终端
+summary，不建立额外的 pair runner 或实验账本。
+
+首次真实配对使用相同 root、semantic input、`deepseek/deepseek-v4-flash`、Action 和上限。`full`
+两个 episode 均一次生成合法的相同 4 步计划，共 2 calls、17,593 tokens；`masked` 的首个 episode
+经历 `no-match` 并修正，第二个仅执行 1 步，共 3 calls、28,312 tokens。两组都有 2/2 stable Replay、
+0 Oracle violation、23 个 session Core PSS 状态，Risk 都未达到第二里程碑。
+
+这份结果支持“受限语义可能改善计划有效性和成本”，但不证明它提高 Risk/PSS 或已形成稳定 Agent 优势：
+`full` 两次重复了同一计划，而且当前只有一组公开 pair。后续效果评估需要预注册的重复 trial；A6eR 已先
+校准可达性并修正规划时域，下一阶段进入 A6f 最小 Oracle。
+
+#### A6eR：Risk 可达性与规划时域修正
+
+真实 Adapter 可达性校准已从同一 28-decision root 找到一条 stable Replay witness：中止旧 leader，只用
+effect completion、消息投递和自然 temporal event 推动新 leader，再重启旧 leader。该 extension 用了 26 个
+决策，在 leader change 前没有客户端返回，并达到三个 Risk milestone。26 不是穷尽证明的最短长度，
+但它暴露了当前评测的结构问题：Agent 只能给出 4 步计划，计划合法完成后 episode 立即结束，新 episode
+又从 root 开始，因此无法通过多个短计划累积长时域进展。
+
+该修正已经实现为 receding-horizon Scenario：每个模型输出仍限制为最多 4 步，每个选择仍由当前可信 frontier
+唯一解析；计划完成但 Risk 未达到时，以已验证 FinalTrace/FinalRisk 作为下一计划的 root，重新构造可信
+frontier/snapshot 和 target-local 语义。当前 JSON 把一个 episode 限制为最多 8 calls、32 decisions，且继续
+受 Campaign work/token/time 上限约束。不提高单次模型输出到 26 步，不隐式自动 drain 协议动作。中止计划
+不会提交部分执行，而是从最近已提交前缀接收机械反馈后修正。
+
+校准同时暴露的具体语义缺口已收紧：planning prefix 没有 client/operation history 时，etcd/raft projector
+以 Adapter application-command 增长作为当前单 proposal workload 的保守 terminal 事实；最终 qualified Risk
+仍使用完整 OperationHistory。这样缺少返回历史不再自动等价于“仍在运行”。该 fallback 不能推广到多并发
+请求；届时必须使用可关联到 operation identity 的完成事实。
+
+现有 semantic calibration spec 现在绑定 scenario prompt version、call、单计划 step 和累计 decision 上限。
+否则相同 Campaign 目录可以在这些作者输入改变后误恢复旧结果，而 Git、版本号和 Go 类型无法区分同一提交内
+的运行配置变化。实现复用已有 spec，没有新增平行 ledger、contract、hash 层或 gate。
+
+本地 provider/真实 Adapter 集成已验证连续两轮规划从新 prefix 继续、下一 Campaign episode 从统一 root 重置、
+恢复不重复 provider，以及累计计划进入原 qualified execution。首次真实 A6eR 单 episode 随后完成 8 次逻辑
+调用、44,443 tokens；5 个合法短计划把正式 prefix 从 28 推到 33，最终 qualified testing 有 34 个 PSS samples、
+24 个唯一状态、stable Replay 和 0 Oracle violation。Risk 仍只满足初始 workload milestone，不能据此声称模型
+已能生成 26-decision witness，也不能把相对旧 A6e 多出的 1 个状态解释为 Agent 优势。
+
+真实运行有 3/8 个计划因 future ActionID `no-match` 而回滚。v3 prompt 现在明确规定 exact ID 只能来自当前
+frontier，第一步后必须省略 `action_id`并使用冻结输入列明的 semantic selector fields。冲突的
+`semantic-queue-only` 知识文本也改为通用 trusted-view 约束。这是 prompt 修复，不改变 Action 控制能力或 verdict。
+
+旧 6-call journal 上限还造成记账负证据：sidecar 保存 6 calls/42,664 tokens，当时的 Campaign failure marker
+却显示 0 work。上限已与 Scenario 全局上限对齐。session 现在从 durable call audit 汇总已发生 ModelWork，
+Coordinator 仅在 WorkLedger 结构合法时把它写入现有 failure marker，Campaign summary 会把该 work 计入 totals。
+本地回归验证一次成功调用后的 3 次传输失败被记为 2 calls，恢复不重复 provider。这里复用 failure v2
+已有 Work 字段与现有 call audit digest，没有新增 ledger、hash、contract 或 gate。
+
+### A6f：最小共识 Oracle
+
+第一个 target-local `etcdraft-log-progress` 已接入 etcd/raft qualified execution。它只顺序消费
+Adapter Evidence，对同一 `(node, incarnation)` 检查 `Applied <= Commit`、commit frontier 不回退、
+applied frontier 不回退；不读取 Agent 输出、PSS 覆盖或 Risk 进展。真实 Adapter 产生的 Bundle
+通过该监视器，受控 Evidence 变异分别检出 frontier 回退和 `Applied > Commit`。
+
+监视器不跨 incarnation 猜测持久化事实：节点重启后的内存 frontier 只在新区间内比较。如果要检查
+跨重启不变式，必须先补充存储证据。当前仅 etcd/raft 有这一真实消费者，因此不下沉新的
+通用 Oracle 接口。
+
+客户端返回绑定的能力缺口已用最小目标证据补齐。etcd/raft Adapter 复用原有 `ready-advanced`
+typed observation，只在当次 yield 真正应用命令时携带 `request_id/index/term/origin/value`；没有
+将全量命令历史复制进每个 Evidence 快照。`etcdraft-client-application-binding` monitor 从 Trace 取实际
+Invoke，通过已有 item transition 将 observation 与 ClientHistory 返回绑到同一 step，并要求请求、位置、
+任期、origin 和 value 形成唯一精确匹配。真实 Bundle 通过，返回值与 command witness 变异均被拒绝。
+
+反向 proposal/workload validity 也已加入同一 monitor：每个 applied user command 必须晚于对应的实际
+Invoke，并匹配 request/origin/value；同一 request 在所有副本上只能对应同一 `(index, term)`。无来源命令
+和同 request 多日志位置反例均被拒绝。该 monitor 不读 Agent、PSS 或 Risk，也不扩展通用
+Runtime Action。A6f 至此形成 log progress、客户端返回绑定和 applied-command 来源的最小闭环。
+在 workload 仍只有单次写入时不建立通用 linearizability DSL；需要读和多操作历史后再决定。
 
 ### A7：第二协议与接入减负
 

@@ -13,6 +13,8 @@ import (
 
 const DecisionProjectionID = "official-etcdraft-v2/applied-prefix-digest-v1"
 
+const ReadyAdvancedObservationKind = "ready-advanced"
+
 type DecisionProjector struct{}
 
 func (DecisionProjector) ID() string { return DecisionProjectionID }
@@ -106,6 +108,70 @@ type ClientResult struct {
 	Term       uint64 `json:"term,omitempty"`
 	Value      []byte `json:"value,omitempty"`
 	ReasonCode string `json:"reason_code,omitempty"`
+}
+
+// ProjectInput decodes the target-local command carried by a generic Invoke.
+// Protocol-independent packages keep the payload opaque.
+func ProjectInput(payload control.PayloadEnvelope) (Input, error) {
+	input, err := decodeInput(payload)
+	if err != nil {
+		return Input{}, err
+	}
+	input.Value = append([]byte(nil), input.Value...)
+	return input, nil
+}
+
+// AppliedCommandEvidence is emitted only by the ready-advanced observation
+// for the yield that actually applied the command. It avoids copying the full
+// application history into every state Evidence snapshot.
+type AppliedCommandEvidence struct {
+	Index     uint64          `json:"index"`
+	Term      uint64          `json:"term"`
+	RequestID string          `json:"request_id"`
+	Origin    control.NodeRef `json:"origin"`
+	Value     []byte          `json:"value"`
+}
+
+type ReadyAdvancedEvidence struct {
+	ReadyID  string                   `json:"value"`
+	Commands []AppliedCommandEvidence `json:"commands,omitempty"`
+}
+
+func ProjectReadyAdvancedObservation(
+	observation control.TypedObservation,
+) (ReadyAdvancedEvidence, error) {
+	if observation.Kind != ReadyAdvancedObservationKind ||
+		observation.Payload.SchemaVersion != observationV1 ||
+		observation.Payload.Encoding != "json" {
+		return ReadyAdvancedEvidence{}, errors.New("ETCDRAFT_V2_READY_ADVANCED_SCHEMA_MISMATCH")
+	}
+	if err := observation.Owner.Validate(); err != nil {
+		return ReadyAdvancedEvidence{}, err
+	}
+	var wire readyAdvancedObservation
+	if err := json.Unmarshal(observation.Payload.Bytes, &wire); err != nil {
+		return ReadyAdvancedEvidence{}, err
+	}
+	if wire.ReadyID == "" {
+		return ReadyAdvancedEvidence{}, errors.New("ETCDRAFT_V2_READY_ADVANCED_ID_REQUIRED")
+	}
+	result := ReadyAdvancedEvidence{ReadyID: wire.ReadyID}
+	lastIndex := uint64(0)
+	for _, command := range wire.Commands {
+		if command.Index == 0 || command.Term == 0 || command.Index <= lastIndex ||
+			command.RequestID == "" {
+			return ReadyAdvancedEvidence{}, errors.New("ETCDRAFT_V2_APPLIED_COMMAND_INVALID")
+		}
+		if err := command.Origin.Validate(); err != nil {
+			return ReadyAdvancedEvidence{}, err
+		}
+		result.Commands = append(result.Commands, AppliedCommandEvidence{
+			Index: command.Index, Term: command.Term, RequestID: command.RequestID,
+			Origin: command.Origin, Value: append([]byte(nil), command.Value...),
+		})
+		lastIndex = command.Index
+	}
+	return result, nil
 }
 
 // ProjectClientResult decodes only result schemas declared by this Adapter.

@@ -2,6 +2,7 @@ package controlruntime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -65,7 +66,9 @@ func ReplayWithProgress(
 	}
 	for _, want := range expected.Records {
 		if want.Action.Kind == control.ActionInvoke || want.Action.Kind == control.ActionPartition {
-			runtime.offered[want.Action.ID] = want.Action
+			if err := runtime.reofferExpected(ctx, want.Action); err != nil {
+				return nil, progress, err
+			}
 			progress.PrepareActions++
 			if want.Action.Kind == control.ActionInvoke {
 				progress.WorkloadOffers++
@@ -100,4 +103,47 @@ func ReplayWithProgress(
 		}
 	}
 	return runtime, progress, nil
+}
+
+// reofferExpected reconstructs author-supplied actions through the same public
+// validation path used during primary execution. Saved traces are evidence,
+// not permission to inject directly into Runtime-owned state.
+func (runtime *Runtime) reofferExpected(ctx context.Context, expected control.Action) error {
+	var (
+		id  control.ActionID
+		err error
+	)
+	switch expected.Kind {
+	case control.ActionInvoke:
+		var parameters control.AdapterInvokeParameters
+		if err := json.Unmarshal(expected.Parameters, &parameters); err != nil {
+			return fmt.Errorf("REPLAY_PREPARATION_PARAMETERS_INVALID: %w", err)
+		}
+		id, err = runtime.OfferInvoke(ctx, expected.Node.Node, parameters.Input)
+	case control.ActionPartition:
+		var parameters control.PartitionParameters
+		parameters, err = control.DecodePartitionParameters(expected.Parameters)
+		if err == nil {
+			id, err = runtime.OfferPartition(parameters.Left, parameters.Right)
+		}
+	default:
+		return fmt.Errorf("REPLAY_PREPARATION_KIND_UNSUPPORTED: %s", expected.Kind)
+	}
+	if err != nil {
+		return fmt.Errorf("REPLAY_PREPARATION_REJECTED: %s: %w", expected.Kind, err)
+	}
+	actual := runtime.offered[id]
+	wantDigest, digestErr := control.CanonicalDigest(expected)
+	if digestErr != nil {
+		return digestErr
+	}
+	actualDigest, digestErr := control.CanonicalDigest(actual)
+	if digestErr != nil {
+		return digestErr
+	}
+	if id != expected.ID || actualDigest != wantDigest {
+		delete(runtime.offered, id)
+		return fmt.Errorf("REPLAY_PREPARATION_MISMATCH: %s", expected.ID)
+	}
+	return nil
 }

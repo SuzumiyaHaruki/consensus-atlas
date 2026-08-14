@@ -248,8 +248,13 @@ func (coordinator *CampaignCoordinator) Step(ctx context.Context) (CampaignCheck
 		if errors.As(providerErr, &deferred) {
 			return coordinator.recovered.Head, providerErr
 		}
-		return coordinator.failAttempt(
+		failureWork := emptyWork()
+		if validateMethodWork(result.Work) == nil {
+			failureWork = result.Work
+		}
+		return coordinator.failAttemptWithWork(
 			request, CampaignFailureProvider,
+			failureWork,
 			fmt.Errorf("EXPERIMENT_CAMPAIGN_PROVIDER_FAILED: %w", providerErr),
 		)
 	}
@@ -303,8 +308,17 @@ func (coordinator *CampaignCoordinator) failAttempt(
 	code string,
 	cause error,
 ) (CampaignCheckpoint, error) {
+	return coordinator.failAttemptWithWork(request, code, emptyWork(), cause)
+}
+
+func (coordinator *CampaignCoordinator) failAttemptWithWork(
+	request CampaignAttemptRequest,
+	code string,
+	work WorkLedger,
+	cause error,
+) (CampaignCheckpoint, error) {
 	coordinator.failed = true
-	if _, err := coordinator.recovered.FailAttempt(request, code); err != nil {
+	if _, err := coordinator.recovered.failAttemptWithWork(request, code, work); err != nil {
 		return CampaignCheckpoint{}, fmt.Errorf("%v; EXPERIMENT_CAMPAIGN_FAILURE_MARKER_FAILED: %w", cause, err)
 	}
 	return CampaignCheckpoint{}, cause

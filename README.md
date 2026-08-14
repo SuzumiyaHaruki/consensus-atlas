@@ -90,6 +90,20 @@ Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替�
   23 个 Core PSS 状态并集、Replay stable、0 Oracle violation；RiskWitness 仍为 `not-reached`。
 - OpenRouter 对无响应传输错误和 HTTP 408/429/5xx 最多重试 2 次。真实第一轮在第 3 次传输成功；
   审计分开记录逻辑 model call 与实际 transport attempt。
+- A6eR 已把 Scenario 改为 episode 内的 receding horizon：单次计划仍最多 4 步，但合法前缀会提交并重建
+  下一轮可信 frontier；当前配置最多累计 8 calls、32 decisions。真实 Adapter 本地测试已覆盖 continuation、
+  episode 隔离、恢复和 qualified execution。首次真实单 episode 运行用 8 calls/44,443 tokens 把 prefix 从
+  28 推到 33，得到 24 个 PSS 状态、stable Replay 和 0 Oracle violation，但 Risk 仍未进入第二里程碑。
+- 真实 A6eR 暴露的 future ActionID 失配已用 v3 prompt 收紧：第一步之后必须省略 `action_id`
+  并使用明示 selector fields。Campaign provider failure 现在也会把 durable call audit 中已发生的
+  calls/tokens 写入原 failure marker 和终端汇总；两项修复都未触发新的真实模型调用。
+- A6f 已为 etcd/raft qualified 路径接入 target-local `etcdraft-log-progress` Oracle：它独立检查
+  `Applied ≤ Commit` 以及同一 node incarnation 的 commit/applied frontier 不回退。真实 Bundle 正例和两个
+  Evidence 变异负例已通过；监视器不读取 Agent、PSS 或 Risk 结论。
+- A6f 同时复用 `ready-advanced` observation 记录当次 applied-command witness，
+  `etcdraft-client-application-binding` 要求成功 ClientResult 与实际 Invoke/同 step command 唯一精确匹配。
+  反向也要求每个 applied command 来自更早的 Invoke，且同 request 日志位置唯一。真实 Bundle 正例和四类错配
+  反例已通过。
 
 本轮 A2R 收敛删除了已经被替代的 trace/corpus/PSS 批处理搜索、Agent-v1 frontier campaign、未资格化的
 raft-rs 路径以及仓库中的重复大型轨迹。历史内容仍可从 Git 提交 `0106e2c` 恢复。
@@ -141,9 +155,15 @@ go run ./cmd/control-experiment \
   -campaign-dir artifacts/agentic/example \
   -stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
   -semantic-input plans/agent/etcdraft-leader-change-inflight-v1.json \
+  -scenario-semantic-exposure full \
   -agent-key-file /path/to/openrouter-key.txt \
   -agent-model provider/model
 ```
+
+`-scenario-semantic-exposure` 只接受 `full` 或 `masked`；省略时使用 semantic input JSON 中的值。A6e
+配对校准复用同一 semantic input、root corpus 和模型，分别指定 `full`、`masked`，并使用两个不同的
+`-campaign-dir`。两次运行仍生成普通 A6 session 工件，不另建配对账本。只有显式运行上述 Agent strategy
+才会读取 key 和访问 OpenRouter。
 
 ## 阅读顺序
 

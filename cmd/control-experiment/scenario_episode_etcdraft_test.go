@@ -23,6 +23,21 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 		providerCalls++
 		view := a4bScenarioViewFromRequest(t, request)
+		if view.Semantics.Mode != controlexperiment.ScenarioSemanticExposureFull ||
+			view.Semantics.Validate(view.Frontier) != nil ||
+			len(view.Semantics.ActionHints) != len(view.Frontier.Actions) {
+			t.Fatalf("scenario prompt lacks trusted full semantics: %#v", view.Semantics)
+		}
+		semanticBytes, err := json.Marshal(view.Semantics)
+		if err != nil {
+			t.Fatal(err)
+		}
+		semanticText := string(semanticBytes)
+		for _, forbidden := range []string{"StateLeader", "MsgApp", "payload", "oracle", "verdict"} {
+			if strings.Contains(semanticText, forbidden) {
+				t.Fatalf("scenario semantics exposed forbidden detail %q: %s", forbidden, semanticText)
+			}
+		}
 		var plan controlexperiment.ScenarioPlan
 		if providerCalls == 1 {
 			if view.Prior != nil {
@@ -61,7 +76,7 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
 	inputs, err := prepareEtcdraftSemanticCalibration(
-		ctx, etcdraftTestRootCorpusPath, etcdraftTestSemanticInputPath, client,
+		ctx, etcdraftTestRootCorpusPath, etcdraftScenarioTestSemanticInput(t, 2, 4), client,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +86,7 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, journal, nil, 2, 2, func() error {
+	result, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, journal, nil, 2, 2, 4, func() error {
 		return journal.ActivateKey("fixture-key")
 	})
 	if err != nil {
@@ -93,7 +108,7 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, recovered, nil, 2, 2, func() error {
+	replayed, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, recovered, nil, 2, 2, 4, func() error {
 		return errStatelessAgentCallKeyRequired
 	})
 	if err != nil || replayed.Testing == nil ||
@@ -115,17 +130,27 @@ func a4bScenarioViewFromRequest(
 	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil || len(payload.Messages) != 2 {
 		t.Fatalf("invalid scenario provider payload: %#v/%v", payload, err)
 	}
+	for _, required := range []string{
+		"For every step after the first, omit action_id",
+		"Never copy an ActionID from prior_feedback",
+	} {
+		if !strings.Contains(payload.Messages[0].Content, required) {
+			t.Fatalf("scenario system prompt lacks future-selector rule %q: %s", required, payload.Messages[0].Content)
+		}
+	}
 	const marker = "Frozen input JSON:\n"
 	index := strings.LastIndex(payload.Messages[1].Content, marker)
 	if index < 0 {
 		t.Fatal("scenario prompt did not contain frozen input")
 	}
 	var prompt struct {
-		PromptVersion string                              `json:"prompt_version"`
-		AgentView     controlexperiment.ScenarioAgentView `json:"agent_view"`
+		PromptVersion  string                              `json:"prompt_version"`
+		SelectorFields []string                            `json:"selector_fields"`
+		AgentView      controlexperiment.ScenarioAgentView `json:"agent_view"`
 	}
 	if err := json.Unmarshal([]byte(payload.Messages[1].Content[index+len(marker):]), &prompt); err != nil ||
-		prompt.PromptVersion != scenarioAgentPromptVersion {
+		prompt.PromptVersion != scenarioAgentPromptVersion || len(prompt.SelectorFields) != 10 ||
+		prompt.SelectorFields[0] != "action_id" || prompt.SelectorFields[1] != "kind" {
 		t.Fatalf("scenario prompt input cannot be decoded: %#v/%v", prompt, err)
 	}
 	return prompt.AgentView

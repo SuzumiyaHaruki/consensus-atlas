@@ -1,6 +1,6 @@
 # ConsensusAtlas 架构
 
-日期：2026-08-13
+日期：2026-08-14
 
 本文件描述当前代码和已经确定的演进边界，而不是历史阶段。系统只保留一条权威主线：
 
@@ -98,6 +98,26 @@ effect 等有限公共字段。每个 selector 都由可信层在当下 admissib
 Agent 在概念上分为三种认知角色：Hypothesis、Explorer、Analysis。它们可以先由一次模型调用或一个进程承担；
 只有同预算消融证明角色分离有收益时，才物理拆成多个 Agent 服务。
 
+A6e 的协议语义不进入 `FrontierActionRef`：Scenario view 另带一个与当前 prefix、snapshot 和每个 Action 身份绑定的
+`action_semantics`。target-local projector 只能输出封闭分类，未知内容必须为 `unknown`；原始协议状态、绝对 epoch、
+消息 payload、未来事实和 verdict 不进入该视图。`full`/`masked` 共享完全相同的 Action 集，masked 仅隐藏语义值，
+因此它是模型信息消融，不是控制能力消融。
+运行时可在 A6 session 入口覆盖暴露模式；覆盖值重建现有 session spec，因此不同模式不会误恢复同一
+Campaign，也不需要另一套配对运行协议。
+
+A6eR 把短计划改为 episode 内的 receding horizon，而没有放宽单次输出：一个最多 4 步的计划合法完成后，
+其已验证 FinalTrace/FinalRisk 成为下一次规划根；Runtime 重建当前 frontier/snapshot，target-local projector
+只对该状态重新分类。中止计划回滚到最近已提交根。整个 episode 另受 call、累计 decision、work、token 和
+wall-clock 上限约束，因此模型不能用长 JSON 绕过逐步具体化，也不能把失败的部分执行写进正式结果。
+
+首次真实运行确认这一机制能跨 5 个已提交短计划把 prefix 从 28 推到 33，最终结果可 qualified Replay；同时
+3 个计划因未来 ActionID 失效而停止。v3 prompt 现在只允许 exact ID 来自当前 frontier，明确要求第一步后
+省略 `action_id`，并在冻结输入中列出可用 semantic selector fields。这改变了提示词 identity，旧 v2 运行不会被误恢复。
+
+attempt 提交前的 provider failure 现在由 session 从 durable call audit 汇总已发生 ModelWork；Coordinator 只在
+WorkLedger 结构合法时将它写入已有 Campaign failure marker，终端 summary 将 failure work 与已提交 totals
+相加。无 durable audit 支持的其他执行成本仍保持为未知，不由系统猜测。
+
 ## 3. 核心模块
 
 | 模块 | 责任 | 不应承担 |
@@ -128,6 +148,27 @@ Runtime 拥有所有待调度项：
 
 Adapter 在一次动作后返回新的 ProducedItem 与 Evidence；它不自行决定全局投递顺序。Runtime 对 ActionID、
 item 状态和节点生命周期做机械校验，并记录足以 fresh Replay 的 Trace。
+
+native Action 遵守 `无副作用校验 -> Adapter actuation -> Runtime commit`：Adapter 只有在 Runtime 已确认当前动作
+可提交后才观察到动作。Replay 中由 workload 或实验准备产生的 invoke/partition 不能直接注入 Runtime 内部
+队列，必须重新经过与首轮执行相同的 Offer API，并核对重建 Action。
+
+验证分为两层：`Trace.Validate` 检查单条记录及 Trace 自身首尾绑定；`ExecutionBundle` 再利用 preparation 记录
+检查 Offer 导致的状态变化和决策记录组成一条完整状态链。Oracle 的 TraceIntegrity 复用这一验证结果，不维护
+另一套较宽松的接受规则。
+
+Oracle 分工保持明确：TraceIntegrity 检查试验结构，Agreement 检查通用决策安全性，
+target-local monitor 只在目标 Evidence 能表达额外性质时加入。当前 `etcdraft-log-progress` 在同一
+`(node, incarnation)` 内检查 commit/applied frontier 单调性和 `Applied <= Commit`。它不读取
+Agent、PSS 或 Risk，也不猜测跨重启的持久化事实。由于尚无第二个协议消费相同语义，
+它保留在 etcd/raft composition，不扩张公共 Runtime 或 Oracle 契约。
+
+客户端返回与应用命令是一条独立证据关系。OperationHistory 或 Trace 能定位实际 Invoke，
+etcd/raft ClientResult 能解析 `request_id/index/term/value`，但累计 ApplicationDigest 不能证明单条
+request 的成员关系。Adapter 因此复用已有 `ready-advanced` typed observation，只附加当次 yield 的
+applied-command witness。monitor 通过已有 item transition 将它与 ClientHistory 绑到同一 return step，
+同时反向检查每个 witness 都来自更早的实际 Invoke，且同 request 的日志位置唯一。它不将命令列表
+加入每个通用 Evidence 快照，也不新增 Runtime item 或 Action。
 
 ## 5. 新协议接入
 
@@ -221,10 +262,10 @@ A4c 的 target-local 运行器只组合现有组件：创建或恢复 model-call
 再派生紧凑 `summary.json`。summary 不替代 journal、Trace 或 Bundle；成功时报告 Replay/PSS/Risk/Oracle 摘要，
 provider 终止失败时报告已消费调用和零 token，并确保恢复不会重新 dispatch。
 
-A6a 继续把现有 Scenario episode 作为 Campaign attempt，而不是引入 Session Runtime。Campaign 负责外部
+A6a 继续把 Scenario episode 作为 Campaign attempt，而不是引入 Session Runtime。Campaign 负责外部
 episode/work/model/time 预算、checkpoint 和恢复；前一 attempt 的紧凑 artifact 只导出最后一条机械
 `ScenarioAgentFeedback` 给下一次规划。Oracle、PSS、testing outcome 和候选身份不进入该反馈。每个 episode
-仍从相同可信 root 独立具体化并进入原 qualified execution。
+仍从相同可信 root 开始；只在该 episode 内由多个已提交短计划累积前缀，最终进入原 qualified execution。
 
 A6b 在 session attempt artifact 中保存每个 qualified bundle 已有的规范 Core PSS 状态键。终端派生视图对这些
 键取并集，同时汇总 Agent/Testing/Replay episode 数、Risk 最佳进展和 Oracle violations；CampaignSummary 继续

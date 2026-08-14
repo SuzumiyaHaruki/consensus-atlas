@@ -65,19 +65,21 @@ func (source etcdraftWorkloadAuthoringSource) build() (controlexperiment.Workloa
 // etcdraftAgentExperimentConfig contains only inputs already consumed by the
 // active A2/A4 composition. It is authoring data, not a generic budget DSL.
 type etcdraftAgentExperimentConfig struct {
-	AdapterConfig        etcdraftv2.Config                        `json:"adapter_config"`
-	Runtime              controlexperiment.RuntimeConfig          `json:"runtime"`
-	FaultEnvelope        controlexperiment.FaultEnvelope          `json:"fault_envelope"`
-	SearchMaxDepth       int                                      `json:"search_max_depth"`
-	SearchMaxWorkItems   int                                      `json:"search_max_work_items"`
-	SearchMaxWorkUnits   int                                      `json:"search_max_work_units"`
-	ExplorerBudget       controlexperiment.SemanticExplorerBudget `json:"explorer_budget"`
-	ScenarioMaxAttempts  int                                      `json:"scenario_max_attempts"`
-	ScenarioMaxSteps     int                                      `json:"scenario_max_steps"`
-	ModelMaxOutputTokens int                                      `json:"model_max_output_tokens"`
-	ModelMaxRetries      int                                      `json:"model_max_retries"`
-	SessionBudget        controlexperiment.CampaignLogicalBudget  `json:"session_budget"`
-	SessionWallClockMS   int64                                    `json:"session_wall_clock_ms"`
+	AdapterConfig            etcdraftv2.Config                              `json:"adapter_config"`
+	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
+	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
+	SearchMaxDepth           int                                            `json:"search_max_depth"`
+	SearchMaxWorkItems       int                                            `json:"search_max_work_items"`
+	SearchMaxWorkUnits       int                                            `json:"search_max_work_units"`
+	ExplorerBudget           controlexperiment.SemanticExplorerBudget       `json:"explorer_budget"`
+	ScenarioMaxCalls         int                                            `json:"scenario_max_calls"`
+	ScenarioMaxSteps         int                                            `json:"scenario_max_steps"`
+	ScenarioMaxDecisions     int                                            `json:"scenario_max_decisions"`
+	ScenarioSemanticExposure controlexperiment.ScenarioSemanticExposureMode `json:"scenario_semantic_exposure"`
+	ModelMaxOutputTokens     int                                            `json:"model_max_output_tokens"`
+	ModelMaxRetries          int                                            `json:"model_max_retries"`
+	SessionBudget            controlexperiment.CampaignLogicalBudget        `json:"session_budget"`
+	SessionWallClockMS       int64                                          `json:"session_wall_clock_ms"`
 }
 
 func (config etcdraftAgentExperimentConfig) validate() error {
@@ -86,9 +88,12 @@ func (config etcdraftAgentExperimentConfig) validate() error {
 	if adapterErr != nil || seedErr != nil || len(seed) == 0 || config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.SearchMaxDepth <= 0 ||
 		config.SearchMaxWorkItems <= 0 || config.SearchMaxWorkUnits <= 0 ||
-		config.ExplorerBudget.Validate() != nil || config.ScenarioMaxAttempts <= 0 ||
-		config.ScenarioMaxAttempts > controlexperiment.ScenarioAgentMaxAttempts ||
+		config.ExplorerBudget.Validate() != nil || config.ScenarioMaxCalls <= 0 ||
+		config.ScenarioMaxCalls > controlexperiment.ScenarioAgentMaxCalls ||
 		config.ScenarioMaxSteps <= 0 || config.ScenarioMaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
+		config.ScenarioMaxDecisions <= 0 ||
+		config.ScenarioMaxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
+		config.ScenarioSemanticExposure.Validate() != nil ||
 		config.ModelMaxOutputTokens <= 0 || config.ModelMaxOutputTokens > 4096 ||
 		config.ModelMaxRetries < 0 || config.ModelMaxRetries > 2 ||
 		!validEtcdraftSessionBudget(config.SessionBudget, config.SessionWallClockMS) {

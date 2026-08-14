@@ -1,0 +1,240 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+)
+
+const etcdraftLogProgressMonitorID = "etcdraft-log-progress"
+const etcdraftClientApplicationBindingMonitorID = "etcdraft-client-application-binding"
+
+// etcdraftLogProgressMonitor stays target-local until another protocol has a
+// real consumer for the same observation shape. It checks only Adapter-owned
+// Evidence and never consumes PSS, Risk progress, or Agent output.
+type etcdraftLogProgressMonitor struct{}
+
+func (etcdraftLogProgressMonitor) Name() string { return etcdraftLogProgressMonitorID }
+
+func (etcdraftLogProgressMonitor) CheckBundle(
+	bundle controlexperiment.ExecutionBundle,
+) []oracle.Violation {
+	type frontier struct {
+		commit  uint64
+		applied uint64
+	}
+	previous := make(map[control.NodeRef]frontier)
+	points := []struct {
+		step     int
+		evidence control.EvidenceEnvelope
+	}{{evidence: bundle.Trace.InitialEvidence}}
+	for _, record := range bundle.Trace.Records {
+		if record.Evidence != nil {
+			points = append(points, struct {
+				step     int
+				evidence control.EvidenceEnvelope
+			}{step: int(record.Step), evidence: *record.Evidence})
+		}
+	}
+	for _, point := range points {
+		evidence, err := etcdraftv2.ProjectEvidence(point.evidence)
+		if err != nil {
+			return etcdraftLogProgressViolation(point.step, "evidence projection failed")
+		}
+		for _, node := range evidence.Nodes {
+			ref := control.NodeRef{Node: node.Node, Incarnation: node.Incarnation}
+			if node.Applied > node.Commit {
+				return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
+					"node %s/%d applied frontier %d exceeds commit frontier %d",
+					node.Node, node.Incarnation, node.Applied, node.Commit,
+				))
+			}
+			if before, ok := previous[ref]; ok {
+				if node.Commit < before.commit {
+					return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
+						"node %s/%d commit frontier regressed from %d to %d",
+						node.Node, node.Incarnation, before.commit, node.Commit,
+					))
+				}
+				if node.Applied < before.applied {
+					return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
+						"node %s/%d applied frontier regressed from %d to %d",
+						node.Node, node.Incarnation, before.applied, node.Applied,
+					))
+				}
+			}
+			previous[ref] = frontier{commit: node.Commit, applied: node.Applied}
+		}
+	}
+	return nil
+}
+
+func etcdraftLogProgressViolation(step int, message string) []oracle.Violation {
+	return []oracle.Violation{{
+		Monitor: etcdraftLogProgressMonitorID, Step: step, Message: message,
+	}}
+}
+
+// etcdraftClientApplicationBindingMonitor joins three independently recorded
+// facts: the Invoke input, the Adapter's command-applied observation, and the
+// committed ClientResult. The observation is target-local and produced only
+// on the yield that applied the command.
+type etcdraftClientApplicationBindingMonitor struct{}
+
+func (etcdraftClientApplicationBindingMonitor) Name() string {
+	return etcdraftClientApplicationBindingMonitorID
+}
+
+func (etcdraftClientApplicationBindingMonitor) CheckBundle(
+	bundle controlexperiment.ExecutionBundle,
+) []oracle.Violation {
+	type invocation struct {
+		step   int
+		origin control.NodeRef
+		input  etcdraftv2.Input
+	}
+	invocations := make(map[string]invocation)
+	itemSteps := make(map[control.ItemID]int)
+	for _, record := range bundle.Trace.Records {
+		for _, transition := range record.ItemTransitions {
+			if _, exists := itemSteps[transition.Item]; !exists {
+				itemSteps[transition.Item] = int(record.Step)
+			}
+		}
+		if record.Action.Kind != control.ActionInvoke {
+			continue
+		}
+		var parameters control.AdapterInvokeParameters
+		if err := json.Unmarshal(record.Action.Parameters, &parameters); err != nil {
+			return etcdraftClientApplicationBindingViolation(
+				int(record.Step), "invoke parameters could not be decoded",
+			)
+		}
+		input, err := etcdraftv2.ProjectInput(parameters.Input)
+		if err != nil {
+			return etcdraftClientApplicationBindingViolation(
+				int(record.Step), "invoke input projection failed",
+			)
+		}
+		if _, exists := invocations[input.RequestID]; exists {
+			return etcdraftClientApplicationBindingViolation(
+				int(record.Step), fmt.Sprintf("duplicate invoke request %s", input.RequestID),
+			)
+		}
+		invocations[input.RequestID] = invocation{
+			step: int(record.Step), origin: record.Action.Node, input: input,
+		}
+	}
+
+	type witnessedCommand struct {
+		step    int
+		owner   control.NodeRef
+		command etcdraftv2.AppliedCommandEvidence
+	}
+	var witnessed []witnessedCommand
+	for _, item := range bundle.FinalSnapshot.Items {
+		if item.Kind != control.ItemObservation || item.Value.Observation == nil ||
+			item.Value.Observation.Kind != etcdraftv2.ReadyAdvancedObservationKind {
+			continue
+		}
+		step := itemSteps[item.ID]
+		if step <= 0 {
+			return etcdraftClientApplicationBindingViolation(
+				0, fmt.Sprintf("ready-advanced observation %s has no trace step", item.ID),
+			)
+		}
+		projected, err := etcdraftv2.ProjectReadyAdvancedObservation(*item.Value.Observation)
+		if err != nil {
+			return etcdraftClientApplicationBindingViolation(
+				step, "ready-advanced observation projection failed",
+			)
+		}
+		for _, command := range projected.Commands {
+			witnessed = append(witnessed, witnessedCommand{
+				step: step, owner: item.Owner, command: command,
+			})
+		}
+	}
+
+	for _, entry := range bundle.ClientHistory {
+		result, err := etcdraftv2.ProjectClientResult(entry.Response)
+		if err != nil {
+			return etcdraftClientApplicationBindingViolation(
+				entry.Step, fmt.Sprintf("client result %s projection failed", entry.Response.RequestID),
+			)
+		}
+		if result.Status != "committed" {
+			continue
+		}
+		invoke, exists := invocations[result.RequestID]
+		if !exists {
+			return etcdraftClientApplicationBindingViolation(
+				entry.Step, fmt.Sprintf("committed result %s has no invoke", result.RequestID),
+			)
+		}
+		if entry.Step < invoke.step || entry.Response.Owner.Node != invoke.origin.Node ||
+			!bytes.Equal(result.Value, invoke.input.Value) {
+			return etcdraftClientApplicationBindingViolation(
+				entry.Step, fmt.Sprintf("committed result %s does not match its invoke", result.RequestID),
+			)
+		}
+		matches := 0
+		for _, candidate := range witnessed {
+			if candidate.step != entry.Step || candidate.owner != entry.Response.Owner {
+				continue
+			}
+			command := candidate.command
+			if command.RequestID == result.RequestID && command.Index == result.Index &&
+				command.Term == result.Term && command.Origin == invoke.origin &&
+				bytes.Equal(command.Value, result.Value) {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return etcdraftClientApplicationBindingViolation(
+				entry.Step, fmt.Sprintf(
+					"committed result %s has %d exact applied-command witnesses", result.RequestID, matches,
+				),
+			)
+		}
+	}
+	type logPosition struct {
+		index uint64
+		term  uint64
+	}
+	positions := make(map[string]logPosition)
+	for _, candidate := range witnessed {
+		command := candidate.command
+		invoke, exists := invocations[command.RequestID]
+		if !exists {
+			return etcdraftClientApplicationBindingViolation(
+				candidate.step, fmt.Sprintf("applied command %s has no prior invoke", command.RequestID),
+			)
+		}
+		if candidate.step <= invoke.step || command.Origin != invoke.origin ||
+			!bytes.Equal(command.Value, invoke.input.Value) {
+			return etcdraftClientApplicationBindingViolation(
+				candidate.step, fmt.Sprintf("applied command %s does not match its invoke", command.RequestID),
+			)
+		}
+		position := logPosition{index: command.Index, term: command.Term}
+		if previous, exists := positions[command.RequestID]; exists && previous != position {
+			return etcdraftClientApplicationBindingViolation(
+				candidate.step, fmt.Sprintf("applied command %s has multiple log positions", command.RequestID),
+			)
+		}
+		positions[command.RequestID] = position
+	}
+	return nil
+}
+
+func etcdraftClientApplicationBindingViolation(step int, message string) []oracle.Violation {
+	return []oracle.Violation{{
+		Monitor: etcdraftClientApplicationBindingMonitorID, Step: step, Message: message,
+	}}
+}

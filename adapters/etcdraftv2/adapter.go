@@ -617,7 +617,9 @@ func (adapter *Adapter) advanceReadyEffect(node *nodeState) ([]control.ProducedI
 	}
 	node.outstanding = nil
 	node.advanceCount++
-	observation, err := adapter.observation(node, "ready-advanced", record.id)
+	observation, err := adapter.typedObservation(node, ReadyAdvancedObservationKind, readyAdvancedObservation{
+		ReadyID: record.id, Commands: commands,
+	})
 	if err != nil {
 		return nil, err
 	}

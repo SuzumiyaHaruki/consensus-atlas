@@ -27,6 +27,7 @@ type etcdraftScenarioSessionOptions struct {
 	SemanticInputPath string
 	Resume            bool
 	AgentKeyFile      string
+	SemanticExposure  controlexperiment.ScenarioSemanticExposureMode
 	Client            openRouterIntentClient
 	ReadKey           agentKeyReader
 }
@@ -42,19 +43,20 @@ type etcdraftScenarioSessionEpisodeArtifact struct {
 // etcdraftScenarioSessionSummary is a derived terminal view. Campaign remains
 // the durable ledger; this view is rebuilt from committed attempt artifacts.
 type etcdraftScenarioSessionSummary struct {
-	Campaign                controlexperiment.CampaignSummary `json:"campaign"`
-	AgentCompletedEpisodes  int                               `json:"agent_completed_episodes"`
-	AgentStoppedEpisodes    int                               `json:"agent_stopped_episodes"`
-	TestingEpisodes         int                               `json:"testing_episodes"`
-	ReplayStableEpisodes    int                               `json:"replay_stable_episodes"`
-	CorePSSSamples          int                               `json:"core_pss_samples"`
-	UniqueCorePSSStates     int                               `json:"unique_core_pss_states"`
-	CorePSSStateKeys        []string                          `json:"core_pss_state_keys"`
-	BestRiskEpisode         int                               `json:"best_risk_episode,omitempty"`
-	BestRiskStatus          string                            `json:"best_risk_status,omitempty"`
-	BestSatisfiedMilestones []string                          `json:"best_satisfied_milestones,omitempty"`
-	BestFirstMissing        string                            `json:"best_first_missing_milestone,omitempty"`
-	OracleViolations        int                               `json:"oracle_violations"`
+	Campaign                controlexperiment.CampaignSummary              `json:"campaign"`
+	SemanticExposure        controlexperiment.ScenarioSemanticExposureMode `json:"semantic_exposure"`
+	AgentCompletedEpisodes  int                                            `json:"agent_completed_episodes"`
+	AgentStoppedEpisodes    int                                            `json:"agent_stopped_episodes"`
+	TestingEpisodes         int                                            `json:"testing_episodes"`
+	ReplayStableEpisodes    int                                            `json:"replay_stable_episodes"`
+	CorePSSSamples          int                                            `json:"core_pss_samples"`
+	UniqueCorePSSStates     int                                            `json:"unique_core_pss_states"`
+	CorePSSStateKeys        []string                                       `json:"core_pss_state_keys"`
+	BestRiskEpisode         int                                            `json:"best_risk_episode,omitempty"`
+	BestRiskStatus          string                                         `json:"best_risk_status,omitempty"`
+	BestSatisfiedMilestones []string                                       `json:"best_satisfied_milestones,omitempty"`
+	BestFirstMissing        string                                         `json:"best_first_missing_milestone,omitempty"`
+	OracleViolations        int                                            `json:"oracle_violations"`
 }
 
 func runEtcdraftScenarioSession(
@@ -64,6 +66,7 @@ func runEtcdraftScenarioSession(
 	clean := filepath.Clean(options.Directory)
 	if options.Directory == "" || clean == "." || clean == string(filepath.Separator) ||
 		options.CorpusPath == "" || options.SemanticInputPath == "" ||
+		(options.SemanticExposure != "" && options.SemanticExposure.Validate() != nil) ||
 		!validateEtcdraftSemanticRunKeyName(options.AgentKeyFile) ||
 		options.Client.HTTP == nil || options.ReadKey == nil ||
 		openRouterTransportFreeze(options.Client).Validate() != nil {
@@ -74,6 +77,12 @@ func runEtcdraftScenarioSession(
 	)
 	if err != nil {
 		return etcdraftScenarioSessionSummary{}, err
+	}
+	if options.SemanticExposure != "" {
+		inputs, err = overrideEtcdraftScenarioSemanticExposure(inputs, options.SemanticExposure)
+		if err != nil {
+			return etcdraftScenarioSessionSummary{}, err
+		}
 	}
 	config, err := newEtcdraftScenarioSessionConfig(inputs)
 	if err != nil {
@@ -89,7 +98,7 @@ func runEtcdraftScenarioSession(
 		return etcdraftScenarioSessionSummary{}, err
 	}
 	if recovered.Failure != nil {
-		summary, summaryErr := summarizeEtcdraftScenarioSession(&recovered)
+		summary, summaryErr := summarizeEtcdraftScenarioSession(&recovered, inputs.experiment.ScenarioSemanticExposure)
 		if summaryErr != nil {
 			return etcdraftScenarioSessionSummary{}, summaryErr
 		}
@@ -108,11 +117,30 @@ func runEtcdraftScenarioSession(
 		return etcdraftScenarioSessionSummary{}, err
 	}
 	_, runErr := coordinator.Run(ctx)
-	summary, summaryErr := summarizeEtcdraftScenarioSession(&recovered)
+	summary, summaryErr := summarizeEtcdraftScenarioSession(&recovered, inputs.experiment.ScenarioSemanticExposure)
 	if summaryErr != nil {
 		return etcdraftScenarioSessionSummary{}, summaryErr
 	}
 	return summary, runErr
+}
+
+func overrideEtcdraftScenarioSemanticExposure(
+	inputs etcdraftSemanticCalibrationInputs,
+	mode controlexperiment.ScenarioSemanticExposureMode,
+) (etcdraftSemanticCalibrationInputs, error) {
+	if mode.Validate() != nil {
+		return etcdraftSemanticCalibrationInputs{}, errors.New("ETCDRAFT_SCENARIO_SEMANTIC_OVERRIDE_INVALID")
+	}
+	inputs.experiment.ScenarioSemanticExposure = mode
+	spec, err := newEtcdraftSemanticCalibrationSpec(
+		inputs.campaign, inputs.root, inputs.frontier, inputs.riskSpec, inputs.knowledge,
+		inputs.hypothesis, inputs.experiment, inputs.searchSpec, openRouterTransportFreeze(inputs.client),
+	)
+	if err != nil {
+		return etcdraftSemanticCalibrationInputs{}, err
+	}
+	inputs.spec = spec
+	return inputs, nil
 }
 
 func newEtcdraftScenarioSessionConfig(
@@ -172,18 +200,26 @@ func executeEtcdraftScenarioSessionEpisode(
 		key = ""
 		return activateErr
 	}
-	maxAttempts := inputs.experiment.ScenarioMaxAttempts
-	if request.Allowance.ModelCalls < maxAttempts {
-		maxAttempts = request.Allowance.ModelCalls
+	maxCalls := inputs.experiment.ScenarioMaxCalls
+	if request.Allowance.ModelCalls < maxCalls {
+		maxCalls = request.Allowance.ModelCalls
 	}
-	if maxAttempts <= 0 {
+	if maxCalls <= 0 {
 		return controlexperiment.CampaignAttemptResult{}, errors.New("ETCDRAFT_SCENARIO_SESSION_MODEL_ALLOWANCE_EMPTY")
 	}
 	result, err := runEtcdraftScenarioAgentEpisode(
-		ctx, inputs, journal, prior, maxAttempts, inputs.experiment.ScenarioMaxSteps, activateKey,
+		ctx, inputs, journal, prior, maxCalls, inputs.experiment.ScenarioMaxSteps,
+		inputs.experiment.ScenarioMaxDecisions, activateKey,
 	)
 	if err != nil {
-		return controlexperiment.CampaignAttemptResult{}, err
+		modelWork, auditErr := etcdraftScenarioAuditedModelWork(result.ProviderCalls)
+		if auditErr != nil {
+			return controlexperiment.CampaignAttemptResult{}, err
+		}
+		result.Agent.ModelWork = modelWork
+		return controlexperiment.CampaignAttemptResult{
+			Work: etcdraftScenarioSessionWork(result, request.Ordinal == 1, inputs),
+		}, err
 	}
 	artifactValue, err := newEtcdraftScenarioSessionEpisodeArtifact(inputs.client, result)
 	if err != nil {
@@ -302,12 +338,16 @@ func (artifact etcdraftScenarioSessionEpisodeArtifact) validate() error {
 
 func summarizeEtcdraftScenarioSession(
 	recovered *controlexperiment.CampaignRecovery,
+	exposure controlexperiment.ScenarioSemanticExposureMode,
 ) (etcdraftScenarioSessionSummary, error) {
+	if exposure.Validate() != nil {
+		return etcdraftScenarioSessionSummary{}, errors.New("ETCDRAFT_SCENARIO_SESSION_EXPOSURE_INVALID")
+	}
 	campaign, err := controlexperiment.NewCampaignSummary(recovered)
 	if err != nil {
 		return etcdraftScenarioSessionSummary{}, err
 	}
-	summary := etcdraftScenarioSessionSummary{Campaign: campaign}
+	summary := etcdraftScenarioSessionSummary{Campaign: campaign, SemanticExposure: exposure}
 	states := make(map[string]bool)
 	for ordinal := 1; ordinal <= campaign.Sequence; ordinal++ {
 		encoded, err := recovered.ReadAttemptArtifact(ordinal)
@@ -400,6 +440,19 @@ func etcdraftScenarioSessionWork(
 	}
 	work.Model = result.Agent.ModelWork
 	return work
+}
+
+func etcdraftScenarioAuditedModelWork(
+	audits []controlexperiment.StatelessAgentCallAudit,
+) (controlexperiment.ModelWork, error) {
+	var work controlexperiment.ModelWork
+	for index, audit := range audits {
+		if audit.Validate() != nil || audit.Ordinal != index+1 {
+			return controlexperiment.ModelWork{}, errors.New("ETCDRAFT_SCENARIO_SESSION_CALL_AUDIT_INVALID")
+		}
+		addEtcdraftSemanticModelWork(&work, audit.Work)
+	}
+	return work, nil
 }
 
 func addEtcdraftScenarioSessionLedger(

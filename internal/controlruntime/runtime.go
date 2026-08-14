@@ -60,6 +60,13 @@ type executionMeta struct {
 	clockAdvance *ClockAdvance
 }
 
+type nativeCommit struct {
+	action     control.Action
+	clone      *control.ProducedItem
+	cloneCount uint64
+	partition  *control.PartitionParameters
+}
+
 func New(ctx context.Context, adapter control.Adapter, config Config) (*Runtime, error) {
 	if adapter == nil {
 		return nil, errors.New("ADAPTER_REQUIRED")
@@ -177,10 +184,15 @@ func (runtime *Runtime) Select(ctx context.Context, id control.ActionID) (Action
 	if runtime.adapterDirected(selected.Kind) {
 		meta, err = runtime.executeAdapter(ctx, *selected)
 	} else {
-		if err = runtime.adapter.ApplyRuntimeAction(ctx, *selected); err != nil {
-			err = fmt.Errorf("ADAPTER_RUNTIME_ACTION_FAILED: %w", err)
-		} else {
-			err = runtime.executeNative(*selected)
+		var commit nativeCommit
+		commit, err = runtime.prepareNative(*selected)
+		if err == nil {
+			if applyErr := runtime.adapter.ApplyRuntimeAction(ctx, *selected); applyErr != nil {
+				err = fmt.Errorf("ADAPTER_RUNTIME_ACTION_FAILED: %w", applyErr)
+			}
+		}
+		if err == nil {
+			runtime.commitNative(commit)
 		}
 	}
 	if err != nil {
@@ -348,58 +360,71 @@ func (runtime *Runtime) commitAdapterAction(action control.Action, emission cont
 	return nil
 }
 
-func (runtime *Runtime) executeNative(action control.Action) error {
+func (runtime *Runtime) prepareNative(action control.Action) (nativeCommit, error) {
+	commit := nativeCommit{action: action}
 	switch action.Kind {
 	case control.ActionDuplicateMessage:
 		entry := runtime.items[action.Item]
 		if entry == nil || entry.item.Kind != control.ItemMessage || entry.state != control.ItemEnabled {
-			return fmt.Errorf("DUPLICATE_ITEM_INVALID: %s", action.Item)
+			return nativeCommit{}, fmt.Errorf("DUPLICATE_ITEM_INVALID: %s", action.Item)
 		}
 		count := runtime.cloneCounts[action.Item] + 1
 		if count > runtime.maxClones {
-			return fmt.Errorf("DUPLICATE_BUDGET_EXCEEDED: %s", action.Item)
+			return nativeCommit{}, fmt.Errorf("DUPLICATE_BUDGET_EXCEEDED: %s", action.Item)
 		}
 		itemID, err := control.StableID("item-clone", string(action.Item), fmt.Sprint(count))
 		if err != nil {
-			return err
+			return nativeCommit{}, err
 		}
 		messageID, err := control.StableID("message-clone", string(entry.item.Message.ID), fmt.Sprint(count))
 		if err != nil {
-			return err
+			return nativeCommit{}, err
 		}
 		clone := cloneItem(entry.item)
 		clone.ID = control.ItemID(itemID)
 		clone.Dependencies = nil
 		clone.Message.CloneOf = entry.item.Message.ID
 		clone.Message.ID = control.MessageID(messageID)
-		runtime.items[clone.ID] = &itemEntry{item: clone, state: control.ItemEnabled}
-		runtime.cloneCounts[action.Item] = count
+		commit.clone = &clone
+		commit.cloneCount = count
 	case control.ActionPartition:
 		parameters, err := control.DecodePartitionParameters(action.Parameters)
 		if err != nil {
-			return err
+			return nativeCommit{}, err
 		}
 		if runtime.partitions[parameters.ID] != nil {
-			return fmt.Errorf("PARTITION_ALREADY_ACTIVE: %s", parameters.ID)
+			return nativeCommit{}, fmt.Errorf("PARTITION_ALREADY_ACTIVE: %s", parameters.ID)
 		}
-		runtime.partitions[parameters.ID] = &partition{
-			id:    parameters.ID,
-			left:  append([]control.NodeID(nil), parameters.Left...),
-			right: append([]control.NodeID(nil), parameters.Right...),
-		}
+		commit.partition = &parameters
 	case control.ActionHeal:
 		parameters, err := control.DecodePartitionParameters(action.Parameters)
 		if err != nil {
-			return err
+			return nativeCommit{}, err
 		}
 		if runtime.partitions[parameters.ID] == nil {
-			return fmt.Errorf("PARTITION_NOT_ACTIVE: %s", parameters.ID)
+			return nativeCommit{}, fmt.Errorf("PARTITION_NOT_ACTIVE: %s", parameters.ID)
 		}
-		delete(runtime.partitions, parameters.ID)
+		commit.partition = &parameters
 	default:
-		return fmt.Errorf("NATIVE_ACTION_UNSUPPORTED: %s", action.Kind)
+		return nativeCommit{}, fmt.Errorf("NATIVE_ACTION_UNSUPPORTED: %s", action.Kind)
 	}
-	return nil
+	return commit, nil
+}
+
+func (runtime *Runtime) commitNative(commit nativeCommit) {
+	switch commit.action.Kind {
+	case control.ActionDuplicateMessage:
+		runtime.items[commit.clone.ID] = &itemEntry{item: *commit.clone, state: control.ItemEnabled}
+		runtime.cloneCounts[commit.action.Item] = commit.cloneCount
+	case control.ActionPartition:
+		parameters := commit.partition
+		runtime.partitions[parameters.ID] = &partition{
+			id: parameters.ID, left: append([]control.NodeID(nil), parameters.Left...),
+			right: append([]control.NodeID(nil), parameters.Right...),
+		}
+	case control.ActionHeal:
+		delete(runtime.partitions, commit.partition.ID)
+	}
 }
 
 func (runtime *Runtime) collect(ctx context.Context, yield control.Yield) (cycleResult, error) {

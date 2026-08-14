@@ -361,7 +361,7 @@ func TestReplayWithProgressChargesCompletedDecisionBeforeDivergence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	trace.Records[0].Outcome = "tampered-expected-outcome"
+	trace.Records[0].EnabledSetDigest = strings.Repeat("0", 64)
 	trace, err = trace.Seal()
 	if err != nil {
 		t.Fatal(err)
@@ -373,6 +373,64 @@ func TestReplayWithProgressChargesCompletedDecisionBeforeDivergence(t *testing.T
 	}
 	if !progress.RuntimeInitialized || progress.Decisions != 1 {
 		t.Fatalf("ReplayWithProgress() progress = %#v, want initialized + one decision", progress)
+	}
+}
+
+func TestTraceValidateRejectsResealedInvalidRecord(t *testing.T) {
+	ctx := context.Background()
+	runtime := newRuntime(t)
+	action := mustEnabled(t, ctx, runtime)[0]
+	if _, err := runtime.Select(ctx, action.ID); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace.Records[0].Step = 2
+	trace, err = trace.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := trace.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_STEP_NONCONTIGUOUS") {
+		t.Fatalf("Trace.Validate() error = %v, want non-contiguous step", err)
+	}
+}
+
+func TestReplayReoffersPartitionThroughNodeValidation(t *testing.T) {
+	ctx := context.Background()
+	runtime := newRuntime(t)
+	partitionID, err := runtime.OfferPartition([]control.NodeID{"n1"}, []control.NodeID{"n2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Select(ctx, partitionID); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := control.NewPartitionParameters(
+		[]control.NodeID{"missing-node"}, []control.NodeID{"n2"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace.Records[0].Action.Parameters, err = json.Marshal(parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace, err = trace.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, progress, err := controlruntime.ReplayWithProgress(ctx, fixture.New(), runtimeConfig(), trace)
+	if err == nil || !strings.Contains(err.Error(), "PARTITION_NODE_UNKNOWN: missing-node") {
+		t.Fatalf("ReplayWithProgress() error = %v, want unknown partition node", err)
+	}
+	if !progress.RuntimeInitialized || progress.PrepareActions != 0 || progress.Decisions != 0 {
+		t.Fatalf("ReplayWithProgress() progress = %#v, want only initialized Runtime", progress)
 	}
 }
 

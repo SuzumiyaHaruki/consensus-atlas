@@ -50,13 +50,17 @@ func executeEtcdraftSemanticTesting(
 	if err != nil {
 		return etcdraftSemanticTestingResult{}, err
 	}
-	risk, err := (etcdraftSemanticPrefixProjector{}).Project(
+	risk, err := projectEtcdraftSemanticRisk(
 		candidate.RiskResult.ID, inputs.riskSpec, bundle.Trace,
+		bundle.ClientHistory, bundle.OperationHistory,
 	)
 	if err != nil {
 		return etcdraftSemanticTestingResult{}, err
 	}
-	verdict := oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
+	verdict := oracle.CheckBundle(
+		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
+		etcdraftClientApplicationBindingMonitor{},
+	)
 	outcome := etcdraftSemanticTestingPassed
 	if len(verdict.Violations) > 0 {
 		outcome = etcdraftSemanticTestingViolation
@@ -92,15 +96,17 @@ func (result etcdraftSemanticTestingResult) Validate(
 		result.Replay != result.Bundle.Run.Replay || !result.Replay.Required || !result.Replay.Stable {
 		return errors.New("ETCDRAFT_SEMANTIC_TESTING_EXECUTION_MISMATCH")
 	}
-	wantRisk, err := (etcdraftSemanticPrefixProjector{}).Project(
+	wantRisk, err := projectEtcdraftSemanticRisk(
 		candidate.RiskResult.ID, inputs.riskSpec, result.Bundle.Trace,
+		result.Bundle.ClientHistory, result.Bundle.OperationHistory,
 	)
 	if err != nil || !reflect.DeepEqual(wantRisk, candidate.RiskResult) ||
 		!reflect.DeepEqual(result.Risk, wantRisk) {
 		return errors.New("ETCDRAFT_SEMANTIC_TESTING_RISK_MISMATCH")
 	}
 	wantOracle := oracle.CheckBundle(
-		result.Bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{},
+		result.Bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
+		etcdraftClientApplicationBindingMonitor{},
 	)
 	wantOutcome := etcdraftSemanticTestingPassed
 	if len(wantOracle.Violations) > 0 {

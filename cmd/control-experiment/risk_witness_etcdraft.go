@@ -57,6 +57,26 @@ func projectEtcdraftLeaderChangeRiskMilestones(
 		return nil, err
 	}
 	oldAtInvoke := oldCoordinator
+	applicationCommandsAtInvoke := 0
+	if invoke.Evidence != nil {
+		evidence, err := etcdraftv2.ProjectEvidence(*invoke.Evidence)
+		if err != nil {
+			return nil, err
+		}
+		for _, node := range evidence.Nodes {
+			if node.ApplicationCommands > applicationCommandsAtInvoke {
+				applicationCommandsAtInvoke = node.ApplicationCommands
+			}
+		}
+	}
+	if terminalStep == 0 && operations == nil && len(clients) == 0 {
+		terminalStep, err = etcdraftRiskWitnessAppliedTerminalStep(
+			trace, invoke.Step, applicationCommandsAtInvoke,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	milestones := []semantic.RiskWitnessMilestoneEvidence{{
 		MilestoneID: raftfamily.MilestoneWorkloadInvokedAtCoordinator,
 		Step:        invoke.Step, Kind: "trace-action", EvidenceDigest: invokeDigest,
@@ -148,6 +168,32 @@ func projectEtcdraftLeaderChangeRiskMilestones(
 		}
 	}
 	return milestones, nil
+}
+
+// A planning prefix has no generic client history. For the current single
+// proposal workload, an increase in the Adapter-owned application command
+// count is a conservative terminal fact: the projector must not interpret
+// missing return history as proof that the proposal is still in flight.
+func etcdraftRiskWitnessAppliedTerminalStep(
+	trace controlruntime.Trace,
+	invokeStep uint64,
+	applicationCommandsAtInvoke int,
+) (uint64, error) {
+	for _, record := range trace.Records {
+		if record.Step <= invokeStep || record.Evidence == nil {
+			continue
+		}
+		evidence, err := etcdraftv2.ProjectEvidence(*record.Evidence)
+		if err != nil {
+			return 0, err
+		}
+		for _, node := range evidence.Nodes {
+			if node.ApplicationCommands > applicationCommandsAtInvoke {
+				return record.Step, nil
+			}
+		}
+	}
+	return 0, nil
 }
 
 func etcdraftRiskWitnessStoppedTransition(

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	statelessAgentMaxCalls = 6
+	statelessAgentMaxCalls = controlexperiment.ScenarioAgentMaxCalls
 )
 
 var errStatelessAgentCallKeyRequired = errors.New("STATELESS_AGENT_CALL_KEY_REQUIRED")

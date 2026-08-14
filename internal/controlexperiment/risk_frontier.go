@@ -110,25 +110,48 @@ func ReconstructRiskFrontierView(
 	faultEnvelope *FaultEnvelope,
 	newAdapter AdapterFactory,
 ) (RiskFrontierView, PhaseWork, error) {
+	view, _, work, err := ReconstructRiskFrontierState(
+		ctx, id, spec, result, trace, completedDecisions, runtimeConfig, faultEnvelope, newAdapter,
+	)
+	return view, work, err
+}
+
+// ReconstructRiskFrontierState additionally returns the trusted Runtime
+// snapshot for target-local semantic projection. The planner never receives
+// this raw snapshot.
+func ReconstructRiskFrontierState(
+	ctx context.Context,
+	id string,
+	spec semantic.RiskWitnessSpec,
+	result semantic.RiskWitnessResult,
+	trace controlruntime.Trace,
+	completedDecisions int,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	newAdapter AdapterFactory,
+) (RiskFrontierView, controlruntime.Snapshot, PhaseWork, error) {
 	prefix, err := ExecutionTracePrefix(trace, completedDecisions)
 	if err != nil {
-		return RiskFrontierView{}, PhaseWork{}, err
+		return RiskFrontierView{}, controlruntime.Snapshot{}, PhaseWork{}, err
 	}
 	if result.ExecutionDigest != prefix.Digest || result.TargetIdentityDigest != prefix.ManifestDigest {
-		return RiskFrontierView{}, PhaseWork{}, errors.New("EXPERIMENT_FRONTIER_PROGRESS_PREFIX_MISMATCH")
+		return RiskFrontierView{}, controlruntime.Snapshot{}, PhaseWork{}, errors.New("EXPERIMENT_FRONTIER_PROGRESS_PREFIX_MISMATCH")
 	}
 	progress, err := semantic.NewRiskWitnessProgress(spec, result)
 	if err != nil {
-		return RiskFrontierView{}, PhaseWork{}, err
+		return RiskFrontierView{}, controlruntime.Snapshot{}, PhaseWork{}, err
 	}
-	frontier, work, err := ReconstructActionFrontierView(
-		ctx, id, trace, completedDecisions, runtimeConfig, faultEnvelope, newAdapter,
+	frontier, runtime, work, err := reconstructActionFrontierPrefix(
+		ctx, id, prefix, runtimeConfig, faultEnvelope, newAdapter,
 	)
 	if err != nil {
-		return RiskFrontierView{}, work, err
+		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
 	}
 	view, err := newRiskFrontierView(id, spec, progress, frontier)
-	return view, work, err
+	if err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
+	}
+	return view, runtime.Snapshot(), work, nil
 }
 
 func newRiskFrontierView(

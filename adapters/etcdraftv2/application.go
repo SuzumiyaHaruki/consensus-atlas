@@ -103,6 +103,11 @@ type appliedCommand struct {
 	Value     []byte          `json:"value"`
 }
 
+type readyAdvancedObservation struct {
+	ReadyID  string           `json:"value"`
+	Commands []appliedCommand `json:"commands,omitempty"`
+}
+
 type applicationImage struct {
 	SchemaVersion string           `json:"schema_version"`
 	Applied       uint64           `json:"applied"`

@@ -131,6 +131,14 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 			want: "PROVIDER_FAILED",
 		},
 		{
+			name: "provider-error-with-work",
+			result: CampaignAttemptResult{
+				Work: campaignTestWork(2, 2, 0, 0),
+			},
+			providerError: errors.New("fixture provider error after work"),
+			want:          "PROVIDER_FAILED",
+		},
+		{
 			name: "over-allowance",
 			result: CampaignAttemptResult{
 				Outcome: CampaignAttemptCompleted, Work: campaignTestWork(11, 5, 0, 0),
@@ -199,6 +207,17 @@ func TestCampaignCoordinatorRejectsInvalidProviderResultWithoutRetry(t *testing.
 			}
 			if checked.Failure.Code != wantCode {
 				t.Fatalf("durable failure code = %q, want %q", checked.Failure.Code, wantCode)
+			}
+			wantFailureWork := emptyWork()
+			if test.providerError != nil && validateMethodWork(test.result.Work) == nil {
+				wantFailureWork = test.result.Work
+			}
+			if checked.Failure.Work != wantFailureWork {
+				t.Fatalf("durable provider work = %#v, want %#v", checked.Failure.Work, wantFailureWork)
+			}
+			summary, summaryErr := NewCampaignSummary(&checked)
+			if summaryErr != nil || summary.Totals != wantFailureWork {
+				t.Fatalf("provider failure work missing from terminal summary: %#v/%v", summary, summaryErr)
 			}
 			if _, err := newCampaignCoordinator(
 				&checked, provider, newCampaignTestClock(0).Now,

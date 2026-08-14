@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const scenarioAgentPromptVersion = "scenario-agent-plan-v1"
+const scenarioAgentPromptVersion = "scenario-agent-receding-horizon-v3"
 
 type scenarioAgentCallJournal struct {
 	core *statelessAgentCallJournal
@@ -99,6 +99,7 @@ func scenarioAgentPrompt(
 		view.Hypothesis.Validate(
 			view.Knowledge, spec, controlexperiment.ScenarioPlanningBackendID,
 		) != nil || view.Frontier.Validate(spec) != nil || view.MaxSteps <= 0 ||
+		view.Semantics.Validate(view.Frontier) != nil ||
 		view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps || len(view.Frontier.Actions) == 0 {
 		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
 	}
@@ -110,19 +111,33 @@ func scenarioAgentPrompt(
 		}},
 	}
 	input := struct {
-		PromptVersion string                              `json:"prompt_version"`
-		PlanTemplate  controlexperiment.ScenarioPlan      `json:"plan_template"`
-		AgentView     controlexperiment.ScenarioAgentView `json:"agent_view"`
-	}{scenarioAgentPromptVersion, template, view}
+		PromptVersion  string                              `json:"prompt_version"`
+		PlanTemplate   controlexperiment.ScenarioPlan      `json:"plan_template"`
+		SelectorFields []string                            `json:"selector_fields"`
+		AgentView      controlexperiment.ScenarioAgentView `json:"agent_view"`
+	}{
+		PromptVersion: scenarioAgentPromptVersion,
+		PlanTemplate:  template,
+		SelectorFields: []string{
+			"action_id", "kind", "node", "item_kind", "owner", "message_source",
+			"message_target", "temporal_kind", "effect_kind", "durability",
+		},
+		AgentView: view,
+	}
 	encoded, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
 		return "", "", err
 	}
-	system := "Return exactly one ScenarioPlan JSON object and no prose. Use only id, steps, and selector fields shown by " +
-		"plan_template. Use an exact action_id only for an Action currently listed in root_frontier or prior feedback; " +
-		"use semantic selector fields for future steps. Never add budgets, faults, assertions, verdicts, or digests."
+	system := "Return exactly one ScenarioPlan JSON object and no prose. Use only id, steps, and selector_fields listed in " +
+		"the frozen input. action_id is valid only for an Action in the supplied current root_frontier. For every step after " +
+		"the first, omit action_id and use stable semantic selector fields because executing an earlier step rebuilds the " +
+		"frontier and may invalidate every current ActionID. Never copy an ActionID from prior_feedback. " +
+		"action_semantics only describes the bound current Actions and grants " +
+		"no authority to invent Actions or facts. Never add budgets, faults, assertions, verdicts, or digests."
 	user := "Create a short plan of at most max_steps that advances the supplied hypothesis. A trusted concretizer requires " +
-		"each selector to match exactly one current admissible Action. If prior_feedback exists, return a complete revised plan " +
-		"from the same root and repair its mechanical reason. Frozen input JSON:\n" + string(encoded)
+		"each selector to match exactly one current admissible Action. A completed prior_feedback means the trusted root has " +
+		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback means return a " +
+		"complete revised plan from the current root and repair its mechanical reason. plan_template demonstrates only a " +
+		"first-step exact ID; later steps must use selector_fields without action_id. Frozen input JSON:\n" + string(encoded)
 	return system, user, nil
 }

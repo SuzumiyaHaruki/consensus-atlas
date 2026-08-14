@@ -8,6 +8,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
@@ -35,14 +36,16 @@ func runEtcdraftScenarioAgentEpisode(
 	inputs etcdraftSemanticCalibrationInputs,
 	journal *scenarioAgentCallJournal,
 	initialFeedback *controlexperiment.ScenarioAgentFeedback,
-	maxAttempts int,
-	maxSteps int,
+	maxCalls int,
+	maxPlanSteps int,
+	maxDecisions int,
 	activateKey func() error,
 ) (etcdraftScenarioEpisodeResult, error) {
-	if journal == nil || journal.core == nil || maxAttempts <= 0 ||
-		maxAttempts > controlexperiment.ScenarioAgentMaxAttempts || maxSteps <= 0 ||
-		maxSteps > controlexperiment.ScenarioPlanMaxSteps ||
-		activateKey == nil || !validEtcdraftScenarioInitialFeedback(initialFeedback, maxSteps) ||
+	if journal == nil || journal.core == nil || maxCalls <= 0 ||
+		maxCalls > controlexperiment.ScenarioAgentMaxCalls || maxPlanSteps <= 0 ||
+		maxPlanSteps > controlexperiment.ScenarioPlanMaxSteps || maxDecisions <= 0 ||
+		maxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
+		activateKey == nil || !validEtcdraftScenarioInitialFeedback(initialFeedback, maxPlanSteps) ||
 		journal.SetRoot("invoked-scenario") != nil {
 		return etcdraftScenarioEpisodeResult{}, errors.New("ETCDRAFT_SCENARIO_EPISODE_INPUT_INVALID")
 	}
@@ -54,7 +57,7 @@ func runEtcdraftScenarioAgentEpisode(
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 	}
-	frontier, frontierWork, err := controlexperiment.ReconstructRiskFrontierView(
+	frontier, snapshot, frontierWork, err := controlexperiment.ReconstructRiskFrontierState(
 		ctx, "etcdraft-scenario-root-frontier", inputs.riskSpec, rootRisk,
 		inputs.root, len(inputs.root.Records), inputs.experiment.Runtime,
 		inputs.experiment.faultEnvelope(), factory,
@@ -62,11 +65,26 @@ func runEtcdraftScenarioAgentEpisode(
 	if err != nil {
 		return etcdraftScenarioEpisodeResult{}, err
 	}
+	semantics, err := projectEtcdraftScenarioSemantics(
+		inputs.experiment.ScenarioSemanticExposure, inputs.root, frontier, snapshot,
+	)
+	if err != nil {
+		return etcdraftScenarioEpisodeResult{}, err
+	}
 	plannerCalls := 0
 	agent, err := controlexperiment.ExploreScenarioWithPlanner(
-		ctx, maxAttempts, maxSteps,
-		inputs.knowledge, inputs.hypothesis, inputs.riskSpec, frontier, rootRisk, inputs.root,
+		ctx, maxCalls, maxPlanSteps, maxDecisions,
+		inputs.knowledge, inputs.hypothesis, inputs.riskSpec, frontier, semantics, rootRisk, inputs.root,
 		inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector,
+		func(
+			trace controlruntime.Trace,
+			frontier controlexperiment.RiskFrontierView,
+			snapshot controlruntime.Snapshot,
+		) (controlexperiment.ScenarioSemanticExposure, error) {
+			return projectEtcdraftScenarioSemantics(
+				inputs.experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
+			)
+		},
 		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
@@ -85,15 +103,18 @@ func runEtcdraftScenarioAgentEpisode(
 			return journal.Planner(ctx, inputs.riskSpec, view)
 		},
 	)
-	if err != nil {
-		return etcdraftScenarioEpisodeResult{}, err
-	}
-	audits, err := journal.Audits()
-	if err != nil || len(audits) != len(agent.Attempts) {
-		return etcdraftScenarioEpisodeResult{}, errors.New("ETCDRAFT_SCENARIO_EPISODE_AUDIT_INVALID")
-	}
+	audits, auditErr := journal.Audits()
 	result := etcdraftScenarioEpisodeResult{
 		Agent: agent, ProviderCalls: audits, FrontierWork: frontierWork,
+	}
+	if auditErr != nil {
+		return result, auditErr
+	}
+	if err != nil {
+		return result, err
+	}
+	if len(audits) != len(agent.Attempts) {
+		return etcdraftScenarioEpisodeResult{}, errors.New("ETCDRAFT_SCENARIO_EPISODE_AUDIT_INVALID")
 	}
 	if agent.Status == controlexperiment.ScenarioAgentCompleted {
 		testing, err := executeEtcdraftScenarioQualified(ctx, inputs, *agent.Execution)
@@ -153,14 +174,18 @@ func executeEtcdraftScenarioQualified(
 	if err != nil {
 		return etcdraftScenarioTestingResult{}, err
 	}
-	risk, err := (etcdraftSemanticPrefixProjector{}).Project(
+	risk, err := projectEtcdraftSemanticRisk(
 		execution.FinalRisk.ID, inputs.riskSpec, bundle.Trace,
+		bundle.ClientHistory, bundle.OperationHistory,
 	)
 	if err != nil || bundle.Trace.Digest != execution.FinalTrace.Digest ||
 		!reflect.DeepEqual(risk, execution.FinalRisk) {
 		return etcdraftScenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
-	verdict := oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
+	verdict := oracle.CheckBundle(
+		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
+		etcdraftClientApplicationBindingMonitor{},
+	)
 	outcome := etcdraftSemanticTestingPassed
 	if len(verdict.Violations) > 0 {
 		outcome = etcdraftSemanticTestingViolation

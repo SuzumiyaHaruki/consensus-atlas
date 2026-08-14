@@ -13,8 +13,8 @@
         "text": "Leadership change and recovery arise through controlled message delivery, lifecycle events, and natural temporal progress."
       },
       {
-        "id": "semantic-queue-only",
-        "text": "Choose only the complete Candidate ID set supplied by the current trusted semantic queue."
+        "id": "trusted-view-only",
+        "text": "Choose only candidates or actions supplied by the current trusted view; never invent identities or execution facts."
       }
     ],
     "risks": [
@@ -86,18 +86,20 @@
       "max_calls": 2,
       "max_tokens": 16000
     },
-    "scenario_max_attempts": 2,
+    "scenario_max_calls": 8,
     "scenario_max_steps": 4,
+    "scenario_max_decisions": 32,
+    "scenario_semantic_exposure": "full",
     "model_max_output_tokens": 1200,
     "model_max_retries": 2,
     "session_budget": {
       "max_attempts": 2,
-      "max_primary_scheduler_decisions": 4096,
-      "max_primary_work_units": 8192,
-      "max_replay_work_units": 4096,
-      "max_model_calls": 4,
-      "max_model_tokens": 32000
+      "max_primary_scheduler_decisions": 16384,
+      "max_primary_work_units": 32768,
+      "max_replay_work_units": 8192,
+      "max_model_calls": 16,
+      "max_model_tokens": 160000
     },
-    "session_wall_clock_ms": 180000
+    "session_wall_clock_ms": 600000
   }
 }
