@@ -245,9 +245,7 @@ func TestRetiredUnqualifiedStrategiesStayUnavailable(t *testing.T) {
 func TestA5aAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
 	for _, strategy := range []string{
 		etcdraftSemanticCalibrationStrategy,
-		etcdraftScenarioCalibrationStrategy,
 		etcdraftScenarioSessionStrategy,
-		omnipaxosScenarioCalibrationStrategy,
 		omnipaxosScenarioSessionStrategy,
 	} {
 		output := &strings.Builder{}

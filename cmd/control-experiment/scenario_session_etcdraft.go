@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	etcdraftScenarioSessionStrategy = "etcdraft-openrouter-session-a6a"
-	etcdraftScenarioSessionID       = "etcdraft-scenario-session-a6a"
-	etcdraftScenarioSidecar         = "etcdraft-scenario"
+	etcdraftScenarioSessionStrategy  = "etcdraft-openrouter-session-a6a"
+	etcdraftScenarioSessionID        = "etcdraft-scenario-session-a6a"
+	etcdraftScenarioSidecar          = "etcdraft-scenario"
+	etcdraftScenarioCalibrationClass = "public-calibration-not-agent-effectiveness-holdout-or-correctness"
 )
 
 type etcdraftScenarioSessionOptions struct {

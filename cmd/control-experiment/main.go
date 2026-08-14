@@ -80,39 +80,6 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		return err
 	}
-	if *strategy == omnipaxosScenarioCalibrationStrategy {
-		if *campaignDirectory == "" || *workerPath == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" || *out != "" || *bundleOut != "" ||
-			*statelessCorpus != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
-			*scenarioSemanticExposure != "" {
-			return errors.New("OmniPaxos Scenario requires -campaign-dir, -worker, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
-		}
-		summary, err := runOmnipaxosScenarioCalibration(ctx, omnipaxosScenarioCalibrationRunOptions{
-			Directory: *campaignDirectory, WorkerPath: *workerPath, SemanticInputPath: *semanticInput,
-			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
-		})
-		if summary.AgentStatus != "" {
-			if summary.Testing != nil {
-				fmt.Fprintf(
-					stdout, "summary=%s status=%s attempts=%d pss_states=%d risk=%s replay=%t oracle_violations=%d model_calls=%d model_tokens=%d\n",
-					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus, summary.Attempts,
-					summary.Testing.UniqueCorePSSStates, summary.Testing.RiskStatus,
-					summary.Testing.ReplayStable, summary.Testing.OracleViolations,
-					summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
-				)
-			} else {
-				fmt.Fprintf(
-					stdout, "summary=%s status=%s attempts=%d model_calls=%d model_tokens=%d\n",
-					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus,
-					summary.Attempts, summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
-				)
-			}
-		}
-		return err
-	}
 	if *strategy == etcdraftScenarioSessionStrategy {
 		exposure := controlexperiment.ScenarioSemanticExposureMode(*scenarioSemanticExposure)
 		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
@@ -141,37 +108,6 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 				summary.TestingEpisodes, summary.ReplayStableEpisodes, summary.UniqueCorePSSStates,
 				summary.BestRiskStatus, summary.OracleViolations,
 			)
-		}
-		return err
-	}
-	if *strategy == etcdraftScenarioCalibrationStrategy {
-		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" || *workerPath != "" ||
-			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 || *scenarioSemanticExposure != "" {
-			return errors.New("OpenRouter Scenario calibration requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
-		}
-		summary, err := runEtcdraftScenarioCalibration(ctx, etcdraftScenarioCalibrationRunOptions{
-			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
-			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
-		})
-		if summary.AgentStatus != "" {
-			if summary.Testing != nil {
-				fmt.Fprintf(
-					stdout, "summary=%s status=%s attempts=%d pss_states=%d replay=%t oracle_violations=%d model_calls=%d model_tokens=%d\n",
-					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus, summary.Attempts,
-					summary.Testing.UniqueCorePSSStates, summary.Testing.ReplayStable,
-					summary.Testing.OracleViolations, summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
-				)
-			} else {
-				fmt.Fprintf(
-					stdout, "summary=%s status=%s attempts=%d model_calls=%d model_tokens=%d\n",
-					filepath.Join(*campaignDirectory, "summary.json"), summary.AgentStatus,
-					summary.Attempts, summary.ModelWork.Calls, summary.ModelWork.TotalTokens,
-				)
-			}
 		}
 		return err
 	}

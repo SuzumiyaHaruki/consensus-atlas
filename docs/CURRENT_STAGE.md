@@ -31,7 +31,6 @@
    message 和 timer 动作，直到 Risk 里程碑变化、客户端返回、自然推进静止或预算结束。
 8. Scenario Agent 通过现有 durable journal 调用 OpenRouter；恢复时复用精确响应，不再次访问 provider。
 9. DeepSeek、Claude、GPT 等模型只改变 `model_id`，不改变 Planner、journal、Runtime 或 evaluator。
-10. A4c CLI 将 episode 派生为紧凑 summary；恢复会重建并核对结果，不重复终止调用。
 11. `TestHypothesis` 是唯一共享语义假设；A2/A4 各自负责 queue proposal 与 short plan，不再经过 A1 兼容层。
 12. `-semantic-input` 严格读取可编辑 JSON，再交给现有构造器生成 schema/digest 并验证 A2/A4 backend。
 13. Adapter factory、Runtime、FaultEnvelope、DFS/Explorer/Scenario 预算和 OpenRouter reasoning/output 都使用
@@ -67,6 +66,8 @@
     natural-progress 动作优先级、Risk/Scenario-semantic 投影器 ID；OmniPaxos 还绑定 root、Risk spec 和
     qualification bundle。
     Campaign config 已独立绑定 session 预算与 wall-clock 终止策略，实际 stop reason 仍作为运行结果保存。
+28. etcd/raft 与 OmniPaxos 的旧单 episode Scenario CLI 已由可配置 `MaxAttempts=1` 的 Session 完整覆盖并从
+    HEAD 删除；共享 episode core、summary 和正式多 episode Session 均保留。
 
 ## 得到什么
 
@@ -98,7 +99,8 @@
   TraceIntegrity 和 Agreement 得到 0 violation。尚未接 session CLI 或真实 OpenRouter。
 - A7c 本地 OpenRouter fixture 经正式运行入口调用 1 次，选择一条 replication message 执行 DropMessage；结果仍为
   31/28 PSS、Risk reached、Replay stable、0 Oracle violation。resume 得到字节等价 summary，provider/key 均未重访。
-- 当前同时保留单 episode 校准入口和多 episode Campaign；OmniPaxos 尚未进行真实付费模型效果实验。
+- 当前只保留正式多 episode Campaign 入口；单 episode 由相同 Session 配置表达。OmniPaxos 尚未进行真实付费
+  模型效果实验。
 - 对已完成目录执行 `-campaign-resume` 得到完全相同的 episode、work、token、PSS/Risk/Oracle 汇总，没有新增
   provider 调用。
 - A6e 首次配对校准使用同一 root、semantic input、`deepseek/deepseek-v4-flash` 和 session 预算。
@@ -238,6 +240,8 @@ executor 重现完全相同的 Trace。恢复两个模型调用时 provider 调�
 和 OpenRouter 返回的实际模型标识。旧 direct-DeepSeek 工件保留为历史证据，不参与新运行恢复。
 
 ## 已完成：A4c OpenRouter Scenario 运行器
+
+本节记录历史校准；独立 CLI 已在 A8 前瘦身中删除，现行入口为 Scenario Session。
 
 显式策略 `etcdraft-openrouter-scenario-a4c` 复用 A4b journal 与 qualified episode，最多 2 次模型调用、每个
 计划最多执行 4 步。运行目录保留无凭据 prompt/request/result sidecar，`summary.json` 只报告 transport、机械
@@ -393,6 +397,8 @@ decision replay 与 opaque invoke 六项能力。成功 Scenario 被编译为 ex
 TraceIntegrity/Agreement 零异常。etcd/raft 与 OmniPaxos 相同的结果外壳已合并；协议 Risk 和 monitor 未合并。
 
 ## 已完成：A7c OpenRouter 与可调用入口
+
+本节记录历史集成；独立 CLI 已在 A8 前瘦身中删除，现行入口为 OmniPaxos Scenario Session。
 
 原 etcd/raft episode 中的 journal、Frontier/semantics 准备、Planner、closure 和 audit 组合已提为共享 core；
 etcd/raft wrapper 只保留目标 projector 与 qualified executor。OmniPaxos wrapper 复用该 core，并继续负责 worker、
