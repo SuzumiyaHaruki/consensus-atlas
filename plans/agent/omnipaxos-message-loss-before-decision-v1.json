@@ -1,0 +1,73 @@
+{
+  "protocol_knowledge": {
+    "id": "omnipaxos-message-loss-knowledge-a7",
+    "family": "paxos",
+    "protocol": "omnipaxos",
+    "knowledge": [
+      {
+        "id": "message-loss",
+        "text": "Delay one current consensus message while a proposal is in flight, then observe whether normal progress reaches a decision."
+      },
+      {
+        "id": "trusted-frontier",
+        "text": "Choose only an Action supplied by the current trusted frontier; do not invent message or node identities."
+      }
+    ],
+    "risks": [
+      {
+        "id": "message-loss-before-decision",
+        "summary": "Exercise one consensus-message loss before the in-flight workload is decided.",
+        "required_capabilities": [
+          "natural-temporal-progress",
+          "opaque-invoke-boundary",
+          "runtime-owned-message",
+          "strict-decision-replay"
+        ],
+        "required_actions": [
+          "deliver-message",
+          "drop-message",
+          "fire-temporal-event",
+          "invoke"
+        ],
+        "allowed_backend_ids": [
+          "bounded-scenario-plan-v1"
+        ]
+      }
+    ]
+  },
+  "test_hypothesis": {
+    "id": "omnipaxos-message-loss-hypothesis-a7",
+    "risk_id": "message-loss-before-decision",
+    "rationale": "Choose one current replication message for loss and let trusted natural progress seek a later decision."
+  },
+  "workload": {
+    "id": "omnipaxos-single-write-a7",
+    "target_selector": "single-coordinating-participant",
+    "invocations": [
+      {
+        "id": "omnipaxos-a7-request",
+        "value": "omnipaxos-a7-value",
+        "expected_status": "decided"
+      }
+    ]
+  },
+  "experiment": {
+    "runtime": {
+      "seed_hex": "6f6d6e697061786f732d61372d7363656e6172696f",
+      "clock_error": 0,
+      "max_clones": 1
+    },
+    "fault_envelope": {
+      "max_crashes": 0,
+      "max_concurrent_crashes": 0,
+      "max_message_drops": 1,
+      "max_message_duplicates": 0,
+      "max_partitions": 0,
+      "max_active_partitions": 0
+    },
+    "scenario_max_calls": 1,
+    "scenario_max_steps": 1,
+    "scenario_max_decisions": 64,
+    "scenario_semantic_exposure": "full"
+  }
+}

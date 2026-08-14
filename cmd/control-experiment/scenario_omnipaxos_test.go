@@ -21,9 +21,22 @@ func TestA7aOmniPaxosUsesGenericScenarioEpisodeWithoutRaftActions(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
-	seed := []byte("omnipaxos-a7a-scenario")
-	runtimeConfig := controlexperiment.RuntimeConfig{SeedHex: hex.EncodeToString(seed), MaxClones: 1}
-	envelope := &controlexperiment.FaultEnvelope{MaxMessageDrops: 1}
+	spec, err := omnipaxosMessageLossWitness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	knowledge, hypothesis, experiment, workload, err := loadOmnipaxosScenarioAuthoringSource(
+		"../../plans/agent/omnipaxos-message-loss-before-decision-v1.json", spec,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed, err := hex.DecodeString(experiment.Runtime.SeedHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeConfig := experiment.Runtime
+	envelope := experiment.faultEnvelope()
 
 	rootAdapter, err := omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	if err != nil {
@@ -34,12 +47,7 @@ func TestA7aOmniPaxosUsesGenericScenarioEpisodeWithoutRaftActions(t *testing.T) 
 		t.Fatal(err)
 	}
 	coordinator := driveOmnipaxosScenarioToCoordinator(t, ctx, rootRuntime)
-	payload, err := omnipaxosv2.InputPayload(omnipaxosv2.Input{
-		RequestID: "omnipaxos-a7a-request", Value: []byte("omnipaxos-a7a-value"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := workload.Invocations[0].Input
 	invoke, err := rootRuntime.OfferInvoke(ctx, coordinator, payload)
 	if err != nil {
 		t.Fatal(err)
@@ -55,10 +63,6 @@ func TestA7aOmniPaxosUsesGenericScenarioEpisodeWithoutRaftActions(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	spec, err := omnipaxosMessageLossWitness()
-	if err != nil {
-		t.Fatal(err)
-	}
 	projector := omnipaxosScenarioProjector{}
 	rootRisk, err := projector.Project("omnipaxos-a7a-root-risk", spec, root)
 	if err != nil || !reflect.DeepEqual(rootRisk.SatisfiedMilestones, []string{omnipaxosMilestoneWorkloadInvoked}) {
@@ -92,36 +96,10 @@ func TestA7aOmniPaxosUsesGenericScenarioEpisodeWithoutRaftActions(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	knowledge, err := controlexperiment.NewProtocolKnowledgePack(controlexperiment.ProtocolKnowledgePack{
-		ID: "omnipaxos-a7a-knowledge", Family: spec.FamilyID, Protocol: "omnipaxos",
-		Knowledge: []controlexperiment.KnowledgeStatement{
-			{ID: "message-loss", Text: "Delay one consensus message while a proposal is in flight, then observe whether normal progress decides it."},
-			{ID: "trusted-frontier", Text: "Choose only an Action supplied by the current trusted frontier."},
-		},
-		Risks: []controlexperiment.ProtocolRisk{{
-			ID: spec.RiskID, Summary: "Exercise a message loss before the in-flight proposal is decided.",
-			RequiredCapabilities: []string{"natural-temporal-progress", "runtime-owned-message"},
-			RequiredActions: []control.ActionKind{
-				control.ActionInvoke, control.ActionDropMessage,
-				control.ActionDeliverMessage, control.ActionFireTemporal,
-			},
-			AllowedBackendIDs: []string{controlexperiment.ScenarioPlanningBackendID},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hypothesis, err := controlexperiment.NewTestHypothesis(
-		"omnipaxos-a7a-hypothesis", knowledge, spec,
-		"Drop one current replication message and let trusted natural progress seek a later decision.",
-		controlexperiment.ScenarioPlanningBackendID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	plannerCalls := 0
 	result, err := controlexperiment.ExploreScenarioWithPlanner(
-		ctx, 1, 1, 64, knowledge, hypothesis, spec, frontier, semantics, rootRisk, root,
+		ctx, experiment.ScenarioMaxCalls, experiment.ScenarioMaxSteps,
+		experiment.ScenarioMaxDecisions, knowledge, hypothesis, spec, frontier, semantics, rootRisk, root,
 		runtimeConfig, envelope, factory, projector,
 		func(trace controlruntime.Trace, next controlexperiment.RiskFrontierView, state controlruntime.Snapshot) (
 			controlexperiment.ScenarioSemanticExposure, error,
