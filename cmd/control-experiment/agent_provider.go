@@ -68,9 +68,9 @@ type openRouterChatRequest struct {
 	Provider struct {
 		RequireParameters bool `json:"require_parameters"`
 	} `json:"provider"`
-	Temperature         float64 `json:"temperature"`
-	MaxCompletionTokens int     `json:"max_completion_tokens"`
-	Stream              bool    `json:"stream"`
+	Temperature float64 `json:"temperature"`
+	MaxTokens   int     `json:"max_tokens"`
+	Stream      bool    `json:"stream"`
 }
 
 type openRouterStructuredOutput struct {
@@ -145,7 +145,7 @@ func (client openRouterIntentClient) prepare(
 	}
 	requestBody := openRouterChatRequest{
 		Model: client.Model, Messages: messages, Temperature: 0,
-		MaxCompletionTokens: client.MaxOutputTokens, Stream: false,
+		MaxTokens: client.MaxOutputTokens, Stream: false,
 	}
 	requestBody.ResponseFormat.Type = "json_schema"
 	requestBody.ResponseFormat.JSONSchema.Name = output.Name
@@ -190,7 +190,7 @@ func (prepared agentPreparedRequest) validate(client openRouterIntentClient) err
 		request.Reasoning.Effort != client.ReasoningEffort ||
 		request.Reasoning.Exclude != client.ExcludeReasoning || !request.Provider.RequireParameters ||
 		request.Temperature != 0 || request.Stream ||
-		request.MaxCompletionTokens != client.MaxOutputTokens || len(request.Messages) != len(messages) {
+		request.MaxTokens != client.MaxOutputTokens || len(request.Messages) != len(messages) {
 		return errors.New("AGENT_PREPARED_REQUEST_INVALID")
 	}
 	encodedMessages, err := json.Marshal(request.Messages)

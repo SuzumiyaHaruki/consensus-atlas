@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A6f 最小共识 Oracle 闭环完成
+阶段：A6g 单步 Agent 干预真实闭环完成
 
 ## 一句话状态
 
-A6f 现在有两个独立 target-local Oracle：检查 etcd/raft commit/applied frontier，以及 Invoke、
-applied command 和成功 ClientResult 的双向绑定。无来源命令和同 request 多日志位置也已进入反例测试。
+真实 `deepseek/deepseek-v4-flash` 已连续选择 `crash n1` 和 `restart n1`；两次战略干预之间由可信
+natural-progress closure 执行 24 个低层动作，最终达到全部 Risk milestones，并通过 fresh Replay 和 Oracle。
 
 ## 输入什么
 
@@ -40,8 +40,9 @@ applied command 和成功 ClientResult 的双向绑定。无来源命令和同 r
     已验证执行结果。下一 episode 从统一 Campaign root 独立开始，当前不再注入前一 episode feedback。
 15. A6b 从 qualified bundle 提取规范 Core PSS 状态键，在 session 结束或恢复时跨 episode 去重；Risk 最佳进展
     按 reached 优先、否则已满足里程碑数更多选择，Oracle 只汇总独立检查结果。
-16. OpenRouter 对无响应的传输错误、HTTP 408/429/5xx 最多重试 2 次；401、合法 HTTP 响应中的非法模型内容、
-    非法计划和预算终止不重试。`model_calls` 统计逻辑调用，`transport_attempts` 单独保留实际网络尝试数。
+16. OpenRouter 使用其 Chat Completions 公共 `max_tokens` 参数，并要求路由端点支持 reasoning 与 strict
+    structured output；对无响应传输错误、HTTP 408/429/5xx 最多重试 2 次。`model_calls` 统计逻辑调用，
+    `transport_attempts` 单独保留实际网络尝试数。
 17. etcd/raft qualified Bundle 在 TraceIntegrity 和 Agreement 之后运行 target-local `etcdraft-log-progress`；
     它只解码 Adapter-owned Evidence，不读取 Agent、PSS 或 Risk 结论。
 
@@ -83,6 +84,10 @@ applied command 和成功 ClientResult 的双向绑定。无来源命令和同 r
   把 `scenario_max_steps` 设为 1，消除 future ActionID。一次战略干预后的 deterministic natural-progress closure
   与干预一起累计编译为 qualified execution。真实 Adapter 测试已验证 24-step closure 到达下一 Risk milestone、
   同 episode continuation、跨 episode root 隔离和恢复。
+- A6g 首次真实 strict-schema 单步运行用 2 calls 选择 `crash n1 -> restart n1`。中间 24 个普通动作由 closure
+  完成，最终 55 个 PSS samples、38 个唯一 Core PSS 状态、Risk `reached`、stable Replay、0 Oracle violation。
+  完整 closure 仍保留在审计工件，但不再逐步复制进下一次模型 prompt；相同 Trace/Bundle 的复验把总 token
+  从 33,215 降到 15,423，其中输入 token 从 31,870 降到 13,665。
 - planning prefix 缺少 operation history 时，etcd/raft projector 会以 Adapter application-command 增长作为
   保守 terminal 事实；最终 qualified Risk 仍使用完整 OperationHistory，避免把“没有传入返回历史”当成
   “请求仍在途”。
@@ -132,9 +137,8 @@ Oracle 和 evaluator 安全边界没有删除。
   不适合当前正常控制路径，但不宣称所有更短路径均不存在；
 - planning projector 的 application-command fallback 只适用于当前单 proposal workload；多并发请求仍必须依赖
   OperationHistory 或更精确的 target-local operation identity，不能用命令总数推断某个请求的终态；
-- A6eR 真实运行证明 continuation 机制可用，但 3/8 次计划因模型为未来步骤复制短命 ActionID 而 `no-match`。
-  当前 v3 prompt 已明确限制 exact ID 只来自当前 frontier，要求后续步骤省略 `action_id`并使用列明的
-  semantic selector fields；该修复已本地验证，尚未再次付费校准。
+- 旧 A6eR 的 3/8 次 `no-match` 来自未来 ActionID。当前单步接口已经消除该失配，并由真实运行验证；这只证明
+  当前公开 Risk 的闭环可达，不证明模型在未知场景或同预算对照实验中更优。
 - 成功运行的 24 个 PSS 状态只比旧 A6e 的 23 多 1，输入、prompt 和时域已经变化，不能把这一个状态差
   解释为 Agent 优势；
 - provider/local episode error 发生在 Campaign attempt 提交前时，现在会记录已发生且可验证的 provider Work；

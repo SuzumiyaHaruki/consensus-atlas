@@ -360,7 +360,9 @@ func (journal *statelessAgentCallJournal) dispatch(
 	if transportErr != nil || call.FailureCode != "" {
 		result.Status = controlexperiment.StatelessAgentCallFailed
 		result.FailureCode = "agent-transport-failed"
-		if transportErr == nil && call.FailureCode != agentFailureTransport {
+		if transportErr == nil && call.FailureCode == agentFailureHTTP {
+			result.FailureCode = "agent-http-status-rejected"
+		} else if transportErr == nil && call.FailureCode != agentFailureTransport {
 			result.FailureCode = "agent-response-rejected"
 		}
 		result.Content, result.Response = nil, nil

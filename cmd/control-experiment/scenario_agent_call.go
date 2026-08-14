@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const scenarioAgentPromptVersion = "scenario-agent-receding-horizon-v4"
+const scenarioAgentPromptVersion = "scenario-agent-receding-horizon-v5"
 
 type scenarioAgentCallJournal struct {
 	core *statelessAgentCallJournal
@@ -153,6 +153,12 @@ func scenarioAgentPrompt(
 		view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps || len(view.Frontier.Actions) == 0 {
 		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
 	}
+	promptView := view
+	if view.Prior != nil {
+		prior := *view.Prior
+		prior.NaturalProgress = nil
+		promptView.Prior = &prior
+	}
 	input := struct {
 		PromptVersion  string                              `json:"prompt_version"`
 		SelectorFields []string                            `json:"selector_fields"`
@@ -163,7 +169,7 @@ func scenarioAgentPrompt(
 			"action_id", "kind", "node", "item_kind", "owner", "message_source",
 			"message_target", "temporal_kind", "effect_kind", "durability",
 		},
-		AgentView: view,
+		AgentView: promptView,
 	}
 	encoded, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
@@ -182,8 +188,9 @@ func scenarioAgentPrompt(
 		system += " Return exactly one step using the exact action_id of one current Action."
 		user = "Choose one current strategic intervention that advances the hypothesis. After it executes, a deterministic " +
 			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until Risk progress " +
-			"changes, the client operation terminates, natural progress is quiescent, or the decision budget ends. Use prior_feedback " +
-			"to understand the previous intervention and closure, but select only from the supplied current frontier. Frozen input JSON:\n" +
+			"changes, the client operation terminates, natural progress is quiescent, or the decision budget ends. prior_feedback " +
+			"contains the previous strategic intervention and the closure stop reason; routine closure steps remain in the audit rather " +
+			"than this prompt. Treat the supplied current frontier and Risk progress as authoritative. Frozen input JSON:\n" +
 			string(encoded)
 	} else {
 		system += " For every step after the first, omit action_id and use stable semantic selector fields because executing an " +

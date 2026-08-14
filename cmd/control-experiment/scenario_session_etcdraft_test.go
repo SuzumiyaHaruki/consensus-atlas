@@ -43,7 +43,8 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 		}
 		if providerCalls%2 == 0 && (view.Prior == nil ||
 			view.Prior.Outcome != controlexperiment.ScenarioAgentCompleted ||
-			len(view.Prior.Steps) != 1) {
+			len(view.Prior.Steps) != 1 || len(view.Prior.NaturalProgress) != 0 ||
+			view.Prior.NaturalProgressStop == "") {
 			t.Fatalf("same-episode continuation did not receive mechanical feedback: %#v", view.Prior)
 		}
 		if len(view.Frontier.Actions) == 0 ||

@@ -132,10 +132,7 @@ func a4bScenarioViewFromRequest(
 	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil || len(payload.Messages) != 2 {
 		t.Fatalf("invalid scenario provider payload: %#v/%v", payload, err)
 	}
-	for _, required := range []string{
-		"For every step after the first, omit action_id",
-		"Never copy an ActionID from prior_feedback",
-	} {
+	for _, required := range []string{"Never copy an ActionID from prior_feedback"} {
 		if !strings.Contains(payload.Messages[0].Content, required) {
 			t.Fatalf("scenario system prompt lacks future-selector rule %q: %s", required, payload.Messages[0].Content)
 		}
@@ -154,6 +151,13 @@ func a4bScenarioViewFromRequest(
 		prompt.PromptVersion != scenarioAgentPromptVersion || len(prompt.SelectorFields) != 10 ||
 		prompt.SelectorFields[0] != "action_id" || prompt.SelectorFields[1] != "kind" {
 		t.Fatalf("scenario prompt input cannot be decoded: %#v/%v", prompt, err)
+	}
+	wantRule := "Return exactly one step using the exact action_id"
+	if prompt.AgentView.MaxSteps > 1 {
+		wantRule = "For every step after the first, omit action_id"
+	}
+	if !strings.Contains(payload.Messages[0].Content, wantRule) {
+		t.Fatalf("scenario system prompt lacks max-step rule %q: %s", wantRule, payload.Messages[0].Content)
 	}
 	return prompt.AgentView
 }

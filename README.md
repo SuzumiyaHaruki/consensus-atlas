@@ -95,6 +95,9 @@ Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替�
   natural-progress closure 按 `complete-effect -> deliver-message -> fire-temporal-event` 推进，直到 Risk
   里程碑变化、目标客户端返回、自然推进静止或预算耗尽。etcd/raft 集成测试中一次 crash 后的 24 个自然动作
   到达下一 Risk milestone，再由 Agent 选择恢复动作；全部动作仍进入 Trace、work accounting 和 fresh Replay。
+- 真实 strict-schema 校准已让 `deepseek/deepseek-v4-flash` 用两次调用选择 `crash n1 -> restart n1`，达到全部
+  Risk milestones；结果为 38 个唯一 Core PSS 状态、Replay stable、0 Oracle violation。完整 closure 留在审计
+  工件但不复制进下一 prompt 后，同一 Trace/Bundle 的总 token 从 33,215 降到 15,423。
 - 真实 A6eR 暴露的 future ActionID 失配已用 v3 prompt 收紧：第一步之后必须省略 `action_id`
   并使用明示 selector fields。Campaign provider failure 现在也会把 durable call audit 中已发生的
   calls/tokens 写入原 failure marker 和终端汇总；两项修复都未触发新的真实模型调用。

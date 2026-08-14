@@ -515,6 +515,17 @@ Invoke，并匹配 request/origin/value；同一 request 在所有副本上只�
 Runtime Action。A6f 至此形成 log progress、客户端返回绑定和 applied-command 来源的最小闭环。
 在 workload 仍只有单次写入时不建立通用 linearizability DSL；需要读和多操作历史后再决定。
 
+### 已完成：A6g 单步 Agent 干预真实校准
+
+OpenRouter Chat Completions 请求使用端点能力表声明的 `max_tokens`；`require_parameters=true` 继续要求
+reasoning 和 strict structured output 都由实际路由支持。真实 `deepseek/deepseek-v4-flash` 用两次调用依次选择
+`crash n1`、`restart n1`，可信 closure 在两者之间执行 24 个普通 effect/message/timer 动作。最终 Trace 达到
+全部 Risk milestones，得到 55 个 PSS samples、38 个唯一 Core PSS 状态、stable Replay 和 0 Oracle violation。
+
+完整 closure 进入执行审计，但下一次 prompt 只保留上一战略干预、closure stop reason 和当前可信
+Frontier/Risk。相同 Trace 与 Bundle 的复验把总 token 从 33,215 降到 15,423。该公开校准证明新的职责分工能够
+闭环，并不证明 Agent 优于 baseline，也不是 hidden candidate/control 结果。
+
 ### A7：第二协议与接入减负
 
 先以已有 OmniPaxos strict Adapter 盘点 A6 中的 etcd/raft 组合耦合，再复用同一 episode/session 数据流。

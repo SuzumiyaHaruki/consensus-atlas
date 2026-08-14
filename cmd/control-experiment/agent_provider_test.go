@@ -64,7 +64,7 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 			var payload openRouterChatRequest
 			if err := json.Unmarshal(body, &payload); err != nil ||
 				payload.Model != openRouterFixtureModel ||
-				payload.MaxCompletionTokens != openRouterDefaultTokens ||
+				payload.MaxTokens != openRouterDefaultTokens ||
 				payload.Reasoning.Effort != openRouterDefaultReasoningEffort ||
 				!payload.Reasoning.Exclude || payload.ResponseFormat.Type != "json_schema" ||
 				!payload.ResponseFormat.JSONSchema.Strict ||
