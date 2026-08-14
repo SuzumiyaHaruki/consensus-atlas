@@ -13,7 +13,7 @@ import (
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 )
 
-func TestA5cEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
+func TestEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 	riskSpec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestA5cEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 	}
 }
 
-func TestA5bEtcdraftAdapterConfigurationMustMatchRootCorpus(t *testing.T) {
+func TestEtcdraftAdapterConfigurationMustMatchRootCorpus(t *testing.T) {
 	var source etcdraftSemanticAuthoringSource
 	if err := readStrictJSONFile(etcdraftTestSemanticInputPath, etcdraftSemanticInputLimit, &source); err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestA5bEtcdraftAdapterConfigurationMustMatchRootCorpus(t *testing.T) {
 	}
 }
 
-func TestA5cEtcdraftWorkloadMustMatchRootCorpus(t *testing.T) {
+func TestEtcdraftWorkloadMustMatchRootCorpus(t *testing.T) {
 	var source etcdraftSemanticAuthoringSource
 	if err := readStrictJSONFile(etcdraftTestSemanticInputPath, etcdraftSemanticInputLimit, &source); err != nil {
 		t.Fatal(err)

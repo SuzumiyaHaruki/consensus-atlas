@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
 )
 
-func TestM518aCheckedBuildAuditsMatchFrozenManifest(t *testing.T) {
+func TestCheckedBuildAuditsMatchFrozenManifest(t *testing.T) {
 	for _, fixture := range []struct {
 		path   string
 		digest string
@@ -46,7 +46,7 @@ func TestM518aCheckedBuildAuditsMatchFrozenManifest(t *testing.T) {
 	}
 }
 
-func TestM518aFreshEvaluationManifestIdentity(t *testing.T) {
+func TestFreshEvaluationManifestIdentity(t *testing.T) {
 	manifest, err := (BundleBenchmark{
 		SchemaVersion:        BundleBenchmarkSchemaVersionV2,
 		ID:                   "public-etcdraft-v2-method-evaluation-m5.18a",
@@ -95,7 +95,7 @@ func TestM518aFreshEvaluationManifestIdentity(t *testing.T) {
 	}
 }
 
-func TestM518aCheckedFreshEvaluationReportIsSelfValidating(t *testing.T) {
+func TestCheckedFreshEvaluationReportIsSelfValidating(t *testing.T) {
 	manifestBytes, err := os.ReadFile("../../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/evaluator/manifest.json")
 	if err != nil {
 		t.Fatal(err)

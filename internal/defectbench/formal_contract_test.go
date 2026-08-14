@@ -158,7 +158,7 @@ type formalContractStageSummary struct {
 	Digest                   string `json:"digest"`
 }
 
-func TestM521lSyntheticContractSummaryIsRecomputed(t *testing.T) {
+func TestSyntheticContractSummaryIsRecomputed(t *testing.T) {
 	contract := sealFixtureContract(t)
 	view, err := contract.OpaqueView()
 	if err != nil {

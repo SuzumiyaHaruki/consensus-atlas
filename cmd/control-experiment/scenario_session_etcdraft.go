@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	etcdraftScenarioSessionStrategy  = "etcdraft-openrouter-session-a6a"
-	etcdraftScenarioSessionID        = "etcdraft-scenario-session-a6a"
+	etcdraftScenarioSessionStrategy  = "etcdraft-agent-session-v1"
+	etcdraftScenarioSessionID        = "etcdraft-agent-session-v1"
 	etcdraftScenarioSidecar          = "etcdraft-scenario"
 	etcdraftScenarioCalibrationClass = "public-calibration-not-agent-effectiveness-holdout-or-correctness"
 )
@@ -25,8 +25,6 @@ type etcdraftScenarioSessionOptions struct {
 	Client            openRouterIntentClient
 	ReadKey           agentKeyReader
 }
-
-type etcdraftScenarioSessionEpisodeArtifact = scenarioSessionEpisodeArtifact
 
 type etcdraftScenarioSessionSummary = scenarioSessionSummary
 

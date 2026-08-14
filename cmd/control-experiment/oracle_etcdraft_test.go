@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 )
 
-func TestA6fEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t *testing.T) {
+func TestEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t *testing.T) {
 	_, bundle := sharedEtcdraftWorkloadBundleFixture(t)
 	verdict := oracle.CheckBundle(bundle, etcdraftClientApplicationBindingMonitor{})
 	if len(verdict.Violations) != 0 || len(verdict.Checked) != 1 ||
@@ -168,7 +168,7 @@ func assertEtcdraftClientApplicationBindingViolation(
 	}
 }
 
-func TestA6fEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testing.T) {
+func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testing.T) {
 	monotonic := controlexperiment.ExecutionBundle{Trace: controlruntime.Trace{
 		InitialEvidence: etcdraftLogProgressFixtureEvidence(t, 0, 0, 0, 1),
 		Records: []controlruntime.ActionRecord{

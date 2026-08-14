@@ -670,33 +670,30 @@ func (adapter *Adapter) restartNode(node *nodeState, next control.NodeRef) error
 }
 
 func (adapter *Adapter) readyPersistEffect(node *nodeState, record readyRecord) (control.ProducedItem, error) {
-	requestBytes, err := json.Marshal(readyRequest{
-		ReadyID: record.id, Digest: record.digest, Phase: "persist", MustSync: record.ready.MustSync,
-	})
-	if err != nil {
-		return control.ProducedItem{}, err
-	}
-	request, err := control.NewPayload(readySchema, "json", requestBytes)
-	if err != nil {
-		return control.ProducedItem{}, err
-	}
-	itemID, typedID, err := adapter.nextIDs(node, "ready-persist-effect")
-	if err != nil {
-		return control.ProducedItem{}, err
-	}
-	owner := adapter.owner(node)
-	return control.ProducedItem{
-		ID: itemID, Kind: control.ItemEffect, Owner: owner,
-		Effect: &control.HostEffect{
-			ID: control.EffectID(typedID), Kind: effectReadyPersist, Owner: owner, Request: request,
-			AllowedResults: []string{"persisted"}, Durability: control.DurabilityDurable,
-		},
-	}, nil
+	return adapter.readyEffect(
+		node, record, "persist", "ready-persist-effect", effectReadyPersist,
+		"persisted", control.DurabilityDurable,
+	)
 }
 
 func (adapter *Adapter) readyAdvanceEffect(node *nodeState, record readyRecord) (control.ProducedItem, error) {
+	return adapter.readyEffect(
+		node, record, "advance", "ready-advance-effect", effectReadyAdvance,
+		"applied-and-advanced", control.DurabilityApplied,
+	)
+}
+
+func (adapter *Adapter) readyEffect(
+	node *nodeState,
+	record readyRecord,
+	phase string,
+	idKind string,
+	effectKind string,
+	allowedResult string,
+	durability control.DurabilityClass,
+) (control.ProducedItem, error) {
 	requestBytes, err := json.Marshal(readyRequest{
-		ReadyID: record.id, Digest: record.digest, Phase: "advance", MustSync: record.ready.MustSync,
+		ReadyID: record.id, Digest: record.digest, Phase: phase, MustSync: record.ready.MustSync,
 	})
 	if err != nil {
 		return control.ProducedItem{}, err
@@ -705,7 +702,7 @@ func (adapter *Adapter) readyAdvanceEffect(node *nodeState, record readyRecord) 
 	if err != nil {
 		return control.ProducedItem{}, err
 	}
-	itemID, typedID, err := adapter.nextIDs(node, "ready-advance-effect")
+	itemID, typedID, err := adapter.nextIDs(node, idKind)
 	if err != nil {
 		return control.ProducedItem{}, err
 	}
@@ -713,8 +710,8 @@ func (adapter *Adapter) readyAdvanceEffect(node *nodeState, record readyRecord) 
 	return control.ProducedItem{
 		ID: itemID, Kind: control.ItemEffect, Owner: owner,
 		Effect: &control.HostEffect{
-			ID: control.EffectID(typedID), Kind: effectReadyAdvance, Owner: owner, Request: request,
-			AllowedResults: []string{"applied-and-advanced"}, Durability: control.DurabilityApplied,
+			ID: control.EffectID(typedID), Kind: effectKind, Owner: owner, Request: request,
+			AllowedResults: []string{allowedResult}, Durability: durability,
 		},
 	}, nil
 }

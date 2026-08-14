@@ -128,7 +128,7 @@ func TestEtcdraftRiskWitnessProjectorDoesNotTreatAppliedWorkAsInflightWithoutCli
 	}
 }
 
-func TestA6eEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *testing.T) {
+func TestEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	inputs, err := prepareEtcdraftSemanticCalibration(

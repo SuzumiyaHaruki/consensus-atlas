@@ -556,7 +556,7 @@ OpenRouter journal 的成功响应进入同一 closure 与 qualified Bundle；co
 该结果尚不是多 episode session。A7d 只在确认现有 Campaign coordinator 可直接消费共享 episode artifact 后补
 session 编排；否则保留单 episode 入口并记录差异，不复制 etcd/raft Campaign 实现。
 
-A7d 已完成：`omnipaxos-openrouter-session-a7d` 由现有 Campaign coordinator 在 JSON 声明的共享预算内运行两个
+A7d 已完成：`omnipaxos-agent-session-v1` 由现有 Campaign coordinator 在 JSON 声明的共享预算内运行两个
 独立 episode。每轮均进入 qualification-bound Bundle、fresh Replay、Oracle、Risk 和 PSS；终端结果计算 PSS
 状态并集而不是简单相加。恢复已提交 Campaign 时不再次访问 provider 或 key。
 

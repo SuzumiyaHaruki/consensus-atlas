@@ -292,7 +292,7 @@ Target-local projector、RiskWitness 证据解码和 Oracle 仍保留在代码�
 
 ## 已完成：A6a 多 episode session 骨架
 
-显式策略 `etcdraft-openrouter-session-a6a` 复用现有 Campaign coordinator 和 Scenario episode。JSON 中的
+显式策略 `etcdraft-agent-session-v1` 复用现有 Campaign coordinator 和 Scenario episode。JSON 中的
 `session_budget`/`session_wall_clock_ms` 限制 episode、primary/replay work、模型调用、token 和 wall time。
 每个已提交 attempt 的 artifact 是现有 A4c 紧凑 summary。下一 attempt 从统一 root 重新开始，不再提取前一
 episode feedback；机械 feedback 只服务同一 episode 的真实 continuation。Campaign checkpoint 绑定预算、目标、
@@ -413,7 +413,7 @@ Risk、PSS/Decision projector 和 qualification。
 
 ## 已完成：A7d OmniPaxos 多 episode Campaign
 
-新策略 `omnipaxos-openrouter-session-a7d` 使用现有 Campaign coordinator 连续运行独立 OmniPaxos episode。
+新策略 `omnipaxos-agent-session-v1` 使用现有 Campaign coordinator 连续运行独立 OmniPaxos episode。
 authoring JSON 直接声明 session 的 episode、primary/replay work、模型调用、token 与 wall-clock 上限；每轮仍从同一
 可信 root 开始，并分别经过 qualification-bound execution、fresh Replay、Oracle、Risk 与 PSS 投影。
 

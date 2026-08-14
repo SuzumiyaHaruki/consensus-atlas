@@ -15,7 +15,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
-func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *testing.T) {
+func TestScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()

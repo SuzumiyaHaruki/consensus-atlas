@@ -143,7 +143,7 @@ func TestEtcdraftExperimentSemanticsV2PreservesTerminalAndPendingRuns(t *testing
 	}
 }
 
-func TestEtcdraftM518aBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
+func TestEtcdraftBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 	baseline, err := etcdraftReport(context.Background(), "workload-evaluation-v3", 96, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func TestRetiredUnqualifiedStrategiesStayUnavailable(t *testing.T) {
 	}
 }
 
-func TestA5aAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
+func TestAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
 	for _, strategy := range []string{
 		etcdraftSemanticCalibrationStrategy,
 		etcdraftScenarioSessionStrategy,

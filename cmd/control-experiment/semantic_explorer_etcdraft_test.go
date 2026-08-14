@@ -39,7 +39,7 @@ func etcdraftScenarioTestSemanticInput(t *testing.T, calls int, decisions int) s
 	return path
 }
 
-func TestA2b3EtcdraftPublicSemanticCalibrationInputsAreValidAndSourceBound(t *testing.T) {
+func TestEtcdraftSemanticExplorerInputsAreValidAndSourceBound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()
@@ -164,7 +164,7 @@ func TestA2b3EtcdraftPublicSemanticCalibrationInputsAreValidAndSourceBound(t *te
 	}
 }
 
-func TestA2b3EtcdraftSemanticCalibrationCreatesResumesAndSealsTerminalArtifacts(t *testing.T) {
+func TestEtcdraftSemanticExplorerCreatesResumesAndSealsTerminalArtifacts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	corpusPath := etcdraftTestRootCorpusPath

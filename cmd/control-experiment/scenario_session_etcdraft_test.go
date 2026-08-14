@@ -54,7 +54,7 @@ func TestScenarioSessionExperimentDigestBindsExecutionMethod(t *testing.T) {
 	}
 }
 
-func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResumes(t *testing.T) {
+func TestScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResumes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()
@@ -106,7 +106,7 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 			t.Fatalf("strategic session action %s/%s unavailable: %#v", wantKind, wantNode, view.Frontier.Actions)
 		}
 		content, err := json.Marshal(controlexperiment.ScenarioPlan{
-			ID: "a6a-session-plan", Steps: []controlexperiment.ScenarioStep{{
+			ID: "etcdraft-session-plan", Steps: []controlexperiment.ScenarioStep{{
 				ID: "advance", Selector: controlexperiment.FrontierActionSelector{
 					ActionID: selected.ActionID,
 				},
@@ -118,7 +118,7 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 		response := a2b2OpenRouterResponse(t, providerCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
-	directory := filepath.Join(t.TempDir(), "a6a-session")
+	directory := filepath.Join(t.TempDir(), "etcdraft-session")
 	keyReads := 0
 	options := etcdraftScenarioSessionOptions{
 		Directory: directory, CorpusPath: etcdraftTestRootCorpusPath,
@@ -167,7 +167,7 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 	if err != nil {
 		t.Fatal(err)
 	}
-	var first etcdraftScenarioSessionEpisodeArtifact
+	var first scenarioSessionEpisodeArtifact
 	if err := json.Unmarshal(firstBytes, &first); err != nil ||
 		first.validate(etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting) != nil ||
 		first.Episode.Testing == nil || first.Testing == nil || first.Testing.Bundle.Validate() != nil ||
@@ -216,7 +216,7 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 	}
 }
 
-func TestA6eRScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
+func TestScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()

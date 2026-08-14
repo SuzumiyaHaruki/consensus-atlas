@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
-func TestM523R4bRetiredCampaignCLIFlagsFailClosed(t *testing.T) {
+func TestRetiredCampaignCLIFlagsFailClosed(t *testing.T) {
 	if err := run(context.Background(), []string{
 		"-strategy", "campaign-etcdraft-agent-v1",
 		"-campaign-dir", "unused",
@@ -27,7 +27,7 @@ func TestM523R4bRetiredCampaignCLIFlagsFailClosed(t *testing.T) {
 	}
 }
 
-func TestM523R1RetiredAgentStrategiesAreNotReachable(t *testing.T) {
+func TestRetiredAgentStrategiesAreNotReachable(t *testing.T) {
 	for _, strategy := range []string{
 		"workload-stateless-agent-m5.23g",
 		"workload-guarded-agent-one-shot",

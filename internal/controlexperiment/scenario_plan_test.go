@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-func TestA4ScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t *testing.T) {
+func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t *testing.T) {
 	ctx := context.Background()
 	runtimeConfig := RuntimeConfig{SeedHex: "61342d7363656e6172696f2d706c616e", MaxClones: 1}
 	root := fixtureInitialTrace(t, ctx, runtimeConfig)
@@ -238,7 +238,7 @@ func unknownScenarioSemantics(t *testing.T, frontier RiskFrontierView) ScenarioS
 	return exposure
 }
 
-func TestA4ScenarioPlanParsingRejectsUnknownAuthorityAndMixedSelector(t *testing.T) {
+func TestScenarioPlanParsingRejectsUnknownAuthorityAndMixedSelector(t *testing.T) {
 	valid := []byte(`{"id":"fixture-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}`)
 	if plan, err := ParseScenarioPlan(valid); err != nil || plan.Steps[0].Selector.Node != "n1" {
 		t.Fatalf("valid scenario plan rejected: %#v/%v", plan, err)

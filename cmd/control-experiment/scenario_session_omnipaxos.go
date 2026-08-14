@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	omnipaxosScenarioSessionStrategy  = "omnipaxos-openrouter-session-a7d"
-	omnipaxosScenarioSessionID        = "omnipaxos-scenario-session-a7d"
+	omnipaxosScenarioSessionStrategy  = "omnipaxos-agent-session-v1"
+	omnipaxosScenarioSessionID        = "omnipaxos-agent-session-v1"
 	omnipaxosScenarioSessionTargetID  = "omnipaxos-v2-agent"
 	omnipaxosScenarioSidecar          = "omnipaxos-scenario"
 	omnipaxosScenarioCalibrationClass = "public-integration-not-agent-effectiveness-holdout-or-correctness"

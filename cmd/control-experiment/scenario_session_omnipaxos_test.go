@@ -17,7 +17,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-func TestA7dOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
+func TestOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
@@ -38,7 +38,7 @@ func TestA7dOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
 			t.Fatalf("no in-flight OmniPaxos replication message can be dropped: %#v", view.Frontier.Actions)
 		}
 		content, err := json.Marshal(controlexperiment.ScenarioPlan{
-			ID: "omnipaxos-a7d-plan", Steps: []controlexperiment.ScenarioStep{{
+			ID: "omnipaxos-session-plan", Steps: []controlexperiment.ScenarioStep{{
 				ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{ActionID: selected.ActionID},
 			}},
 		})
@@ -48,7 +48,7 @@ func TestA7dOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
 		response := a2b2OpenRouterResponse(t, providerCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
-	directory := filepath.Join(t.TempDir(), "omnipaxos-a7d-session")
+	directory := filepath.Join(t.TempDir(), "omnipaxos-session")
 	keyReads := 0
 	options := omnipaxosScenarioSessionOptions{
 		Directory: directory, WorkerPath: workerPath,

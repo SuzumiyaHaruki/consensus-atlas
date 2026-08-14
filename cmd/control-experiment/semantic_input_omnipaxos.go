@@ -109,14 +109,6 @@ func loadOmnipaxosScenarioAuthoringSource(
 			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
 			errors.New("OMNIPAXOS_SCENARIO_INPUT_FILE_INVALID")
 	}
-	if source.Knowledge.SchemaVersion != "" || source.Knowledge.Digest != "" ||
-		source.Hypothesis.SchemaVersion != "" || source.Hypothesis.KnowledgeDigest != "" ||
-		source.Hypothesis.RiskSpecDigest != "" || source.Hypothesis.Digest != "" ||
-		source.Hypothesis.RiskID != riskSpec.RiskID {
-		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
-			errors.New("OMNIPAXOS_SCENARIO_INPUT_AUTHORING_FIELDS_INVALID")
-	}
 	if source.Experiment.validate() != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
 			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
@@ -128,22 +120,13 @@ func loadOmnipaxosScenarioAuthoringSource(
 			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
 			errors.New("OMNIPAXOS_SCENARIO_INPUT_WORKLOAD_INVALID")
 	}
-	knowledge, err := controlexperiment.NewProtocolKnowledgePack(source.Knowledge)
-	if err != nil || knowledge.Family != riskSpec.FamilyID || knowledge.Protocol != "omnipaxos" {
-		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
-			errors.New("OMNIPAXOS_SCENARIO_INPUT_KNOWLEDGE_INVALID")
-	}
-	hypothesis, err := controlexperiment.NewTestHypothesis(
-		source.Hypothesis.ID, knowledge, riskSpec, source.Hypothesis.Rationale,
-		controlexperiment.ScenarioPlanningBackendID,
+	knowledge, hypothesis, err := buildSemanticAuthoring(
+		source.Knowledge, source.Hypothesis, riskSpec, "omnipaxos",
+		controlexperiment.ScenarioPlanningBackendID, controlexperiment.ScenarioPlanningBackendID,
 	)
-	if err != nil || hypothesis.Validate(
-		knowledge, riskSpec, controlexperiment.ScenarioPlanningBackendID,
-	) != nil {
+	if err != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
-			errors.New("OMNIPAXOS_SCENARIO_INPUT_HYPOTHESIS_INVALID")
+			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{}, err
 	}
 	return knowledge, hypothesis, source.Experiment, workload, nil
 }

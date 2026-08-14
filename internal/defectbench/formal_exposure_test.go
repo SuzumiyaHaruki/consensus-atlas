@@ -129,7 +129,7 @@ type formalExposureStageSummary struct {
 	Digest                   string `json:"digest"`
 }
 
-func TestM521mFormalExposureSummaryIsRecomputed(t *testing.T) {
+func TestFormalExposureSummaryIsRecomputed(t *testing.T) {
 	contract := sealFixtureContract(t)
 	view, err := contract.OpaqueView()
 	if err != nil {

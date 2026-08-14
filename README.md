@@ -58,7 +58,7 @@ Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替�
 
 - etcd/raft 可走完整统一 Runtime、qualified execution、fresh Replay、PSS 和 Agreement Oracle；
 - OmniPaxos 已从可编辑输入完成同一 Scenario/closure，并经 qualification-bound Bundle 得到 PSS/Replay/Oracle；
-- `omnipaxos-openrouter-session-a7d` 已提供可恢复的非 Raft 多 episode Agent Campaign；
+- `omnipaxos-agent-session-v1` 已提供可恢复的非 Raft 多 episode Agent Campaign；
 - HashiCorp Raft 保留部分能力资格，明确表示统一 Action 不等于统一控制强度；
 - deterministic semantic best-first 和单 Explorer 已在真实 etcd/raft prefix 上连通；
 - Explorer 首个可信选择现在会进入同一 qualified executor，产出包含 Bundle、Core PSS、RiskWitness、
@@ -156,7 +156,7 @@ A6 session 需要同时选择测试输入和 OpenRouter 模型；episode/work/to
 
 ```bash
 go run ./cmd/control-experiment \
-  -strategy etcdraft-openrouter-session-a6a \
+  -strategy etcdraft-agent-session-v1 \
   -campaign-dir artifacts/agentic/example \
   -stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
   -semantic-input plans/agent/etcdraft-leader-change-inflight-v1.json \

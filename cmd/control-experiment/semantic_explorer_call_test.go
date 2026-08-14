@@ -48,7 +48,7 @@ func (projector a2b2FixtureProjector) Project(
 	)
 }
 
-func TestA2b2SemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t *testing.T) {
+func TestSemanticExplorerUsesDurableProviderJournalAndRecoversExactContent(t *testing.T) {
 	ctx := context.Background()
 	runtimeConfig := controlexperiment.RuntimeConfig{
 		SeedHex: "613262322d73656d616e7469632d6a6f75726e616c", MaxClones: 1,

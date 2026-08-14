@@ -12,7 +12,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
-func TestM523R3EtcdraftStatelessMethodSequencesArePredeclared(t *testing.T) {
+func TestEtcdraftStatelessMethodSequencesArePredeclared(t *testing.T) {
 	canonical, err := newEtcdraftStatelessCampaignMethods(
 		etcdraftStatelessCanonicalCampaignStrategy, 2, 1,
 	)
@@ -38,7 +38,7 @@ func TestM523R3EtcdraftStatelessMethodSequencesArePredeclared(t *testing.T) {
 	}
 }
 
-func TestM523R3EtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *testing.T) {
+func TestEtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 360*time.Second)
 	defer cancel()
 	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, etcdraftTestRootCorpusPath)
@@ -89,7 +89,7 @@ func TestM523R3EtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *te
 	}
 }
 
-func TestM523R3EtcdraftStatelessCLIResumesAndStrictlyReadsArtifacts(t *testing.T) {
+func TestEtcdraftStatelessCLIResumesAndStrictlyReadsArtifacts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 360*time.Second)
 	defer cancel()
 	corpusPath := etcdraftTestRootCorpusPath
