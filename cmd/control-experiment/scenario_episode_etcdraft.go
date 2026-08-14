@@ -10,7 +10,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 type etcdraftScenarioEpisodeResult struct {
@@ -20,16 +19,7 @@ type etcdraftScenarioEpisodeResult struct {
 	Testing       *etcdraftScenarioTestingResult              `json:"testing,omitempty"`
 }
 
-type etcdraftScenarioTestingResult struct {
-	PlanID              string                            `json:"plan_id"`
-	Bundle              controlexperiment.ExecutionBundle `json:"execution_bundle"`
-	Risk                semantic.RiskWitnessResult        `json:"risk"`
-	CorePSSSamples      int                               `json:"core_pss_samples"`
-	UniqueCorePSSStates int                               `json:"unique_core_pss_states"`
-	Replay              controlexperiment.ReplayResult    `json:"replay"`
-	Oracle              oracle.Result                     `json:"oracle"`
-	Outcome             string                            `json:"outcome"`
-}
+type etcdraftScenarioTestingResult = scenarioTestingResult
 
 func runEtcdraftScenarioAgentEpisode(
 	ctx context.Context,
@@ -166,9 +156,9 @@ func executeEtcdraftScenarioQualified(
 		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
 		etcdraftClientApplicationBindingMonitor{},
 	)
-	outcome := etcdraftSemanticTestingPassed
+	outcome := scenarioTestingPassed
 	if len(verdict.Violations) > 0 {
-		outcome = etcdraftSemanticTestingViolation
+		outcome = scenarioTestingViolation
 	}
 	return etcdraftScenarioTestingResult{
 		PlanID: execution.PlanID, Bundle: bundle, Risk: risk,

@@ -191,6 +191,11 @@ applied-command witness。monitor 通过已有 item transition 将它与 ClientH
 Risk milestones 和有限 Action hints；Scenario 引擎仍只消费统一 Frontier、Action 和进度接口。目标间确实重复的
 “取 Trace 最新 Evidence”已下沉为共享助手，其余 Risk/消息分类继续留在各自目标边界。
 
+OmniPaxos 的 authoring JSON 只保存人工可编辑知识、假设、workload 和本目标使用的预算；PayloadEnvelope、
+ProtocolKnowledge 和 TestHypothesis 仍由代码构造。Scenario 完成后，组合层只申请资格报告中已验证的六项能力，
+再用公共 exact-policy/Bundle executor 重跑。PSS mapper、Decision projector 和 Workload router 均复用 Adapter
+已有实现，Oracle 只运行通用 TraceIntegrity 与 Agreement。
+
 ## 6. 规划确定性与执行确定性
 
 两者必须分开描述：

@@ -540,6 +540,14 @@ frontier 丢弃一条 `sequence-paxos` 消息，closure 再执行 7 个动作后
 下一步 A7b 先补可编辑 authoring 输入和 qualification-bound testing result，再决定是否复用 session 编排。
 不把 etcd/raft CLI/Oracle/PSS 映射整份复制给 OmniPaxos；只有出现第二个相同消费者的逻辑才进入公共包。
 
+A7b 已完成：OmniPaxos 知识、假设、单写 workload 和消息丢弃预算来自独立可编辑 JSON；目标已验证的六项能力
+绑定 execution admission，Scenario exact policy 经唯一 Bundle executor 重跑。实际结果为 31 个 Core PSS
+samples、28 个唯一状态、stable Replay、TraceIntegrity/Agreement 零异常。两个目标共有的 testing result 外壳
+已合并，Risk 与 monitor 仍留在目标组合。
+
+下一步 A7c 复用现有 provider/session 编排形成可调用的非 Raft session。该阶段不引入 A2 搜索、冻结 spec、
+新账本或新的覆盖率定义。
+
 完成判据：不修改公共 Action/Runtime/episode 数据流即可完成一次非 Raft session。
 
 ### A8：效果评测

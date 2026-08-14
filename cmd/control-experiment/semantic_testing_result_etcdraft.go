@@ -11,11 +11,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const (
-	etcdraftSemanticTestingPassed    = "passed"
-	etcdraftSemanticTestingViolation = "violation"
-)
-
 // etcdraftSemanticTestingResult is a target-local composition view over
 // existing trusted artifacts. It is not a second execution ledger: exact
 // decisions, PSS samples, Replay evidence and qualifications stay in Bundle.
@@ -61,9 +56,9 @@ func executeEtcdraftSemanticTesting(
 		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
 		etcdraftClientApplicationBindingMonitor{},
 	)
-	outcome := etcdraftSemanticTestingPassed
+	outcome := scenarioTestingPassed
 	if len(verdict.Violations) > 0 {
-		outcome = etcdraftSemanticTestingViolation
+		outcome = scenarioTestingViolation
 	}
 	result := etcdraftSemanticTestingResult{
 		SelectedCandidateID: selectedID, SelectedWorkItem: item.Digest,
@@ -108,9 +103,9 @@ func (result etcdraftSemanticTestingResult) Validate(
 		result.Bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
 		etcdraftClientApplicationBindingMonitor{},
 	)
-	wantOutcome := etcdraftSemanticTestingPassed
+	wantOutcome := scenarioTestingPassed
 	if len(wantOracle.Violations) > 0 {
-		wantOutcome = etcdraftSemanticTestingViolation
+		wantOutcome = scenarioTestingViolation
 	}
 	if !reflect.DeepEqual(result.Oracle, wantOracle) || result.Outcome != wantOutcome {
 		return errors.New("ETCDRAFT_SEMANTIC_TESTING_ORACLE_MISMATCH")

@@ -277,8 +277,8 @@ func (artifact etcdraftScenarioSessionEpisodeArtifact) validate() error {
 			episode.Testing.UniqueCorePSSStates != len(artifact.CorePSSStateKeys) ||
 			episode.Testing.CorePSSSamples < episode.Testing.UniqueCorePSSStates ||
 			episode.Testing.OracleViolations < 0 ||
-			(episode.Testing.Outcome != etcdraftSemanticTestingPassed &&
-				episode.Testing.Outcome != etcdraftSemanticTestingViolation) ||
+			(episode.Testing.Outcome != scenarioTestingPassed &&
+				episode.Testing.Outcome != scenarioTestingViolation) ||
 			(episode.Testing.RiskStatus != semantic.RiskWitnessReached &&
 				episode.Testing.RiskStatus != semantic.RiskWitnessNotReached) {
 			return errors.New("ETCDRAFT_SCENARIO_SESSION_EPISODE_INVALID")

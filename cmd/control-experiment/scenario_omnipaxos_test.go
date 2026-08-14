@@ -17,7 +17,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-func TestA7aOmniPaxosUsesGenericScenarioEpisodeWithoutRaftActions(t *testing.T) {
+func TestA7bOmniPaxosProducesQualifiedScenarioTestingResult(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
@@ -137,29 +137,29 @@ func TestA7aOmniPaxosUsesGenericScenarioEpisodeWithoutRaftActions(t *testing.T) 
 		result.Attempts[0].Feedback.NaturalProgressStop != controlexperiment.ScenarioProgressRiskChanged {
 		t.Fatalf("OmniPaxos Scenario episode did not close: %#v calls=%d err=%v", result, plannerCalls, err)
 	}
-	replayAdapter, err := omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
+	qualification, err := qualifyOmnipaxosScenario(ctx, workerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := replayAdapter.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
-	replayRuntime, err := controlruntime.Replay(ctx, replayAdapter, controlruntime.Config{
-		Seed: seed, MaxClones: 1,
-	}, result.Execution.FinalTrace)
+	testingResult, err := executeOmnipaxosScenarioQualified(
+		ctx, workerPath, experiment, workload, qualification, root, *result.Execution,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := replayRuntime.Trace()
-	if err != nil || replayed.Digest != result.Execution.FinalTrace.Digest {
-		t.Fatalf("OmniPaxos Scenario replay drifted: %s/%s err=%v",
-			replayed.Digest, result.Execution.FinalTrace.Digest, err)
+	if testingResult.Outcome != scenarioTestingPassed ||
+		testingResult.Bundle.Trace.Digest != result.Execution.FinalTrace.Digest ||
+		testingResult.CorePSSSamples == 0 || testingResult.UniqueCorePSSStates == 0 ||
+		!testingResult.Replay.Required || !testingResult.Replay.Stable ||
+		len(testingResult.Oracle.Violations) != 0 ||
+		!reflect.DeepEqual(testingResult.Oracle.Checked, []string{"trace-integrity", "agreement"}) {
+		t.Fatalf("OmniPaxos qualified testing result invalid: %#v", testingResult)
 	}
-	t.Logf("root_decisions=%d extension=%d risk=%s replay=%t",
+	t.Logf("root_decisions=%d extension=%d risk=%s replay=%t pss=%d/%d oracle=%d qualification=%s",
 		len(root.Records), len(result.Execution.Steps), result.Execution.FinalRisk.Status,
-		replayed.Digest == result.Execution.FinalTrace.Digest)
+		testingResult.Replay.Stable, testingResult.CorePSSSamples,
+		testingResult.UniqueCorePSSStates, len(testingResult.Oracle.Violations),
+		qualification.Admission.Digest)
 }
 
 func driveOmnipaxosScenarioToCoordinator(

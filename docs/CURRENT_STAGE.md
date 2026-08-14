@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7a 第二协议 Scenario episode 已连通
+阶段：A7b 第二协议 qualified episode 已连通
 
 ## 一句话状态
 
-同一套协议无关 Scenario/Frontier/natural-progress/Replay 路径已在真实 OmniPaxos worker 上执行第一条
-非 Raft episode；目标专用部分只负责 Evidence、Risk 与语义提示，没有修改公共 Action 或 Runtime。
+OmniPaxos 已从可编辑 JSON 读取知识、假设、workload 和运行预算，并将 Agent Scenario 的相同 Trace 交给
+qualification-bound executor 重跑，得到 Core PSS、fresh Replay 与独立 Oracle 结果。
 
 ## 输入什么
 
@@ -47,6 +47,8 @@
     它只解码 Adapter-owned Evidence，不读取 Agent、PSS 或 Risk 结论。
 18. A7a 用 OmniPaxos target binding 投影 leader、decided frontier 与消息类别；通用 Scenario 引擎执行一次
     `Invoke -> DropMessage -> natural progress -> decided`，随后由全新 worker 精确 Replay。
+19. A7b 从 `plans/agent/omnipaxos-message-loss-before-decision-v1.json` 构造可信输入；最终 Scenario 通过
+    OmniPaxos 已验证的六项能力绑定 admission，再由唯一 Bundle executor 重新执行。
 
 ## 得到什么
 
@@ -73,8 +75,9 @@
 - A7a 真实 OmniPaxos episode 的 root 有 23 个决策；Planner 从可信 frontier 选择一条
   `sequence-paxos` 消息执行 `DropMessage`，closure 再执行 7 个普通动作后达到
   `workload-invoked -> message-dropped -> workload-decided`，fresh worker Replay digest 完全相同。
-- 该结果只证明第二协议复用最短闭环。尚未形成 OmniPaxos 的可编辑 JSON、qualification-bound Bundle、
-  PSS/Oracle 汇总、session CLI 或真实 OpenRouter 运行，因此 A7 尚未完成。
+- A7a 单独只证明第二协议复用最短闭环；当时尚无可编辑 JSON、qualification-bound Bundle 或 PSS/Oracle 汇总。
+- A7b 已补齐前三项：资格化执行产生 31 个 Core PSS samples、28 个唯一状态、stable Replay，并由
+  TraceIntegrity 和 Agreement 得到 0 violation。尚未接 session CLI 或真实 OpenRouter。
 - 对已完成目录执行 `-campaign-resume` 得到完全相同的 episode、work、token、PSS/Risk/Oracle 汇总，没有新增
   provider 调用。
 - A6e 首次配对校准使用同一 root、semantic input、`deepseek/deepseek-v4-flash` 和 session 预算。
@@ -337,8 +340,22 @@ OmniPaxos 直接复用了 `RiskFrontierView`、`ExploreScenarioWithPlanner`、�
 closure 和 fresh Replay。新增代码停留在目标边界：Adapter 导出只读语义 Evidence，组合层定义目标 Risk 和
 Action hints。唯一被两个真实目标共同使用的“取最新 Trace Evidence”助手已移出 etcd/raft 文件。
 
-本阶段没有新增 Action、Runtime、episode 契约、schema、hash、baseline 或 gate。下一步 A7b 将把这条路径接到
-OmniPaxos 的可编辑 authoring 输入和 qualification-bound testing result；在此之前不复制 etcd/raft session CLI。
+本阶段没有新增 Action、Runtime、episode 契约、schema、hash、baseline 或 gate。A7b 在下节将该路径接到
+OmniPaxos 的可编辑 authoring 输入和 qualification-bound testing result，仍未复制 etcd/raft session CLI。
+
+## 已完成：A7b authoring 与 qualified testing result
+
+活动输入位于 `plans/agent/omnipaxos-message-loss-before-decision-v1.json`。它只包含本目标实际消费的协议知识、
+测试假设、单写 workload、Runtime/消息丢弃边界与 Scenario 预算；worker 路径和 provider 配置没有混入协议知识。
+加载后仍由已有构造器产生 ProtocolKnowledge、TestHypothesis、PayloadEnvelope 和 WorkloadPlan。
+
+目标组合运行现有 OmniPaxos qualification，并只申请已经验证的 yield、enabled check、自然时间、消息控制、
+decision replay 与 opaque invoke 六项能力。成功 Scenario 被编译为 exact policy，进入唯一
+`ExecuteQualifiedBundle`，结果包含同一 Trace、31 个 PSS samples、28 个唯一状态、stable Replay，以及
+TraceIntegrity/Agreement 零异常。etcd/raft 与 OmniPaxos 相同的结果外壳已合并；协议 Risk 和 monitor 未合并。
+
+下一步 A7c 只补最小 provider/session 组合和可调用入口，验证非 Raft session；不复制 A2 搜索、旧校准 spec 或
+etcd/raft 专用 Oracle。
 
 ## 阅读顺序
 
