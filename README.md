@@ -125,6 +125,22 @@ go run ./cmd/control-experiment \
   -agent-model provider/model
 ```
 
+A8 同执行底座配对实验会在一个目录下各运行一个 deterministic 与 Agent episode，并写出紧凑
+`summary.json`：
+
+```bash
+go run ./cmd/control-experiment \
+  -strategy etcdraft-a8-paired-scenario-v1 \
+  -campaign-dir artifacts/agentic/a8-paired-run \
+  -stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
+  -semantic-input plans/agent/etcdraft-leader-change-inflight-v1.json \
+  -agent-key-file /path/to/openrouter-key.txt \
+  -agent-model provider/model
+```
+
+两条 arm 共享 root、Scenario closure、primary/replay 上限、qualified executor 和 Oracle；模型调用与 token
+只记在 Agent arm。当前默认 authoring input 每个 trial 只运行一个 episode，避免相同 root 的重复轨迹被误作增益。
+
 OmniPaxos：
 
 ```bash

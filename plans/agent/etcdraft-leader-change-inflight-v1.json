@@ -95,7 +95,7 @@
     "model_max_output_tokens": 4096,
     "model_max_retries": 2,
     "session_budget": {
-      "max_attempts": 2,
+      "max_attempts": 1,
       "max_primary_scheduler_decisions": 16384,
       "max_primary_work_units": 32768,
       "max_replay_work_units": 8192,

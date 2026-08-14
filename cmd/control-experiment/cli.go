@@ -82,6 +82,36 @@ func runEtcdraftSessionCLI(
 	return err
 }
 
+func runEtcdraftA8PairedScenarioCLI(
+	ctx context.Context,
+	options controlExperimentOptions,
+	stdout io.Writer,
+) error {
+	if options.CampaignDirectory == "" || options.StatelessCorpus == "" || options.SemanticInput == "" ||
+		options.AgentKeyFile == "" || options.AgentModel == "" || options.WorkerPath != "" ||
+		options.ScenarioSemanticExposure != "" || options.hasNonSessionFlags() {
+		return errors.New("A8 paired Scenario requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
+	}
+	summary, err := runEtcdraftA8PairedScenario(ctx, etcdraftA8PairedScenarioOptions{
+		Directory: options.CampaignDirectory, CorpusPath: options.StatelessCorpus,
+		SemanticInputPath: options.SemanticInput, Resume: options.CampaignResume,
+		AgentKeyFile: options.AgentKeyFile,
+		Client:       newOpenRouterIntentClient(options.AgentModel), ReadKey: readAgentKey,
+	})
+	if summary.TargetID != "" {
+		fmt.Fprintf(stdout,
+			"paired=%s same_trace=%t deterministic_work=%d/%d agent_work=%d/%d model_calls=%d model_tokens=%d risk=%s/%s oracle=%d/%d\n",
+			options.CampaignDirectory, summary.SameTrace,
+			summary.Deterministic.PrimaryWorkUnits, summary.Deterministic.ReplayWorkUnits,
+			summary.Agent.PrimaryWorkUnits, summary.Agent.ReplayWorkUnits,
+			summary.Agent.ModelCalls, summary.Agent.ModelTokens,
+			summary.Deterministic.RiskStatus, summary.Agent.RiskStatus,
+			summary.Deterministic.OracleViolations, summary.Agent.OracleViolations,
+		)
+	}
+	return err
+}
+
 func writeScenarioSessionSummary(
 	stdout io.Writer,
 	directory string,

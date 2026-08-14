@@ -619,6 +619,13 @@ A8a 已把 Scenario episode core 与 OpenRouter journal 解耦，并增加 targe
 的具体问题；Git、类型和普通测试只能验证两条旧路径各自有效，不能生成同形的 Replay/Oracle 证据。本节没有新增
 Runtime、Action、schema、hash、gate 或评分公式。下一步是把两种 planner 接入同预算 trial runner 和紧凑结果表。
 
+A8b 已完成该 runner：`etcdraft-a8-paired-scenario-v1` 在两个现有 Campaign 目录中分别执行一个 deterministic 与
+Agent episode，机械要求相同 primary/replay 上限，并从原 artifact 汇总 Trace、PSS、Risk、Oracle 和实际成本。
+Agent calls/tokens 单列，不假装 deterministic 也消耗模型额度。默认 etcd/raft authoring input 每个 trial 只运行一个
+episode；重复实验使用独立 trial，而不是把同一 root 上两个完全相同的 Trace 计为覆盖增长。fixture 配对结果中两 arm
+Trace 和测试证据相同，Agent 额外调用模型两次，证明结果格式可以诚实表达负证据。下一步先做真实 OpenRouter public
+preflight，再把同一 trial 单位接入 private candidate/control evaluator。
+
 ### A9：多 Agent 消融
 
 在单 Agent 闭环稳定后比较单 Agent、双角色和三角色，并保持模型、总 token、调用次数和 Runtime work 一致。

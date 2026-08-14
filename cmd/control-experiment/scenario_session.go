@@ -214,18 +214,52 @@ func newScenarioSessionEpisodeArtifact(
 	return artifact, nil
 }
 
+func newDeterministicScenarioSessionEpisodeArtifact(
+	classification string,
+	exposure controlexperiment.ScenarioSemanticExposureMode,
+	result scenarioAgentEpisodeResult,
+	revalidate scenarioTestingRevalidator,
+) (scenarioSessionEpisodeArtifact, error) {
+	artifact := scenarioSessionEpisodeArtifact{
+		Episode: summarizeDeterministicScenario(classification, result), SemanticExposure: exposure,
+	}
+	if result.Testing != nil {
+		testing := *result.Testing
+		artifact.Testing = &testing
+	}
+	if err := artifact.validate(classification, revalidate); err != nil {
+		return scenarioSessionEpisodeArtifact{}, err
+	}
+	return artifact, nil
+}
+
 func (artifact scenarioSessionEpisodeArtifact) validate(
 	classification string,
 	revalidate scenarioTestingRevalidator,
 ) error {
 	episode := artifact.Episode
+	planner := episode.Planner
+	if planner == "" {
+		planner = scenarioPlannerAgent
+	}
 	if classification == "" || artifact.SemanticExposure.Validate() != nil || revalidate == nil ||
 		episode.Classification != classification ||
-		len(episode.Feedback) != episode.Attempts || len(episode.ProviderCalls) != episode.Attempts {
+		len(episode.Feedback) != episode.Attempts {
 		return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 	}
-	modelWork, err := scenarioSessionAuditedModelWork(episode.ProviderCalls)
-	if err != nil || modelWork != episode.ModelWork {
+	switch planner {
+	case scenarioPlannerAgent:
+		modelWork, err := scenarioSessionAuditedModelWork(episode.ProviderCalls)
+		if err != nil || modelWork != episode.ModelWork ||
+			len(episode.ProviderCalls) != episode.Attempts || episode.Transport.Validate() != nil {
+			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
+		}
+	case scenarioPlannerDeterministic:
+		if len(episode.ProviderCalls) != 0 || episode.ModelWork != (controlexperiment.ModelWork{}) ||
+			episode.Transport != (controlexperiment.AgentTransportFreeze{}) {
+			return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
+		}
+	default:
 		return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 	}
 	switch episode.AgentStatus {

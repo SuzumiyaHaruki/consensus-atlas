@@ -57,6 +57,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	switch options.Strategy {
 	case omnipaxosScenarioSessionStrategy:
 		return runOmnipaxosSessionCLI(ctx, options, stdout)
+	case etcdraftA8PairedScenarioStrategy:
+		return runEtcdraftA8PairedScenarioCLI(ctx, options, stdout)
 	case etcdraftScenarioSessionStrategy:
 		return runEtcdraftSessionCLI(ctx, options, stdout)
 	case etcdraftSemanticCalibrationStrategy:

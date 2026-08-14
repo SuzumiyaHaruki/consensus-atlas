@@ -4,8 +4,14 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
+const (
+	scenarioPlannerAgent         = "agent"
+	scenarioPlannerDeterministic = "deterministic"
+)
+
 type scenarioCalibrationSummary struct {
 	Classification string                                      `json:"classification"`
+	Planner        string                                      `json:"planner,omitempty"`
 	Transport      controlexperiment.AgentTransportFreeze      `json:"transport"`
 	AgentStatus    string                                      `json:"agent_status"`
 	Attempts       int                                         `json:"attempts"`
@@ -36,6 +42,7 @@ func summarizeScenarioCalibration(
 ) scenarioCalibrationSummary {
 	summary := scenarioCalibrationSummary{
 		Classification: classification,
+		Planner:        scenarioPlannerAgent,
 		Transport:      openRouterTransportFreeze(client),
 		AgentStatus:    result.Agent.Status,
 		Attempts:       len(result.Agent.Attempts),
@@ -71,5 +78,15 @@ func summarizeScenarioCalibration(
 			FirstMissing:        firstMissing, OracleViolations: len(result.Testing.Oracle.Violations),
 		}
 	}
+	return summary
+}
+
+func summarizeDeterministicScenario(
+	classification string,
+	result scenarioAgentEpisodeResult,
+) scenarioCalibrationSummary {
+	summary := summarizeScenarioCalibration(classification, openRouterIntentClient{}, result)
+	summary.Planner = scenarioPlannerDeterministic
+	summary.Transport = controlexperiment.AgentTransportFreeze{}
 	return summary
 }

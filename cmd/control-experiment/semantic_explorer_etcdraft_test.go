@@ -28,6 +28,7 @@ func etcdraftScenarioTestSemanticInput(t *testing.T, calls int, decisions int) s
 	}
 	source.Experiment.ScenarioMaxCalls = calls
 	source.Experiment.ScenarioMaxDecisions = decisions
+	source.Experiment.SessionBudget.MaxAttempts = 2
 	encoded, err := json.MarshalIndent(source, "", "  ")
 	if err != nil {
 		t.Fatal(err)

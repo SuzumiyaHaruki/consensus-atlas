@@ -4,12 +4,13 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8a 同执行底座效果对照
+阶段：A8b 同预算配对 trial runner
 
 ## 一句话状态
 
-ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 现在可以复用同一 root、Frontier、
-自然推进、qualified executor、Replay 和 Oracle；下一步把两者接入同预算 trial runner，再进入非公开配对实验。
+ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
+共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；下一步用真实 OpenRouter 做公开预跑，
+再把相同执行单位接到非公开 candidate/control。
 
 ## 输入什么
 
@@ -123,6 +124,22 @@ A8a 因此没有新增另一套 Runtime、schema、hash、gate 或评分公式�
 增加该对照是为了解决“异构方法输出无法归因”的具体失败，不把它称为效果结果。当前尚未增加实验 CLI，
 也没有用公开 etcd/raft 校准宣称方法优劣。
 
+## A8b：同预算 paired trial runner
+
+新策略 `etcdraft-a8-paired-scenario-v1` 复用现有 Campaign 数据面，在同一根目录下运行：
+
+- `deterministic/`：一个零模型成本的确定性 Scenario episode；
+- `agent/`：一个 OpenRouter Scenario episode；
+- `summary.json`：只汇总两 arm 的执行预算、实际 primary/replay work、model work、Trace、PSS、Risk 和 Oracle。
+
+两 arm 的 execution budget 必须完全一致；Agent 的 calls/tokens 作为额外成本单列。每个 arm 的完整 Bundle 仍只存一份
+在原 Campaign artifact 中，根 summary 不复制大型 Trace。停止后恢复会从两个 Campaign 重算 summary，不重复访问
+provider 或 key。fixture 配对实验中两 arm 得到相同 Trace、PSS/Risk/Oracle 和 primary/replay work，Agent 额外使用
+2 次模型调用；这正是公开校准应报告的负结果形态，而不是把“LLM 参与”自动写成优势。
+
+默认 etcd/raft authoring input 已从两个 episode 改为每 trial 一个 episode。多 episode coordinator 与恢复能力继续由
+显式测试覆盖；真实 A8 重复通过独立 trial 目录组织，避免同一 root 的重复 Trace 被算作独立状态发现。
+
 ## 本轮减负结果
 
 本轮已完成：
@@ -136,21 +153,22 @@ A8a 因此没有新增另一套 Runtime、schema、hash、gate 或评分公式�
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8a）：
+当前 Go 规模（包含 A8b）：
 
-- 生产代码：32,945 行；
-- 测试代码：15,048 行；
-- 合计：47,993 行。
+- 生产代码：33,287 行；
+- 测试代码：15,134 行；
+- 合计：48,421 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
-消除。测试约占 31%，这是确定性执行、恢复和反例验证的主要可信边界，不进行比例式删除。
+消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
+恢复和反例验证的主要可信边界，不进行比例式删除。
 
 ## 当前边界
 
 尚未完成：
 
 - 非公开 candidate/control 正式效果实验；
-- deterministic Scenario 对照与单 Agent 的同预算 trial runner；
+- paired trial runner 与非公开 candidate/control evaluator 的衔接；
 - A9 的双角色 Agent 消融；
 - 多次重复实验与置信区间；
 - fixed Profile obligation coverage 接入当前 Session 汇总；
@@ -176,8 +194,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步只接同预算 trial runner 和紧凑结果表。在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的
-评分公式。
+下一小步先运行一次真实 OpenRouter public paired preflight，再定义 paired trial 到现有 private evaluator 的最小
+衔接。在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
 
 ## 当前验证
 
@@ -188,6 +206,7 @@ A8 先形成一个最小、可预注册的配对实验：
 - etcd/raft Adapter 全包；
 - etcd/raft 与 OmniPaxos 双 episode Session；
 - etcd/raft deterministic/Agent 共用 Scenario core 与 qualified testing 的集成测试；
+- A8 单 episode paired runner 的同预算、同 Trace 和无 provider/key 恢复测试；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；
