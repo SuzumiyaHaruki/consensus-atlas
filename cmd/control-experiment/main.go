@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,233 +26,46 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdout io.Writer) error {
+	options := controlExperimentOptions{
+		Strategy:   "workload",
+		Decisions:  96,
+		PolicySeed: 1,
+	}
 	flags := flag.NewFlagSet("control-experiment", flag.ContinueOnError)
-	out := flags.String("out", "", "report output path")
-	bundleOut := flags.String("bundle-out", "", "optional execution bundle output path (qualified workload strategies only)")
-	bundleEvidenceVersion := flags.Int("bundle-evidence-version", 0, "optional trusted bundle evidence version (3 only)")
-	methodSpecDigest := flags.String("method-spec-digest", "", "frozen MethodSpec digest required by bundle evidence v3")
-	agentKeyFile := flags.String("agent-key-file", "", "key file for an explicit opt-in Agent strategy")
-	agentModel := flags.String("agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
-	workerPath := flags.String("worker", "", "target worker executable for a worker-backed Agent strategy")
-	semanticInput := flags.String("semantic-input", "", "editable protocol knowledge and hypothesis JSON for an Agent strategy")
-	scenarioSemanticExposure := flags.String("scenario-semantic-exposure", "", "optional full or masked Scenario semantic exposure")
-	campaignDirectory := flags.String("campaign-dir", "", "Campaign directory for an explicit Campaign strategy")
-	campaignObservationOut := flags.String("campaign-observation-out", "", "Campaign Observation output path")
-	campaignAttempts := flags.Int("campaign-attempts", 0, "attempt limit for an explicit Campaign strategy")
-	campaignWallClock := flags.Int64("campaign-wall-clock-ms", 0, "wall-clock ceiling for an explicit Campaign strategy")
-	campaignModelTokens := flags.Int("campaign-model-tokens-per-attempt", 0, "model-token allowance per Agent Campaign attempt")
-	campaignResume := flags.Bool("campaign-resume", false, "resume an existing exact Campaign config")
-	statelessCorpus := flags.String("stateless-corpus", "", "frozen root corpus for a Stateless Campaign strategy")
-	strategy := flags.String("strategy", "workload", "qualified strategy, including explicit opt-in Agent strategies")
-	decisions := flags.Int("decisions", 96, "charged decisions per run")
-	policySeed := flags.Uint64("policy-seed", 1, "public random-policy seed")
+	flags.StringVar(&options.Out, "out", "", "report output path")
+	flags.StringVar(&options.BundleOut, "bundle-out", "", "optional execution bundle output path")
+	flags.IntVar(&options.BundleEvidenceVersion, "bundle-evidence-version", 0, "optional trusted bundle evidence version")
+	flags.StringVar(&options.MethodSpecDigest, "method-spec-digest", "", "MethodSpec digest required by bundle evidence v3")
+	flags.StringVar(&options.AgentKeyFile, "agent-key-file", "", "key file for an explicit opt-in Agent strategy")
+	flags.StringVar(&options.AgentModel, "agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
+	flags.StringVar(&options.WorkerPath, "worker", "", "target worker executable for a worker-backed Agent strategy")
+	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol knowledge and hypothesis JSON")
+	flags.StringVar(&options.ScenarioSemanticExposure, "scenario-semantic-exposure", "", "optional full or masked semantics")
+	flags.StringVar(&options.CampaignDirectory, "campaign-dir", "", "Campaign directory")
+	flags.StringVar(&options.CampaignObservationOut, "campaign-observation-out", "", "Campaign Observation output path")
+	flags.IntVar(&options.CampaignAttempts, "campaign-attempts", 0, "Campaign attempt limit")
+	flags.Int64Var(&options.CampaignWallClock, "campaign-wall-clock-ms", 0, "Campaign wall-clock ceiling")
+	flags.IntVar(&options.CampaignModelTokens, "campaign-model-tokens-per-attempt", 0, "model-token allowance per attempt")
+	flags.BoolVar(&options.CampaignResume, "campaign-resume", false, "resume an exact Campaign")
+	flags.StringVar(&options.StatelessCorpus, "stateless-corpus", "", "frozen root corpus")
+	flags.StringVar(&options.Strategy, "strategy", options.Strategy, "qualified or explicit opt-in Agent strategy")
+	flags.IntVar(&options.Decisions, "decisions", options.Decisions, "charged decisions per run")
+	flags.Uint64Var(&options.PolicySeed, "policy-seed", options.PolicySeed, "public random-policy seed")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *strategy == omnipaxosScenarioSessionStrategy {
-		if *campaignDirectory == "" || *workerPath == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" || *out != "" || *bundleOut != "" ||
-			*statelessCorpus != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
-			*scenarioSemanticExposure != "" {
-			return errors.New("OmniPaxos Scenario session requires -campaign-dir, -worker, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
-		}
-		summary, err := runOmnipaxosScenarioSession(ctx, omnipaxosScenarioSessionOptions{
-			Directory: *campaignDirectory, WorkerPath: *workerPath, SemanticInputPath: *semanticInput,
-			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
-		})
-		if summary.Campaign.CampaignID != "" {
-			fmt.Fprintf(
-				stdout, "session=%s semantics=%s status=%s episodes=%d stop=%s primary_work=%d replay_work=%d model_calls=%d model_tokens=%d\n",
-				*campaignDirectory, summary.SemanticExposure, summary.Campaign.Status, summary.Campaign.Sequence,
-				summary.Campaign.StopReason, summary.Campaign.Totals.Primary.WorkUnits,
-				summary.Campaign.Totals.Replay.WorkUnits, summary.Campaign.Totals.Model.Calls,
-				summary.Campaign.Totals.Model.TotalTokens,
-			)
-			fmt.Fprintf(
-				stdout, "testing_episodes=%d replay_stable=%d pss_states=%d risk=%s oracle_violations=%d\n",
-				summary.TestingEpisodes, summary.ReplayStableEpisodes, summary.UniqueCorePSSStates,
-				summary.BestRiskStatus, summary.OracleViolations,
-			)
-		}
-		return err
+	switch options.Strategy {
+	case omnipaxosScenarioSessionStrategy:
+		return runOmnipaxosSessionCLI(ctx, options, stdout)
+	case etcdraftScenarioSessionStrategy:
+		return runEtcdraftSessionCLI(ctx, options, stdout)
+	case etcdraftSemanticCalibrationStrategy:
+		return runEtcdraftSemanticExplorerCLI(ctx, options, stdout)
+	case etcdraftStatelessCanonicalCampaignStrategy, etcdraftStatelessUniformCampaignStrategy:
+		return runEtcdraftStatelessCampaignCLI(ctx, options, stdout)
+	default:
+		return runEtcdraftQualifiedCLI(ctx, options, stdout)
 	}
-	if *strategy == etcdraftScenarioSessionStrategy {
-		exposure := controlexperiment.ScenarioSemanticExposureMode(*scenarioSemanticExposure)
-		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" || *workerPath != "" ||
-			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
-			(*scenarioSemanticExposure != "" && exposure.Validate() != nil) {
-			return errors.New("OpenRouter Scenario session requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
-		}
-		summary, err := runEtcdraftScenarioSession(ctx, etcdraftScenarioSessionOptions{
-			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
-			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			SemanticExposure: exposure,
-			Client:           newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
-		})
-		if summary.Campaign.CampaignID != "" {
-			fmt.Fprintf(
-				stdout, "session=%s semantics=%s status=%s episodes=%d stop=%s primary_work=%d replay_work=%d model_calls=%d model_tokens=%d\n",
-				*campaignDirectory, summary.SemanticExposure, summary.Campaign.Status, summary.Campaign.Sequence, summary.Campaign.StopReason,
-				summary.Campaign.Totals.Primary.WorkUnits, summary.Campaign.Totals.Replay.WorkUnits,
-				summary.Campaign.Totals.Model.Calls, summary.Campaign.Totals.Model.TotalTokens,
-			)
-			fmt.Fprintf(
-				stdout, "testing_episodes=%d replay_stable=%d pss_states=%d risk=%s oracle_violations=%d\n",
-				summary.TestingEpisodes, summary.ReplayStableEpisodes, summary.UniqueCorePSSStates,
-				summary.BestRiskStatus, summary.OracleViolations,
-			)
-		}
-		return err
-	}
-	if *strategy == etcdraftSemanticCalibrationStrategy {
-		if *campaignDirectory == "" || *statelessCorpus == "" || *semanticInput == "" ||
-			*agentKeyFile == "" || *agentModel == "" || *workerPath != "" ||
-			*out != "" || *bundleOut != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 || *scenarioSemanticExposure != "" {
-			return errors.New("semantic Explorer calibration requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
-		}
-		artifact, err := runEtcdraftSemanticCalibration(ctx, etcdraftSemanticCalibrationRunOptions{
-			Directory: *campaignDirectory, CorpusPath: *statelessCorpus, SemanticInputPath: *semanticInput,
-			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
-			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
-		})
-		if artifact.Digest != "" {
-			if artifact.Testing != nil {
-				fmt.Fprintf(
-					stdout, "artifact=%s status=%s selected=%s pss_states=%d replay=%t oracle_violations=%d model_calls=%d model_tokens=%d digest=%s\n",
-					filepath.Join(*campaignDirectory, "artifact.json"), artifact.Status,
-					artifact.Testing.SelectedCandidateID, artifact.Testing.UniqueCorePSSStates,
-					artifact.Testing.Replay.Stable, len(artifact.Testing.Oracle.Violations),
-					artifact.ModelWork.Calls, artifact.ModelWork.TotalTokens, artifact.Digest,
-				)
-			} else {
-				fmt.Fprintf(
-					stdout, "artifact=%s status=%s model_calls=%d model_tokens=%d digest=%s\n",
-					filepath.Join(*campaignDirectory, "artifact.json"), artifact.Status,
-					artifact.ModelWork.Calls, artifact.ModelWork.TotalTokens, artifact.Digest,
-				)
-			}
-		}
-		return err
-	}
-	if *strategy == etcdraftStatelessCanonicalCampaignStrategy ||
-		*strategy == etcdraftStatelessUniformCampaignStrategy {
-		if *out == "" || *campaignObservationOut == "" || *campaignDirectory == "" ||
-			*campaignAttempts <= 0 || *campaignWallClock <= 0 || *statelessCorpus == "" ||
-			*decisions != 96 || *bundleOut != "" || *bundleEvidenceVersion != 0 ||
-			*methodSpecDigest != "" || *agentKeyFile != "" || *agentModel != "" || *semanticInput != "" ||
-			*scenarioSemanticExposure != "" || *workerPath != "" ||
-			*campaignModelTokens != 0 ||
-			(*strategy == etcdraftStatelessCanonicalCampaignStrategy && *policySeed != 1) {
-			return errors.New("Stateless Campaign strategy requires only -stateless-corpus, -out, Campaign, and uniform seed flags")
-		}
-		return runEtcdraftStatelessCampaign(ctx, etcdraftStatelessCampaignRunOptions{
-			Directory: *campaignDirectory, SummaryOut: *out,
-			ObservationOut: *campaignObservationOut, Resume: *campaignResume,
-			Strategy: *strategy, Attempts: *campaignAttempts, FirstSeed: *policySeed,
-			WallClockCeilingMillis: *campaignWallClock, CorpusPath: *statelessCorpus,
-		}, stdout)
-	}
-	if *campaignDirectory != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
-		*campaignWallClock != 0 || *campaignModelTokens != 0 || *campaignResume {
-		return errors.New("Campaign flags require an explicit Campaign strategy")
-	}
-	if *statelessCorpus != "" {
-		return errors.New("-stateless-corpus requires a Stateless Campaign strategy")
-	}
-	if *agentKeyFile != "" {
-		return errors.New("Agent flags require an explicit opt-in Agent strategy")
-	}
-	if *agentModel != "" {
-		return errors.New("-agent-model requires an explicit opt-in Agent strategy")
-	}
-	if *semanticInput != "" {
-		return errors.New("-semantic-input requires an explicit opt-in Agent strategy")
-	}
-	if *scenarioSemanticExposure != "" {
-		return errors.New("-scenario-semantic-exposure requires the Scenario session strategy")
-	}
-	if *workerPath != "" {
-		return errors.New("-worker requires a worker-backed Agent strategy")
-	}
-	if *out == "" {
-		return errors.New("-out is required")
-	}
-	if (*bundleEvidenceVersion != 0 || *methodSpecDigest != "") && *bundleOut == "" {
-		return errors.New("bundle evidence flags require -bundle-out")
-	}
-	var report controlexperiment.Report
-	var bundle *controlexperiment.ExecutionBundle
-	var err error
-	if *bundleOut != "" {
-		if !supportsQualifiedBundleOutput(*strategy) {
-			return errors.New("-bundle-out requires a qualified workload strategy")
-		}
-		var captured controlexperiment.ExecutionBundle
-		if *bundleEvidenceVersion == 3 {
-			if *methodSpecDigest == "" {
-				return errors.New("bundle evidence v3 requires -method-spec-digest")
-			}
-			report, captured, err = etcdraftBundleV3(
-				ctx, *strategy, *decisions, *policySeed, *methodSpecDigest,
-			)
-		} else {
-			if *bundleEvidenceVersion != 0 || *methodSpecDigest != "" {
-				return errors.New("only -bundle-evidence-version 3 is supported")
-			}
-			report, captured, err = etcdraftBundle(ctx, *strategy, *decisions, *policySeed)
-		}
-		bundle = &captured
-	} else {
-		report, err = etcdraftReport(ctx, *strategy, *decisions, *policySeed)
-	}
-	if err != nil {
-		return err
-	}
-	encoded, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return err
-	}
-	var persisted controlexperiment.Report
-	if err := json.Unmarshal(encoded, &persisted); err != nil {
-		return err
-	}
-	if err := persisted.Validate(); err != nil {
-		return fmt.Errorf("validate persisted report: %w", err)
-	}
-	if err := writeReport(*out, encoded); err != nil {
-		return err
-	}
-	if bundle != nil {
-		bundleBytes, err := json.MarshalIndent(bundle, "", "  ")
-		if err != nil {
-			return err
-		}
-		var persistedBundle controlexperiment.ExecutionBundle
-		if err := json.Unmarshal(bundleBytes, &persistedBundle); err != nil {
-			return err
-		}
-		if err := persistedBundle.Validate(); err != nil {
-			return fmt.Errorf("validate persisted execution bundle: %w", err)
-		}
-		if err := persistedBundle.ValidateProjection(etcdraftv2.DecisionProjector{}); err != nil {
-			return fmt.Errorf("validate persisted decision projection: %w", err)
-		}
-		if err := writeReport(*bundleOut, bundleBytes); err != nil {
-			return err
-		}
-	}
-	fmt.Fprintf(stdout, "wrote %s\nruns=%d decisions=%d states=%d replay=%t digest=%s\n",
-		*out, len(report.Runs), report.StateDiscovery.TotalDecisions,
-		report.StateDiscovery.UniqueStates, allReplayStable(report), report.Digest)
-	return nil
 }
 
 func etcdraftBundle(

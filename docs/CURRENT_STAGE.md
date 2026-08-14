@@ -68,6 +68,8 @@
     Campaign config 已独立绑定 session 预算与 wall-clock 终止策略，实际 stop reason 仍作为运行结果保存。
 28. etcd/raft 与 OmniPaxos 的旧单 episode Scenario CLI 已由可配置 `MaxAttempts=1` 的 Session 完整覆盖并从
     HEAD 删除；共享 episode core、summary 和正式多 episode Session 均保留。
+29. `control-experiment` 的 `run()` 只负责 flag 解析和四路显式分派；Session、Semantic Explorer、stateless
+    baseline 与 qualified execution 各自校验参数并输出结果，没有引入策略注册表或新 package。
 
 ## 得到什么
 
