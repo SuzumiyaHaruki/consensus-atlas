@@ -61,6 +61,7 @@ func runOmnipaxosScenarioAgentEpisode(
 	ctx context.Context,
 	inputs omnipaxosScenarioInputs,
 	journal *scenarioAgentCallJournal,
+	maxCalls int,
 	activateKey func() error,
 ) (scenarioAgentEpisodeResult, error) {
 	var opened []*omnipaxosv2.Adapter
@@ -90,7 +91,7 @@ func runOmnipaxosScenarioAgentEpisode(
 				inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
 			)
 		},
-	}, journal, inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
+	}, journal, maxCalls, inputs.Experiment.ScenarioMaxSteps,
 		inputs.Experiment.ScenarioMaxDecisions, activateKey)
 	if err != nil {
 		return result, err

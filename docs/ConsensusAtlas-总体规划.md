@@ -545,7 +545,7 @@ A7b 已完成：OmniPaxos 知识、假设、单写 workload 和消息丢弃预�
 samples、28 个唯一状态、stable Replay、TraceIntegrity/Agreement 零异常。两个目标共有的 testing result 外壳
 已合并，Risk 与 monitor 仍留在目标组合。
 
-下一步 A7c 复用现有 provider/session 编排形成可调用的非 Raft session。该阶段不引入 A2 搜索、冻结 spec、
+下一步 A7c 复用现有 provider 编排形成可调用的非 Raft episode。该阶段不引入 A2 搜索、冻结 spec、
 新账本或新的覆盖率定义。
 
 A7c 已完成其中的 provider 与可调用单 episode run：共享 episode core 同时服务 etcd/raft 和 OmniPaxos，
@@ -556,7 +556,19 @@ OpenRouter journal 的成功响应进入同一 closure 与 qualified Bundle；co
 该结果尚不是多 episode session。A7d 只在确认现有 Campaign coordinator 可直接消费共享 episode artifact 后补
 session 编排；否则保留单 episode 入口并记录差异，不复制 etcd/raft Campaign 实现。
 
-完成判据：不修改公共 Action/Runtime/episode 数据流即可完成一次非 Raft session。
+A7d 已完成：`omnipaxos-openrouter-session-a7d` 由现有 Campaign coordinator 在 JSON 声明的共享预算内运行两个
+独立 episode。每轮均进入 qualification-bound Bundle、fresh Replay、Oracle、Risk 和 PSS；终端结果计算 PSS
+状态并集而不是简单相加。恢复已提交 Campaign 时不再次访问 provider 或 key。
+
+etcd/raft 原目标内会话代码已提取为两个真实协议共同消费的 attempt journal、artifact validation、work/model
+计费和结果聚合；OmniPaxos wrapper 只负责准备目标输入、调用目标 executor。会话身份复用现有规范化摘要绑定知识、
+假设、workload、运行配置、execution admission 与 provider transport，解决“输入改变后错误复用已提交 artifact”
+这一具体恢复失败场景；没有增加新的冻结文件、版本或 gate。
+
+本地结果为 2 个 completed/testing/replay-stable episode、2 次模型调用、Risk reached、0 Oracle violation，并在
+attempt limit 停止。相同策略产生的状态并集不应被解释成 Agent 已改善覆盖。
+
+完成判据已经满足：没有修改公共 Action/Runtime/episode 数据流即完成非 Raft 多 episode session。
 
 ### A8：效果评测
 

@@ -50,6 +50,36 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if *strategy == omnipaxosScenarioSessionStrategy {
+		if *campaignDirectory == "" || *workerPath == "" || *semanticInput == "" ||
+			*agentKeyFile == "" || *agentModel == "" || *out != "" || *bundleOut != "" ||
+			*statelessCorpus != "" || *campaignObservationOut != "" || *campaignAttempts != 0 ||
+			*campaignWallClock != 0 || *campaignModelTokens != 0 || *bundleEvidenceVersion != 0 ||
+			*methodSpecDigest != "" || *decisions != 96 || *policySeed != 1 ||
+			*scenarioSemanticExposure != "" {
+			return errors.New("OmniPaxos Scenario session requires -campaign-dir, -worker, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
+		}
+		summary, err := runOmnipaxosScenarioSession(ctx, omnipaxosScenarioSessionOptions{
+			Directory: *campaignDirectory, WorkerPath: *workerPath, SemanticInputPath: *semanticInput,
+			Resume: *campaignResume, AgentKeyFile: *agentKeyFile,
+			Client: newOpenRouterIntentClient(*agentModel), ReadKey: readAgentKey,
+		})
+		if summary.Campaign.CampaignID != "" {
+			fmt.Fprintf(
+				stdout, "session=%s semantics=%s status=%s episodes=%d stop=%s primary_work=%d replay_work=%d model_calls=%d model_tokens=%d\n",
+				*campaignDirectory, summary.SemanticExposure, summary.Campaign.Status, summary.Campaign.Sequence,
+				summary.Campaign.StopReason, summary.Campaign.Totals.Primary.WorkUnits,
+				summary.Campaign.Totals.Replay.WorkUnits, summary.Campaign.Totals.Model.Calls,
+				summary.Campaign.Totals.Model.TotalTokens,
+			)
+			fmt.Fprintf(
+				stdout, "testing_episodes=%d replay_stable=%d pss_states=%d risk=%s oracle_violations=%d\n",
+				summary.TestingEpisodes, summary.ReplayStableEpisodes, summary.UniqueCorePSSStates,
+				summary.BestRiskStatus, summary.OracleViolations,
+			)
+		}
+		return err
+	}
 	if *strategy == omnipaxosScenarioCalibrationStrategy {
 		if *campaignDirectory == "" || *workerPath == "" || *semanticInput == "" ||
 			*agentKeyFile == "" || *agentModel == "" || *out != "" || *bundleOut != "" ||

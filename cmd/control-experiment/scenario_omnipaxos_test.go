@@ -90,6 +90,76 @@ func TestA7cOpenRouterJournalDrivesQualifiedOmniPaxosEpisodeAndRecovers(t *testi
 		summary.Testing.RiskStatus, providerCalls)
 }
 
+func TestA7dOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+	workerPath := buildOmnipaxosScenarioWorker(t)
+	client := fixtureOpenRouterIntentClient()
+	providerCalls := 0
+	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls++
+		view := a4bScenarioViewFromRequest(t, request)
+		var selected controlexperiment.FrontierActionRef
+		for index, action := range view.Frontier.Actions {
+			if action.Kind == control.ActionDropMessage &&
+				view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
+				selected = action
+				break
+			}
+		}
+		if selected.ActionID == "" {
+			t.Fatalf("no in-flight OmniPaxos replication message can be dropped: %#v", view.Frontier.Actions)
+		}
+		content, err := json.Marshal(controlexperiment.ScenarioPlan{
+			ID: "omnipaxos-a7d-plan", Steps: []controlexperiment.ScenarioStep{{
+				ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{ActionID: selected.ActionID},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := a2b2OpenRouterResponse(t, providerCalls, content)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
+	})
+	directory := filepath.Join(t.TempDir(), "omnipaxos-a7d-session")
+	keyReads := 0
+	options := omnipaxosScenarioSessionOptions{
+		Directory: directory, WorkerPath: workerPath,
+		SemanticInputPath: "../../plans/agent/omnipaxos-message-loss-before-decision-v1.json",
+		AgentKeyFile:      "fixture-key-source", Client: client,
+		ReadKey: func(string) (string, error) {
+			keyReads++
+			return "fixture-key", nil
+		},
+	}
+	summary, err := runOmnipaxosScenarioSession(ctx, options)
+	if err != nil || summary.Campaign.Status != controlexperiment.CampaignSummaryStatusStopped ||
+		summary.Campaign.StopReason != controlexperiment.CampaignStopAttemptLimit ||
+		summary.Campaign.Sequence != 2 || summary.Campaign.Totals.Model.Calls != 2 ||
+		summary.AgentCompletedEpisodes != 2 || summary.AgentStoppedEpisodes != 0 ||
+		summary.TestingEpisodes != 2 || summary.ReplayStableEpisodes != 2 ||
+		summary.CorePSSSamples == 0 || summary.UniqueCorePSSStates == 0 ||
+		summary.UniqueCorePSSStates != len(summary.CorePSSStateKeys) ||
+		summary.BestRiskEpisode != 1 || summary.BestRiskStatus != semantic.RiskWitnessReached ||
+		summary.OracleViolations != 0 || providerCalls != 2 || keyReads != 2 {
+		t.Fatalf("OmniPaxos session incomplete: %#v calls=%d reads=%d err=%v",
+			summary, providerCalls, keyReads, err)
+	}
+	options.Resume = true
+	options.ReadKey = func(string) (string, error) {
+		keyReads++
+		return "unexpected-key-read", nil
+	}
+	recovered, err := runOmnipaxosScenarioSession(ctx, options)
+	if err != nil || !reflect.DeepEqual(recovered, summary) || providerCalls != 2 || keyReads != 2 {
+		t.Fatalf("OmniPaxos session recovery contacted provider/key or drifted: %#v calls=%d reads=%d err=%v",
+			recovered, providerCalls, keyReads, err)
+	}
+	t.Logf("episodes=%d pss=%d/%d risk=%s provider=%d replay=2 recovery=true",
+		summary.Campaign.Sequence, summary.CorePSSSamples, summary.UniqueCorePSSStates,
+		summary.BestRiskStatus, providerCalls)
+}
+
 func buildOmnipaxosScenarioWorker(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("cargo"); err != nil {

@@ -372,6 +372,24 @@ Risk、PSS/Decision projector 和 qualification。
 下一步 A7d 再决定是否以同一 Campaign coordinator 组织多个独立 OmniPaxos episode，并核对预算/聚合是否能直接
 复用；在此之前不复制 etcd/raft session 文件。
 
+## 已完成：A7d OmniPaxos 多 episode Campaign
+
+新策略 `omnipaxos-openrouter-session-a7d` 使用现有 Campaign coordinator 连续运行独立 OmniPaxos episode。
+authoring JSON 直接声明 session 的 episode、primary/replay work、模型调用、token 与 wall-clock 上限；每轮仍从同一
+可信 root 开始，并分别经过 qualification-bound execution、fresh Replay、Oracle、Risk 与 PSS 投影。
+
+etcd/raft 原有 322 行目标内会话实现已收敛为共享 attempt journal、artifact 校验、PSS 并集、最佳 Risk、work/model
+计费和恢复汇总；两个目标的 wrapper 只组装各自输入与 executor。新增 OmniPaxos wrapper 没有修改公共 Action、
+Runtime、Replay、Oracle 或 episode 契约。Campaign 的实验摘要复用现有规范化摘要，绑定知识、假设、workload、
+execution admission、运行预算和 provider transport，防止输入改变后错误复用已提交 artifact；未新增冻结文件、
+版本、baseline 或 gate。
+
+本地 provider 结果为 2 个 completed/testing/replay-stable episode、2 次模型调用、Risk reached、PSS 状态并集和
+0 Oracle violation；停止原因为 attempt limit。恢复未再次读取 key 或访问 provider。该结果证明同一 Campaign
+机制能服务第二个非 Raft 目标，不证明两个相同 episode 带来额外覆盖，也不构成 Agent 效果比较。
+
+下一阶段进入 A8 前先固定最小实验问题、对照方法和共享预算，不继续增加会话基础设施。
+
 ## 阅读顺序
 
 1. [总体规划](ConsensusAtlas-总体规划.md)

@@ -250,6 +250,7 @@ func TestA5aAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
 		etcdraftScenarioCalibrationStrategy,
 		etcdraftScenarioSessionStrategy,
 		omnipaxosScenarioCalibrationStrategy,
+		omnipaxosScenarioSessionStrategy,
 	} {
 		output := &strings.Builder{}
 		err := run(context.Background(), []string{

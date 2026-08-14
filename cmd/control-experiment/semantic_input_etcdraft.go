@@ -99,13 +99,13 @@ func (config etcdraftAgentExperimentConfig) validate() error {
 		!validOpenRouterReasoningEffort(config.ModelReasoningEffort) ||
 		config.ModelMaxOutputTokens <= 0 || config.ModelMaxOutputTokens > 4096 ||
 		config.ModelMaxRetries < 0 || config.ModelMaxRetries > 2 ||
-		!validEtcdraftSessionBudget(config.SessionBudget, config.SessionWallClockMS) {
+		!validScenarioSessionBudget(config.SessionBudget, config.SessionWallClockMS) {
 		return errors.New("ETCDRAFT_AGENT_EXPERIMENT_CONFIG_INVALID")
 	}
 	return nil
 }
 
-func validEtcdraftSessionBudget(
+func validScenarioSessionBudget(
 	budget controlexperiment.CampaignLogicalBudget,
 	wallClockMS int64,
 ) bool {

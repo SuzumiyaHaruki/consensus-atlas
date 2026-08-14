@@ -65,6 +65,8 @@ type omnipaxosScenarioExperimentConfig struct {
 	ScenarioMaxSteps         int                                            `json:"scenario_max_steps"`
 	ScenarioMaxDecisions     int                                            `json:"scenario_max_decisions"`
 	ScenarioSemanticExposure controlexperiment.ScenarioSemanticExposureMode `json:"scenario_semantic_exposure"`
+	SessionBudget            controlexperiment.CampaignLogicalBudget        `json:"session_budget"`
+	SessionWallClockMS       int64                                          `json:"session_wall_clock_ms"`
 }
 
 func (config omnipaxosScenarioExperimentConfig) validate() error {
@@ -78,7 +80,8 @@ func (config omnipaxosScenarioExperimentConfig) validate() error {
 		config.ScenarioMaxSteps <= 0 || config.ScenarioMaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
 		config.ScenarioMaxDecisions <= 0 ||
 		config.ScenarioMaxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
-		config.ScenarioSemanticExposure.Validate() != nil {
+		config.ScenarioSemanticExposure.Validate() != nil ||
+		!validScenarioSessionBudget(config.SessionBudget, config.SessionWallClockMS) {
 		return errors.New("OMNIPAXOS_SCENARIO_EXPERIMENT_CONFIG_INVALID")
 	}
 	return nil

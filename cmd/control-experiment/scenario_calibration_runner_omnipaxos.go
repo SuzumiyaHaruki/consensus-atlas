@@ -71,7 +71,9 @@ func runOmnipaxosScenarioCalibration(
 		key = ""
 		return activateErr
 	}
-	result, err := runOmnipaxosScenarioAgentEpisode(ctx, inputs, journal, activateKey)
+	result, err := runOmnipaxosScenarioAgentEpisode(
+		ctx, inputs, journal, inputs.Experiment.ScenarioMaxCalls, activateKey,
+	)
 	if err != nil {
 		audits, auditErr := journal.Audits()
 		if auditErr != nil || len(audits) == 0 ||

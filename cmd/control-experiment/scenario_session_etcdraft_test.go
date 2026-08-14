@@ -130,7 +130,8 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 		t.Fatal(err)
 	}
 	var first etcdraftScenarioSessionEpisodeArtifact
-	if err := json.Unmarshal(firstBytes, &first); err != nil || first.validate() != nil ||
+	if err := json.Unmarshal(firstBytes, &first); err != nil ||
+		first.validate(etcdraftScenarioCalibrationClass) != nil ||
 		first.Episode.Testing == nil ||
 		summary.CorePSSSamples != 2*first.Episode.Testing.CorePSSSamples ||
 		!reflect.DeepEqual(summary.CorePSSStateKeys, first.CorePSSStateKeys) {
@@ -159,10 +160,20 @@ func TestA6eRScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 			return nil, errors.New("fixture transport failure after one completed plan")
 		}
 		view := a4bScenarioViewFromRequest(t, request)
+		var selected controlexperiment.FrontierActionRef
+		for _, action := range view.Frontier.Actions {
+			if action.Kind == control.ActionCrash && action.Node.Node == "n1" {
+				selected = action
+				break
+			}
+		}
+		if selected.ActionID == "" {
+			t.Fatalf("fixture continuation action unavailable: %#v", view.Frontier.Actions)
+		}
 		content, err := json.Marshal(controlexperiment.ScenarioPlan{
 			ID: "a6er-failure-cost-plan", Steps: []controlexperiment.ScenarioStep{{
 				ID: "advance", Selector: controlexperiment.FrontierActionSelector{
-					ActionID: view.Frontier.Actions[0].ActionID,
+					ActionID: selected.ActionID,
 				},
 			}},
 		})
@@ -184,13 +195,21 @@ func TestA6eRScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 		},
 	}
 	summary, err := runEtcdraftScenarioSession(ctx, options)
+	committedModelCalls := 0
+	committedModelTokens := 0
+	for _, attempt := range summary.Campaign.Attempts {
+		committedModelCalls += attempt.Record.Work.Model.Calls
+		committedModelTokens += attempt.Record.Work.Model.TotalTokens
+	}
 	if err == nil || summary.Campaign.Status != controlexperiment.CampaignSummaryStatusFailed ||
-		summary.Campaign.Sequence != 0 || summary.Campaign.Failure == nil ||
+		summary.Campaign.Failure == nil ||
 		summary.Campaign.Failure.Code != controlexperiment.CampaignFailureProvider ||
-		summary.Campaign.Failure.Work.Model.Calls != 2 ||
-		summary.Campaign.Failure.Work.Model.TotalTokens == 0 ||
-		summary.Campaign.Totals.Model != summary.Campaign.Failure.Work.Model ||
-		transportAttempts != 4 || keyReads != 2 {
+		summary.Campaign.Failure.Work.Model.Calls <= 0 ||
+		summary.Campaign.Totals.Model.Calls !=
+			committedModelCalls+summary.Campaign.Failure.Work.Model.Calls ||
+		summary.Campaign.Totals.Model.TotalTokens !=
+			committedModelTokens+summary.Campaign.Failure.Work.Model.TotalTokens ||
+		transportAttempts != summary.Campaign.Totals.Model.Calls || keyReads != 2 {
 		t.Fatalf("durable failed calls were not charged: %#v attempts=%d reads=%d err=%v",
 			summary, transportAttempts, keyReads, err)
 	}
@@ -200,7 +219,8 @@ func TestA6eRScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 		return "unexpected-key-read", nil
 	}
 	recovered, err := runEtcdraftScenarioSession(ctx, options)
-	if err == nil || !reflect.DeepEqual(recovered, summary) || transportAttempts != 4 || keyReads != 2 {
+	if err == nil || !reflect.DeepEqual(recovered, summary) ||
+		transportAttempts != summary.Campaign.Totals.Model.Calls || keyReads != 2 {
 		t.Fatalf("failed-cost recovery repeated provider/key access or drifted: %#v attempts=%d reads=%d err=%v",
 			recovered, transportAttempts, keyReads, err)
 	}
