@@ -76,15 +76,6 @@ func projectEtcdraftScenarioSemantics(
 	return exposure, nil
 }
 
-func latestScenarioEvidence(trace controlruntime.Trace) control.EvidenceEnvelope {
-	for index := len(trace.Records) - 1; index >= 0; index-- {
-		if trace.Records[index].Evidence != nil {
-			return *trace.Records[index].Evidence
-		}
-	}
-	return trace.InitialEvidence
-}
-
 func etcdraftScenarioActorRole(role string) string {
 	switch role {
 	case "StateLeader":

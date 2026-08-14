@@ -4,12 +4,12 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A6g 单步 Agent 干预真实闭环完成
+阶段：A7a 第二协议 Scenario episode 已连通
 
 ## 一句话状态
 
-真实 `deepseek/deepseek-v4-flash` 已连续选择 `crash n1` 和 `restart n1`；两次战略干预之间由可信
-natural-progress closure 执行 24 个低层动作，最终达到全部 Risk milestones，并通过 fresh Replay 和 Oracle。
+同一套协议无关 Scenario/Frontier/natural-progress/Replay 路径已在真实 OmniPaxos worker 上执行第一条
+非 Raft episode；目标专用部分只负责 Evidence、Risk 与语义提示，没有修改公共 Action 或 Runtime。
 
 ## 输入什么
 
@@ -45,6 +45,8 @@ natural-progress closure 执行 24 个低层动作，最终达到全部 Risk mil
     `transport_attempts` 单独保留实际网络尝试数。
 17. etcd/raft qualified Bundle 在 TraceIntegrity 和 Agreement 之后运行 target-local `etcdraft-log-progress`；
     它只解码 Adapter-owned Evidence，不读取 Agent、PSS 或 Risk 结论。
+18. A7a 用 OmniPaxos target binding 投影 leader、decided frontier 与消息类别；通用 Scenario 引擎执行一次
+    `Invoke -> DropMessage -> natural progress -> decided`，随后由全新 worker 精确 Replay。
 
 ## 得到什么
 
@@ -68,6 +70,11 @@ natural-progress closure 执行 24 个低层动作，最终达到全部 Risk mil
 - 第一轮选择 1 个消息投递动作，得到 20 个唯一 Core PSS 状态；第二轮收到第一轮 `completed` 机械反馈后选择
   `deliver-message -> crash -> fire-temporal-event -> deliver-message`，得到 23 个状态，session 并集仍为 23。
   两轮 Replay 都稳定，0 Oracle violation，Risk 都只满足 workload 初始里程碑，仍为 `not-reached`。
+- A7a 真实 OmniPaxos episode 的 root 有 23 个决策；Planner 从可信 frontier 选择一条
+  `sequence-paxos` 消息执行 `DropMessage`，closure 再执行 7 个普通动作后达到
+  `workload-invoked -> message-dropped -> workload-decided`，fresh worker Replay digest 完全相同。
+- 该结果只证明第二协议复用最短闭环。尚未形成 OmniPaxos 的可编辑 JSON、qualification-bound Bundle、
+  PSS/Oracle 汇总、session CLI 或真实 OpenRouter 运行，因此 A7 尚未完成。
 - 对已完成目录执行 `-campaign-resume` 得到完全相同的 episode、work、token、PSS/Risk/Oracle 汇总，没有新增
   provider 调用。
 - A6e 首次配对校准使用同一 root、semantic input、`deepseek/deepseek-v4-flash` 和 session 预算。
@@ -324,10 +331,14 @@ frontier。它检出 `Applied > Commit`、commit 回退和 applied 回退，并�
 request/origin/value 一致。这不要求命令已经产生 ClientResult，因此与当前“从成功返回找应用见证”
 的方向独立。
 
-## 下一步：A7 第二协议复用审查
+## 已完成：A7a 第二协议最短 episode
 
-以现有 OmniPaxos strict Adapter 为对象，先盘点 A6 episode/session 组合中哪些是 etcd/raft 专用，
-哪些能直接复用。在第二个真实消费者出现前不下沉新公共接口。
+OmniPaxos 直接复用了 `RiskFrontierView`、`ExploreScenarioWithPlanner`、单步战略干预、可信 natural-progress
+closure 和 fresh Replay。新增代码停留在目标边界：Adapter 导出只读语义 Evidence，组合层定义目标 Risk 和
+Action hints。唯一被两个真实目标共同使用的“取最新 Trace Evidence”助手已移出 etcd/raft 文件。
+
+本阶段没有新增 Action、Runtime、episode 契约、schema、hash、baseline 或 gate。下一步 A7b 将把这条路径接到
+OmniPaxos 的可编辑 authoring 输入和 qualification-bound testing result；在此之前不复制 etcd/raft session CLI。
 
 ## 阅读顺序
 

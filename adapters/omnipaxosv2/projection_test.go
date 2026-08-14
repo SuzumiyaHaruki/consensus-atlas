@@ -152,6 +152,27 @@ func TestDecisionProjectorRejectsMalformedPrefixDigest(t *testing.T) {
 	}
 }
 
+func TestProjectEvidenceExposesOnlySemanticWorkerState(t *testing.T) {
+	snapshot := adapterSnapshot{LogicalTime: 7, Nodes: []workerNode{
+		{ID: 1, Leader: 2, DecidedIndex: 3, DecidedPrefixDigest: zeroDigest(), PromiseNumber: 4, PromisePriority: 3, PromisePID: 2},
+		{ID: 2, Leader: 2, DecidedIndex: 3, DecidedPrefixDigest: zeroDigest(), PromiseNumber: 4, PromisePriority: 2, PromisePID: 2},
+		{ID: 3, Leader: 2, DecidedIndex: 2, DecidedPrefixDigest: zeroDigest(), PromiseNumber: 3, PromisePriority: 1, PromisePID: 3},
+	}}
+	payload, err := control.NewJSONPayload(evidenceSchema, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := ProjectEvidence(control.EvidenceEnvelope{Payload: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.LogicalTime != 7 || len(evidence.Nodes) != 3 ||
+		evidence.Nodes[0].Node != "n1" || evidence.Nodes[0].Leader != "n2" ||
+		evidence.Nodes[0].PromiseNode != "n2" || evidence.Nodes[2].DecidedIndex != 2 {
+		t.Fatalf("unexpected projected evidence: %#v", evidence)
+	}
+}
+
 func decidedNodeCountAt(adapter *Adapter, index uint64) int {
 	count := 0
 	for _, node := range adapter.last.Nodes {

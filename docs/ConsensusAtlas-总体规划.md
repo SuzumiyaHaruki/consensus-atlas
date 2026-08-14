@@ -532,6 +532,14 @@ Frontier/Risk。相同 Trace 与 Bundle 的复验把总 token 从 33,215 降到 
 只有当 Binding、Evidence Extractor、Risk/Oracle 组合或 authoring 输入确实被两个目标消费时，才下沉最小公共接口。
 不预先重构 Adapter v3；记录目标专用新增代码量、qualification 差异和实际可运行义务。
 
+A7a 已完成最短非 Raft episode：真实 OmniPaxos worker 在 23 个 root 决策后接受 workload，Scenario 从可信
+frontier 丢弃一条 `sequence-paxos` 消息，closure 再执行 7 个动作后形成决定，fresh worker Replay 一致。
+公共 Action、Runtime、Scenario 和 Replay 未修改；新增内容只包含 OmniPaxos 只读 Evidence、目标 Risk、
+语义提示和集成测试。该证明尚不等于完整 session，也没有进行真实模型调用。
+
+下一步 A7b 先补可编辑 authoring 输入和 qualification-bound testing result，再决定是否复用 session 编排。
+不把 etcd/raft CLI/Oracle/PSS 映射整份复制给 OmniPaxos；只有出现第二个相同消费者的逻辑才进入公共包。
+
 完成判据：不修改公共 Action/Runtime/episode 数据流即可完成一次非 Raft session。
 
 ### A8：效果评测

@@ -183,9 +183,13 @@ applied-command witness。monitor 通过已有 item transition 将它与 ClientH
 当前证据：
 
 - etcd/raft：完整 strict 主路径；
-- OmniPaxos：非 Raft 的同 Runtime 严格路径；
+- OmniPaxos：非 Raft 的同 Runtime 严格路径，并已复用同一 Scenario/closure/Replay 完成首个真实 episode；
 - HashiCorp Raft：部分能力，用于暴露黑盒接口的真实上限；
 - raft-rs：未取得资格的探索路径已从 HEAD 删除，不再作为当前适配证据。
+
+第二协议的 Scenario 接入不要求通用层理解 Paxos。Adapter 只导出稳定的目标 Evidence，组合层将它投影为
+Risk milestones 和有限 Action hints；Scenario 引擎仍只消费统一 Frontier、Action 和进度接口。目标间确实重复的
+“取 Trace 最新 Evidence”已下沉为共享助手，其余 Risk/消息分类继续留在各自目标边界。
 
 ## 6. 规划确定性与执行确定性
 
