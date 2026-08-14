@@ -64,19 +64,9 @@ func runOmnipaxosScenarioAgentEpisode(
 	maxCalls int,
 	activateKey func() error,
 ) (scenarioAgentEpisodeResult, error) {
-	var opened []*omnipaxosv2.Adapter
 	factory := func() (control.Adapter, error) {
-		adapter, err := omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: inputs.WorkerPath})
-		if err == nil {
-			opened = append(opened, adapter)
-		}
-		return adapter, err
+		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: inputs.WorkerPath})
 	}
-	defer func() {
-		for _, adapter := range opened {
-			_ = adapter.Close()
-		}
-	}()
 	projector := omnipaxosScenarioProjector{}
 	result, err := runScenarioAgentEpisodeCore(ctx, scenarioEpisodeCoreInputs{
 		RootID:    "omnipaxos-invoked-scenario",
@@ -127,7 +117,6 @@ func buildOmnipaxosScenarioRoot(
 	if err != nil {
 		return controlruntime.Trace{}, err
 	}
-	defer adapter.Close()
 	runtime, err := controlruntime.New(ctx, adapter, controlruntime.Config{
 		Seed: seed, ClockError: experiment.Runtime.ClockError,
 		MaxClones: experiment.Runtime.MaxClones,
@@ -135,6 +124,7 @@ func buildOmnipaxosScenarioRoot(
 	if err != nil {
 		return controlruntime.Trace{}, err
 	}
+	defer runtime.Close()
 	router := omnipaxosv2.WorkloadRouter{}
 	for decisions := 0; decisions < 256; decisions++ {
 		trace, err := runtime.Trace()
@@ -252,19 +242,9 @@ func executeOmnipaxosScenarioQualified(
 			Run: 1, Policy: policy, Workload: &workload,
 		}},
 	}
-	var opened []*omnipaxosv2.Adapter
 	factory := func() (control.Adapter, error) {
-		adapter, err := omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
-		if err == nil {
-			opened = append(opened, adapter)
-		}
-		return adapter, err
+		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	}
-	defer func() {
-		for _, adapter := range opened {
-			_ = adapter.Close()
-		}
-	}()
 	_, bundle, err := controlexperiment.ExecuteQualifiedBundle(
 		ctx, config, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
 		omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{},

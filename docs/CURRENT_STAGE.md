@@ -4,7 +4,7 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A7H0 A8 前证据与评测边界完善
+阶段：A7H1a A8 前成本与执行资源生命周期完善
 
 ## 一句话状态
 
@@ -51,6 +51,10 @@
     OmniPaxos 已验证的六项能力绑定 admission，再由唯一 Bundle executor 重新执行。
 20. A7d 已用同一 Campaign coordinator 运行两个独立 OmniPaxos episode；当前 artifact 仍只保存 provider 调用
     审计与 compact summary，完整 Bundle 持久化与无 SUT 重访恢复属于 A7H 的明确缺口。
+21. Campaign 现在保留 provider 实际返回的超预算 work，Scenario child verification 统一计入 Replay；
+    `controlruntime.New` 明确接管 Adapter，初始化/Replay 失败自动清理，成功 Runtime 由调用者幂等关闭。
+22. DFS、semantic best-first、Risk frontier、Scenario root、qualified primary/replay 均在一次临时使用后关闭
+    Runtime；OmniPaxos episode 不再把所有 worker 累积到 episode 结束。
 
 ## 得到什么
 
@@ -121,6 +125,8 @@
   被判为与 Invoke 不匹配，command witness 变异被判为缺少唯一精确见证。
 - 反向检查要求每个 applied command 都匹配一个更早的 Invoke，同 request 在不同副本上的 `(index, term)`
   必须一致。将 witness request 改成未调用 ID、或为同 request 添加第二日志位置，均会在确切 step 报告 violation。
+- A7H0 已恢复全仓普通测试和 race shard 清单；A7H1a 的资源回归测试验证 bounded DFS 创建的每个临时
+  Adapter 都在对应重建或 Replay 完成后关闭，而不是由目标 wrapper 延迟批量回收。
 
 ## 已删除什么
 
@@ -158,6 +164,8 @@ Oracle 和 evaluator 安全边界没有删除。
   解释为 Agent 优势；
 - provider/local episode error 发生在 Campaign attempt 提交前时，现在会记录已发生且可验证的 provider Work；
   其他无法从 durable audit 确认的 primary 部分仍不应被推测或补写；
+- conformance qualification 仍使用目标 wrapper 在整次有限 qualification 结束时批量回收 Adapter；它不进入
+  Scenario 的高扇出搜索循环，但应在 A7H1b 统一到 Runtime 所有权后再删除 wrapper；
 - log-progress 当前按 `NodeRef(node, incarnation)` 分段，不把 crash 后未持久的 volatile commit 回退误判为跨重启违例；
   持久化边界的跨 incarnation 检查需要独立 storage Evidence，本阶段不猜测；
 - token 统计只包含 provider 最终返回的 usage；无响应尝试是否已在 provider 端产生计费无法从本地确认，

@@ -582,6 +582,11 @@ attempt limit 停止。相同策略产生的状态并集不应被解释成 Agent
 只有对应具体恢复、成本或资源失败场景时才增加身份字段；不额外建立文件 digest、第二套 ledger、发布 gate 或
 Session Runtime。OmniPaxos 在补 target-local Oracle 和真实模型对照前只作为跨协议集成证据。
 
+A7H0 已恢复全仓测试与 race shard 清单。A7H1 已先修正超预算 work 和 child verification 分类，并建立统一
+Runtime 所有权：`New` 接管 Adapter，失败自动释放，成功后由 `Runtime.Close` 幂等释放；高扇出的 frontier
+重建、child verification、Scenario 和 qualified Replay 不再把外部 worker 累积到 episode 结束。有限的
+conformance qualification 批量回收将在同阶段下一小步收敛，之后再进入完整 Bundle 持久化。
+
 ### A8：效果评测
 
 准备非公开 candidate/control，比较 deterministic baseline、单 Explorer 和多 Agent。预注册重复次数、预算、

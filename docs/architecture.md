@@ -198,8 +198,10 @@ ProtocolKnowledge 和 TestHypothesis 仍由代码构造。Scenario 完成后，�
 
 OpenRouter journal、Scenario episode/session core 和 compact summary 已经有两个真实协议消费者。共享 core
 不导入目标类型；target wrapper 提供 Root、Risk/Semantic projector、Adapter factory 和 qualified executor。
-OmniPaxos 已进入现有多 episode Campaign；当前仍需补完整 Bundle 持久化、成本分类、外部 worker 生命周期和
-方法身份，才能将该入口用于正式效果评价。
+OmniPaxos 已进入现有多 episode Campaign。Runtime 现在接管 Adapter：初始化和 Replay 失败会自动释放，
+frontier 重建、Scenario 与 qualified execution 在每次临时使用后关闭 Runtime，不再把外部 worker 累积到
+episode 结束。当前仍需收敛有限 conformance qualification 的批量回收，并补完整 Bundle 持久化和方法身份，
+才能将该入口用于正式效果评价。
 
 ## 6. 规划确定性与执行确定性
 

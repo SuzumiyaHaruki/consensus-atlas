@@ -147,11 +147,15 @@ func ReconstructRiskFrontierState(
 	if err != nil {
 		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
 	}
+	snapshot := runtime.Snapshot()
+	if err := runtime.Close(); err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
+	}
 	view, err := newRiskFrontierView(id, spec, progress, frontier)
 	if err != nil {
 		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
 	}
-	return view, runtime.Snapshot(), work, nil
+	return view, snapshot, work, nil
 }
 
 func newRiskFrontierView(

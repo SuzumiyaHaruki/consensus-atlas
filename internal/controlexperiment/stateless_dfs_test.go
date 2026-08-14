@@ -11,6 +11,41 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 )
 
+type closeCountingAdapter struct {
+	control.Adapter
+	closed *int
+}
+
+func (adapter *closeCountingAdapter) Close() error {
+	*adapter.closed++
+	return nil
+}
+
+func TestStatelessDFSClosesEveryTemporaryAdapter(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "613768312d616461707465722d6c6966656379636c65", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	spec, err := NewStatelessDFSSpec(
+		"fixture-a7h1-adapter-lifecycle", root, runtimeConfig,
+		&FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1}, 2, 5, 400,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := 0
+	closed := 0
+	factory := func() (control.Adapter, error) {
+		opened++
+		return &closeCountingAdapter{Adapter: fixture.New(), closed: &closed}, nil
+	}
+	if _, err := ExploreBoundedStatelessDFS(ctx, spec, root, factory); err != nil {
+		t.Fatal(err)
+	}
+	if opened == 0 || closed != opened {
+		t.Fatalf("temporary adapters: opened=%d closed=%d", opened, closed)
+	}
+}
+
 func TestSearchKernelCanonicalCompatibility(t *testing.T) {
 	ctx := context.Background()
 	runtimeConfig := RuntimeConfig{SeedHex: "61312d7365617263682d73706c6974", MaxClones: 1}
@@ -274,6 +309,7 @@ func fixtureInitialTrace(t *testing.T, ctx context.Context, config RuntimeConfig
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer runtime.Close()
 	trace, err := runtime.Trace()
 	if err != nil {
 		t.Fatal(err)

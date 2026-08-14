@@ -184,6 +184,7 @@ func executeRun(
 			"primary-runtime", "EXPERIMENT_PRIMARY_RUNTIME_FAILED", plan.Run, 0, *work, err,
 		)
 	}
+	defer runtime.Close()
 	chargeRuntimeInitialization(&work.Primary)
 	initialTrace, err := runtime.Trace()
 	if err != nil {
@@ -358,6 +359,7 @@ func executeRun(
 			"replay", "EXPERIMENT_REPLAY_FAILED", plan.Run, progress.Decisions, *work, err,
 		)
 	}
+	defer replayed.Close()
 	replayTrace, err := replayed.Trace()
 	if err != nil {
 		return RunReport{}, nil, executionFailure(

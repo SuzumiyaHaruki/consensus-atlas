@@ -55,11 +55,62 @@ type failingRuntimeActionAdapter struct {
 	control.Adapter
 }
 
+type closeTrackingAdapter struct {
+	control.Adapter
+	closes int
+}
+
+func (adapter *closeTrackingAdapter) Close() error {
+	adapter.closes++
+	return nil
+}
+
 func (adapter *failingRuntimeActionAdapter) ApplyRuntimeAction(ctx context.Context, action control.Action) error {
 	if action.Kind == control.ActionPartition {
 		return errors.New("TEST_PARTITION_ACTUATION_FAILED")
 	}
 	return adapter.Adapter.ApplyRuntimeAction(ctx, action)
+}
+
+func TestRuntimeOwnsAndClosesAdapter(t *testing.T) {
+	adapter := &closeTrackingAdapter{Adapter: fixture.New()}
+	runtime, err := controlruntime.New(context.Background(), adapter, runtimeConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.closes != 1 {
+		t.Fatalf("adapter closes = %d, want 1", adapter.closes)
+	}
+}
+
+func TestRuntimeClosesAdapterWhenInitializationFails(t *testing.T) {
+	adapter := &closeTrackingAdapter{Adapter: fixture.New()}
+	_, err := controlruntime.New(context.Background(), adapter, controlruntime.Config{})
+	if err == nil || !strings.Contains(err.Error(), "RUNTIME_SEED_REQUIRED") {
+		t.Fatalf("New() error = %v, want missing seed", err)
+	}
+	if adapter.closes != 1 {
+		t.Fatalf("adapter closes = %d, want 1", adapter.closes)
+	}
+}
+
+func TestReplayClosesAdapterWhenTraceIsInvalid(t *testing.T) {
+	adapter := &closeTrackingAdapter{Adapter: fixture.New()}
+	_, _, err := controlruntime.ReplayWithProgress(
+		context.Background(), adapter, runtimeConfig(), controlruntime.Trace{},
+	)
+	if err == nil {
+		t.Fatal("ReplayWithProgress() accepted an invalid trace")
+	}
+	if adapter.closes != 1 {
+		t.Fatalf("adapter closes = %d, want 1", adapter.closes)
+	}
 }
 
 func (adapter *falseEntropyDigestAdapter) SnapshotEntropy(ctx context.Context) (control.EntropyAuditEnvelope, error) {

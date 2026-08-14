@@ -188,9 +188,12 @@ func ReconstructActionFrontierView(
 	if err != nil {
 		return ActionFrontierView{}, PhaseWork{}, err
 	}
-	view, _, work, err := reconstructActionFrontierPrefix(
+	view, runtime, work, err := reconstructActionFrontierPrefix(
 		ctx, id, prefix, runtimeConfig, faultEnvelope, newAdapter,
 	)
+	if runtime != nil {
+		err = errors.Join(err, runtime.Close())
+	}
 	return view, work, err
 }
 
@@ -292,10 +295,13 @@ func exploreBoundedStatelessDFS(
 			return nil
 		}
 		viewID := fmt.Sprintf("%s-frontier-%06d", spec.ID, result.StatesExpanded+1)
-		view, _, reconstruction, err := reconstructActionFrontierPrefix(
+		view, runtime, reconstruction, err := reconstructActionFrontierPrefix(
 			ctx, viewID, prefix, spec.Runtime, spec.FaultEnvelope, newAdapter,
 		)
 		if err != nil {
+			return err
+		}
+		if err := runtime.Close(); err != nil {
 			return err
 		}
 		if reconstruction != reconstructionEstimate {
@@ -464,11 +470,11 @@ func reconstructActionFrontierPrefix(
 	}
 	var work PhaseWork
 	chargeSetup(&work)
-	adapter, err := newAdapter()
+	config, err := runtimeConfig.runtimeConfig()
 	if err != nil {
 		return ActionFrontierView{}, nil, work, err
 	}
-	config, err := runtimeConfig.runtimeConfig()
+	adapter, err := newAdapter()
 	if err != nil {
 		return ActionFrontierView{}, nil, work, err
 	}
@@ -483,12 +489,15 @@ func reconstructActionFrontierPrefix(
 	}
 	enabled, err := runtime.EnabledActions(ctx)
 	if err != nil {
-		return ActionFrontierView{}, nil, work, err
+		return ActionFrontierView{}, nil, work, errors.Join(err, runtime.Close())
 	}
 	admissible := admissibleActions(
 		faultEnvelope, faultUsageFromRecords(prefix.Records), enabled, runtime.Snapshot(),
 	)
 	view, err := newActionFrontierView(id, prefix, runtime.Snapshot(), enabled, admissible)
+	if err != nil {
+		return ActionFrontierView{}, nil, work, errors.Join(err, runtime.Close())
+	}
 	return view, runtime, work, err
 }
 
@@ -564,6 +573,7 @@ func materializeDFSChild(
 	if err != nil {
 		return controlruntime.Trace{}, materialization, PhaseWork{}, err
 	}
+	defer runtime.Close()
 	if view.Digest != wantView.Digest {
 		return controlruntime.Trace{}, materialization, PhaseWork{},
 			errors.New("EXPERIMENT_STATELESS_DFS_FRONTIER_DRIFT")
@@ -597,13 +607,16 @@ func materializeDFSChild(
 	if err != nil {
 		return controlruntime.Trace{}, materialization, verification, err
 	}
-	_, replay, err := controlruntime.ReplayWithProgress(ctx, adapter, config, child)
+	verificationRuntime, replay, err := controlruntime.ReplayWithProgress(ctx, adapter, config, child)
 	if replay.RuntimeInitialized {
 		chargeRuntimeInitialization(&verification)
 	}
 	chargePrepareActions(&verification, replay.PrepareActions)
 	chargeDecisions(&verification, replay.Decisions)
 	if err != nil {
+		return controlruntime.Trace{}, materialization, verification, err
+	}
+	if err := verificationRuntime.Close(); err != nil {
 		return controlruntime.Trace{}, materialization, verification, err
 	}
 	return child, materialization, verification, nil

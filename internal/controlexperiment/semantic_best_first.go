@@ -158,10 +158,13 @@ func ExploreBoundedSemanticBestFirst(
 			return false, nil
 		}
 		viewID := fmt.Sprintf("%s-semantic-frontier-%06d", spec.ID, search.StatesExpanded+1)
-		view, _, reconstruction, err := reconstructActionFrontierPrefix(
+		view, runtime, reconstruction, err := reconstructActionFrontierPrefix(
 			ctx, viewID, prefix, spec.Runtime, spec.FaultEnvelope, newAdapter,
 		)
 		if err != nil {
+			return false, err
+		}
+		if err := runtime.Close(); err != nil {
 			return false, err
 		}
 		if reconstruction != reconstructionEstimate {

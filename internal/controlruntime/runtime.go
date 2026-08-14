@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlentropy"
@@ -21,6 +22,8 @@ type Config struct {
 
 type Runtime struct {
 	adapter      control.Adapter
+	closeOnce    sync.Once
+	closeErr     error
 	manifest     control.AdapterManifest
 	manifestHash string
 	seedDigest   string
@@ -67,10 +70,19 @@ type nativeCommit struct {
 	partition  *control.PartitionParameters
 }
 
-func New(ctx context.Context, adapter control.Adapter, config Config) (*Runtime, error) {
+// New takes ownership of adapter. If initialization fails, New closes it
+// before returning. After a successful initialization, the caller must close
+// the returned Runtime when it is no longer needed.
+func New(ctx context.Context, adapter control.Adapter, config Config) (_ *Runtime, err error) {
 	if adapter == nil {
 		return nil, errors.New("ADAPTER_REQUIRED")
 	}
+	runtime := &Runtime{adapter: adapter}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+	}()
 	if len(config.Seed) == 0 {
 		return nil, errors.New("RUNTIME_SEED_REQUIRED")
 	}
@@ -96,13 +108,16 @@ func New(ctx context.Context, adapter control.Adapter, config Config) (*Runtime,
 		config.MaxClones = 2
 	}
 	seedSum := sha256.Sum256(config.Seed)
-	runtime := &Runtime{
-		adapter: adapter, manifest: manifest, manifestHash: manifestHash,
-		seedDigest: hex.EncodeToString(seedSum[:]), clockError: config.ClockError,
-		maxClones: config.MaxClones, nodes: make(map[control.NodeID]NodeSnapshot),
-		items: make(map[control.ItemID]*itemEntry), partitions: make(map[string]*partition),
-		cloneCounts: make(map[control.ItemID]uint64), offered: make(map[control.ActionID]control.Action),
-	}
+	runtime.manifest = manifest
+	runtime.manifestHash = manifestHash
+	runtime.seedDigest = hex.EncodeToString(seedSum[:])
+	runtime.clockError = config.ClockError
+	runtime.maxClones = config.MaxClones
+	runtime.nodes = make(map[control.NodeID]NodeSnapshot)
+	runtime.items = make(map[control.ItemID]*itemEntry)
+	runtime.partitions = make(map[string]*partition)
+	runtime.cloneCounts = make(map[control.ItemID]uint64)
+	runtime.offered = make(map[control.ActionID]control.Action)
 	for _, node := range manifest.Nodes {
 		runtime.nodes[node] = NodeSnapshot{
 			Ref: control.NodeRef{Node: node, Incarnation: 1}, Lifecycle: control.NodeRunning,
@@ -150,6 +165,25 @@ func New(ctx context.Context, adapter control.Adapter, config Config) (*Runtime,
 		InitialStateDigest: initialStateDigest, FinalStateDigest: initialStateDigest,
 	}
 	return runtime, nil
+}
+
+// Close releases resources owned by the Adapter. Adapters without an optional
+// Close method need no special handling. Close is safe to call more than once.
+func (runtime *Runtime) Close() error {
+	if runtime == nil {
+		return nil
+	}
+	runtime.closeOnce.Do(func() {
+		runtime.closeErr = closeAdapter(runtime.adapter)
+	})
+	return runtime.closeErr
+}
+
+func closeAdapter(adapter control.Adapter) error {
+	if closer, ok := adapter.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 func (runtime *Runtime) Select(ctx context.Context, id control.ActionID) (ActionRecord, error) {
