@@ -171,6 +171,8 @@ func prepareEtcdraftSemanticCalibration(
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
+	client.ReasoningEffort = experiment.ModelReasoningEffort
+	client.ExcludeReasoning = experiment.ModelExcludeReasoning
 	client.MaxOutputTokens = experiment.ModelMaxOutputTokens
 	client.MaxRetries = experiment.ModelMaxRetries
 	if openRouterTransportFreeze(client).Validate() != nil {
@@ -243,6 +245,8 @@ func (spec etcdraftSemanticCalibrationSpec) ValidateInputs(
 		spec.ExplorerBudget != experiment.ExplorerBudget || spec.Transport.Validate() != nil ||
 		spec.Transport.Provider != openRouterProvider ||
 		spec.Transport.Endpoint != openRouterChatEndpoint || !validOpenRouterModelID(spec.Transport.Model) ||
+		spec.Transport.Thinking != experiment.ModelReasoningEffort ||
+		spec.Transport.ExcludeReasoning != experiment.ModelExcludeReasoning ||
 		spec.Transport.MaxOutputTokens != experiment.ModelMaxOutputTokens ||
 		spec.Transport.MaxRetries != experiment.ModelMaxRetries ||
 		searchSpec.Runtime != experiment.Runtime || searchSpec.FaultEnvelope == nil ||

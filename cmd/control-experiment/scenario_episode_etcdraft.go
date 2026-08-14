@@ -35,7 +35,6 @@ func runEtcdraftScenarioAgentEpisode(
 	ctx context.Context,
 	inputs etcdraftSemanticCalibrationInputs,
 	journal *scenarioAgentCallJournal,
-	initialFeedback *controlexperiment.ScenarioAgentFeedback,
 	maxCalls int,
 	maxPlanSteps int,
 	maxDecisions int,
@@ -45,8 +44,7 @@ func runEtcdraftScenarioAgentEpisode(
 		maxCalls > controlexperiment.ScenarioAgentMaxCalls || maxPlanSteps <= 0 ||
 		maxPlanSteps > controlexperiment.ScenarioPlanMaxSteps || maxDecisions <= 0 ||
 		maxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
-		activateKey == nil || !validEtcdraftScenarioInitialFeedback(initialFeedback, maxPlanSteps) ||
-		journal.SetRoot("invoked-scenario") != nil {
+		activateKey == nil || journal.SetRoot("invoked-scenario") != nil {
 		return etcdraftScenarioEpisodeResult{}, errors.New("ETCDRAFT_SCENARIO_EPISODE_INPUT_INVALID")
 	}
 	projector := etcdraftSemanticPrefixProjector{}
@@ -71,7 +69,6 @@ func runEtcdraftScenarioAgentEpisode(
 	if err != nil {
 		return etcdraftScenarioEpisodeResult{}, err
 	}
-	plannerCalls := 0
 	agent, err := controlexperiment.ExploreScenarioWithPlanner(
 		ctx, maxCalls, maxPlanSteps, maxDecisions,
 		inputs.knowledge, inputs.hypothesis, inputs.riskSpec, frontier, semantics, rootRisk, inputs.root,
@@ -88,11 +85,6 @@ func runEtcdraftScenarioAgentEpisode(
 		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
-			if plannerCalls == 0 && initialFeedback != nil && view.Prior == nil {
-				prior := *initialFeedback
-				view.Prior = &prior
-			}
-			plannerCalls++
 			content, work, callErr := journal.Planner(ctx, inputs.riskSpec, view)
 			if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
 				return content, work, callErr
@@ -124,18 +116,6 @@ func runEtcdraftScenarioAgentEpisode(
 		result.Testing = &testing
 	}
 	return result, nil
-}
-
-func validEtcdraftScenarioInitialFeedback(
-	feedback *controlexperiment.ScenarioAgentFeedback,
-	maxSteps int,
-) bool {
-	if feedback == nil {
-		return true
-	}
-	return feedback.Attempt > 0 && len(feedback.Steps) <= maxSteps &&
-		(feedback.Outcome == controlexperiment.ScenarioAgentCompleted ||
-			feedback.Outcome == controlexperiment.ScenarioAgentStopped)
 }
 
 func executeEtcdraftScenarioQualified(

@@ -24,6 +24,13 @@ func fixtureOpenRouterIntentClient() openRouterIntentClient {
 	return newOpenRouterIntentClient(openRouterFixtureModel)
 }
 
+func fixtureOpenRouterStructuredOutput() openRouterStructuredOutput {
+	return openRouterStructuredOutput{
+		Name:   "fixture_output_v1",
+		Schema: json.RawMessage(`{"type":"object","additionalProperties":true}`),
+	}
+}
+
 func (function agentHTTPDoerFunc) Do(request *http.Request) (*http.Response, error) {
 	return function(request)
 }
@@ -39,6 +46,7 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 }`)
 	client := openRouterIntentClient{
 		Endpoint: openRouterChatEndpoint, Model: openRouterFixtureModel,
+		ReasoningEffort: openRouterDefaultReasoningEffort, ExcludeReasoning: true,
 		MaxOutputTokens: openRouterDefaultTokens,
 		HTTP: agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 			if request.Method != http.MethodPost || request.URL.String() != openRouterChatEndpoint ||
@@ -57,8 +65,11 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 			if err := json.Unmarshal(body, &payload); err != nil ||
 				payload.Model != openRouterFixtureModel ||
 				payload.MaxCompletionTokens != openRouterDefaultTokens ||
-				payload.Reasoning.Effort != openRouterReasoningDisabled ||
-				payload.ResponseFormat.Type != "json_object" {
+				payload.Reasoning.Effort != openRouterDefaultReasoningEffort ||
+				!payload.Reasoning.Exclude || payload.ResponseFormat.Type != "json_schema" ||
+				!payload.ResponseFormat.JSONSchema.Strict ||
+				payload.ResponseFormat.JSONSchema.Name != "fixture_output_v1" ||
+				!payload.Provider.RequireParameters {
 				t.Fatalf("unexpected OpenRouter payload: %#v/%v", payload, err)
 			}
 			return &http.Response{
@@ -72,7 +83,7 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 		clock = clock.Add(7 * time.Millisecond)
 		return current
 	}
-	prepared, err := client.prepare("public-system", "public-user")
+	prepared, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,12 +107,13 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 func TestOpenRouterProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T) {
 	client := openRouterIntentClient{
 		Endpoint: openRouterChatEndpoint, Model: openRouterFixtureModel,
+		ReasoningEffort: openRouterDefaultReasoningEffort, ExcludeReasoning: true,
 		MaxOutputTokens: openRouterDefaultTokens,
 		HTTP: agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 			return nil, errors.New("provider diagnostic that must not be persisted")
 		}),
 	}
-	prepared, err := client.prepare("public-system", "public-user")
+	prepared, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +165,7 @@ func TestOpenRouterProviderRetriesOnlyTransientFailuresAndRecordsAttempts(t *tes
 			}, nil
 		}
 	})
-	prepared, err := client.prepare("public-system", "public-user")
+	prepared, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +197,7 @@ func TestOpenRouterModelSelectionUsesOneTransport(t *testing.T) {
 		"router/model-c:fast",
 	} {
 		client := newOpenRouterIntentClient(model)
-		prepared, err := client.prepare("public-system", "public-user")
+		prepared, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput())
 		if err != nil {
 			t.Fatalf("model %q was not accepted: %v", model, err)
 		}
@@ -198,11 +210,11 @@ func TestOpenRouterModelSelectionUsesOneTransport(t *testing.T) {
 
 	client := newOpenRouterIntentClient(openRouterFixtureModel)
 	client.Endpoint = "https://example.invalid/chat/completions"
-	if _, err := client.prepare("public-system", "public-user"); err == nil {
+	if _, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput()); err == nil {
 		t.Fatal("non-OpenRouter endpoint was accepted")
 	}
 	client = newOpenRouterIntentClient("invalid model")
-	if _, err := client.prepare("public-system", "public-user"); err == nil {
+	if _, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput()); err == nil {
 		t.Fatal("invalid OpenRouter model ID was accepted")
 	}
 }

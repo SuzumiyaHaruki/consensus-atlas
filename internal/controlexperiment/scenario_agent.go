@@ -3,6 +3,7 @@ package controlexperiment
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
@@ -20,10 +21,14 @@ const (
 )
 
 type ScenarioAgentFeedback struct {
-	Attempt    int                    `json:"attempt"`
-	Outcome    string                 `json:"outcome"`
-	ReasonCode string                 `json:"reason_code,omitempty"`
-	Steps      []ScenarioStepFeedback `json:"steps,omitempty"`
+	Attempt             int                    `json:"attempt"`
+	Outcome             string                 `json:"outcome"`
+	ReasonCode          string                 `json:"reason_code,omitempty"`
+	PreviousPlan        *ScenarioPlan          `json:"previous_plan,omitempty"`
+	FailedStep          *ScenarioStep          `json:"failed_step,omitempty"`
+	Steps               []ScenarioStepFeedback `json:"steps,omitempty"`
+	NaturalProgress     []ScenarioStepFeedback `json:"natural_progress,omitempty"`
+	NaturalProgressStop string                 `json:"natural_progress_stop,omitempty"`
 }
 
 type ScenarioAgentView struct {
@@ -148,20 +153,51 @@ func ExploreScenarioWithPlanner(
 		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		attempt.Execution = &execution
 		attempt.Feedback = ScenarioAgentFeedback{
-			Attempt: ordinal, Outcome: execution.Status, Steps: cloneScenarioStepFeedback(execution.Steps),
+			Attempt: ordinal, Outcome: execution.Status, PreviousPlan: cloneScenarioPlan(&plan),
+			Steps: cloneScenarioStepFeedback(execution.Steps),
 		}
 		if execution.Status == ScenarioStatusStopped && len(execution.Steps) > 0 {
-			attempt.Feedback.ReasonCode = execution.Steps[len(execution.Steps)-1].ReasonCode
+			failed := execution.Steps[len(execution.Steps)-1]
+			attempt.Feedback.ReasonCode = failed.ReasonCode
+			attempt.Feedback.FailedStep = scenarioPlanStepByID(plan, failed.StepID)
 		}
 		result.Attempts = append(result.Attempts, attempt)
-		if execution.Status == ScenarioStatusCompleted {
-			mergeScenarioExecution(&result, execution)
+		committed, ok := committedScenarioPrefix(execution)
+		if ok {
+			mergeScenarioExecution(&result, committed)
 			currentTrace, currentRisk = execution.FinalTrace, execution.FinalRisk
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			if currentRisk.Status == semantic.RiskWitnessReached ||
-				len(result.Execution.Steps) >= maxDecisions || ordinal == maxCalls {
+				len(result.Execution.Steps) >= maxDecisions {
 				result.Status = ScenarioAgentCompleted
 				return result, nil
+			}
+			if execution.Status == ScenarioStatusCompleted {
+				remaining = maxDecisions - len(result.Execution.Steps)
+				if remaining > 0 {
+					progress, err := ExecuteScenarioNaturalProgress(
+						ctx, fmt.Sprintf("scenario-natural-progress-%02d", ordinal), remaining,
+						spec, currentRisk, currentTrace, runtimeConfig, faultEnvelope, newAdapter, projector,
+					)
+					if err != nil {
+						return result, err
+					}
+					addScenarioExecutionWork(&result.ExecutionWork, progress.Execution.Work)
+					stored := &result.Attempts[len(result.Attempts)-1].Feedback
+					stored.NaturalProgress = cloneScenarioStepFeedback(progress.Execution.Steps)
+					stored.NaturalProgressStop = progress.StopReason
+					prior = stored
+					if len(progress.Execution.Steps) > 0 {
+						mergeScenarioExecution(&result, progress.Execution)
+						currentTrace, currentRisk = progress.Execution.FinalTrace, progress.Execution.FinalRisk
+					}
+					if currentRisk.Status == semantic.RiskWitnessReached ||
+						progress.StopReason == ScenarioProgressClientTerminal ||
+						len(result.Execution.Steps) >= maxDecisions {
+						result.Status = ScenarioAgentCompleted
+						return result, nil
+					}
+				}
 			}
 			frontier, snapshot, reconstruction, err := ReconstructRiskFrontierState(
 				ctx, "scenario-continuation-frontier", spec, currentRisk, currentTrace,
@@ -189,6 +225,34 @@ func ExploreScenarioWithPlanner(
 	return result, nil
 }
 
+// committedScenarioPrefix retains only the mechanically applied leading
+// steps. A rejected step remains in the attempt feedback, while the verified
+// prefix becomes the continuation root and stays eligible for exact policy
+// compilation.
+func committedScenarioPrefix(execution ScenarioExecution) (ScenarioExecution, bool) {
+	applied := 0
+	for applied < len(execution.Steps) && execution.Steps[applied].Outcome == ScenarioStepApplied {
+		applied++
+	}
+	if applied == 0 {
+		return ScenarioExecution{}, false
+	}
+	committed := execution
+	committed.Status = ScenarioStatusCompleted
+	committed.Steps = cloneScenarioStepFeedback(execution.Steps[:applied])
+	return committed, true
+}
+
+func scenarioPlanStepByID(plan ScenarioPlan, id string) *ScenarioStep {
+	for _, step := range plan.Steps {
+		if step.ID == id {
+			value := step
+			return &value
+		}
+	}
+	return nil
+}
+
 func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecution) {
 	if result.Execution == nil {
 		value := execution
@@ -196,7 +260,6 @@ func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecu
 		result.Execution = &value
 		return
 	}
-	result.Execution.PlanID = execution.PlanID
 	result.Execution.Status = execution.Status
 	result.Execution.Steps = append(
 		result.Execution.Steps, cloneScenarioStepFeedback(execution.Steps)...,
@@ -222,7 +285,22 @@ func cloneScenarioFeedback(feedback *ScenarioAgentFeedback) *ScenarioAgentFeedba
 		return nil
 	}
 	value := *feedback
+	value.PreviousPlan = cloneScenarioPlan(feedback.PreviousPlan)
+	if feedback.FailedStep != nil {
+		step := *feedback.FailedStep
+		value.FailedStep = &step
+	}
 	value.Steps = cloneScenarioStepFeedback(feedback.Steps)
+	value.NaturalProgress = cloneScenarioStepFeedback(feedback.NaturalProgress)
+	return &value
+}
+
+func cloneScenarioPlan(plan *ScenarioPlan) *ScenarioPlan {
+	if plan == nil {
+		return nil
+	}
+	value := *plan
+	value.Steps = append([]ScenarioStep(nil), plan.Steps...)
 	return &value
 }
 

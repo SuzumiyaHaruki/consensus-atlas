@@ -105,14 +105,11 @@ A6e 的协议语义不进入 `FrontierActionRef`：Scenario view 另带一个与
 运行时可在 A6 session 入口覆盖暴露模式；覆盖值重建现有 session spec，因此不同模式不会误恢复同一
 Campaign，也不需要另一套配对运行协议。
 
-A6eR 把短计划改为 episode 内的 receding horizon，而没有放宽单次输出：一个最多 4 步的计划合法完成后，
-其已验证 FinalTrace/FinalRisk 成为下一次规划根；Runtime 重建当前 frontier/snapshot，target-local projector
-只对该状态重新分类。中止计划回滚到最近已提交根。整个 episode 另受 call、累计 decision、work、token 和
-wall-clock 上限约束，因此模型不能用长 JSON 绕过逐步具体化，也不能把失败的部分执行写进正式结果。
-
-首次真实运行确认这一机制能跨 5 个已提交短计划把 prefix 从 28 推到 33，最终结果可 qualified Replay；同时
-3 个计划因未来 ActionID 失效而停止。v3 prompt 现在只允许 exact ID 来自当前 frontier，明确要求第一步后
-省略 `action_id`，并在冻结输入中列出可用 semantic selector fields。这改变了提示词 identity，旧 v2 运行不会被误恢复。
+A6eR 现在把活动路径限制为单步当前 Action，避免模型预测 future ActionID。干预成功后，可信 closure 按固定
+优先级执行普通 effect、message 和自然 timer，直到 Risk 里程碑变化、客户端返回、自然推进静止或预算耗尽；
+随后 Runtime 重建 frontier/snapshot，target-local projector 只对该状态重新分类。stopped 多步计划的 leading
+applied prefix 会保留，rejected step 只进入反馈。整个 episode 仍受 call、decision、work、token 和 wall-clock
+上限约束。
 
 attempt 提交前的 provider failure 现在由 session 从 durable call audit 汇总已发生 ModelWork；Coordinator 只在
 WorkLedger 结构合法时将它写入已有 Campaign failure marker，终端 summary 将 failure work 与已提交 totals
@@ -253,7 +250,11 @@ Policy 后送入同一 qualified Bundle。真实 provider 的效果仍需单独�
 这层统一的是模型传输，不统一模型能力。不同模型是否能生成有效 ScenarioPlan，仍需在相同输入、预算和机械
 反馈下分别测量。
 
-瞬时可用性与计划失败分开：无响应的传输错误、HTTP 408/429/5xx 可在同一冻结请求上最多重试 2 次；
+活动请求使用 strict JSON Schema，并要求 OpenRouter 只路由到支持所需参数的 endpoint。reasoning effort 是
+可编辑实验输入；当前主配置为 `high`、`exclude=true`、4096 output tokens，`none` 仍可用于消融。模型输出
+仍必须通过本地类型与 frontier 具体化，结构化输出不会增加事实或执行权限。
+
+瞬时可用性与计划失败分开：无响应的传输错误、HTTP 408/429/5xx 可在同一请求上最多重试 2 次；
 鉴权失败、可读但非法的模型响应、非法 ScenarioPlan 和预算终止不进入传输重试。逻辑请求仍消耗一次
 `ModelWork.Calls`，实际 HTTP 尝试用 `transport_attempts` 审计，避免将重试伪装成免费模型决策。
 无响应尝试没有 provider usage 可供本地计费，因此 token 成本是已收到响应的精确值，不是网络模糊期间的 provider 账单上限。
@@ -263,9 +264,14 @@ A4c 的 target-local 运行器只组合现有组件：创建或恢复 model-call
 provider 终止失败时报告已消费调用和零 token，并确保恢复不会重新 dispatch。
 
 A6a 继续把 Scenario episode 作为 Campaign attempt，而不是引入 Session Runtime。Campaign 负责外部
-episode/work/model/time 预算、checkpoint 和恢复；前一 attempt 的紧凑 artifact 只导出最后一条机械
-`ScenarioAgentFeedback` 给下一次规划。Oracle、PSS、testing outcome 和候选身份不进入该反馈。每个 episode
-仍从相同可信 root 开始；只在该 episode 内由多个已提交短计划累积前缀，最终进入原 qualified execution。
+episode/work/model/time 预算、checkpoint 和恢复。`ScenarioAgentFeedback` 只在同一 episode 的真实 continuation
+中使用；它携带上一计划、失败步骤、执行反馈和 natural-progress 摘要。跨 episode 时 root 重置，因此当前不传
+上一 episode feedback；Oracle、PSS、testing outcome 和候选身份始终不进入 Agent 反馈。
+
+活动路径每次只允许模型选择一个当前 Action。可信 natural-progress closure 随后只执行 effect completion、
+普通消息投递和自然到期 timer，并在 Risk 里程碑变化、目标客户端返回、自然推进静止或 decision budget 耗尽时
+停止。每个 closure Action 仍经过当前 admissible frontier、fresh Adapter materialization、Replay、Trace 和 work
+统计。该闭包已抽为协议无关执行组件，但尚未完成所有 baseline 的配对接线，因此当前结果不能用于宣称 LLM 优势。
 
 A6b 在 session attempt artifact 中保存每个 qualified bundle 已有的规范 Core PSS 状态键。终端派生视图对这些
 键取并集，同时汇总 Agent/Testing/Replay episode 数、Risk 最佳进展和 Oracle violations；CampaignSummary 继续

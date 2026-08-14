@@ -48,7 +48,9 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 			}}}
 		} else {
 			if view.Prior == nil || view.Prior.ReasonCode != controlexperiment.ScenarioReasonNoMatch ||
-				len(view.Prior.Steps) != 1 || len(view.Prior.Steps[0].Available) == 0 {
+				view.Prior.PreviousPlan == nil || view.Prior.FailedStep == nil ||
+				view.Prior.FailedStep.ID != "restart-running" || len(view.Prior.Steps) != 1 ||
+				len(view.Prior.Steps[0].Available) != 0 {
 				t.Fatalf("repaired call did not receive mechanical no-match feedback: %#v", view.Prior)
 			}
 			var crash controlexperiment.FrontierActionRef
@@ -86,7 +88,7 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, journal, nil, 2, 2, 4, func() error {
+	result, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, journal, 2, 2, 4, func() error {
 		return journal.ActivateKey("fixture-key")
 	})
 	if err != nil {
@@ -108,7 +110,7 @@ func TestA4bScenarioAgentRepairsNoMatchAndProducesQualifiedTestingResult(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, recovered, nil, 2, 2, 4, func() error {
+	replayed, err := runEtcdraftScenarioAgentEpisode(ctx, inputs, recovered, 2, 2, 4, func() error {
 		return errStatelessAgentCallKeyRequired
 	})
 	if err != nil || replayed.Testing == nil ||

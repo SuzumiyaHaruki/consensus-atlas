@@ -2,10 +2,12 @@ package controlexperiment
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/fixture"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
@@ -112,6 +114,128 @@ func TestA4ScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(
 		len(budgetResult.FinalTrace.Records) != len(root.Records)+1 {
 		t.Fatalf("external step budget was not enforced: %#v/%v", budgetResult, err)
 	}
+}
+
+func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "61342d7363656e6172696f2d707265666978", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	envelope := &FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1}
+	factory := func() (control.Adapter, error) { return fixture.New(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-scenario-prefix-risk", "fixture-cft", "repair-prefix",
+		[]string{"crash-prefix", "temporal-prefix"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := actionKindSemanticProjector{}
+	rootRisk, err := projector.Project("fixture-scenario-prefix-root-risk", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, _, _, err := ReconstructRiskFrontierState(
+		ctx, "fixture-scenario-prefix-frontier", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, envelope, factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	semantics := unknownScenarioSemantics(t, frontier)
+	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
+		ID: "fixture-scenario-prefix-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
+		Knowledge: []KnowledgeStatement{{ID: "repair", Text: "Continue from each verified execution prefix."}},
+		Risks: []ProtocolRisk{{
+			ID: spec.RiskID, Summary: "Exercise repair after a partially applicable plan.",
+			RequiredCapabilities: []string{"natural-time"},
+			RequiredActions:      []control.ActionKind{control.ActionCrash, control.ActionRestart},
+			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hypothesis, err := NewTestHypothesis(
+		"fixture-scenario-prefix-hypothesis", knowledge, spec,
+		"Repair only the rejected suffix while retaining the verified prefix.", ScenarioPlanningBackendID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	result, err := ExploreScenarioWithPlanner(
+		ctx, 2, 2, 2, knowledge, hypothesis, spec, frontier, semantics, rootRisk, root,
+		runtimeConfig, envelope, factory, projector,
+		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
+			return unknownScenarioSemantics(t, next), nil
+		},
+		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
+			calls++
+			var plan ScenarioPlan
+			switch calls {
+			case 1:
+				var crash FrontierActionRef
+				for _, action := range view.Frontier.Actions {
+					if action.Kind == control.ActionCrash {
+						crash = action
+						break
+					}
+				}
+				plan = ScenarioPlan{ID: "partial-plan", Steps: []ScenarioStep{
+					{ID: "crash", Selector: FrontierActionSelector{ActionID: crash.ActionID}},
+					{ID: "missing-restart", Selector: FrontierActionSelector{
+						Kind: control.ActionRestart, Node: "missing-node",
+					}},
+				}}
+			case 2:
+				if view.Prior == nil || view.Prior.PreviousPlan == nil || view.Prior.FailedStep == nil ||
+					view.Prior.FailedStep.ID != "missing-restart" ||
+					view.Frontier.PrefixDecisions != len(root.Records)+1 {
+					t.Fatalf("repair view did not retain the verified prefix: %#v", view)
+				}
+				var restart FrontierActionRef
+				for _, action := range view.Frontier.Actions {
+					if action.Kind == control.ActionRestart {
+						restart = action
+						break
+					}
+				}
+				plan = ScenarioPlan{ID: "repaired-plan", Steps: []ScenarioStep{{
+					ID: "restart", Selector: FrontierActionSelector{ActionID: restart.ActionID},
+				}}}
+			}
+			encoded, marshalErr := json.Marshal(plan)
+			return encoded, ModelWork{Calls: 1, InputTokens: 10, OutputTokens: 10, TotalTokens: 20}, marshalErr
+		},
+	)
+	if err != nil || calls != 2 || result.Status != ScenarioAgentCompleted || result.Execution == nil ||
+		len(result.Execution.Steps) != 2 || len(result.Execution.FinalTrace.Records) != len(root.Records)+2 ||
+		result.Execution.Steps[0].Choice == nil ||
+		result.Execution.Steps[0].Choice.Action.Kind != control.ActionCrash ||
+		result.Execution.Steps[1].Choice == nil ||
+		result.Execution.Steps[1].Choice.Action.Kind != control.ActionRestart ||
+		len(result.Attempts) != 2 || result.Attempts[0].Execution == nil ||
+		result.Attempts[0].Execution.Status != ScenarioStatusStopped ||
+		len(result.Attempts[0].Execution.Steps) != 2 {
+		t.Fatalf("verified prefix was not committed across repair: %#v calls=%d err=%v", result, calls, err)
+	}
+}
+
+func unknownScenarioSemantics(t *testing.T, frontier RiskFrontierView) ScenarioSemanticExposure {
+	t.Helper()
+	hints := make([]ConsensusActionHint, len(frontier.Actions))
+	for index, action := range frontier.Actions {
+		hints[index] = ConsensusActionHint{
+			ActionID: action.ActionID, ActionDigest: action.ActionDigest,
+			ActorRole: ConsensusSemanticUnknown, MessageClass: ConsensusSemanticUnknown,
+			EpochRelation: ConsensusSemanticUnknown, OperationState: ConsensusOperationNone,
+		}
+	}
+	exposure, err := NewScenarioSemanticExposure(ScenarioSemanticExposureFull, frontier, hints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return exposure
 }
 
 func TestA4ScenarioPlanParsingRejectsUnknownAuthorityAndMixedSelector(t *testing.T) {

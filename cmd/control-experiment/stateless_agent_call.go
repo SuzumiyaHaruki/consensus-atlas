@@ -156,7 +156,8 @@ func recoverStatelessAgentCallJournal(
 func openRouterTransportFreeze(client openRouterIntentClient) controlexperiment.AgentTransportFreeze {
 	return controlexperiment.AgentTransportFreeze{
 		Provider: openRouterProvider, Endpoint: client.Endpoint, Model: client.Model,
-		Thinking: "disabled", Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
+		Thinking: client.ReasoningEffort, ExcludeReasoning: client.ExcludeReasoning,
+		Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
 		MaxCallsPerArm: 1, MaxRetries: client.MaxRetries,
 	}
 }

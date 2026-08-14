@@ -16,8 +16,14 @@ func TestAgentTransportFreezeKeepsProviderAuthorityBounded(t *testing.T) {
 	if err := retrying.Validate(); err != nil {
 		t.Fatalf("bounded retry transport rejected: %v", err)
 	}
+	reasoning := valid
+	reasoning.Thinking = "high"
+	reasoning.ExcludeReasoning = true
+	if err := reasoning.Validate(); err != nil {
+		t.Fatalf("bounded internal reasoning transport rejected: %v", err)
+	}
 	cases := []AgentTransportFreeze{
-		func() AgentTransportFreeze { changed := valid; changed.Thinking = "enabled"; return changed }(),
+		func() AgentTransportFreeze { changed := valid; changed.Thinking = "unbounded"; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.Temperature = 1; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.MaxCallsPerArm = 2; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.MaxRetries = 3; return changed }(),

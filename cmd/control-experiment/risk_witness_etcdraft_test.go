@@ -225,6 +225,69 @@ func TestA6eEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *t
 	t.Logf("reachable extension decisions=%d kinds=%v", len(extension), extension)
 }
 
+func TestScenarioNaturalProgressAdvancesEtcdraftToNextRiskMilestone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+	inputs, err := prepareEtcdraftSemanticCalibration(
+		ctx, etcdraftTestRootCorpusPath, etcdraftTestSemanticInputPath, fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := etcdraftSemanticPrefixProjector{}
+	rootRisk, err := projector.Project("scenario-progress-root", inputs.riskSpec, inputs.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory := func() (control.Adapter, error) {
+		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
+	}
+	frontier, _, _, err := controlexperiment.ReconstructRiskFrontierState(
+		ctx, "scenario-progress-frontier", inputs.riskSpec, rootRisk, inputs.root,
+		len(inputs.root.Records), inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crash controlexperiment.FrontierActionRef
+	for _, action := range frontier.Actions {
+		if action.Kind == control.ActionCrash && action.Node.Node == "n1" {
+			crash = action
+			break
+		}
+	}
+	intervention, err := controlexperiment.ExecuteBoundedScenarioPlan(
+		ctx, "scenario-progress-crash",
+		controlexperiment.ScenarioPlan{ID: "scenario-progress-crash", Steps: []controlexperiment.ScenarioStep{{
+			ID:       "crash-old-coordinator",
+			Selector: controlexperiment.FrontierActionSelector{ActionID: crash.ActionID},
+		}}},
+		1, inputs.riskSpec, rootRisk, inputs.root, inputs.experiment.Runtime,
+		inputs.experiment.faultEnvelope(), factory, projector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress, err := controlexperiment.ExecuteScenarioNaturalProgress(
+		ctx, "scenario-progress-closure", 31, inputs.riskSpec,
+		intervention.FinalRisk, intervention.FinalTrace, inputs.experiment.Runtime,
+		inputs.experiment.faultEnvelope(), factory, projector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := make([]control.ActionKind, 0, len(progress.Execution.Steps))
+	for _, step := range progress.Execution.Steps {
+		kinds = append(kinds, step.Choice.Action.Kind)
+	}
+	if progress.StopReason != controlexperiment.ScenarioProgressRiskChanged ||
+		len(progress.Execution.FinalRisk.SatisfiedMilestones) < 2 {
+		t.Fatalf("natural progress did not reach the next risk milestone: stop=%s kinds=%v risk=%#v",
+			progress.StopReason, kinds, progress.Execution.FinalRisk)
+	}
+	t.Logf("natural progress decisions=%d kinds=%v", len(kinds), kinds)
+}
+
 func etcdraftReachabilityProgressAction(
 	ctx context.Context,
 	runtime *controlruntime.Runtime,

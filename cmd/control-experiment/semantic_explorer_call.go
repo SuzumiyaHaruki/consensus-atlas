@@ -89,7 +89,11 @@ func (journal *semanticExplorerCallJournal) Planner(
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
-	prepared, err := journal.core.client.prepare(system, user)
+	output, err := semanticExplorerStructuredOutput(view)
+	if err != nil {
+		return nil, controlexperiment.ModelWork{}, err
+	}
+	prepared, err := journal.core.client.prepare(system, user, output)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
@@ -98,6 +102,40 @@ func (journal *semanticExplorerCallJournal) Planner(
 		intentID:      fmt.Sprintf("semantic-explorer-call-%d", ordinal),
 		requestDigest: view.Request.Digest, prepared: prepared, contentReady: true,
 	})
+}
+
+func semanticExplorerStructuredOutput(
+	view controlexperiment.SemanticExplorerAgentView,
+) (openRouterStructuredOutput, error) {
+	candidates := make([]string, len(view.Request.Queue.Candidates))
+	for index, candidate := range view.Request.Queue.Candidates {
+		candidates[index] = candidate.CandidateID
+	}
+	if len(candidates) == 0 {
+		return openRouterStructuredOutput{}, errors.New("SEMANTIC_EXPLORER_OUTPUT_SCHEMA_INVALID")
+	}
+	schema := map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{
+			"schema_version": map[string]any{"type": "string", "const": controlexperiment.SemanticExplorerProposalVersion},
+			"id":             map[string]any{"type": "string", "const": view.Request.ID},
+			"request_digest": map[string]any{"type": "string", "const": view.Request.Digest},
+			"queue_digest":   map[string]any{"type": "string", "const": view.Request.Queue.Digest},
+			"ordered_candidate_ids": map[string]any{
+				"type": "array", "minItems": len(candidates), "maxItems": len(candidates),
+				"uniqueItems": true, "items": map[string]any{"type": "string", "enum": candidates},
+			},
+			"digest": map[string]any{"type": "string", "const": ""},
+		},
+		"required": []string{
+			"schema_version", "id", "request_digest", "queue_digest", "ordered_candidate_ids", "digest",
+		},
+	}
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return openRouterStructuredOutput{}, err
+	}
+	return openRouterStructuredOutput{Name: "semantic_explorer_proposal_v1", Schema: encoded}, nil
 }
 
 func semanticExplorerPrompt(

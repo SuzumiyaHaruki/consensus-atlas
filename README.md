@@ -64,8 +64,8 @@ Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替�
   fresh Replay 和 TraceIntegrity/Agreement 结果的单 episode testing result；
 - A4a 已加入最多 8 步的短 `ScenarioPlan`：每一步只能引用当前 ActionID 或有限公共语义 selector，可信层按
   当前 admissible frontier 唯一解析，并对零匹配、歧义和外部预算耗尽返回机械反馈；
-- A4b 已把 ScenarioPlan 接到 durable model-call journal：最多两次提议，第二次只能依据公开机械反馈修正；
-  成功多步计划会编译为 exact Policy，并进入 qualified Bundle/PSS/Replay/Oracle；
+- A4b 已把 ScenarioPlan 接到 durable model-call journal；同一 episode 的修正请求会收到完整上一计划、失败步骤
+  和机械反馈，已 fresh-replay 验证的成功前缀不会因后续 selector 失败而回滚；
 - A4c0 已把活动模型传输收敛为唯一 OpenRouter 入口；模型必须通过 `-agent-model`
   显式选择，不保留厂商专用客户端或默认模型；
 - A4c 已增加可恢复的 Scenario Agent 真实运行入口和紧凑 summary；第二次独立 OpenRouter 运行成功获得两次
@@ -79,21 +79,22 @@ Coverage/PSS 不是“协议正确率”。Agent 也不能用自己的解释替�
 - A5a 已把 etcd/raft Agent 路径的 ProtocolKnowledge 和 TestHypothesis 外移到
   `plans/agent/etcdraft-leader-change-inflight-v1.json`；A2/A4 运行必须显式提供 `-semantic-input`。
 - A5b 已在同一 JSON 外移 Adapter 拓扑/tick、Runtime、FaultEnvelope、搜索/episode 预算和
-  OpenRouter 输出上限；修改配置后不能恢复旧运行。
+  OpenRouter reasoning/output 配置；活动 Scenario 使用 `high` reasoning、隐藏 reasoning 文本、4096 token
+  上限和 strict JSON Schema；修改配置后不能恢复旧运行。
 - A5c 已在同一 JSON 外移 workload authoring 输入；加载器生成现有 `WorkloadPlan` 和 payload digest，
   source bundle、root corpus 校验及 A2/A4 执行消费同一份 workload。
-- A6a 已用现有 Campaign coordinator 串联多个 Scenario episode；后一 episode 只收到前一 episode 的机械
-  feedback，Campaign 统一限制 work/model/time 并提供停止后恢复。
+- A6a 已用现有 Campaign coordinator 串联多个 Scenario episode；每个 episode 从同一可信 root 独立开始，
+  不再把前一 episode 的 feedback 伪装成 continuation；Campaign 统一限制 work/model/time 并提供停止后恢复。
 - A6b 已从 committed episode artifact 派生 session 级 PSS 状态并集、Risk 最佳进展、Replay/Oracle 和成本；
   PSS/Oracle/testing 字段只用于终端汇总，不进入下一次 Agent 请求。
 - A6c 已用真实 `deepseek/deepseek-v4-flash` 完成两 episode session：2 次逻辑调用、10,984 tokens、
   23 个 Core PSS 状态并集、Replay stable、0 Oracle violation；RiskWitness 仍为 `not-reached`。
 - OpenRouter 对无响应传输错误和 HTTP 408/429/5xx 最多重试 2 次。真实第一轮在第 3 次传输成功；
   审计分开记录逻辑 model call 与实际 transport attempt。
-- A6eR 已把 Scenario 改为 episode 内的 receding horizon：单次计划仍最多 4 步，但合法前缀会提交并重建
-  下一轮可信 frontier；当前配置最多累计 8 calls、32 decisions。真实 Adapter 本地测试已覆盖 continuation、
-  episode 隔离、恢复和 qualified execution。首次真实单 episode 运行用 8 calls/44,443 tokens 把 prefix 从
-  28 推到 33，得到 24 个 PSS 状态、stable Replay 和 0 Oracle violation，但 Risk 仍未进入第二里程碑。
+- 当前活动 Scenario 已从“模型调度多个低层动作”收敛为单步战略干预：模型只选当前 Action，随后可信
+  natural-progress closure 按 `complete-effect -> deliver-message -> fire-temporal-event` 推进，直到 Risk
+  里程碑变化、目标客户端返回、自然推进静止或预算耗尽。etcd/raft 集成测试中一次 crash 后的 24 个自然动作
+  到达下一 Risk milestone，再由 Agent 选择恢复动作；全部动作仍进入 Trace、work accounting 和 fresh Replay。
 - 真实 A6eR 暴露的 future ActionID 失配已用 v3 prompt 收紧：第一步之后必须省略 `action_id`
   并使用明示 selector fields。Campaign provider failure 现在也会把 durable call audit 中已发生的
   calls/tokens 写入原 failure marker 和终端汇总；两项修复都未触发新的真实模型调用。

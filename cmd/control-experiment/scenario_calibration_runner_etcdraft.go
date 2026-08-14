@@ -101,7 +101,7 @@ func runEtcdraftScenarioCalibration(
 		return activateErr
 	}
 	result, err := runEtcdraftScenarioAgentEpisode(
-		ctx, inputs, journal, nil, inputs.experiment.ScenarioMaxCalls,
+		ctx, inputs, journal, inputs.experiment.ScenarioMaxCalls,
 		inputs.experiment.ScenarioMaxSteps, inputs.experiment.ScenarioMaxDecisions, activateKey,
 	)
 	if err != nil {

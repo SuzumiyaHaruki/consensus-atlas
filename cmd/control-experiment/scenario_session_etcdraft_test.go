@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
@@ -37,25 +38,38 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 			view.Semantics.Validate(view.Frontier) != nil {
 			t.Fatalf("session semantic override did not reach the Agent view: %#v", view.Semantics)
 		}
-		if providerCalls == 1 && view.Prior != nil {
-			t.Fatal("first session episode received invented feedback")
+		if providerCalls%2 == 1 && view.Prior != nil {
+			t.Fatalf("reset session episode received continuation feedback: %#v", view.Prior)
 		}
-		if providerCalls > 1 && (view.Prior == nil ||
+		if providerCalls%2 == 0 && (view.Prior == nil ||
 			view.Prior.Outcome != controlexperiment.ScenarioAgentCompleted ||
 			len(view.Prior.Steps) != 1) {
-			t.Fatalf("continued planning did not receive prior mechanical feedback: %#v", view.Prior)
+			t.Fatalf("same-episode continuation did not receive mechanical feedback: %#v", view.Prior)
 		}
-		wantDecisions := 28
-		if providerCalls == 2 || providerCalls == 4 {
-			wantDecisions = 29
-		}
-		if len(view.Frontier.Actions) == 0 || view.Frontier.PrefixDecisions != wantDecisions {
+		if len(view.Frontier.Actions) == 0 ||
+			(providerCalls%2 == 1 && view.Frontier.PrefixDecisions != 28) ||
+			(providerCalls%2 == 0 && view.Frontier.PrefixDecisions <= 28) {
 			t.Fatalf("session continuation/reset frontier mismatch: %#v", view.Frontier)
+		}
+		wantKind := control.ActionCrash
+		wantNode := control.NodeID("n1")
+		if providerCalls%2 == 0 {
+			wantKind = control.ActionRestart
+		}
+		var selected controlexperiment.FrontierActionRef
+		for _, action := range view.Frontier.Actions {
+			if action.Kind == wantKind && action.Node.Node == wantNode {
+				selected = action
+				break
+			}
+		}
+		if selected.ActionID == "" {
+			t.Fatalf("strategic session action %s/%s unavailable: %#v", wantKind, wantNode, view.Frontier.Actions)
 		}
 		content, err := json.Marshal(controlexperiment.ScenarioPlan{
 			ID: "a6a-session-plan", Steps: []controlexperiment.ScenarioStep{{
 				ID: "advance", Selector: controlexperiment.FrontierActionSelector{
-					ActionID: view.Frontier.Actions[0].ActionID,
+					ActionID: selected.ActionID,
 				},
 			}},
 		})
@@ -69,7 +83,7 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 	keyReads := 0
 	options := etcdraftScenarioSessionOptions{
 		Directory: directory, CorpusPath: etcdraftTestRootCorpusPath,
-		SemanticInputPath: etcdraftScenarioTestSemanticInput(t, 2, 4),
+		SemanticInputPath: etcdraftScenarioTestSemanticInput(t, 2, 32),
 		AgentKeyFile:      "fixture-key-source", Client: client,
 		SemanticExposure: controlexperiment.ScenarioSemanticExposureMasked,
 		ReadKey: func(string) (string, error) {

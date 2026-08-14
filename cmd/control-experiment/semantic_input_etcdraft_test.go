@@ -25,8 +25,9 @@ func TestA5cEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 		hypothesis.Validate(knowledge, riskSpec, controlexperiment.SemanticBestFirstAlgorithmID) != nil ||
 		hypothesis.Validate(knowledge, riskSpec, controlexperiment.ScenarioPlanningBackendID) != nil ||
 		experiment.validate() != nil || len(experiment.AdapterConfig.Nodes) != 3 ||
-		experiment.SearchMaxWorkItems != 16 || experiment.ModelMaxOutputTokens != 1200 ||
-		experiment.ScenarioMaxCalls != 8 || experiment.ScenarioMaxSteps != 4 ||
+		experiment.SearchMaxWorkItems != 16 || experiment.ModelReasoningEffort != "high" ||
+		!experiment.ModelExcludeReasoning || experiment.ModelMaxOutputTokens != 4096 ||
+		experiment.ScenarioMaxCalls != 8 || experiment.ScenarioMaxSteps != 1 ||
 		experiment.ScenarioMaxDecisions != 32 ||
 		experiment.ScenarioSemanticExposure != controlexperiment.ScenarioSemanticExposureFull ||
 		workload.Validate() != nil || workload.ID != "single-write-v1" ||

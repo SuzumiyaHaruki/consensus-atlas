@@ -15,14 +15,14 @@ import (
 )
 
 const (
-	openRouterProvider          = "openrouter"
-	openRouterChatEndpoint      = "https://openrouter.ai/api/v1/chat/completions"
-	openRouterMaxResponse       = 2 << 20
-	openRouterDefaultTokens     = 1200
-	agentFailureTransport       = "AGENT_TRANSPORT_FAILED"
-	agentFailureHTTP            = "AGENT_HTTP_STATUS_REJECTED"
-	agentFailureResponse        = "AGENT_RESPONSE_REJECTED"
-	openRouterReasoningDisabled = "none"
+	openRouterProvider               = "openrouter"
+	openRouterChatEndpoint           = "https://openrouter.ai/api/v1/chat/completions"
+	openRouterMaxResponse            = 2 << 20
+	openRouterDefaultTokens          = 4096
+	openRouterDefaultReasoningEffort = "high"
+	agentFailureTransport            = "AGENT_TRANSPORT_FAILED"
+	agentFailureHTTP                 = "AGENT_HTTP_STATUS_REJECTED"
+	agentFailureResponse             = "AGENT_RESPONSE_REJECTED"
 )
 
 type agentHTTPDoer interface {
@@ -35,12 +35,14 @@ type agentKeyReader func(string) (string, error)
 // paths. Different model families are selected through Model rather than by
 // adding provider-specific clients.
 type openRouterIntentClient struct {
-	Endpoint        string
-	Model           string
-	MaxOutputTokens int
-	MaxRetries      int
-	HTTP            agentHTTPDoer
-	Now             func() time.Time
+	Endpoint         string
+	Model            string
+	ReasoningEffort  string
+	ExcludeReasoning bool
+	MaxOutputTokens  int
+	MaxRetries       int
+	HTTP             agentHTTPDoer
+	Now              func() time.Time
 }
 
 type openRouterMessage struct {
@@ -52,14 +54,28 @@ type openRouterChatRequest struct {
 	Model          string              `json:"model"`
 	Messages       []openRouterMessage `json:"messages"`
 	ResponseFormat struct {
-		Type string `json:"type"`
+		Type       string `json:"type"`
+		JSONSchema struct {
+			Name   string          `json:"name"`
+			Strict bool            `json:"strict"`
+			Schema json.RawMessage `json:"schema"`
+		} `json:"json_schema"`
 	} `json:"response_format"`
 	Reasoning struct {
-		Effort string `json:"effort"`
+		Effort  string `json:"effort"`
+		Exclude bool   `json:"exclude"`
 	} `json:"reasoning"`
+	Provider struct {
+		RequireParameters bool `json:"require_parameters"`
+	} `json:"provider"`
 	Temperature         float64 `json:"temperature"`
 	MaxCompletionTokens int     `json:"max_completion_tokens"`
 	Stream              bool    `json:"stream"`
+}
+
+type openRouterStructuredOutput struct {
+	Name   string
+	Schema json.RawMessage
 }
 
 type openRouterChatResponse struct {
@@ -105,19 +121,22 @@ type agentPreparedRequest struct {
 func newOpenRouterIntentClient(model string) openRouterIntentClient {
 	return openRouterIntentClient{
 		Endpoint: openRouterChatEndpoint, Model: strings.TrimSpace(model),
-		MaxOutputTokens: openRouterDefaultTokens,
-		HTTP:            &http.Client{Timeout: 60 * time.Second},
+		ReasoningEffort: openRouterDefaultReasoningEffort, ExcludeReasoning: true,
+		MaxOutputTokens: openRouterDefaultTokens, HTTP: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
 func (client openRouterIntentClient) prepare(
 	systemPrompt string,
 	userPrompt string,
+	output openRouterStructuredOutput,
 ) (agentPreparedRequest, error) {
 	if client.Endpoint != openRouterChatEndpoint || !validOpenRouterModelID(client.Model) ||
+		!validOpenRouterReasoningEffort(client.ReasoningEffort) ||
 		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > 4096 ||
 		client.MaxRetries < 0 || client.MaxRetries > 2 ||
-		strings.TrimSpace(systemPrompt) == "" || strings.TrimSpace(userPrompt) == "" {
+		strings.TrimSpace(systemPrompt) == "" || strings.TrimSpace(userPrompt) == "" ||
+		!validOpenRouterStructuredOutput(output.Name, output.Schema) {
 		return agentPreparedRequest{}, errors.New("AGENT_CLIENT_CONFIG_INVALID")
 	}
 	messages := []openRouterMessage{
@@ -128,8 +147,13 @@ func (client openRouterIntentClient) prepare(
 		Model: client.Model, Messages: messages, Temperature: 0,
 		MaxCompletionTokens: client.MaxOutputTokens, Stream: false,
 	}
-	requestBody.ResponseFormat.Type = "json_object"
-	requestBody.Reasoning.Effort = openRouterReasoningDisabled
+	requestBody.ResponseFormat.Type = "json_schema"
+	requestBody.ResponseFormat.JSONSchema.Name = output.Name
+	requestBody.ResponseFormat.JSONSchema.Strict = true
+	requestBody.ResponseFormat.JSONSchema.Schema = append(json.RawMessage(nil), output.Schema...)
+	requestBody.Reasoning.Effort = client.ReasoningEffort
+	requestBody.Reasoning.Exclude = client.ExcludeReasoning
+	requestBody.Provider.RequireParameters = true
 	encodedRequest, err := json.Marshal(requestBody)
 	if err != nil {
 		return agentPreparedRequest{}, err
@@ -159,8 +183,13 @@ func (prepared agentPreparedRequest) validate(client openRouterIntentClient) err
 	var request openRouterChatRequest
 	if err := json.Unmarshal(prepared.PromptBytes, &messages); err != nil ||
 		json.Unmarshal(prepared.RequestBytes, &request) != nil || len(messages) != 2 ||
-		request.Model != client.Model || request.ResponseFormat.Type != "json_object" ||
-		request.Reasoning.Effort != openRouterReasoningDisabled || request.Temperature != 0 || request.Stream ||
+		request.Model != client.Model || request.ResponseFormat.Type != "json_schema" ||
+		!validOpenRouterStructuredOutput(
+			request.ResponseFormat.JSONSchema.Name, request.ResponseFormat.JSONSchema.Schema,
+		) || !request.ResponseFormat.JSONSchema.Strict ||
+		request.Reasoning.Effort != client.ReasoningEffort ||
+		request.Reasoning.Exclude != client.ExcludeReasoning || !request.Provider.RequireParameters ||
+		request.Temperature != 0 || request.Stream ||
 		request.MaxCompletionTokens != client.MaxOutputTokens || len(request.Messages) != len(messages) {
 		return errors.New("AGENT_PREPARED_REQUEST_INVALID")
 	}
@@ -177,7 +206,8 @@ func (client openRouterIntentClient) invokePrepared(
 	prepared agentPreparedRequest,
 ) (agentCall, error) {
 	if client.Endpoint != openRouterChatEndpoint || !validOpenRouterModelID(client.Model) ||
-		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > 4096 || client.HTTP == nil ||
+		!validOpenRouterReasoningEffort(client.ReasoningEffort) || client.MaxOutputTokens <= 0 ||
+		client.MaxOutputTokens > 4096 || client.HTTP == nil ||
 		client.MaxRetries < 0 || client.MaxRetries > 2 ||
 		strings.TrimSpace(key) == "" {
 		return agentCall{}, errors.New("AGENT_CLIENT_CONFIG_INVALID")
@@ -274,6 +304,29 @@ func (client openRouterIntentClient) invokePrepared(
 	}
 	call.Content = []byte(content)
 	return call, nil
+}
+
+func validOpenRouterReasoningEffort(effort string) bool {
+	switch effort {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
+func validOpenRouterStructuredOutput(name string, schema json.RawMessage) bool {
+	if name == "" || len(name) > 64 || !json.Valid(schema) || len(schema) == 0 || schema[0] != '{' {
+		return false
+	}
+	for _, character := range name {
+		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') ||
+			character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func retryableOpenRouterStatus(status int) bool {

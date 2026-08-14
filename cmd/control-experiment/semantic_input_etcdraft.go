@@ -76,6 +76,8 @@ type etcdraftAgentExperimentConfig struct {
 	ScenarioMaxSteps         int                                            `json:"scenario_max_steps"`
 	ScenarioMaxDecisions     int                                            `json:"scenario_max_decisions"`
 	ScenarioSemanticExposure controlexperiment.ScenarioSemanticExposureMode `json:"scenario_semantic_exposure"`
+	ModelReasoningEffort     string                                         `json:"model_reasoning_effort"`
+	ModelExcludeReasoning    bool                                           `json:"model_exclude_reasoning"`
 	ModelMaxOutputTokens     int                                            `json:"model_max_output_tokens"`
 	ModelMaxRetries          int                                            `json:"model_max_retries"`
 	SessionBudget            controlexperiment.CampaignLogicalBudget        `json:"session_budget"`
@@ -94,6 +96,7 @@ func (config etcdraftAgentExperimentConfig) validate() error {
 		config.ScenarioMaxDecisions <= 0 ||
 		config.ScenarioMaxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
 		config.ScenarioSemanticExposure.Validate() != nil ||
+		!validOpenRouterReasoningEffort(config.ModelReasoningEffort) ||
 		config.ModelMaxOutputTokens <= 0 || config.ModelMaxOutputTokens > 4096 ||
 		config.ModelMaxRetries < 0 || config.ModelMaxRetries > 2 ||
 		!validEtcdraftSessionBudget(config.SessionBudget, config.SessionWallClockMS) {

@@ -11,7 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const scenarioAgentPromptVersion = "scenario-agent-receding-horizon-v3"
+const scenarioAgentPromptVersion = "scenario-agent-receding-horizon-v4"
 
 type scenarioAgentCallJournal struct {
 	core *statelessAgentCallJournal
@@ -76,7 +76,11 @@ func (journal *scenarioAgentCallJournal) Planner(
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
-	prepared, err := journal.core.client.prepare(system, user)
+	output, err := scenarioPlanStructuredOutput(view.MaxSteps)
+	if err != nil {
+		return nil, controlexperiment.ModelWork{}, err
+	}
+	prepared, err := journal.core.client.prepare(system, user, output)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
@@ -91,6 +95,52 @@ func (journal *scenarioAgentCallJournal) Planner(
 	})
 }
 
+func scenarioPlanStructuredOutput(maxSteps int) (openRouterStructuredOutput, error) {
+	if maxSteps <= 0 || maxSteps > controlexperiment.ScenarioPlanMaxSteps {
+		return openRouterStructuredOutput{}, errors.New("SCENARIO_AGENT_OUTPUT_SCHEMA_INVALID")
+	}
+	stringField := map[string]any{"type": "string", "minLength": 1}
+	selector := map[string]any{
+		"oneOf": []any{
+			map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{"action_id": stringField},
+				"required":   []string{"action_id"},
+			},
+			map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"kind": stringField, "node": stringField, "item_kind": stringField,
+					"owner": stringField, "message_source": stringField,
+					"message_target": stringField, "temporal_kind": stringField,
+					"effect_kind": stringField, "durability": stringField,
+				},
+				"required": []string{"kind"},
+			},
+		},
+	}
+	schema := map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{
+			"id": stringField,
+			"steps": map[string]any{
+				"type": "array", "minItems": 1, "maxItems": maxSteps,
+				"items": map[string]any{
+					"type": "object", "additionalProperties": false,
+					"properties": map[string]any{"id": stringField, "selector": selector},
+					"required":   []string{"id", "selector"},
+				},
+			},
+		},
+		"required": []string{"id", "steps"},
+	}
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return openRouterStructuredOutput{}, err
+	}
+	return openRouterStructuredOutput{Name: "scenario_plan_v1", Schema: encoded}, nil
+}
+
 func scenarioAgentPrompt(
 	spec semantic.RiskWitnessSpec,
 	view controlexperiment.ScenarioAgentView,
@@ -103,21 +153,12 @@ func scenarioAgentPrompt(
 		view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps || len(view.Frontier.Actions) == 0 {
 		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
 	}
-	template := controlexperiment.ScenarioPlan{
-		ID: "scenario-plan", Steps: []controlexperiment.ScenarioStep{{
-			ID: "step-1", Selector: controlexperiment.FrontierActionSelector{
-				ActionID: view.Frontier.Actions[0].ActionID,
-			},
-		}},
-	}
 	input := struct {
 		PromptVersion  string                              `json:"prompt_version"`
-		PlanTemplate   controlexperiment.ScenarioPlan      `json:"plan_template"`
 		SelectorFields []string                            `json:"selector_fields"`
 		AgentView      controlexperiment.ScenarioAgentView `json:"agent_view"`
 	}{
 		PromptVersion: scenarioAgentPromptVersion,
-		PlanTemplate:  template,
 		SelectorFields: []string{
 			"action_id", "kind", "node", "item_kind", "owner", "message_source",
 			"message_target", "temporal_kind", "effect_kind", "durability",
@@ -129,15 +170,24 @@ func scenarioAgentPrompt(
 		return "", "", err
 	}
 	system := "Return exactly one ScenarioPlan JSON object and no prose. Use only id, steps, and selector_fields listed in " +
-		"the frozen input. action_id is valid only for an Action in the supplied current root_frontier. For every step after " +
-		"the first, omit action_id and use stable semantic selector fields because executing an earlier step rebuilds the " +
-		"frontier and may invalidate every current ActionID. Never copy an ActionID from prior_feedback. " +
-		"action_semantics only describes the bound current Actions and grants " +
-		"no authority to invent Actions or facts. Never add budgets, faults, assertions, verdicts, or digests."
+		"the frozen input. action_id is valid only for an Action in the supplied current root_frontier. " +
+		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
+		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
 	user := "Create a short plan of at most max_steps that advances the supplied hypothesis. A trusted concretizer requires " +
 		"each selector to match exactly one current admissible Action. A completed prior_feedback means the trusted root has " +
-		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback means return a " +
-		"complete revised plan from the current root and repair its mechanical reason. plan_template demonstrates only a " +
-		"first-step exact ID; later steps must use selector_fields without action_id. Frozen input JSON:\n" + string(encoded)
+		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback includes the complete " +
+		"previous_plan and failed_step; return a complete revised plan from the current frontier and repair its mechanical reason. " +
+		"Frozen input JSON:\n" + string(encoded)
+	if view.MaxSteps == 1 {
+		system += " Return exactly one step using the exact action_id of one current Action."
+		user = "Choose one current strategic intervention that advances the hypothesis. After it executes, a deterministic " +
+			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until Risk progress " +
+			"changes, the client operation terminates, natural progress is quiescent, or the decision budget ends. Use prior_feedback " +
+			"to understand the previous intervention and closure, but select only from the supplied current frontier. Frozen input JSON:\n" +
+			string(encoded)
+	} else {
+		system += " For every step after the first, omit action_id and use stable semantic selector fields because executing an " +
+			"earlier step rebuilds the frontier and may invalidate every current ActionID."
+	}
 	return system, user, nil
 }

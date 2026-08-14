@@ -27,17 +27,17 @@ applied command 和成功 ClientResult 的双向绑定。无来源命令和同 r
 4. Trace/Evidence 由可信代码映射为 PSS/Risk；
 5. fresh Replay、Oracle 和 evaluator 独立验证结果；
 6. Campaign 以 episode、work、model token 和 wall clock 上限组织多 episode session。
-7. ScenarioPlan 每一步重新构造可信 RiskFrontier，唯一匹配后使用原 stateless materializer 执行并 fresh Replay；
-   一个短计划完成但 Risk 未达到时，从其已验证 FinalTrace/FinalRisk 重建下一轮 frontier 和语义视图。
+7. 活动 Scenario 每次只让 Agent 选择一个当前 Action；成功后由可信 natural-progress closure 执行普通 effect、
+   message 和 timer 动作，直到 Risk 里程碑变化、客户端返回、自然推进静止或预算结束。
 8. Scenario Agent 通过现有 durable journal 调用 OpenRouter；恢复时复用精确响应，不再次访问 provider。
 9. DeepSeek、Claude、GPT 等模型只改变 `model_id`，不改变 Planner、journal、Runtime 或 evaluator。
 10. A4c CLI 将 episode 派生为紧凑 summary；恢复会重建并核对结果，不重复终止调用。
 11. `TestHypothesis` 是唯一共享语义假设；A2/A4 各自负责 queue proposal 与 short plan，不再经过 A1 兼容层。
 12. `-semantic-input` 严格读取可编辑 JSON，再交给现有构造器生成 schema/digest 并验证 A2/A4 backend。
-13. Adapter factory、Runtime、FaultEnvelope、DFS/Explorer/Scenario 预算和 OpenRouter 输出上限都使用
+13. Adapter factory、Runtime、FaultEnvelope、DFS/Explorer/Scenario 预算和 OpenRouter reasoning/output 都使用
     JSON 值；与 root corpus/qualification 不一致时由现有 manifest/Replay 拒绝。
-14. A6a 把每个 Scenario episode 作为一个 Campaign attempt；episode 内按 receding horizon 推进，下一 episode
-    仍从统一 Campaign root 独立开始，只读取前一个紧凑 artifact 的最后一条机械 feedback。
+14. A6a 把每个 Scenario episode 作为一个 Campaign attempt；episode 内 feedback 携带上一计划、失败步骤和
+    已验证执行结果。下一 episode 从统一 Campaign root 独立开始，当前不再注入前一 episode feedback。
 15. A6b 从 qualified bundle 提取规范 Core PSS 状态键，在 session 结束或恢复时跨 episode 去重；Risk 最佳进展
     按 reached 优先、否则已满足里程碑数更多选择，Oracle 只汇总独立检查结果。
 16. OpenRouter 对无响应的传输错误、HTTP 408/429/5xx 最多重试 2 次；401、合法 HTTP 响应中的非法模型内容、
@@ -57,8 +57,9 @@ applied command 和成功 ClientResult 的双向绑定。无来源命令和同 r
 - OpenRouter 请求形态、模型切换和成功/失败恢复已由本地模拟服务验证。
 - 首次真实 OpenRouter 调用因瞬时传输问题形成 1 call、0 token 的 `provider-failed` 工件；第二个新目录中的
   重试成功获得 2 次模型响应和 qualified testing，恢复保持 provider call 数为 2。
-- A6a 本地 provider 集成测试连续完成 2 个 episode；第二次规划收到了第一次的 `completed` 机械反馈，
-  Campaign 达到 attempt limit 后恢复没有重复 provider 或 key 访问。
+- A6a 本地 provider 集成测试连续完成 2 个 episode；每个 episode 内的第二次规划收到第一次干预及 24 个
+  natural-progress 动作的反馈，而第二 episode 的首次规划没有收到伪造 continuation。恢复没有重复 provider
+  或 key 访问。
 - A6b 同一测试验证了重复 episode 的 PSS 状态按键取并集而非相加，并检查第二次模型请求不包含 PSS 状态键、
   bundle digest 或 Oracle violation 字段；恢复重建出完全相同的终端汇总。
 - A6c 真实 session 一次完成 2 个 episode。第一轮模型调用经历 3 次传输后成功，第二轮 1 次成功，证明新增重试
@@ -78,9 +79,10 @@ applied command 和成功 ClientResult 的双向绑定。无来源命令和同 r
 - A6eR 从相同 28-decision root 立即中止旧 leader，然后只选择正常 effect completion、消息投递和
   自然 temporal event，在新 leader 出现后重启旧 leader。这条 26-decision extension 达到全部三个
   Risk milestones，新 leader 出现前没有客户端返回，最终 Trace 可 fresh Replay。
-- A6eR 执行器在每次最多 4 步的模型输出后提交已验证前缀，并从该前缀继续规划；当前 JSON 允许每 episode
-  最多 8 次逻辑调用、32 个累计决策。失败短计划不会污染已提交前缀，合法短计划可累计编译为一个 qualified
-  execution。真实 Adapter 的本地 provider 测试已验证两轮 continuation、Campaign episode 隔离和恢复。
+- 当前执行器会提交 stopped 计划中所有 leading applied steps，只把首个 rejected step 留作修正反馈；活动 JSON
+  把 `scenario_max_steps` 设为 1，消除 future ActionID。一次战略干预后的 deterministic natural-progress closure
+  与干预一起累计编译为 qualified execution。真实 Adapter 测试已验证 24-step closure 到达下一 Risk milestone、
+  同 episode continuation、跨 episode root 隔离和恢复。
 - planning prefix 缺少 operation history 时，etcd/raft projector 会以 Adapter application-command 增长作为
   保守 terminal 事实；最终 qualified Risk 仍使用完整 OperationHistory，避免把“没有传入返回历史”当成
   “请求仍在途”。
@@ -236,8 +238,9 @@ Target-local projector、RiskWitness 证据解码和 Oracle 仍保留在代码�
 
 显式策略 `etcdraft-openrouter-session-a6a` 复用现有 Campaign coordinator 和 Scenario episode。JSON 中的
 `session_budget`/`session_wall_clock_ms` 限制 episode、primary/replay work、模型调用、token 和 wall time。
-每个已提交 attempt 的 artifact 是现有 A4c 紧凑 summary；下一 attempt 只提取最后一条机械 feedback。
-Campaign checkpoint 绑定预算、目标、实验输入和 artifact，停止后恢复不再次访问 provider。
+每个已提交 attempt 的 artifact 是现有 A4c 紧凑 summary。下一 attempt 从统一 root 重新开始，不再提取前一
+episode feedback；机械 feedback 只服务同一 episode 的真实 continuation。Campaign checkpoint 绑定预算、目标、
+实验输入和 artifact，停止后恢复不再次访问 provider。
 
 该阶段没有新增 Runtime、Replay、Oracle、Ledger、schema 或 digest。测试证明两次 episode 的组合与恢复可用，
 不证明 Agent 优于 baseline，也不证明跨 episode 已发现更多语义状态。
@@ -248,8 +251,8 @@ session attempt artifact 在原 A4c 紧凑 summary 外只增加 qualified Core P
 终端视图报告 Agent completed/stopped episode、testing/replay-stable episode、PSS 样本总数与状态并集、最佳
 Risk 进展、Oracle violation 总数，以及原 CampaignSummary 的 work/model/time 成本。
 
-相同 episode 的状态键测试证明并集不会退化为数量相加。第二次 provider 请求的原始 JSON 检查证明 PSS、Bundle
-和 Oracle 字段没有作为跨 episode feedback 泄漏。恢复只读取 Campaign artifact，并重建完全相同的结果。
+相同 episode 的状态键测试证明并集不会退化为数量相加。新 episode 的首次 provider 请求不含上一 episode
+feedback，PSS、Bundle 和 Oracle 字段也不会进入 Agent 视图。恢复只读取 Campaign artifact，并重建完全相同的结果。
 
 ## 已完成：A6c 真实 OpenRouter session 校准
 
@@ -284,19 +287,19 @@ control-experiment 主路径。这里证明的是两个已知伪造路径被机�
   运行配对校准；它复用现有 session、spec 和 summary，不增加配对 ledger；
 - 本地测试验证提示不包含原生 `StateLeader`、`MsgApp`、payload、Oracle 或 verdict。
 
-## 已完成：A6eR 短计划连续执行
+## 已完成：A6eR 单步干预与自然推进
 
-每次模型输出仍最多 4 步；合法完成且 Risk 未达到时，系统提交该短计划的已验证 FinalTrace/FinalRisk，重建
-当下 RiskFrontier、Snapshot 和 target-local 语义后继续调用 Planner。当前配置把整个 episode 限制为最多
-8 calls、32 decisions，Campaign 继续限制 primary/replay work、token 和 wall time。非法或执行中止的短计划
-只产生机械反馈，并从最近已提交前缀修正；不会把部分失败执行混入最终 qualified Trace。
+活动模型每次只输出 1 步当前 Action。成功干预后，可信 closure 只执行 effect completion、message delivery
+和自然 timer，直到 Risk 里程碑变化、客户端返回、自然推进静止或预算结束，再重建 RiskFrontier、Snapshot 和
+target-local 语义继续调用 Planner。当前 episode 最多 8 calls、32 decisions，Campaign 继续限制
+primary/replay work、token 和 wall time。stopped 计划保留 leading applied prefix，rejected step 不进入最终 Trace。
 
 现有 semantic calibration spec 绑定 prompt version、calls、plan steps 和 decisions，防止同一运行目录在这些
 作者输入改变后错误恢复。这里复用已有 spec；没有新增账本、评分、Runtime、hash 层或 gate。
 
-本地 provider/真实 Adapter 集成测试验证了两次短计划的 prefix 从 28 增至 29、Campaign 下一 episode 重置为
-28，以及恢复不重复访问 provider。独立可达性测试验证 26-decision expert witness。首次真实模型运行累计提交
-5 个 extension decisions，证明 receding horizon 已真实工作，但尚未证明模型能自行生成完整 witness。
+本地 provider/真实 Adapter 集成测试验证一次 crash 后 24 个自然动作到达下一 Risk milestone、同 episode
+第二次干预、Campaign 下一 episode 重置为 28，以及恢复不重复访问 provider。首次真实模型旧运行仍只证明
+旧 receding-horizon 路径工作；新闭环尚未进行付费模型效果实验，也尚未与共享 closure 的 baseline 比较。
 
 ## 已完成：A6f 第一个最小共识 Oracle
 

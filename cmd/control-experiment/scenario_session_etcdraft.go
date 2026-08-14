@@ -109,7 +109,7 @@ func runEtcdraftScenarioSession(
 		request controlexperiment.CampaignAttemptRequest,
 	) (controlexperiment.CampaignAttemptResult, error) {
 		return executeEtcdraftScenarioSessionEpisode(
-			attemptContext, request, clean, &recovered, inputs, options,
+			attemptContext, request, clean, inputs, options,
 		)
 	})
 	coordinator, err := controlexperiment.NewCampaignCoordinator(&recovered, provider)
@@ -157,7 +157,6 @@ func executeEtcdraftScenarioSessionEpisode(
 	ctx context.Context,
 	request controlexperiment.CampaignAttemptRequest,
 	directory string,
-	recovered *controlexperiment.CampaignRecovery,
 	inputs etcdraftSemanticCalibrationInputs,
 	options etcdraftScenarioSessionOptions,
 ) (controlexperiment.CampaignAttemptResult, error) {
@@ -166,10 +165,6 @@ func executeEtcdraftScenarioSessionEpisode(
 		request.TargetIdentityDigest != inputs.campaign.source.Identity.ManifestDigest ||
 		request.ExperimentSpecDigest != inputs.spec.Digest {
 		return controlexperiment.CampaignAttemptResult{}, errors.New("ETCDRAFT_SCENARIO_SESSION_REQUEST_INVALID")
-	}
-	prior, err := previousEtcdraftScenarioSessionFeedback(recovered, request.Ordinal)
-	if err != nil {
-		return controlexperiment.CampaignAttemptResult{}, err
 	}
 	providerDirectory, err := controlexperiment.CampaignAttemptSidecarDirectory(
 		directory, etcdraftScenarioSidecar, request.Ordinal,
@@ -208,7 +203,7 @@ func executeEtcdraftScenarioSessionEpisode(
 		return controlexperiment.CampaignAttemptResult{}, errors.New("ETCDRAFT_SCENARIO_SESSION_MODEL_ALLOWANCE_EMPTY")
 	}
 	result, err := runEtcdraftScenarioAgentEpisode(
-		ctx, inputs, journal, prior, maxCalls, inputs.experiment.ScenarioMaxSteps,
+		ctx, inputs, journal, maxCalls, inputs.experiment.ScenarioMaxSteps,
 		inputs.experiment.ScenarioMaxDecisions, activateKey,
 	)
 	if err != nil {
@@ -234,38 +229,6 @@ func executeEtcdraftScenarioSessionEpisode(
 		Work:     etcdraftScenarioSessionWork(result, request.Ordinal == 1, inputs),
 		Artifact: artifact,
 	}, nil
-}
-
-func previousEtcdraftScenarioSessionFeedback(
-	recovered *controlexperiment.CampaignRecovery,
-	ordinal int,
-) (*controlexperiment.ScenarioAgentFeedback, error) {
-	if ordinal == 1 {
-		return nil, nil
-	}
-	if recovered == nil || ordinal <= 1 {
-		return nil, errors.New("ETCDRAFT_SCENARIO_SESSION_PRIOR_INVALID")
-	}
-	encoded, err := recovered.ReadAttemptArtifact(ordinal - 1)
-	if err != nil {
-		return nil, err
-	}
-	var prior etcdraftScenarioSessionEpisodeArtifact
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&prior); err != nil {
-		return nil, errors.New("ETCDRAFT_SCENARIO_SESSION_PRIOR_INVALID")
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF || prior.validate() != nil ||
-		len(prior.Episode.Feedback) == 0 {
-		return nil, errors.New("ETCDRAFT_SCENARIO_SESSION_PRIOR_INVALID")
-	}
-	feedback := prior.Episode.Feedback[len(prior.Episode.Feedback)-1]
-	if !validEtcdraftScenarioInitialFeedback(&feedback, controlexperiment.ScenarioPlanMaxSteps) {
-		return nil, errors.New("ETCDRAFT_SCENARIO_SESSION_PRIOR_INVALID")
-	}
-	return &feedback, nil
 }
 
 func newEtcdraftScenarioSessionEpisodeArtifact(

@@ -154,10 +154,10 @@ func ExecuteBoundedScenarioPlan(
 		}
 		if len(matches) != 1 {
 			result.Status = ScenarioStatusStopped
-			feedback.Available = append([]FrontierActionRef(nil), view.Actions...)
 			feedback.ReasonCode = ScenarioReasonNoMatch
 			if len(matches) > 1 {
 				feedback.ReasonCode = ScenarioReasonAmbiguous
+				feedback.Available = append([]FrontierActionRef(nil), matches...)
 			}
 			result.Steps = append(result.Steps, feedback)
 			break

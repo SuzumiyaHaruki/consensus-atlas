@@ -259,8 +259,8 @@ target-local projector 可以理解协议 Evidence，但不能改变 Oracle 规�
 - 唯一 `TestHypothesis`、A2 semantic queue proposal/repair 和 A4 短场景计划；
 - provider 请求持久化、无凭证恢复和显式 opt-in 模型调用；
 - 一次真实 direct-DeepSeek 历史校准和一次显式选择 DeepSeek 的 OpenRouter Scenario 校准。
-- 一次真实 DeepSeek/OpenRouter 两 episode session，包含有界传输重试、机械跨 episode 反馈、
-  qualified testing、PSS/Risk/Replay/Oracle 聚合和无 provider 恢复。
+- 一次真实 DeepSeek/OpenRouter 两 episode session，包含有界传输重试、qualified testing、
+  PSS/Risk/Replay/Oracle 聚合和无 provider 恢复。
 
 公开校准只证明 Explorer 能改变 etcd/raft 的搜索前缀。两臂都未达到完整 RiskWitness，不能证明 Agent 优势。
 
@@ -325,6 +325,10 @@ A4a 已完成短计划、有限 selector、逐步可信具体化以及 `no-match
 A4c0 已把活动模型传输收敛为 OpenRouter 单一入口：provider 固定为 OpenRouter，模型通过显式 `model_id`
 选择；历史 direct-DeepSeek 工件不改写，但新运行不再维护 DeepSeek 专用客户端，也不再提供默认模型。
 
+当前请求使用 strict JSON Schema 和 `provider.require_parameters=true`；reasoning effort、是否返回 reasoning
+文本及 output token 上限来自可编辑实验输入。主配置使用 `high`、`exclude=true` 和 4096 tokens，`none` 保留为
+消融设置。结构化输出只减少格式错误，模型计划仍是不可信输入。
+
 A4c 已增加显式 opt-in 的 Scenario Agent CLI、紧凑 summary 和终止调用恢复。首次真实 OpenRouter 尝试在
 收到模型响应前形成 terminal transport failure；保留该工件后，第二个独立运行成功获得两次响应。第一次计划
 在 `deliver -> crash` 后因第三步 `no-match` 停止，第二次依据机械反馈修正为
@@ -369,9 +373,9 @@ plan -> execute -> mechanical feedback -> revise -> next episode
 停止条件只来自时间/工作量/episode 数等外部预算。输出 session summary，不让 Agent 根据隐藏 verdict 提前停止。
 
 A6a 已将现有 Scenario episode 直接作为 Campaign attempt。`session_budget` 和 `session_wall_clock_ms` 限制
-episode、primary/replay work、模型 calls/tokens 和 wall time；后一个 episode 只接收前一个 episode 的最后一条
-机械 `ScenarioAgentFeedback`。Campaign checkpoint 负责提交和恢复，没有新增 Session Runtime、Ledger、schema
-或 digest。
+episode、primary/replay work、模型 calls/tokens 和 wall time。机械 `ScenarioAgentFeedback` 只在同一 episode
+continuation 中传递；跨 episode 的 root 已重置，当前不传旧 feedback。Campaign checkpoint 负责提交和恢复，
+没有新增 Session Runtime 或 Ledger。
 
 A6b 已在 session attempt artifact 中保存 qualified bundle 的规范 Core PSS 状态键，并从 committed artifact
 派生 completed/stopped/testing/replay-stable episode、PSS 样本与状态并集、Risk 最佳进展和 Oracle violation
@@ -453,11 +457,15 @@ effect completion、消息投递和自然 temporal event 推动新 leader，再�
 但它暴露了当前评测的结构问题：Agent 只能给出 4 步计划，计划合法完成后 episode 立即结束，新 episode
 又从 root 开始，因此无法通过多个短计划累积长时域进展。
 
-该修正已经实现为 receding-horizon Scenario：每个模型输出仍限制为最多 4 步，每个选择仍由当前可信 frontier
-唯一解析；计划完成但 Risk 未达到时，以已验证 FinalTrace/FinalRisk 作为下一计划的 root，重新构造可信
-frontier/snapshot 和 target-local 语义。当前 JSON 把一个 episode 限制为最多 8 calls、32 decisions，且继续
-受 Campaign work/token/time 上限约束。不提高单次模型输出到 26 步，不隐式自动 drain 协议动作。中止计划
-不会提交部分执行，而是从最近已提交前缀接收机械反馈后修正。
+该修正最终收敛为“单步战略干预 + 可信自然推进”：活动 JSON 的 `scenario_max_steps=1`，模型只引用当前
+ActionID；干预执行后，协议无关 closure 只选择 `complete-effect`、`deliver-message` 和
+`fire-temporal-event`，并在 Risk 里程碑变化、目标客户端返回、自然推进静止或预算耗尽时停止，再重建
+frontier/snapshot 和 target-local 语义供下一次模型调用。stopped 多步计划的 leading applied prefix 会保留，
+完整 previous plan 和 failed step 返回给同 episode 修正；rejected step 不进入 aggregate execution。
+
+etcd/raft 测试从同一 root 中止 n1 后，closure 用 24 个普通动作到达 leader-change milestone，下一次干预可
+选择 restart，最终 Trace 仍能编译为 qualified execution。该 closure 也必须接给比较策略后才能开展公平效果
+实验；在此之前不能把可达性改善归因于 LLM。
 
 校准同时暴露的具体语义缺口已收紧：planning prefix 没有 client/operation history 时，etcd/raft projector
 以 Adapter application-command 增长作为当前单 proposal workload 的保守 terminal 事实；最终 qualified Risk
