@@ -163,7 +163,7 @@ func executeEtcdraftScenarioSessionEpisode(
 		ExperimentSpecDigest: config.ExperimentSpecDigest,
 		Classification:       etcdraftScenarioCalibrationClass,
 		SemanticExposure:     inputs.experiment.ScenarioSemanticExposure,
-		Client:               options.Client, AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
+		Client:               inputs.client, AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
 		ScenarioMaxCalls: inputs.experiment.ScenarioMaxCalls,
 		Run: func(ctx context.Context, journal *scenarioAgentCallJournal, maxCalls int,
 			activateKey func() error) (scenarioAgentEpisodeResult, error) {

@@ -170,6 +170,7 @@ func TestScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResumes(t
 	var first scenarioSessionEpisodeArtifact
 	if err := json.Unmarshal(firstBytes, &first); err != nil ||
 		first.validate(etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting) != nil ||
+		first.Episode.Transport.MaxRetries != 2 ||
 		first.Episode.Testing == nil || first.Testing == nil || first.Testing.Bundle.Validate() != nil ||
 		summary.CorePSSSamples != 2*first.Episode.Testing.CorePSSSamples {
 		t.Fatalf("session PSS union was summed or cannot be audited: %#v/%v", first, err)

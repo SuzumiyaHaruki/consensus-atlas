@@ -137,6 +137,12 @@ A8a 因此没有新增另一套 Runtime、schema、hash、gate 或评分公式�
 provider 或 key。fixture 配对实验中两 arm 得到相同 Trace、PSS/Risk/Oracle 和 primary/replay work，Agent 额外使用
 2 次模型调用；这正是公开校准应报告的负结果形态，而不是把“LLM 参与”自动写成优势。
 
+首次真实 OpenRouter paired preflight 在 deterministic arm 完成后，于 Agent 首次响应读取阶段终止。工件显示
+`duration=60002ms`、`transport_attempts=1` 和零 token；检查发现 etcd/raft Session 虽把 JSON 中
+`model_max_retries=2` 绑定进实验输入，执行时却误用了 CLI client 的默认 0。现已让执行端使用校验后的 authoring
+client，并用 Session/A8 回归测试确认 artifact 中实际 retry 上限为 2。失败目录保持不变，不能重命名为有效 trial；
+下一次真实预跑必须使用新目录。
+
 默认 etcd/raft authoring input 已从两个 episode 改为每 trial 一个 episode。多 episode coordinator 与恢复能力继续由
 显式测试覆盖；真实 A8 重复通过独立 trial 目录组织，避免同一 root 的重复 Trace 被算作独立状态发现。
 
@@ -156,8 +162,8 @@ provider 或 key。fixture 配对实验中两 arm 得到相同 Trace、PSS/Risk/
 当前 Go 规模（包含 A8b）：
 
 - 生产代码：33,287 行；
-- 测试代码：15,134 行；
-- 合计：48,421 行。
+- 测试代码：15,135 行；
+- 合计：48,422 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
