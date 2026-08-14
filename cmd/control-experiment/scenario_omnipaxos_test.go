@@ -146,6 +146,8 @@ func TestA7dOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
 			summary, providerCalls, keyReads, err)
 	}
 	options.Resume = true
+	options.WorkerPath = filepath.Join(directory, "missing-worker")
+	options.SemanticInputPath = filepath.Join(directory, "missing-semantic-input.json")
 	options.ReadKey = func(string) (string, error) {
 		keyReads++
 		return "unexpected-key-read", nil

@@ -203,8 +203,9 @@ frontier 重建、Scenario 与 qualified execution 在每次临时使用后关�
 episode 结束。conformance 与两个进程型 qualification 也已使用相同所有权，不再保留目标专用批量回收。
 completed attempt 现在把完整 ExecutionBundle 放入既有 Campaign artifact；恢复先验证 Bundle，并从其 Core PSS
 样本派生 session 状态并集，不再信任平行键列表。完整 Risk/Oracle 也保存在同一 artifact，并由目标现有
-projector/monitor 从 Bundle 重算后核对 summary。当前仍需消除 resume 入口的 SUT 准备、补方法身份，才能将
-该入口用于正式效果评价。
+projector/monitor 从 Bundle 重算后核对 summary。终止 Campaign 可在不准备 SUT、不读取模型 key 的情况下从
+既有 config/checkpoint/artifact 恢复；运行中的 Campaign 仍要求独立构造 expected config。当前还需补方法身份，
+才能将该入口用于正式效果评价。
 
 ## 6. 规划确定性与执行确定性
 

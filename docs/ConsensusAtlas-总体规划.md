@@ -589,8 +589,10 @@ manifest、raw case、Runtime 和 Replay 也已使用同一所有权，HashiCorp
 目标专用批量回收 wrapper。A7H2a 已把完整 `ExecutionBundle` 直接写入现有 Campaign attempt artifact；
 恢复会执行 `Bundle.Validate()` 并从 Bundle 重新派生 PSS 状态键，不新增 sidecar、文件 hash 或平行 ledger。
 A7H2b1 已进一步保存完整 Risk/Oracle，并由两目标现有 projector/monitor 从持久化 Bundle 重算 Risk、Oracle、
-outcome 和 compact summary；Bundle、Risk 或 Oracle 篡改都会被拒绝。下一小步只处理 resume 入口仍先准备 SUT
-输入的问题。
+outcome 和 compact summary；Bundle、Risk 或 Oracle 篡改都会被拒绝。A7H2b2 已让终止 Campaign 从既有
+自验证 config/checkpoint/artifact 只读恢复，同时核对固定
+campaign/target ID 与 Bundle manifest；不存在的 etcd/raft 输入路径和 OmniPaxos worker 路径不再阻止结果恢复。
+运行中的 Campaign 仍使用独立构造的 expected config 继续执行。A7H2 至此完成。
 
 ### A8：效果评测
 

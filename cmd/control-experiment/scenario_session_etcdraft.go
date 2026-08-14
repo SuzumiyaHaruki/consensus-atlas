@@ -42,6 +42,21 @@ func runEtcdraftScenarioSession(
 		openRouterTransportFreeze(options.Client).Validate() != nil {
 		return etcdraftScenarioSessionSummary{}, errors.New("ETCDRAFT_SCENARIO_SESSION_OPTIONS_INVALID")
 	}
+	if options.Resume {
+		summary, terminal, err := recoverTerminalScenarioSession(
+			clean, etcdraftScenarioSessionID, etcdraftCampaignTargetID,
+			etcdraftScenarioCalibrationClass, validateEtcdraftScenarioTesting,
+		)
+		if err != nil {
+			return etcdraftScenarioSessionSummary{}, err
+		}
+		if terminal {
+			if summary.Campaign.Status == controlexperiment.CampaignSummaryStatusFailed {
+				return summary, errors.New("ETCDRAFT_SCENARIO_SESSION_DURABLY_FAILED")
+			}
+			return summary, nil
+		}
+	}
 	inputs, err := prepareEtcdraftSemanticCalibration(
 		ctx, options.CorpusPath, options.SemanticInputPath, options.Client,
 	)
@@ -136,6 +151,7 @@ func executeEtcdraftScenarioSessionEpisode(
 		TargetIdentityDigest: inputs.campaign.source.Identity.ManifestDigest,
 		ExperimentSpecDigest: inputs.spec.Digest,
 		Classification:       etcdraftScenarioCalibrationClass,
+		SemanticExposure:     inputs.experiment.ScenarioSemanticExposure,
 		Client:               options.Client, AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
 		ScenarioMaxCalls: inputs.experiment.ScenarioMaxCalls,
 		Run: func(ctx context.Context, journal *scenarioAgentCallJournal, maxCalls int,

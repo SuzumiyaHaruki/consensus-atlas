@@ -37,6 +37,21 @@ func runOmnipaxosScenarioSession(
 		options.ReadKey == nil || openRouterTransportFreeze(options.Client).Validate() != nil {
 		return scenarioSessionSummary{}, errors.New("OMNIPAXOS_SCENARIO_SESSION_OPTIONS_INVALID")
 	}
+	if options.Resume {
+		summary, terminal, err := recoverTerminalScenarioSession(
+			clean, omnipaxosScenarioSessionID, omnipaxosScenarioSessionTargetID,
+			omnipaxosScenarioCalibrationClass, validateOmnipaxosScenarioTesting,
+		)
+		if err != nil {
+			return scenarioSessionSummary{}, err
+		}
+		if terminal {
+			if summary.Campaign.Status == controlexperiment.CampaignSummaryStatusFailed {
+				return summary, errors.New("OMNIPAXOS_SCENARIO_SESSION_DURABLY_FAILED")
+			}
+			return summary, nil
+		}
+	}
 	inputs, err := prepareOmnipaxosScenario(ctx, options.WorkerPath, options.SemanticInputPath)
 	if err != nil {
 		return scenarioSessionSummary{}, err
@@ -74,6 +89,7 @@ func runOmnipaxosScenarioSession(
 			TargetIdentityDigest: config.TargetIdentityDigest,
 			ExperimentSpecDigest: config.ExperimentSpecDigest,
 			Classification:       omnipaxosScenarioCalibrationClass,
+			SemanticExposure:     inputs.Experiment.ScenarioSemanticExposure,
 			Client:               options.Client, AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
 			ScenarioMaxCalls: inputs.Experiment.ScenarioMaxCalls,
 			Run: func(ctx context.Context, journal *scenarioAgentCallJournal, maxCalls int,

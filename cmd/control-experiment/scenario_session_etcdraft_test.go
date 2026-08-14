@@ -165,6 +165,8 @@ func TestA6bScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResume
 		t.Fatal("session artifact accepted a tampered persisted Oracle result")
 	}
 	options.Resume = true
+	options.CorpusPath = filepath.Join(directory, "missing-corpus.json")
+	options.SemanticInputPath = filepath.Join(directory, "missing-semantic-input.json")
 	options.ReadKey = func(string) (string, error) {
 		keyReads++
 		return "unexpected-key-read", nil

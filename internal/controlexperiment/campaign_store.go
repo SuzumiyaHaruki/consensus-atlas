@@ -414,6 +414,26 @@ func RecoverCampaignDirectory(
 	}, nil
 }
 
+// RecoverStoredCampaignDirectory verifies and recovers the exact Campaign
+// named by directory using its persisted, self-validating config. Callers must
+// still check the application-level campaign and target IDs before accepting
+// artifacts. Use RecoverCampaignDirectory when an independently constructed
+// expected config is available.
+func RecoverStoredCampaignDirectory(directory string) (CampaignRecovery, error) {
+	clean, err := validateCampaignDirectoryArgument(directory)
+	if err != nil {
+		return CampaignRecovery{}, err
+	}
+	var stored CampaignConfig
+	if err := readCampaignJSON(filepath.Join(clean, campaignConfigFile), &stored); err != nil {
+		return CampaignRecovery{}, err
+	}
+	if err := stored.Validate(); err != nil {
+		return CampaignRecovery{}, err
+	}
+	return RecoverCampaignDirectory(clean, stored)
+}
+
 func readCampaignFailure(
 	root string,
 	config CampaignConfig,

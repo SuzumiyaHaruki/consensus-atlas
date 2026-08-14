@@ -19,8 +19,9 @@ import (
 // committed by a Campaign attempt. The PSS keys come only from the qualified
 // execution bundle and are never returned to a later planning episode.
 type scenarioSessionEpisodeArtifact struct {
-	Episode scenarioCalibrationSummary `json:"episode"`
-	Testing *scenarioTestingResult     `json:"testing_evidence,omitempty"`
+	Episode          scenarioCalibrationSummary                     `json:"episode"`
+	SemanticExposure controlexperiment.ScenarioSemanticExposureMode `json:"semantic_exposure"`
+	Testing          *scenarioTestingResult                         `json:"testing_evidence,omitempty"`
 }
 
 type scenarioTestingRevalidator func(scenarioTestingResult) error
@@ -52,6 +53,7 @@ type scenarioSessionAttemptOptions struct {
 	TargetIdentityDigest string
 	ExperimentSpecDigest string
 	Classification       string
+	SemanticExposure     controlexperiment.ScenarioSemanticExposureMode
 	Client               openRouterIntentClient
 	AgentKeyFile         string
 	ReadKey              agentKeyReader
@@ -71,6 +73,7 @@ func executeScenarioSessionAttempt(
 		request.TargetIdentityDigest != options.TargetIdentityDigest ||
 		request.ExperimentSpecDigest != options.ExperimentSpecDigest ||
 		options.Directory == "" || options.Sidecar == "" || options.Classification == "" ||
+		options.SemanticExposure.Validate() != nil ||
 		options.Client.HTTP == nil || !validateAgentKeyFileName(options.AgentKeyFile) ||
 		options.ReadKey == nil || options.ScenarioMaxCalls <= 0 || options.Run == nil || options.Work == nil ||
 		options.ValidateTesting == nil {
@@ -124,7 +127,7 @@ func executeScenarioSessionAttempt(
 		}, err
 	}
 	artifactValue, err := newScenarioSessionEpisodeArtifact(
-		options.Classification, options.Client, result, options.ValidateTesting,
+		options.Classification, options.SemanticExposure, options.Client, result, options.ValidateTesting,
 	)
 	if err != nil {
 		return controlexperiment.CampaignAttemptResult{}, err
@@ -142,12 +145,13 @@ func executeScenarioSessionAttempt(
 
 func newScenarioSessionEpisodeArtifact(
 	classification string,
+	exposure controlexperiment.ScenarioSemanticExposureMode,
 	client openRouterIntentClient,
 	result scenarioAgentEpisodeResult,
 	revalidate scenarioTestingRevalidator,
 ) (scenarioSessionEpisodeArtifact, error) {
 	artifact := scenarioSessionEpisodeArtifact{
-		Episode: summarizeScenarioCalibration(classification, client, result),
+		Episode: summarizeScenarioCalibration(classification, client, result), SemanticExposure: exposure,
 	}
 	if result.Testing != nil {
 		testing := *result.Testing
@@ -164,7 +168,8 @@ func (artifact scenarioSessionEpisodeArtifact) validate(
 	revalidate scenarioTestingRevalidator,
 ) error {
 	episode := artifact.Episode
-	if classification == "" || revalidate == nil || episode.Classification != classification ||
+	if classification == "" || artifact.SemanticExposure.Validate() != nil || revalidate == nil ||
+		episode.Classification != classification ||
 		len(episode.Feedback) != episode.Attempts || len(episode.ProviderCalls) != episode.Attempts {
 		return errors.New("SCENARIO_SESSION_EPISODE_INVALID")
 	}
@@ -256,14 +261,10 @@ func summarizeScenarioSession(
 		if err != nil {
 			return scenarioSessionSummary{}, err
 		}
-		var artifact scenarioSessionEpisodeArtifact
-		decoder := json.NewDecoder(bytes.NewReader(encoded))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&artifact); err != nil || artifact.validate(classification, revalidate) != nil {
-			return scenarioSessionSummary{}, errors.New("SCENARIO_SESSION_ARTIFACT_INVALID")
-		}
-		var trailing any
-		if err := decoder.Decode(&trailing); err != io.EOF {
+		artifact, err := decodeScenarioSessionArtifact(encoded, classification, revalidate)
+		if err != nil || artifact.SemanticExposure != exposure ||
+			artifact.Testing != nil &&
+				artifact.Testing.Bundle.Identity.ManifestDigest != recovered.Config.TargetIdentityDigest {
 			return scenarioSessionSummary{}, errors.New("SCENARIO_SESSION_ARTIFACT_INVALID")
 		}
 		switch artifact.Episode.AgentStatus {
@@ -303,6 +304,61 @@ func summarizeScenarioSession(
 	sort.Strings(summary.CorePSSStateKeys)
 	summary.UniqueCorePSSStates = len(summary.CorePSSStateKeys)
 	return summary, nil
+}
+
+func decodeScenarioSessionArtifact(
+	encoded []byte,
+	classification string,
+	revalidate scenarioTestingRevalidator,
+) (scenarioSessionEpisodeArtifact, error) {
+	var artifact scenarioSessionEpisodeArtifact
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&artifact); err != nil || artifact.validate(classification, revalidate) != nil {
+		return scenarioSessionEpisodeArtifact{}, errors.New("SCENARIO_SESSION_ARTIFACT_INVALID")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return scenarioSessionEpisodeArtifact{}, errors.New("SCENARIO_SESSION_ARTIFACT_INVALID")
+	}
+	return artifact, nil
+}
+
+func recoverTerminalScenarioSession(
+	directory string,
+	campaignID string,
+	targetID string,
+	classification string,
+	revalidate scenarioTestingRevalidator,
+) (scenarioSessionSummary, bool, error) {
+	recovered, err := controlexperiment.RecoverStoredCampaignDirectory(directory)
+	if err != nil {
+		return scenarioSessionSummary{}, false, err
+	}
+	if recovered.Config.ID != campaignID || recovered.Config.TargetID != targetID {
+		return scenarioSessionSummary{}, false, errors.New("SCENARIO_SESSION_STORED_IDENTITY_MISMATCH")
+	}
+	if recovered.Failure == nil && recovered.Head.StopReason == controlexperiment.CampaignStopRunning {
+		return scenarioSessionSummary{}, false, nil
+	}
+	if recovered.Head.Sequence == 0 {
+		return scenarioSessionSummary{}, false, errors.New("SCENARIO_SESSION_STORED_EVIDENCE_MISSING")
+	}
+	encoded, err := recovered.ReadAttemptArtifact(1)
+	if err != nil {
+		return scenarioSessionSummary{}, false, err
+	}
+	first, err := decodeScenarioSessionArtifact(encoded, classification, revalidate)
+	if err != nil {
+		return scenarioSessionSummary{}, false, err
+	}
+	summary, err := summarizeScenarioSession(
+		&recovered, first.SemanticExposure, classification, revalidate,
+	)
+	if err != nil {
+		return scenarioSessionSummary{}, false, err
+	}
+	return summary, true, nil
 }
 
 func betterScenarioSessionRisk(
