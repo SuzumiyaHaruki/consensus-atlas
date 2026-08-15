@@ -1,6 +1,6 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.18（A8cR3b multi-SUT paired batch preflight 完成）
+> 状态：Draft v2.19（A8cR3c resumable paired batch CLI 完成）
 > 日期：2026-08-15
 > 适用分支：`feature/agentic-consensus-testing`
 
@@ -659,9 +659,18 @@ Trial ID 稳定顺序调用单 SUT launcher。任一候选预检失败时是零 
 fresh-root 规则与两 arm Bundle BuildID。
 
 本阶段不新增 schema、hash、gate 或评分公式。现有 formal evaluator 是单 MethodSpec + v3 Bundle，paired Scenario
-是两 Campaign method + v2 终端 Bundle，因此暂不强行复用不同形的 verdict 契约。当前 batch 仍是内部顺序编排：尚无
-正式 CLI 和中断恢复，也没有运行真实 OpenRouter 或非公开 candidate/control pair。下一步先补薄 CLI 和 trial 级恢复，
-再对齐两种 Planner 各自的 candidate/control monitor 结果。
+是两 Campaign method + v2 终端 Bundle，因此暂不强行复用不同形的 verdict 契约。R3b 只是内部顺序编排，尚无
+正式 CLI 和中断恢复。
+
+A8cR3c 已增加 `defect-eval -paired-scenario` 薄入口。它严格隔离 evaluation-output 参数，接收 formal contract、
+exposure audit、fresh inputs、semantic JSON、OpenRouter key/model、artifact root 和每 trial 超时。终端 trial 直接从既有
+summary/Campaign 恢复，不启动 SUT、不读 key；未完成 trial 用同一审计二进制和 `-campaign-resume` 继续。
+批次根目录不额外持久化一份状态，未知项、非目录 trial 和符号链接都会被拒绝。
+
+CLI 实际读取的 semantic JSON bytes 必须出现在通过的 formal exposure audit 中。它防止“审计 A，执行时换成包含
+私有标签的 B”这个具体失败；Git、版本号、类型和普通测试都不能限制运行时的外部文件选择。实现复用既有
+exposure SHA-256 digest，没有新建摘要类型、状态 schema 或另一套 gate。当前未运行真实 OpenRouter 或非公开 pair。
+下一步先定义两种 Planner 各自 candidate/control monitor 结果的最小内存聚合，不立即新增持久化 schema。
 
 ### A9：多 Agent 消融
 

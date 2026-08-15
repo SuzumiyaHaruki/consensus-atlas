@@ -4,15 +4,16 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8cR3b multi-SUT paired batch preflight
+阶段：A8cR3c resumable paired batch CLI
 
 ## 一句话状态
 
 ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
 共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；真实 OpenRouter 公开预跑已经完成，
 evaluator 已能从该执行单位恢复两 arm 的 Bundle 和完整 Campaign 成本。现在它还能先对全部
-opaque trial 的 BuildAudit、二进制和预期身份做集合预检，只有全部通过才按稳定 Trial ID 顺序启动
-fresh-root paired trial；任一预检失败时不调用 runner、不创建实验工件。
+opaque trial 的 BuildAudit、二进制和预期身份做集合预检，只有全部通过才按稳定 Trial ID 顺序启动。
+`defect-eval -paired-scenario` 已暴露该路径；重运行时完整 trial 由 evaluator 直接恢复，只有中断 trial 才重新启动
+SUT 并进入既有 Campaign resume。
 
 ## 输入什么
 
@@ -114,6 +115,8 @@ Qualification 或 `cmd/control-experiment` 边界。
   BuildAudit/Bundle BuildID 匹配；该测试没有读取 key 或访问模型服务；
 - A8cR3b 已用六个 opaque fixture 验证全集预检、稳定启动顺序和证据身份回绑；篡改最后一个
   候选的预期二进制摘要时，六个 runner 调用都不会发生，也不会创建批次工件目录；
+- A8cR3c 已验证首轮执行六个 trial、终端重运行零 runner/零 key 访问，以及未审计 semantic bytes 在任何
+  SUT 启动前被拒绝；该测试使用本地 fixture，未访问 OpenRouter；
 - 两协议的 artifact 都保存完整 Bundle/Risk/Oracle，并能拒绝篡改；
 - deterministic canonical/uniform stateless Campaign 和 Semantic Explorer 仍可作为 A8 对照方法。
 
@@ -243,9 +246,28 @@ BuildAudit、binary、fresh-root 规则和两 arm Bundle BuildID。这解决了�
 前面候选已消耗模型调用”的具体失败。
 
 本阶段没有新增结果 schema、评分或 gate。现有 formal evaluator 只接收一个 MethodSpec 和 v3 Bundle，而 paired
-Scenario 是两个 Campaign method 和 v2 终端 Bundle；在语义没对齐前不强行复用旧 verdict 形式。当前批处理也是顺序
-执行：执行期间失败会保留已完成的子目录，尚未增加 resume 或正式 CLI。本地测试只用 fixture runner，未读取 key、
+Scenario 是两个 Campaign method 和 v2 终端 Bundle；在语义没对齐前不强行复用旧 verdict 形式。R3b 只实现顺序
+内部编排，当时尚无 resume 或正式 CLI；这两项由 R3c 补齐。R3b 本地测试只用 fixture runner，未读取 key、
 未访问 OpenRouter，也没有产生非公开 candidate/control 结论。
+
+## A8cR3c：resumable paired batch CLI
+
+`defect-eval -paired-scenario` 现在复用 formal contract、exposure audit、fresh inputs 和 artifact root，显式接收
+semantic JSON、OpenRouter key 路径、model ID 和每 trial 超时。该模式不接收 `-out`、MethodSpec 或已提交 Bundle，
+因为它只负责产生两种 method 的 Campaign evidence，还不生成 candidate/control verdict。
+
+恢复直接复用现有目录状态：
+
+- 完整 trial 从 `summary.json` 和两个终端 Campaign 严格恢复，不启动 SUT、不读 key；
+- 不完整 trial 使用同一审计二进制和 `-campaign-resume`，由已有 Campaign journal 决定继续位置；
+- 批次根目录中的未知项、非目录 trial 或符号链接会被拒绝，不覆盖原工件。
+
+formal exposure audit 还必须包含这次 CLI 实际读取的 semantic JSON 字节摘要。这一检查针对具体的
+时间差失败：先审计文件 A，执行时通过 CLI 换成含私有标签的文件 B。Git 提交、版本号、类型和普通测试都不能约束
+运行时选择的外部文件；因此这里复用既有 SHA-256 exposure digest 做字节关联，没有新增摘要类型或独立 gate 体系。
+
+当前仍是顺序执行，没有真实非公开 inputs，也没有调用 OpenRouter。批次不额外写另一份状态或大型 JSON；
+Campaign 目录就是唯一恢复依据。
 
 ## 本轮减负结果
 
@@ -260,11 +282,11 @@ Scenario 是两个 Campaign method 和 v2 终端 Bundle；在语义没对齐前�
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8cR3b）：
+当前 Go 规模（包含 A8cR3c）：
 
-- 生产代码：33,837 行；
-- 测试代码：15,412 行；
-- 合计：49,249 行。
+- 生产代码：33,975 行；
+- 测试代码：15,522 行；
+- 合计：49,497 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
@@ -275,7 +297,7 @@ A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增�
 尚未完成：
 
 - 非公开 candidate/control 正式效果实验；
-- paired trial 的多 opaque SUT CLI 入口与 candidate/control 结果聚合；
+- paired trial 的 candidate/control 结果聚合；
 - A9 的双角色 Agent 消融；
 - 多次重复实验与置信区间；
 - fixed Profile obligation coverage 接入当前 Session 汇总；
@@ -301,8 +323,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步是增加薄 CLI 与可恢复的 trial 状态，然后在不混淆 method 轴与 SUT 版本轴的前提下，把
-deterministic 与 Agent 的 Campaign evidence 分别交给 candidate/control monitor 评测。
+下一小步是在不混淆 method 轴与 SUT 版本轴的前提下，把 deterministic 与 Agent 的 Campaign evidence
+分别交给 candidate/control monitor 评测；先定义最小内存聚合，不立即新增另一套持久化 schema。
 在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
 
 ## 当前验证
@@ -320,6 +342,7 @@ deterministic 与 Agent 的 Campaign evidence 分别交给 candidate/control mon
 - per-SUT fresh root、两 Planner 共享 prepared inputs，以及替代 SUT build identity 回归；
 - evaluator-owned paired binary 启动、fresh-root summary 严格恢复和 BuildAudit/Bundle identity 关联；
 - multi-SUT 全集预检、稳定 trial 顺序、返回证据重验及篡改时零 runner 调用；
+- paired Scenario CLI 参数隔离、semantic exposure bytes 关联、已完成 trial 零 SUT/key 恢复和中断目录 resume；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

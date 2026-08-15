@@ -100,6 +100,74 @@ type pairedScenarioArtifactEnvelope struct {
 	TestingEvidence  json.RawMessage `json:"testing_evidence"`
 }
 
+func runFormalPairedScenarioBatch(
+	ctx context.Context,
+	contractPath string,
+	exposurePath string,
+	inputsPath string,
+	config pairedScenarioLaunchConfig,
+	artifactDir string,
+	runner pairedScenarioBinaryRunner,
+) (map[string]pairedScenarioFreshEvidence, error) {
+	if ctx == nil || runner == nil || config.validate() != nil {
+		return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_INPUT_INVALID")
+	}
+	var contract defectbench.FormalBenchmarkContract
+	if err := readStrictJSON(contractPath, &contract); err != nil {
+		return nil, err
+	}
+	var exposure defectbench.FormalExposureAudit
+	if err := readStrictJSON(exposurePath, &exposure); err != nil {
+		return nil, err
+	}
+	semantic, err := os.ReadFile(config.SemanticInputPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePairedScenarioExposure(contract, exposure, semantic); err != nil {
+		return nil, err
+	}
+	var inputs formalFreshInputs
+	if err := readStrictJSON(inputsPath, &inputs); err != nil {
+		return nil, err
+	}
+	sources, variants, err := validateFormalFreshInputs(inputsPath, inputs, contract)
+	if err != nil {
+		return nil, err
+	}
+	loaded, err := loadFreshTrials(sources)
+	if err != nil {
+		return nil, err
+	}
+	return executePairedScenarioTrials(ctx, loaded, variants, config, artifactDir, runner)
+}
+
+func validatePairedScenarioExposure(
+	contract defectbench.FormalBenchmarkContract,
+	exposure defectbench.FormalExposureAudit,
+	semantic []byte,
+) error {
+	if err := contract.Validate(); err != nil {
+		return err
+	}
+	view, err := contract.OpaqueView()
+	if err != nil {
+		return err
+	}
+	if err := exposure.Validate(); err != nil || !exposure.Passed ||
+		exposure.BenchmarkID != contract.ID || exposure.ContractDigest != contract.Digest ||
+		exposure.ExpectedOpaqueViewDigest != view.Digest {
+		return errors.New("FORMAL_PAIRED_SCENARIO_EXPOSURE_AUDIT_REQUIRED")
+	}
+	semanticDigest := digestBytes(semantic)
+	for _, artifact := range exposure.PublicArtifacts {
+		if artifact.Digest == semanticDigest {
+			return nil
+		}
+	}
+	return errors.New("FORMAL_PAIRED_SCENARIO_SEMANTIC_INPUT_NOT_AUDITED")
+}
+
 func loadPairedScenarioTrialEvidence(directory string) (pairedScenarioTrialEvidence, error) {
 	deterministic, err := loadPairedScenarioArmEvidence(
 		filepath.Join(directory, pairedScenarioPlannerDeterministic), pairedScenarioPlannerDeterministic,
@@ -199,8 +267,12 @@ func runPairedScenarioBinary(
 		directory == "" || clean == "." || clean == string(filepath.Separator) {
 		return pairedScenarioFreshEvidence{}, errors.New("FORMAL_PAIRED_SCENARIO_LAUNCH_INPUT_INVALID")
 	}
-	if _, err := os.Lstat(clean); err == nil {
-		return pairedScenarioFreshEvidence{}, errors.New("FORMAL_PAIRED_SCENARIO_OUTPUT_EXISTS")
+	resume := false
+	if info, err := os.Lstat(clean); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return pairedScenarioFreshEvidence{}, errors.New("FORMAL_PAIRED_SCENARIO_RESUME_DIRECTORY_INVALID")
+		}
+		resume = true
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return pairedScenarioFreshEvidence{}, err
 	}
@@ -215,13 +287,17 @@ func runPairedScenarioBinary(
 	}
 	runContext, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
-	command := exec.CommandContext(runContext, binaryPath,
+	arguments := []string{
 		"-strategy", pairedScenarioBinaryStrategy,
 		"-campaign-dir", clean,
 		"-semantic-input", config.SemanticInputPath,
 		"-agent-key-file", config.AgentKeyFile,
 		"-agent-model", config.AgentModel,
-	)
+	}
+	if resume {
+		arguments = append(arguments, "-campaign-resume")
+	}
+	command := exec.CommandContext(runContext, binaryPath, arguments...)
 	command.Env = []string{"TZ=UTC"}
 	combined, err := command.CombinedOutput()
 	if err != nil {
@@ -235,7 +311,14 @@ func runPairedScenarioBinary(
 			current.trialID, err, strings.TrimSpace(string(combined)),
 		)
 	}
-	scenario, root, err := loadFreshPairedScenarioTrialEvidence(clean)
+	return recoverPairedScenarioFreshEvidence(current, clean)
+}
+
+func recoverPairedScenarioFreshEvidence(
+	current loadedFreshTrial,
+	directory string,
+) (pairedScenarioFreshEvidence, error) {
+	scenario, root, err := loadFreshPairedScenarioTrialEvidence(directory)
 	if err != nil {
 		return pairedScenarioFreshEvidence{}, err
 	}
@@ -308,19 +391,46 @@ func executePairedScenarioTrials(
 		}
 		seen[current.trialID] = true
 	}
-	if _, err := os.Lstat(clean); err == nil {
-		return nil, errors.New("FORMAL_PAIRED_SCENARIO_OUTPUT_EXISTS")
+	if info, err := os.Lstat(clean); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_DIRECTORY_INVALID")
+		}
+		entries, readErr := os.ReadDir(clean)
+		if readErr != nil {
+			return nil, readErr
+		}
+		for _, entry := range entries {
+			if !seen[entry.Name()] {
+				return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_ENTRY_UNKNOWN")
+			}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
-	}
-	if err := os.MkdirAll(clean, 0o755); err != nil {
+	} else if err := os.MkdirAll(clean, 0o755); err != nil {
 		return nil, err
 	}
 	result := make(map[string]pairedScenarioFreshEvidence, len(ordered))
 	for _, current := range ordered {
-		fresh, err := runner(ctx, current, config, filepath.Join(clean, current.trialID))
-		if err != nil {
-			return nil, fmt.Errorf("paired Scenario trial %s: %w", current.trialID, err)
+		directory := filepath.Join(clean, current.trialID)
+		var fresh pairedScenarioFreshEvidence
+		if info, err := os.Lstat(directory); err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return nil, errors.New("FORMAL_PAIRED_SCENARIO_TRIAL_DIRECTORY_INVALID")
+			}
+			fresh, err = recoverPairedScenarioFreshEvidence(current, directory)
+			if err != nil {
+				fresh, err = runner(ctx, current, config, directory)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("resume paired Scenario trial %s: %w", current.trialID, err)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		} else {
+			fresh, err = runner(ctx, current, config, directory)
+			if err != nil {
+				return nil, fmt.Errorf("paired Scenario trial %s: %w", current.trialID, err)
+			}
 		}
 		variant := variants[current.trialID]
 		if fresh.TrialID != current.trialID || fresh.BuildID != variant.ExpectedBuildID ||

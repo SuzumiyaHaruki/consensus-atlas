@@ -74,6 +74,7 @@ output=""
 semantic=""
 key=""
 model=""
+resume=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -strategy) shift; strategy="$1" ;;
@@ -81,11 +82,13 @@ while [ "$#" -gt 0 ]; do
     -semantic-input) shift; semantic="$1" ;;
     -agent-key-file) shift; key="$1" ;;
     -agent-model) shift; model="$1" ;;
+    -campaign-resume) resume=1 ;;
     -stateless-corpus) exit 41 ;;
   esac
   shift
 done
 [ "$strategy" = %q ] && [ -n "$output" ] && [ -n "$semantic" ] && [ -n "$key" ] && [ -n "$model" ] || exit 42
+[ ! -e "$output" ] || { [ "$resume" -eq 1 ] && exit 0; exit 43; }
 /bin/cp -R %q "$output"
 `, pairedScenarioBinaryStrategy, template))
 	var audit sutbuild.Audit
@@ -122,6 +125,14 @@ done
 		evidence.Scenario.TargetIdentity != target || evidence.Root.RootMode != pairedScenarioFreshRootMode ||
 		evidence.Root.RootRule != pairedScenarioFreshRootRule {
 		t.Fatalf("launched paired evidence = %#v, err = %v", evidence, err)
+	}
+	recovered, err := runPairedScenarioBinary(context.Background(), current, pairedScenarioLaunchConfig{
+		SemanticInputPath: semanticPath, AgentKeyFile: keyPath,
+		AgentModel: "fixture/model", Timeout: 10 * time.Second,
+	}, filepath.Join(root, "launched"))
+	if err != nil || recovered.BuildAuditDigest != evidence.BuildAuditDigest ||
+		recovered.Scenario.Agent.Bundle.Digest != evidence.Scenario.Agent.Bundle.Digest {
+		t.Fatalf("resumed paired evidence = %#v, err = %v", recovered, err)
 	}
 
 	mismatch := current
@@ -202,6 +213,93 @@ func TestPairedScenarioBatchPreflightsAllTrialsAndUsesCanonicalOrder(t *testing.
 	}
 	if _, err := os.Lstat(badArtifacts); !os.IsNotExist(err) {
 		t.Fatalf("failed preflight created artifacts: %v", err)
+	}
+}
+
+func TestFormalPairedScenarioBatchRequiresAuditedSemanticsAndRecoversCompletedTrials(t *testing.T) {
+	spec, _, bundle := formalCLITestExecution(t)
+	root := t.TempDir()
+	contract, _, inputsPath := writeFormalCLIFixture(t, root, spec, bundle)
+	semantic := []byte("{\"protocol\":\"fixture\"}\n")
+	semanticPath := filepath.Join(root, "semantic.json")
+	if err := os.WriteFile(semanticPath, semantic, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	view, err := contract.OpaqueView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, err := defectbench.AuditFormalExposure(
+		contract, view, []defectbench.FormalPublicArtifact{{Bytes: semantic}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposurePath := filepath.Join(root, "paired-exposure.json")
+	if err := writeJSON(exposurePath, exposure); err != nil {
+		t.Fatal(err)
+	}
+	config := pairedScenarioLaunchConfig{
+		SemanticInputPath: semanticPath, AgentKeyFile: "key.txt",
+		AgentModel: "fixture/model", Timeout: time.Second,
+	}
+	artifacts := filepath.Join(root, "paired-artifacts")
+	runnerCalls := 0
+	runner := func(
+		_ context.Context,
+		current loadedFreshTrial,
+		_ pairedScenarioLaunchConfig,
+		directory string,
+	) (pairedScenarioFreshEvidence, error) {
+		runnerCalls++
+		target := bundle.Trace.ManifestDigest
+		writePairedScenarioArm(t, directory, pairedScenarioPlannerDeterministic, target, bundle)
+		writePairedScenarioArm(t, directory, pairedScenarioPlannerAgent, target, bundle)
+		rootSummary := pairedScenarioRootSummary{
+			Classification: "public-calibration-not-agent-effectiveness-holdout-or-correctness",
+			TargetID:       "fixture-target", TargetIdentity: target, SemanticMode: "full",
+			RootMode: pairedScenarioFreshRootMode, RootRule: pairedScenarioFreshRootRule,
+			SourceDigest: digestBytes([]byte("source")), CorpusDigest: digestBytes([]byte("corpus")),
+			RootDigest: digestBytes([]byte("root")), RootDecisions: 1, SameTrace: true,
+			Deterministic: json.RawMessage(`{}`), Agent: json.RawMessage(`{}`),
+		}
+		if err := writeJSON(filepath.Join(directory, "summary.json"), rootSummary); err != nil {
+			return pairedScenarioFreshEvidence{}, err
+		}
+		return recoverPairedScenarioFreshEvidence(current, directory)
+	}
+	first, err := runFormalPairedScenarioBatch(
+		context.Background(), filepath.Join(root, "contract.json"), exposurePath, inputsPath,
+		config, artifacts, runner,
+	)
+	if err != nil || len(first) != 6 || runnerCalls != 6 {
+		t.Fatalf("first paired batch evidence=%d calls=%d err=%v", len(first), runnerCalls, err)
+	}
+	runnerCalls = 0
+	second, err := runFormalPairedScenarioBatch(
+		context.Background(), filepath.Join(root, "contract.json"), exposurePath, inputsPath,
+		config, artifacts, runner,
+	)
+	if err != nil || len(second) != 6 || runnerCalls != 0 {
+		t.Fatalf("resumed paired batch evidence=%d calls=%d err=%v", len(second), runnerCalls, err)
+	}
+	if err := run([]string{
+		"-paired-scenario", "-formal-contract", filepath.Join(root, "contract.json"),
+		"-formal-exposure-audit", exposurePath, "-formal-inputs", inputsPath,
+		"-fresh-artifacts", artifacts, "-semantic-input", semanticPath,
+		"-agent-key-file", filepath.Join(root, "missing-key.txt"),
+		"-agent-model", "fixture/model", "-paired-timeout", "1s",
+	}); err != nil {
+		t.Fatalf("terminal CLI recovery accessed SUT or key: %v", err)
+	}
+	if err := os.WriteFile(semanticPath, []byte("{\"protocol\":\"changed\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runFormalPairedScenarioBatch(
+		context.Background(), filepath.Join(root, "contract.json"), exposurePath, inputsPath,
+		config, artifacts, runner,
+	); err == nil || !strings.Contains(err.Error(), "SEMANTIC_INPUT_NOT_AUDITED") || runnerCalls != 0 {
+		t.Fatalf("unaudited semantics error=%v calls=%d", err, runnerCalls)
 	}
 }
 

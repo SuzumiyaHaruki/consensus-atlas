@@ -80,8 +80,36 @@ func run(args []string) error {
 	formalContractPath := flags.String("formal-contract", "", "private FormalBenchmarkContract")
 	formalExposurePath := flags.String("formal-exposure-audit", "", "passed private FormalExposureAudit")
 	formalInputsPath := flags.String("formal-inputs", "", "private multi-trial audit/binary path manifest")
+	pairedScenario := flags.Bool("paired-scenario", false, "run deterministic/Agent Scenario arms for each formal trial")
+	semanticInputPath := flags.String("semantic-input", "", "audited protocol knowledge and hypothesis JSON")
+	agentKeyFile := flags.String("agent-key-file", "", "OpenRouter key file for an explicit paired Scenario run")
+	agentModel := flags.String("agent-model", "", "OpenRouter model ID for an explicit paired Scenario run")
+	pairedTimeout := flags.Duration("paired-timeout", 15*time.Minute, "evaluator timeout for each paired Scenario trial")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	pairedFlags := *pairedScenario || *semanticInputPath != "" || *agentKeyFile != "" || *agentModel != ""
+	if pairedFlags {
+		if !*pairedScenario || *formalContractPath == "" || *formalExposurePath == "" || *formalInputsPath == "" ||
+			*freshArtifacts == "" || *semanticInputPath == "" || *agentKeyFile == "" || *agentModel == "" ||
+			*manifestPath != "" || *controlPath != "" || *candidatePath != "" || *outPath != "" ||
+			*methodSpecPath != "" || *controlAuditPath != "" || *controlBinaryPath != "" ||
+			*candidateAuditPath != "" || *candidateBinaryPath != "" {
+			return errors.New("paired Scenario requires formal contract, exposure audit, inputs, fresh artifacts, semantic input, Agent key/model, and no evaluation-output flags")
+		}
+		evidence, err := runFormalPairedScenarioBatch(
+			context.Background(), *formalContractPath, *formalExposurePath, *formalInputsPath,
+			pairedScenarioLaunchConfig{
+				SemanticInputPath: *semanticInputPath, AgentKeyFile: *agentKeyFile,
+				AgentModel: *agentModel, Timeout: *pairedTimeout,
+			},
+			*freshArtifacts, runPairedScenarioBinary,
+		)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("paired Scenario trials=%d artifacts=%s\n", len(evidence), *freshArtifacts)
+		return nil
 	}
 	formalMode := *formalContractPath != "" || *formalExposurePath != "" || *formalInputsPath != ""
 	if formalMode {
