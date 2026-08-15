@@ -47,7 +47,6 @@ func executeEtcdraftSemanticTesting(
 	}
 	risk, err := projectEtcdraftSemanticRisk(
 		candidate.RiskResult.ID, inputs.riskSpec, bundle.Trace,
-		bundle.ClientHistory, bundle.OperationHistory,
 	)
 	if err != nil {
 		return etcdraftSemanticTestingResult{}, err
@@ -93,7 +92,6 @@ func (result etcdraftSemanticTestingResult) Validate(
 	}
 	wantRisk, err := projectEtcdraftSemanticRisk(
 		candidate.RiskResult.ID, inputs.riskSpec, result.Bundle.Trace,
-		result.Bundle.ClientHistory, result.Bundle.OperationHistory,
 	)
 	if err != nil || !reflect.DeepEqual(wantRisk, candidate.RiskResult) ||
 		!reflect.DeepEqual(result.Risk, wantRisk) {

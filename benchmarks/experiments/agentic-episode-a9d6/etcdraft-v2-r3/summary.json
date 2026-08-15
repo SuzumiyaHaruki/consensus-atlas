@@ -1,0 +1,111 @@
+{
+  "target_id": "etcdraft-v2",
+  "status": "risk-agent-stopped",
+  "budget": {
+    "max_risk_calls": 1,
+    "max_scenario_calls": 1,
+    "max_total_calls": 2,
+    "max_observed_tokens": 25000,
+    "max_scenario_plan_steps": 1,
+    "max_runtime_decisions": 32
+  },
+  "risk_attempts": 1,
+  "risk_feedback": {
+    "outcome": "stopped",
+    "reason_code": "risk-candidate-invalid"
+  },
+  "scenario_attempts": 0,
+  "risk_provider_calls": [
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 1,
+      "root_id": "etcdraft-v2-risk-agent",
+      "search_request_digest": "0fa5fce362f7e94e93a4f0802d86464a8dda04a4dd674041589a57c70685998d",
+      "intent_digest": "2ec337f6a63e9e73159ce0ebafed7724eec24afefd33617daae13e0255d5d2ea",
+      "dispatch_digest": "6ce2e9d3c663480ba9f0964820454a542fd747483c5629a39768344d88198704",
+      "result_digest": "36bf6a9b72f0372c46de5f8762701401df615517bd93f08349695555e6ef6e8b",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 973,
+        "output_tokens": 2938,
+        "total_tokens": 3911
+      },
+      "transport_attempts": 1,
+      "digest": "b0d77d51446fd1a5a8055c3cb0e8931e3606a8a5c557f85e1d094be3579253c4"
+    }
+  ],
+  "metrics": {
+    "candidate_accepted": false,
+    "risk_reached": false,
+    "core_pss_samples": 0,
+    "unique_pss_states": 0,
+    "oracle_findings": 0
+  },
+  "work": {
+    "model": {
+      "calls": 1,
+      "input_tokens": 973,
+      "output_tokens": 2938,
+      "total_tokens": 3911
+    },
+    "scenario_frontier": {
+      "setup_attempts": 0,
+      "runtime_initializations": 0,
+      "prepare_actions": 0,
+      "scheduler_decisions": 0,
+      "work_units": 0
+    },
+    "scenario_search": {
+      "frontier_reconstruction": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "child_materialization": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "child_verification": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "total_work_units": 0
+    },
+    "qualified_execution": {
+      "primary": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "replay": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "model": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      },
+      "resources": {
+        "wall_time": "",
+        "cpu_time": "",
+        "peak_rss": ""
+      }
+    }
+  }
+}

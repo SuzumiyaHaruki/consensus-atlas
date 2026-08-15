@@ -1,0 +1,15 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "2d941eccdab50768c12ff9150c7d5b7046f7bab2b9e4ccbb0834cda9dc0b2dde",
+  "status": "failed",
+  "failure_code": "agent-response-rejected",
+  "duration_millis": 180008,
+  "work": {
+    "calls": 1,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "transport_attempts": 3,
+  "digest": "220b063207304b3650ba3feb03c045cbbae6b59522d5a5290f72fc59aee23bf6"
+}

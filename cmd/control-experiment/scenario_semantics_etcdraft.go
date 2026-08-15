@@ -171,10 +171,32 @@ func etcdraftSingleWorkloadApplied(trace controlruntime.Trace) (bool, error) {
 				applicationCommandsAtInvoke = node.ApplicationCommands
 			}
 		}
-		terminalStep, err := etcdraftRiskWitnessAppliedTerminalStep(
+		terminalStep, err := etcdraftAppliedTerminalStep(
 			trace, record.Step, applicationCommandsAtInvoke,
 		)
 		return terminalStep > 0, err
 	}
 	return false, nil
+}
+
+func etcdraftAppliedTerminalStep(
+	trace controlruntime.Trace,
+	invokeStep uint64,
+	applicationCommandsAtInvoke int,
+) (uint64, error) {
+	for _, record := range trace.Records {
+		if record.Step <= invokeStep || record.Evidence == nil {
+			continue
+		}
+		evidence, err := etcdraftv2.ProjectEvidence(*record.Evidence)
+		if err != nil {
+			return 0, err
+		}
+		for _, node := range evidence.Nodes {
+			if node.ApplicationCommands > applicationCommandsAtInvoke {
+				return record.Step, nil
+			}
+		}
+	}
+	return 0, nil
 }

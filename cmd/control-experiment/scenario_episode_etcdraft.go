@@ -12,6 +12,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 )
 
@@ -157,6 +158,25 @@ func executeEtcdraftScenarioQualified(
 	inputs etcdraftSemanticCalibrationInputs,
 	execution controlexperiment.ScenarioExecution,
 ) (etcdraftScenarioTestingResult, error) {
+	spec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
+	if err != nil {
+		return etcdraftScenarioTestingResult{}, err
+	}
+	return executeEtcdraftScenarioQualifiedRisk(
+		ctx, inputs, execution, spec, etcdraftSemanticPrefixProjector{},
+	)
+}
+
+func executeEtcdraftScenarioQualifiedRisk(
+	ctx context.Context,
+	inputs etcdraftSemanticCalibrationInputs,
+	execution controlexperiment.ScenarioExecution,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+) (etcdraftScenarioTestingResult, error) {
+	if spec.Validate() != nil || projector == nil || execution.FinalRisk.Validate(spec) != nil {
+		return etcdraftScenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_INPUT_INVALID")
+	}
 	policy, err := controlexperiment.CompileScenarioPolicy(
 		"etcdraft-scenario-qualified-policy", inputs.root, execution,
 		[]control.ActionKind{
@@ -188,14 +208,24 @@ func executeEtcdraftScenarioQualified(
 	if err != nil {
 		return etcdraftScenarioTestingResult{}, err
 	}
-	risk, err := projectEtcdraftSemanticRisk(
-		execution.FinalRisk.ID, inputs.riskSpec, bundle.Trace,
-		bundle.ClientHistory, bundle.OperationHistory,
-	)
+	risk, err := projector.Project(execution.FinalRisk.ID, spec, bundle.Trace)
 	if err != nil || bundle.Trace.Digest != execution.FinalTrace.Digest ||
-		!reflect.DeepEqual(risk, execution.FinalRisk) {
+		!reflect.DeepEqual(risk, execution.FinalRisk) ||
+		!reflect.DeepEqual(bundle.Qualification, inputs.campaign.qualification) {
 		return etcdraftScenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
+	result := newEtcdraftScenarioTestingResult(execution.PlanID, bundle, risk)
+	if err := validateEtcdraftScenarioTestingRisk(result, spec, projector); err != nil {
+		return etcdraftScenarioTestingResult{}, err
+	}
+	return result, nil
+}
+
+func newEtcdraftScenarioTestingResult(
+	planID string,
+	bundle controlexperiment.ExecutionBundle,
+	risk semantic.RiskWitnessResult,
+) scenarioTestingResult {
 	verdict := oracle.CheckBundle(
 		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
 		etcdraftClientApplicationBindingMonitor{},
@@ -204,27 +234,31 @@ func executeEtcdraftScenarioQualified(
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingViolation
 	}
-	result := etcdraftScenarioTestingResult{
-		PlanID: execution.PlanID, Bundle: bundle, Risk: risk,
+	return scenarioTestingResult{
+		PlanID: planID, Bundle: bundle, Risk: risk,
 		CorePSSSamples: bundle.Run.CorePSSSamples, UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
 		Replay: bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
 	}
-	if err := validateEtcdraftScenarioTesting(result); err != nil {
-		return etcdraftScenarioTestingResult{}, err
-	}
-	return result, nil
 }
 
 func validateEtcdraftScenarioTesting(result scenarioTestingResult) error {
 	spec, err := raftfamily.LeaderChangeWithInflightProposalWitness()
-	if err != nil || result.validateExecutionStructure() != nil ||
+	if err != nil {
+		return err
+	}
+	return validateEtcdraftScenarioTestingRisk(result, spec, etcdraftSemanticPrefixProjector{})
+}
+
+func validateEtcdraftScenarioTestingRisk(
+	result scenarioTestingResult,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+) error {
+	if spec.Validate() != nil || projector == nil || result.validateExecutionStructure() != nil ||
 		result.Bundle.ValidateProjection(etcdraftv2.DecisionProjector{}) != nil {
 		return errors.New("ETCDRAFT_SCENARIO_TESTING_EXECUTION_INVALID")
 	}
-	risk, err := projectEtcdraftSemanticRisk(
-		result.Risk.ID, spec, result.Bundle.Trace,
-		result.Bundle.ClientHistory, result.Bundle.OperationHistory,
-	)
+	risk, err := projector.Project(result.Risk.ID, spec, result.Bundle.Trace)
 	if err != nil || !reflect.DeepEqual(result.Risk, risk) {
 		return errors.New("ETCDRAFT_SCENARIO_TESTING_RISK_INVALID")
 	}

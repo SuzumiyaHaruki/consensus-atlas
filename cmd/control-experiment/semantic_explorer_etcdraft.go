@@ -20,20 +20,21 @@ const (
 	etcdraftSemanticCalibrationRootID      = "invoked"
 	etcdraftSemanticCalibrationExposure    = "public-calibration-official-source"
 	etcdraftSemanticCalibrationClass       = "public-calibration-not-agent-effectiveness-holdout-or-correctness"
-	etcdraftSemanticPrefixProjectorID      = "official-etcdraft-v2-leader-change-prefix-v1"
+	etcdraftSemanticPrefixProjectorID      = "official-etcdraft-v2-leader-change-prefix-v2"
 )
 
 type etcdraftSemanticCalibrationInputs struct {
-	campaign   etcdraftStatelessCampaignInputs
-	root       controlruntime.Trace
-	frontier   controlexperiment.ActionFrontierView
-	riskSpec   semantic.RiskWitnessSpec
-	knowledge  controlexperiment.ProtocolKnowledgePack
-	hypothesis controlexperiment.TestHypothesis
-	experiment etcdraftAgentExperimentConfig
-	client     openRouterIntentClient
-	searchSpec controlexperiment.StatelessDFSSpec
-	spec       etcdraftSemanticCalibrationSpec
+	campaign          etcdraftStatelessCampaignInputs
+	root              controlruntime.Trace
+	frontier          controlexperiment.ActionFrontierView
+	riskSpec          semantic.RiskWitnessSpec
+	riskQualification semantic.RiskQualification
+	knowledge         controlexperiment.ProtocolKnowledgePack
+	hypothesis        controlexperiment.TestHypothesis
+	experiment        etcdraftAgentExperimentConfig
+	client            openRouterIntentClient
+	searchSpec        controlexperiment.StatelessDFSSpec
+	spec              etcdraftSemanticCalibrationSpec
 }
 
 // etcdraftSemanticPrefixProjector is target-owned composition. Generic
@@ -49,21 +50,19 @@ func (projector etcdraftSemanticPrefixProjector) Project(
 	spec semantic.RiskWitnessSpec,
 	trace controlruntime.Trace,
 ) (semantic.RiskWitnessResult, error) {
-	return projectEtcdraftSemanticRisk(id, spec, trace, nil, nil)
+	return projectEtcdraftSemanticRisk(id, spec, trace)
 }
 
 func projectEtcdraftSemanticRisk(
 	id string,
 	spec semantic.RiskWitnessSpec,
 	trace controlruntime.Trace,
-	clients []controlexperiment.ClientHistoryEntry,
-	operations *controlexperiment.OperationHistory,
 ) (semantic.RiskWitnessResult, error) {
 	want, err := raftfamily.LeaderChangeWithInflightProposalWitness()
 	if err != nil || spec.Validate() != nil || !reflect.DeepEqual(spec, want) || trace.Validate() != nil {
 		return semantic.RiskWitnessResult{}, errors.New("ETCDRAFT_SEMANTIC_PREFIX_PROJECTOR_INPUT_INVALID")
 	}
-	milestones, err := projectEtcdraftLeaderChangeRiskMilestones(trace, clients, operations, 1)
+	milestones, err := projectEtcdraftObservationMilestones(spec, trace)
 	if err != nil {
 		return semantic.RiskWitnessResult{}, err
 	}
@@ -172,6 +171,17 @@ func prepareEtcdraftSemanticCalibration(
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
+	riskQualification, err := semantic.QualifyRisk(
+		etcdraftLeaderChangeObservationPredicates(),
+		(etcdraftv2.ObservationProjector{}).Capabilities(),
+		inputs.qualification.Manifest.Capabilities.Actions,
+	)
+	if err != nil {
+		return etcdraftSemanticCalibrationInputs{}, err
+	}
+	if !riskQualification.Qualified {
+		return etcdraftSemanticCalibrationInputs{}, errors.New("ETCDRAFT_SEMANTIC_RISK_UNQUALIFIED")
+	}
 	root, err := inputs.corpus.Prefix(inputs.source, etcdraftSemanticCalibrationRootID)
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
@@ -210,7 +220,8 @@ func prepareEtcdraftSemanticCalibration(
 	}
 	return etcdraftSemanticCalibrationInputs{
 		campaign: inputs, root: root, frontier: frontier, riskSpec: riskSpec,
-		knowledge: knowledge, hypothesis: hypothesis, experiment: experiment,
+		riskQualification: riskQualification,
+		knowledge:         knowledge, hypothesis: hypothesis, experiment: experiment,
 		client: client, searchSpec: searchSpec, spec: spec,
 	}, nil
 }

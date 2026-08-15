@@ -62,6 +62,7 @@ func TestEtcdraftSemanticExplorerInputsAreValidAndSourceBound(t *testing.T) {
 		inputs.spec.ScenarioMaxPlanSteps != inputs.experiment.ScenarioMaxSteps ||
 		inputs.spec.ScenarioMaxDecisions != inputs.experiment.ScenarioMaxDecisions ||
 		inputs.spec.ScenarioSemanticExposure != controlexperiment.ScenarioSemanticExposureFull ||
+		!inputs.riskQualification.Qualified || len(inputs.riskQualification.Issues) != 0 ||
 		inputs.client.MaxOutputTokens != inputs.experiment.ModelMaxOutputTokens ||
 		inputs.searchSpec.Runtime != inputs.experiment.Runtime || inputs.searchSpec.FaultEnvelope == nil ||
 		*inputs.searchSpec.FaultEnvelope != inputs.experiment.FaultEnvelope ||

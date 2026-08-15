@@ -1,0 +1,103 @@
+package main
+
+import (
+	"context"
+	"errors"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+)
+
+type omnipaxosAgenticEpisodeResult = agenticEpisodeResult
+
+func runOmnipaxosAgenticEpisode(
+	ctx context.Context,
+	inputs omnipaxosScenarioInputs,
+	riskJournal *statelessAgentCallJournal,
+	scenarioJournal *scenarioAgentCallJournal,
+	budget agenticEpisodeBudget,
+	activateRiskKey func() error,
+	activateScenarioKey func() error,
+) (omnipaxosAgenticEpisodeResult, error) {
+	target, err := newOmnipaxosAgenticEpisodeTarget(inputs)
+	if err != nil {
+		return omnipaxosAgenticEpisodeResult{Status: agenticEpisodeRiskStopped}, err
+	}
+	return runAgenticEpisode(
+		ctx, target, riskJournal, scenarioJournal, budget, activateRiskKey, activateScenarioKey,
+	)
+}
+
+func omnipaxosAgenticEpisodeRecoveryBinding() agenticEpisodeRecoveryBinding {
+	projector := omnipaxosv2.ObservationProjector{}
+	return agenticEpisodeRecoveryBinding{
+		TargetID: "omnipaxos-v2", ObservationProjector: projector,
+		Testing: func(
+			planID string,
+			bundle controlexperiment.ExecutionBundle,
+			risk semantic.RiskWitnessResult,
+			spec semantic.RiskWitnessSpec,
+			riskProjector controlexperiment.SemanticPrefixProjector,
+		) (scenarioTestingResult, error) {
+			result := newOmnipaxosScenarioTestingResult(planID, bundle, risk)
+			return result, validateOmnipaxosScenarioTestingRisk(result, spec, riskProjector)
+		},
+	}
+}
+
+func newOmnipaxosAgenticEpisodeTarget(
+	inputs omnipaxosScenarioInputs,
+) (agenticEpisodeTarget, error) {
+	if inputs.Knowledge.Validate() != nil || inputs.Root.Validate() != nil ||
+		inputs.Qualification.Bundle.Validate() != nil || inputs.WorkerPath == "" {
+		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_INPUT_INVALID")
+	}
+	observationProjector := omnipaxosv2.ObservationProjector{}
+	target := agenticEpisodeTarget{
+		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge,
+		Actions:              inputs.Qualification.Bundle.Manifest.Capabilities.Actions,
+		ObservationProjector: observationProjector,
+		ScenarioInputs: func(
+			risk controlexperiment.ScenarioRiskHypothesis,
+			projector controlexperiment.SemanticPrefixProjector,
+		) (scenarioEpisodeCoreInputs, error) {
+			factory := func() (control.Adapter, error) {
+				return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: inputs.WorkerPath})
+			}
+			return scenarioEpisodeCoreInputs{
+				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis, RiskSpec: risk.Spec,
+				Root: inputs.Root, Runtime: inputs.Experiment.Runtime,
+				FaultEnvelope:    inputs.Experiment.faultEnvelope(),
+				SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
+				NewAdapter:       factory, RiskProjector: projector,
+				SemanticProjector: func(
+					trace controlruntime.Trace,
+					frontier controlexperiment.RiskFrontierView,
+					snapshot controlruntime.Snapshot,
+				) (controlexperiment.ScenarioSemanticExposure, error) {
+					return projectOmnipaxosScenarioSemantics(
+						inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
+					)
+				},
+			}, nil
+		},
+		Execute: func(
+			ctx context.Context,
+			risk controlexperiment.ScenarioRiskHypothesis,
+			projector controlexperiment.SemanticPrefixProjector,
+			execution controlexperiment.ScenarioExecution,
+		) (scenarioTestingResult, error) {
+			return executeOmnipaxosScenarioQualifiedRisk(
+				ctx, inputs.WorkerPath, inputs.Experiment, inputs.Workload, inputs.Qualification,
+				inputs.Root, execution, risk.Spec, projector,
+			)
+		},
+	}
+	if target.validate() != nil {
+		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_TARGET_INVALID")
+	}
+	return target, nil
+}

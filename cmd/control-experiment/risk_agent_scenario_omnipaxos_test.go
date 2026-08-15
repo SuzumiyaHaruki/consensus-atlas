@@ -1,0 +1,127 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+)
+
+func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+	workerPath := buildOmnipaxosScenarioWorker(t)
+	inputs, err := prepareOmnipaxosScenario(
+		ctx, workerPath, "../../plans/agent/omnipaxos-message-loss-before-decision-v1.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := (omnipaxosv2.ObservationProjector{}).Capabilities()
+	actions := inputs.Qualification.Bundle.Manifest.Capabilities.Actions
+	candidate := omnipaxosDiscoveredRiskCandidate()
+	content, err := json.Marshal(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	riskResult, err := controlexperiment.DiscoverRiskWithPlanner(
+		ctx, controlexperiment.RiskAgentBudget{MaxCalls: 1, MaxTokens: 20},
+		inputs.Knowledge, capabilities, actions,
+		func(context.Context, controlexperiment.RiskAgentView) ([]byte, controlexperiment.ModelWork, error) {
+			return content, controlexperiment.ModelWork{
+				Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7,
+			}, nil
+		},
+	)
+	if err != nil || riskResult.Accepted == nil {
+		t.Fatalf("Risk Agent did not produce an accepted candidate: %#v/%v", riskResult, err)
+	}
+	scenarioRisk, err := controlexperiment.BuildScenarioRiskHypothesis(
+		inputs.Knowledge, *riskResult.Accepted, capabilities, actions,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector, err := controlexperiment.NewLinearObservationRiskProjector(
+		scenarioRisk.Spec, scenarioRisk.Predicates, omnipaxosv2.ObservationProjector{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory := func() (control.Adapter, error) {
+		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
+	}
+	scenario, err := runScenarioEpisodeCore(ctx, scenarioEpisodeCoreInputs{
+		RootID: "omnipaxos-discovered-risk", Knowledge: scenarioRisk.Knowledge,
+		Hypothesis: scenarioRisk.Hypothesis, RiskSpec: scenarioRisk.Spec, Root: inputs.Root,
+		Runtime: inputs.Experiment.Runtime, FaultEnvelope: inputs.Experiment.faultEnvelope(),
+		SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
+		NewAdapter:       factory, RiskProjector: projector,
+		SemanticProjector: func(trace controlruntime.Trace, frontier controlexperiment.RiskFrontierView,
+			snapshot controlruntime.Snapshot) (controlexperiment.ScenarioSemanticExposure, error) {
+			return projectOmnipaxosScenarioSemantics(
+				inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
+			)
+		},
+	}, 1, 1, inputs.Experiment.ScenarioMaxDecisions,
+		func(_ context.Context, view controlexperiment.ScenarioAgentView) ([]byte, controlexperiment.ModelWork, error) {
+			if view.Hypothesis.RiskID != candidate.ID || view.Knowledge.Digest != scenarioRisk.Knowledge.Digest {
+				t.Fatalf("Scenario Agent did not receive derived Risk knowledge: %#v", view.Hypothesis)
+			}
+			for index, action := range view.Frontier.Actions {
+				if action.Kind == control.ActionDropMessage &&
+					view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
+					plan, err := json.Marshal(controlexperiment.ScenarioPlan{
+						ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
+							ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
+								ActionID: action.ActionID,
+							},
+						}},
+					})
+					return plan, controlexperiment.ModelWork{
+						Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7,
+					}, err
+				}
+			}
+			t.Fatal("Scenario Agent received no replication message to drop")
+			return nil, controlexperiment.ModelWork{}, nil
+		},
+	)
+	if err != nil || scenario.Agent.Execution == nil ||
+		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
+		t.Fatalf("discovered Risk did not reach through Scenario Runtime: %#v/%v", scenario.Agent, err)
+	}
+	testingResult, err := executeOmnipaxosScenarioQualifiedRisk(
+		ctx, workerPath, inputs.Experiment, inputs.Workload, inputs.Qualification,
+		inputs.Root, *scenario.Agent.Execution, scenarioRisk.Spec, projector,
+	)
+	if err != nil || !testingResult.Replay.Stable || len(testingResult.Oracle.Violations) != 0 ||
+		testingResult.Risk.RiskID != candidate.ID ||
+		testingResult.Bundle.Trace.Digest != scenario.Agent.Execution.FinalTrace.Digest {
+		t.Fatalf("discovered Risk lost qualified evidence: %#v/%v", testingResult, err)
+	}
+}
+
+func omnipaxosDiscoveredRiskCandidate() controlexperiment.RiskCandidate {
+	return controlexperiment.RiskCandidate{
+		ID:      "agent-message-loss-before-decision",
+		Summary: "Exercise an in-flight message loss and observe a later decision.",
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked,
+				Constraints: []semantic.ObservationConstraint{{
+					Field: semantic.ObservationFieldParticipantRole, Equals: "coordinator",
+				}}},
+			{MilestoneID: omnipaxosMilestoneMessageDropped, Kind: semantic.ObservationMessageDropped,
+				Constraints: []semantic.ObservationConstraint{{
+					Field: semantic.ObservationFieldOperationStage, Equals: "inflight",
+				}}},
+			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced},
+		},
+	}
+}

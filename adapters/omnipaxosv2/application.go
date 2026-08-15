@@ -36,6 +36,18 @@ func decodeInput(payload control.PayloadEnvelope) (Input, error) {
 	return input, nil
 }
 
+// ProjectInput exposes only the Adapter-owned workload identity needed by
+// semantic projection. Generic packages continue to treat the payload as
+// opaque.
+func ProjectInput(payload control.PayloadEnvelope) (Input, error) {
+	input, err := decodeInput(payload)
+	if err != nil {
+		return Input{}, err
+	}
+	input.Value = append([]byte(nil), input.Value...)
+	return input, nil
+}
+
 func encodeEntry(input Input, origin uint64) ([]byte, error) {
 	return json.Marshal(struct {
 		RequestID string `json:"request_id"`

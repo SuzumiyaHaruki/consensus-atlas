@@ -17,14 +17,15 @@ import (
 )
 
 type omnipaxosScenarioInputs struct {
-	WorkerPath    string
-	Knowledge     controlexperiment.ProtocolKnowledgePack
-	Hypothesis    controlexperiment.TestHypothesis
-	Experiment    omnipaxosScenarioExperimentConfig
-	Workload      controlexperiment.WorkloadPlan
-	RiskSpec      semantic.RiskWitnessSpec
-	Root          controlruntime.Trace
-	Qualification omnipaxosScenarioQualification
+	WorkerPath        string
+	Knowledge         controlexperiment.ProtocolKnowledgePack
+	Hypothesis        controlexperiment.TestHypothesis
+	Experiment        omnipaxosScenarioExperimentConfig
+	Workload          controlexperiment.WorkloadPlan
+	RiskSpec          semantic.RiskWitnessSpec
+	RiskQualification semantic.RiskQualification
+	Root              controlruntime.Trace
+	Qualification     omnipaxosScenarioQualification
 }
 
 func prepareOmnipaxosScenario(
@@ -50,10 +51,21 @@ func prepareOmnipaxosScenario(
 	if err != nil {
 		return omnipaxosScenarioInputs{}, err
 	}
+	riskQualification, err := semantic.QualifyRisk(
+		omnipaxosMessageLossObservationPredicates(),
+		(omnipaxosv2.ObservationProjector{}).Capabilities(),
+		qualification.Bundle.Manifest.Capabilities.Actions,
+	)
+	if err != nil {
+		return omnipaxosScenarioInputs{}, err
+	}
+	if !riskQualification.Qualified {
+		return omnipaxosScenarioInputs{}, errors.New("OMNIPAXOS_SCENARIO_RISK_UNQUALIFIED")
+	}
 	return omnipaxosScenarioInputs{
 		WorkerPath: workerPath, Knowledge: knowledge, Hypothesis: hypothesis,
 		Experiment: experiment, Workload: workload, RiskSpec: spec,
-		Root: root, Qualification: qualification,
+		RiskQualification: riskQualification, Root: root, Qualification: qualification,
 	}, nil
 }
 
@@ -211,10 +223,30 @@ func executeOmnipaxosScenarioQualified(
 	execution controlexperiment.ScenarioExecution,
 ) (scenarioTestingResult, error) {
 	spec, err := omnipaxosMessageLossWitness()
+	if err != nil {
+		return scenarioTestingResult{}, err
+	}
+	return executeOmnipaxosScenarioQualifiedRisk(
+		ctx, workerPath, experiment, workload, qualification, root, execution,
+		spec, omnipaxosScenarioProjector{},
+	)
+}
+
+func executeOmnipaxosScenarioQualifiedRisk(
+	ctx context.Context,
+	workerPath string,
+	experiment omnipaxosScenarioExperimentConfig,
+	workload controlexperiment.WorkloadPlan,
+	qualification omnipaxosScenarioQualification,
+	root controlruntime.Trace,
+	execution controlexperiment.ScenarioExecution,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+) (scenarioTestingResult, error) {
 	if workerPath == "" || experiment.validate() != nil || workload.Validate() != nil ||
 		qualification.Bundle.Validate() != nil || qualification.Admission.Validate() != nil ||
 		qualification.Admission.VerifyQualification(qualification.Bundle.Qualification) != nil ||
-		err != nil || root.Validate() != nil || execution.FinalTrace.Validate() != nil ||
+		spec.Validate() != nil || projector == nil || root.Validate() != nil || execution.FinalTrace.Validate() != nil ||
 		execution.FinalRisk.Validate(spec) != nil ||
 		len(execution.Steps) == 0 || len(execution.Steps) > len(execution.FinalTrace.Records) {
 		return scenarioTestingResult{}, errors.New("OMNIPAXOS_SCENARIO_QUALIFIED_INPUT_INVALID")
@@ -252,7 +284,7 @@ func executeOmnipaxosScenarioQualified(
 	if err != nil {
 		return scenarioTestingResult{}, err
 	}
-	risk, err := (omnipaxosScenarioProjector{}).Project(
+	risk, err := projector.Project(
 		execution.FinalRisk.ID, spec, bundle.Trace,
 	)
 	if err != nil || bundle.Trace.Digest != execution.FinalTrace.Digest ||
@@ -260,30 +292,49 @@ func executeOmnipaxosScenarioQualified(
 		!reflect.DeepEqual(bundle.Qualification, qualification.Bundle) {
 		return scenarioTestingResult{}, errors.New("OMNIPAXOS_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
-	verdict := oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
-	outcome := scenarioTestingPassed
-	if len(verdict.Violations) > 0 {
-		outcome = scenarioTestingViolation
-	}
-	result := scenarioTestingResult{
-		PlanID: execution.PlanID, Bundle: bundle, Risk: risk,
-		CorePSSSamples:      bundle.Run.CorePSSSamples,
-		UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
-		Replay:              bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
-	}
-	if err := validateOmnipaxosScenarioTesting(result); err != nil {
+	result := newOmnipaxosScenarioTestingResult(execution.PlanID, bundle, risk)
+	if err := validateOmnipaxosScenarioTestingRisk(result, spec, projector); err != nil {
 		return scenarioTestingResult{}, err
 	}
 	return result, nil
 }
 
+func newOmnipaxosScenarioTestingResult(
+	planID string,
+	bundle controlexperiment.ExecutionBundle,
+	risk semantic.RiskWitnessResult,
+) scenarioTestingResult {
+	verdict := oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
+	outcome := scenarioTestingPassed
+	if len(verdict.Violations) > 0 {
+		outcome = scenarioTestingViolation
+	}
+	return scenarioTestingResult{
+		PlanID: planID, Bundle: bundle, Risk: risk,
+		CorePSSSamples:      bundle.Run.CorePSSSamples,
+		UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
+		Replay:              bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
+	}
+}
+
 func validateOmnipaxosScenarioTesting(result scenarioTestingResult) error {
 	spec, err := omnipaxosMessageLossWitness()
-	if err != nil || result.validateExecutionStructure() != nil ||
+	if err != nil {
+		return err
+	}
+	return validateOmnipaxosScenarioTestingRisk(result, spec, omnipaxosScenarioProjector{})
+}
+
+func validateOmnipaxosScenarioTestingRisk(
+	result scenarioTestingResult,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+) error {
+	if spec.Validate() != nil || projector == nil || result.validateExecutionStructure() != nil ||
 		result.Bundle.ValidateProjection(omnipaxosv2.DecisionProjector{}) != nil {
 		return errors.New("OMNIPAXOS_SCENARIO_TESTING_EXECUTION_INVALID")
 	}
-	risk, err := (omnipaxosScenarioProjector{}).Project(
+	risk, err := projector.Project(
 		result.Risk.ID, spec, result.Bundle.Trace,
 	)
 	if err != nil || !reflect.DeepEqual(result.Risk, risk) {

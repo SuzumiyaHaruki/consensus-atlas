@@ -11,6 +11,7 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 func TestNonLeaderOpaqueAppendDecisionResultAndFreshWorkerReplay(t *testing.T) {
@@ -61,6 +62,20 @@ func TestNonLeaderOpaqueAppendDecisionResultAndFreshWorkerReplay(t *testing.T) {
 	}
 	if !traceHasAction(trace, control.ActionInvoke) {
 		t.Fatal("trace does not contain invoke")
+	}
+	history, err := (ObservationProjector{}).Project(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := make(map[semantic.ObservationKind]int)
+	requestObserved := false
+	for _, event := range history.Events {
+		observed[event.Kind]++
+		requestObserved = requestObserved || event.RequestID == "request-1"
+	}
+	if observed[semantic.ObservationWorkloadInvoked] == 0 ||
+		observed[semantic.ObservationDecisionAdvanced] == 0 || !requestObserved {
+		t.Fatalf("common observation projection incomplete: observed=%v request=%v", observed, requestObserved)
 	}
 	if err := adapter.Close(); err != nil {
 		t.Fatal(err)
@@ -206,6 +221,19 @@ func TestManifestKeepsM521wBoundary(t *testing.T) {
 		manifest.Capabilities.Items[2] != control.ItemClientResult ||
 		len(manifest.Capabilities.EffectKinds) != 0 {
 		t.Fatalf("unexpected item/effect capabilities: %+v", manifest.Capabilities)
+	}
+	risk, err := semantic.QualifyRisk([]semantic.ObservationPredicate{{
+		MilestoneID: "restart", Kind: semantic.ObservationNodeRestarted,
+	}}, (ObservationProjector{}).Capabilities(), manifest.Capabilities.Actions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if risk.Qualified || len(risk.Issues) != 2 ||
+		risk.Issues[0].Code != semantic.RiskIssueMissingAction ||
+		risk.Issues[0].Action != control.ActionRestart ||
+		risk.Issues[1].Code != semantic.RiskIssueMissingObservationKind ||
+		risk.Issues[1].Kind != semantic.ObservationNodeRestarted {
+		t.Fatalf("unsupported restart Risk was not rejected mechanically: %#v", risk)
 	}
 }
 

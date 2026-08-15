@@ -10,6 +10,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlentropy"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 type evidenceState struct {
@@ -555,6 +556,26 @@ func TestThreeNodeProposalsSurviveLeaderChangeAndRecovery(t *testing.T) {
 	if countTraceKind(trace, control.ActionInvoke) != 2 || !traceHasKind(trace, control.ActionCrash) ||
 		!traceHasKind(trace, control.ActionRestart) {
 		t.Fatal("leader-change proposal trace is incomplete")
+	}
+	history, err := (etcdraftv2.ObservationProjector{}).Project(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := make(map[semantic.ObservationKind]int)
+	requests := make(map[string]bool)
+	inflightChanges := 0
+	for _, event := range history.Events {
+		observed[event.Kind]++
+		requests[event.RequestID] = event.RequestID != ""
+		if event.Kind == semantic.ObservationCoordinatorChange && event.OperationStage == "inflight" {
+			inflightChanges++
+		}
+	}
+	if observed[semantic.ObservationCoordinatorChange] == 0 ||
+		observed[semantic.ObservationNodeRestarted] == 0 ||
+		observed[semantic.ObservationDecisionAdvanced] == 0 ||
+		!requests["cluster-request-1"] || !requests["cluster-request-2"] || inflightChanges != 0 {
+		t.Fatalf("common observation projection incomplete: observed=%v requests=%v", observed, requests)
 	}
 	if _, err := controlruntime.Replay(
 		ctx, mustAdapter(t, etcdraftv2.ThreeNodeConfig()), clusterRuntimeConfig(), trace,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
@@ -12,10 +11,15 @@ import (
 )
 
 const (
-	ScenarioProgressRiskChanged    = "risk-progress-changed"
-	ScenarioProgressClientTerminal = "client-terminal"
-	ScenarioProgressQuiescent      = "natural-progress-quiescent"
-	ScenarioProgressBudget         = "natural-progress-budget-exhausted"
+	ScenarioProgressPlanningCheckpoint = "planning-checkpoint"
+	ScenarioProgressClientTerminal     = "client-terminal"
+	ScenarioProgressQuiescent          = "natural-progress-quiescent"
+	ScenarioProgressBudget             = "natural-progress-budget-exhausted"
+
+	// ScenarioNaturalProgressCheckpointActions bounds one trusted closure
+	// quantum. Agent-authored risk milestones cannot shorten this interval and
+	// therefore cannot buy extra planning calls by fragmenting a Risk.
+	ScenarioNaturalProgressCheckpointActions = 24
 )
 
 var scenarioNaturalProgressPriority = []control.ActionKind{
@@ -56,14 +60,14 @@ func ExecuteScenarioNaturalProgress(
 		isNilSemanticComponent(projector) || projector.ID() != rootRisk.ProjectorID {
 		return ScenarioProgressResult{}, errors.New("EXPERIMENT_SCENARIO_PROGRESS_INPUT_INVALID")
 	}
-	start, err := semantic.NewRiskWitnessProgress(spec, rootRisk)
-	if err != nil {
-		return ScenarioProgressResult{}, err
-	}
 	result := ScenarioProgressResult{Execution: ScenarioExecution{
 		PlanID: id, Status: ScenarioStatusCompleted, FinalTrace: root, FinalRisk: rootRisk,
 	}}
-	for decision := 0; decision < maxDecisions; decision++ {
+	closureLimit := maxDecisions
+	if closureLimit > ScenarioNaturalProgressCheckpointActions {
+		closureLimit = ScenarioNaturalProgressCheckpointActions
+	}
+	for decision := 0; decision < closureLimit; decision++ {
 		view, snapshot, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
 			ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+1), spec,
 			result.Execution.FinalRisk, result.Execution.FinalTrace,
@@ -123,23 +127,18 @@ func ExecuteScenarioNaturalProgress(
 			Choice: &choice, RiskProgress: progress,
 		})
 		result.Execution.FinalTrace, result.Execution.FinalRisk = child, risk
-		if !scenarioMilestoneProgressEqual(progress, start) {
-			result.StopReason = ScenarioProgressRiskChanged
-			break
-		}
 	}
 	if result.StopReason == "" {
-		result.StopReason = ScenarioProgressBudget
+		if closureLimit == ScenarioNaturalProgressCheckpointActions {
+			result.StopReason = ScenarioProgressPlanningCheckpoint
+		} else {
+			result.StopReason = ScenarioProgressBudget
+		}
 	}
 	result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
 		result.Execution.Work.ChildMaterialization.WorkUnits +
 		result.Execution.Work.ChildVerification.WorkUnits
 	return result, nil
-}
-
-func scenarioMilestoneProgressEqual(left, right semantic.RiskWitnessProgress) bool {
-	return left.Status == right.Status && left.FirstMissingMilestone == right.FirstMissingMilestone &&
-		reflect.DeepEqual(left.SatisfiedMilestones, right.SatisfiedMilestones)
 }
 
 func scenarioNaturalProgressAction(actions []FrontierActionRef) (FrontierActionRef, bool) {

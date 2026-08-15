@@ -1,0 +1,22 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "988f853e7afe1f256b7e6e6fa8b8d35958d51891a328a3ee49cdae74f8419896",
+  "status": "content-ready",
+  "content": "eyJpZCI6ICJjb29yZGluYXRvci1jaGFuZ2UtYWZ0ZXItbWVzc2FnZS1sb3NzIiwgInByZWRpY2F0ZXMiOiBbeyJjb25zdHJhaW50cyI6IFt7ImJpbmRfYXMiOiAiY29vcmRpbmF0b3IiLCAiZmllbGQiOiAicGFydGljaXBhbnQifSwgeyJiaW5kX2FzIjogIm5vZGUiLCAiZmllbGQiOiAicGFydGljaXBhbnQtbm9kZSJ9LCB7ImVxdWFscyI6ICJjb29yZGluYXRvciIsICJmaWVsZCI6ICJwYXJ0aWNpcGFudC1yb2xlIn1dLCAia2luZCI6ICJ3b3JrbG9hZC1pbnZva2VkIiwgIm1pbGVzdG9uZV9pZCI6ICAiMSJ9LCB7ImNvbnN0cmFpbnRzIjogW3siYmluZF9hcyI6ICJjb29yZGluYXRvciIsICJmaWVsZCI6ICJwYXJ0aWNpcGFudCJ9LCB7ImJpbmRfYXMiOiAibm9kZSIsICJmaWVsZCI6ICJwYXJ0aWNpcGFudC1ub2RlIn0sIHsiZXF1YWxzIjogImluZmxpZ2h0IiwgImZpZWxkIjogIm9wZXJhdGlvbi1zdGFnZSJ9XSwgImtpbmQiOiAibWVzc2FnZS1kcm9wcGVkIiwgIm1pbGVzdG9uZV9pZCI6ICAiMiJ9LCB7ImNvbnN0cmFpbnRzIjogW3siYmluZF9hcyI6ICJuZXctY29vcmRpbmF0b3IiLCAiZmllbGQiOiAicGFydGljaXBhbnQifSwgeyJiaW5kX2FzIjogIm5ldy1ub2RlIiwgImZpZWxkIjogInBhcnRpY2lwYW50LW5vZGUifSwgeyJiaW5kX2FzIjogImNvb3JkaW5hdG9yIiwgImZpZWxkIjogInJlbGF0ZWQtcGFydGljaXBhbnQifSwgeyJiaW5kX2FzIjogIm5vZGUiLCAiZmllbGQiOiAicmVsYXRlZC1wYXJ0aWNpcGFudC1ub2RlIn1dLCAia2luZCI6ICJjb29yZGluYXRvci1jaGFuZ2VkIiwgIm1pbGVzdG9uZV9pZCI6ICAiMyJ9LCB7ImNvbnN0cmFpbnRzIjogW3siYmluZF9hcyI6ICJuZXctY29vcmRpbmF0b3IiLCAiZmllbGQiOiAicGFydGljaXBhbnQifSwgeyJiaW5kX2FzIjogIm5ldy1ub2RlIiwgImZpZWxkIjogInBhcnRpY2lwYW50LW5vZGUifV0sICJraW5kIjogImRlY2lzaW9uLWFkdmFuY2VkIiwgIm1pbGVzdG9uZV9pZCI6ICAiNCJ9XSwgInN1bW1hcnkiOiAiRHJvcCBhIG1lc3NhZ2UgZnJvbSB0aGUgY29vcmRpbmF0b3IsIHRoZW4gdHJpZ2dlciBhIGNvb3JkaW5hdG9yIGNoYW5nZSwgYW5kIHZlcmlmeSB0aGF0IGRlY2lzaW9uIGFkdmFuY2VzIG9uIHRoZSBuZXcgY29vcmRpbmF0b3IuIn0=",
+  "content_digest": "34cbb2c7ec040accfec572ce1a91c084c2389ece23a9dc534eff5596eea35d93",
+  "response_digest": "bcb76d59b5e01eee448f084b122e33d79547222e981c6dfca304f010e17b6fb1",
+  "response": {
+    "id": "gen-1786779952-1cuI4r3efLTFtydHNtYa",
+    "model": "deepseek/deepseek-v4-flash",
+    "finish_reason": "stop"
+  },
+  "duration_millis": 43520,
+  "work": {
+    "calls": 1,
+    "input_tokens": 855,
+    "output_tokens": 2580,
+    "total_tokens": 3435
+  },
+  "transport_attempts": 1,
+  "digest": "8bbdd5ab6510674fab89b79de49e877100e49602463a0de0030c4aa4bb98ded0"
+}

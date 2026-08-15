@@ -2,6 +2,7 @@
 
 ConsensusAtlas 是面向 CFT 与受限 BFT 共识实现的 Agentic 测试系统。Agent 负责提出语义目标、选择当前可执行
 Action 和根据机械反馈修正计划；可信 Go 代码负责动作资格、确定性执行、Replay、PSS/Risk 投影、Oracle 与结果聚合。
+最终目标是让 Agent 利用共识知识主动发现值得测试的风险，并在真实实现上产生可重放、可由独立 Oracle 确认的问题证据。
 
 核心原则是：
 
@@ -10,10 +11,10 @@ Action 和根据机械反馈修正计划；可信 Go 代码负责动作资格、
 ## 当前流程
 
 ```text
-协议知识 + TestHypothesis + workload/预算 JSON + thin Adapter
+协议知识 + workload/预算 JSON + thin Adapter/Qualification
                               |
                               v
-                 Explorer / Scenario Agent
+                 Risk / Scenario Agent
                               |
                     当前可信 Frontier
                               |
@@ -23,7 +24,7 @@ Action 和根据机械反馈修正计划；可信 Go 代码负责动作资格、
              +----------------+----------------+
              |                                 |
              v                                 v
-      fresh Replay                   PSS / Risk / Oracle
+      fresh Replay          Observation / PSS / Risk / Oracle
              |                                 |
              +----------------+----------------+
                               v
@@ -155,11 +156,37 @@ go run ./cmd/control-experiment \
 
 ## 当前研究边界
 
-目前已经证明两个真实协议可以复用同一受限 Agent/Runtime/Replay/Oracle 流程，但尚未证明 Agent 优于
-deterministic baseline，也没有证明 PSS 数量或义务覆盖能预测隐藏缺陷检出。
+目前已经证明两个真实协议可以复用同一受限 Agent/Runtime/Replay/Oracle 流程，并能各自投影到同一组
+Observation 语义，但尚未证明 Agent 优于 deterministic baseline，也没有发现新的共识实现问题。
 
-下一阶段 A8 将在同一模型与 Runtime 预算下比较 deterministic baseline、单 Agent 和双角色 Agent，并以非公开
-candidate/control 的独立根因检出与正确 control 的 false positive 作为主要结果。
+当前 etcd/raft 与 OmniPaxos 的生产 Risk 已统一经 Observation matcher 计算，旧手写 Trace 扫描器已删除。
+A9c 还会从 predicates 机械推导所需 Observation kind/field 和直接蕴含的 Action，并与 projector 声明及真实
+Adapter Manifest 比较；当前两个 Risk 均通过，OmniPaxos restart 负例会在搜索前被明确拒绝。
+
+A9d1 已加入 bounded Risk Agent 候选循环。Agent 只能输出新的有序 Observation predicates；系统机械生成 spec，
+拒绝已有 Risk、无意义 binding、未声明字面值和能力不足，并把原因反馈给下一轮。fixture 已跑通 unsupported
+restart → supported message-loss/decision 的修正，provider 调用复用原 durable journal。accepted Risk 尚未进入
+Scenario Agent 的限制已在 A9d2 fixture 中解除：系统机械派生 hypothesis，并在真实 OmniPaxos worker 上完成
+Scenario Runtime、fresh Replay、PSS 和 Oracle。该候选与现有 message-loss Risk 等价，因此只是双 Agent 衔接证据，
+不是新 Risk 或问题发现。
+
+A9d3 将两者组合成单个 bounded episode，分别限制 Risk/Scenario/总调用、token 停止阈值、plan steps 和 Runtime
+decisions，并分开报告 candidate accepted、Risk reached、PSS 与 Oracle finding。两个 durable journal 可以恢复而不
+重复模型调用；当前尚无该 episode 的 CLI/终端工件恢复。
+
+A9d4 把双 Agent 阶段控制抽成协议无关 coordinator。etcd/raft 与 OmniPaxos 现在只通过各自的薄 binding
+提供 Observation、Runtime composition 与 qualified testing；协调器本身不包含 term、leader、ballot 或协议消息类型。
+两种目标均通过定向复用测试，统一 CLI 与终端 episode 工件留到下一小阶段。
+
+A9d5 已增加统一入口 `-strategy agentic-episode-v1 -target etcdraft-v2|omnipaxos-v2`。每次运行保存
+Risk/Scenario provider journal、紧凑 `summary.json` 和唯一 `bundle.json`。终态 resume 只需 strategy、target、
+directory；系统从 Bundle 重算 Risk/PSS/Oracle，不重访 SUT、provider 或 key。
+
+A9d6 用真实 OpenRouter 完成了 OmniPaxos 的通用双 Agent episode：Risk 候选被接受、Scenario 执行、
+fresh Replay stable、31 个 PSS samples / 29 个唯一状态、Risk 未达、Oracle 0 finding。etcd/raft
+校准暴露了 output/binding 约束和 provider 响应不稳定；可本地修正的约束已收紧，有界失败已完整
+保留而不被记为协议结果。详见
+[`benchmarks/experiments/agentic-episode-a9d6/`](benchmarks/experiments/agentic-episode-a9d6/README.md)。
 
 ## 阅读顺序
 

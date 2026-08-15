@@ -277,7 +277,7 @@ func TestScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 			committedModelCalls+summary.Campaign.Failure.Work.Model.Calls ||
 		summary.Campaign.Totals.Model.TotalTokens !=
 			committedModelTokens+summary.Campaign.Failure.Work.Model.TotalTokens ||
-		transportAttempts != summary.Campaign.Totals.Model.Calls || keyReads != 2 {
+		transportAttempts != 4 || keyReads != 2 {
 		t.Fatalf("durable failed calls were not charged: %#v attempts=%d reads=%d err=%v",
 			summary, transportAttempts, keyReads, err)
 	}
@@ -288,7 +288,7 @@ func TestScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
 	}
 	recovered, err := runEtcdraftScenarioSession(ctx, options)
 	if err == nil || !reflect.DeepEqual(recovered, summary) ||
-		transportAttempts != summary.Campaign.Totals.Model.Calls || keyReads != 2 {
+		transportAttempts != 4 || keyReads != 2 {
 		t.Fatalf("failed-cost recovery repeated provider/key access or drifted: %#v attempts=%d reads=%d err=%v",
 			recovered, transportAttempts, keyReads, err)
 	}

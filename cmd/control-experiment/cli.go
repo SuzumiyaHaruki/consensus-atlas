@@ -20,6 +20,7 @@ type controlExperimentOptions struct {
 	AgentKeyFile             string
 	AgentModel               string
 	WorkerPath               string
+	Target                   string
 	SemanticInput            string
 	ScenarioSemanticExposure string
 	CampaignDirectory        string
@@ -37,7 +38,7 @@ type controlExperimentOptions struct {
 func (options controlExperimentOptions) hasNonSessionFlags() bool {
 	return options.Out != "" || options.BundleOut != "" || options.CampaignObservationOut != "" ||
 		options.CampaignAttempts != 0 || options.CampaignWallClock != 0 || options.CampaignModelTokens != 0 ||
-		options.BundleEvidenceVersion != 0 || options.MethodSpecDigest != "" ||
+		options.BundleEvidenceVersion != 0 || options.MethodSpecDigest != "" || options.Target != "" ||
 		options.Decisions != 96 || options.PolicySeed != 1
 }
 
@@ -256,6 +257,9 @@ func validateQualifiedCLIOptions(options controlExperimentOptions) error {
 	}
 	if options.WorkerPath != "" {
 		return errors.New("-worker requires a worker-backed Agent strategy")
+	}
+	if options.Target != "" {
+		return errors.New("-target requires the Agentic Episode strategy")
 	}
 	if options.Out == "" {
 		return errors.New("-out is required")

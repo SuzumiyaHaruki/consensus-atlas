@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion       = "scenario-agent-receding-horizon-v5"
+	scenarioAgentPromptVersion       = "scenario-agent-receding-horizon-v6"
 	scenarioPlanStructuredOutputName = "scenario_plan_v1"
 )
 
@@ -190,8 +190,9 @@ func scenarioAgentPrompt(
 	if view.MaxSteps == 1 {
 		system += " Return exactly one step using the exact action_id of one current Action."
 		user = "Choose one current strategic intervention that advances the hypothesis. After it executes, a deterministic " +
-			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until Risk progress " +
-			"changes, the client operation terminates, natural progress is quiescent, or the decision budget ends. prior_feedback " +
+			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until its trusted " +
+			"planning checkpoint, the client operation terminates, natural progress is quiescent, or the decision budget ends. " +
+			"Risk progress is reported but does not shorten that closure. prior_feedback " +
 			"contains the previous strategic intervention and the closure stop reason; routine closure steps remain in the audit rather " +
 			"than this prompt. Treat the supplied current frontier and Risk progress as authoritative. Frozen input JSON:\n" +
 			string(encoded)
