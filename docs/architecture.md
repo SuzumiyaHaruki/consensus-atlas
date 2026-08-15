@@ -303,8 +303,10 @@ baseline 的配对接线，因此当前结果不能用于宣称 LLM 优势。
 
 效果评测的进程边界由 evaluator 持有。它先复用现有 BuildAudit 与二进制摘要校验，再从审计后的 bytes 创建
 临时可执行文件，在显式超时内启动 fresh-root paired strategy。终端根 summary、两个 Campaign 和 Bundle 必须
-相互匹配，且 Bundle Manifest BuildID 必须回指 BuildAudit 的 SUTBuildIdentity。当前只完成单 SUT launcher；
-多 trial CLI 与 candidate/control verdict 聚合尚未接线，因此该能力不能被描述为正式 holdout 实验。
+相互匹配，且 Bundle Manifest BuildID 必须回指 BuildAudit 的 SUTBuildIdentity。单 SUT launcher 之上已有内部 multi-SUT
+batch：它在任一进程启动前对全部 BuildAudit、二进制和预期身份做整体预检，按稳定 Trial ID 顺序启动，并重验
+每个返回证据的 fresh-root 规则和两 arm BuildID。任一预检失败时不调用 runner、不创建批次工件。当前尚无
+multi-trial CLI、中断恢复和 candidate/control verdict 聚合，因此该能力不能被描述为正式 holdout 实验。
 
 A6b 在 session attempt artifact 中保存每个 qualified bundle 已有的规范 Core PSS 状态键。终端派生视图对这些
 键取并集，同时汇总 Agent/Testing/Replay episode 数、Risk 最佳进展和 Oracle violations；CampaignSummary 继续

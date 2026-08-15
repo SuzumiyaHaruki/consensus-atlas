@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
 )
 
@@ -131,6 +132,76 @@ done
 	}, filepath.Join(root, "mismatched")); err == nil ||
 		!strings.Contains(err.Error(), "BUILD_IDENTITY_MISMATCH") {
 		t.Fatalf("mismatched build identity error = %v", err)
+	}
+}
+
+func TestPairedScenarioBatchPreflightsAllTrialsAndUsesCanonicalOrder(t *testing.T) {
+	spec, _, bundle := formalCLITestExecution(t)
+	root := t.TempDir()
+	contract, _, inputsPath := writeFormalCLIFixture(t, root, spec, bundle)
+	var inputs formalFreshInputs
+	if err := readStrictJSON(inputsPath, &inputs); err != nil {
+		t.Fatal(err)
+	}
+	sources, variants, err := validateFormalFreshInputs(inputsPath, inputs, contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadFreshTrials(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	runner := func(
+		_ context.Context,
+		current loadedFreshTrial,
+		_ pairedScenarioLaunchConfig,
+		_ string,
+	) (pairedScenarioFreshEvidence, error) {
+		calls = append(calls, current.trialID)
+		arm := pairedScenarioArmEvidence{Bundle: bundle}
+		return pairedScenarioFreshEvidence{
+			TrialID: current.trialID, BuildID: current.audit.SUTBuildIdentity,
+			BuildAuditDigest: current.auditDigest, BinaryDigest: current.binaryDigest,
+			Root: pairedScenarioRootSummary{
+				RootMode: pairedScenarioFreshRootMode, RootRule: pairedScenarioFreshRootRule,
+			},
+			Scenario: pairedScenarioTrialEvidence{
+				TargetIdentity: bundle.Trace.ManifestDigest, Deterministic: arm, Agent: arm,
+			},
+		}, nil
+	}
+	evidence, err := executePairedScenarioTrials(
+		context.Background(), loaded, variants, pairedScenarioLaunchConfig{
+			SemanticInputPath: "semantic.json", AgentKeyFile: "key.txt",
+			AgentModel: "fixture/model", Timeout: time.Second,
+		},
+		filepath.Join(root, "paired-artifacts"), runner,
+	)
+	wantOrder := "opaque-01,opaque-02,opaque-03,opaque-04,opaque-05,opaque-06"
+	if err != nil || len(evidence) != 6 || strings.Join(calls, ",") != wantOrder {
+		t.Fatalf("batch evidence=%d calls=%v err=%v", len(evidence), calls, err)
+	}
+
+	tampered := make(map[string]defectbench.FormalVariant, len(variants))
+	for id, variant := range variants {
+		tampered[id] = variant
+	}
+	variant := tampered["opaque-06"]
+	variant.ExpectedBinaryDigest = digestBytes([]byte("different"))
+	tampered["opaque-06"] = variant
+	calls = nil
+	badArtifacts := filepath.Join(root, "bad-artifacts")
+	if _, err := executePairedScenarioTrials(
+		context.Background(), loaded, tampered, pairedScenarioLaunchConfig{
+			SemanticInputPath: "semantic.json", AgentKeyFile: "key.txt",
+			AgentModel: "fixture/model", Timeout: time.Second,
+		}, badArtifacts, runner,
+	); err == nil || !strings.Contains(err.Error(), "BATCH_PREFLIGHT_FAILED") || len(calls) != 0 {
+		t.Fatalf("tampered batch error=%v calls=%v", err, calls)
+	}
+	if _, err := os.Lstat(badArtifacts); !os.IsNotExist(err) {
+		t.Fatalf("failed preflight created artifacts: %v", err)
 	}
 }
 

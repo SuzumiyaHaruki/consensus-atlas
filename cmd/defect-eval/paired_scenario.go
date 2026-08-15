@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
 )
 
 const (
@@ -30,6 +32,15 @@ type pairedScenarioLaunchConfig struct {
 	AgentKeyFile      string
 	AgentModel        string
 	Timeout           time.Duration
+}
+
+func (config pairedScenarioLaunchConfig) validate() error {
+	model := strings.TrimSpace(config.AgentModel)
+	if config.SemanticInputPath == "" || config.AgentKeyFile == "" || model == "" ||
+		model != config.AgentModel || strings.ContainsAny(model, " \t\r\n") || config.Timeout <= 0 {
+		return errors.New("FORMAL_PAIRED_SCENARIO_LAUNCH_CONFIG_INVALID")
+	}
+	return nil
 }
 
 type pairedScenarioRootSummary struct {
@@ -56,6 +67,13 @@ type pairedScenarioFreshEvidence struct {
 	Root             pairedScenarioRootSummary
 	Scenario         pairedScenarioTrialEvidence
 }
+
+type pairedScenarioBinaryRunner func(
+	context.Context,
+	loadedFreshTrial,
+	pairedScenarioLaunchConfig,
+	string,
+) (pairedScenarioFreshEvidence, error)
 
 // pairedScenarioArmEvidence is the evaluator-side view of one completed A8
 // arm. CampaignWork deliberately remains separate from Bundle.Work: the
@@ -174,13 +192,10 @@ func runPairedScenarioBinary(
 	directory string,
 ) (pairedScenarioFreshEvidence, error) {
 	clean := filepath.Clean(directory)
-	model := strings.TrimSpace(config.AgentModel)
 	if ctx == nil || current.trialID == "" || current.audit.Validate() != nil ||
 		current.audit.TrialID != current.trialID || !pairedScenarioDigest(current.auditDigest) ||
 		current.binaryDigest != current.audit.BinaryDigest ||
-		current.binaryDigest != digestBytes(current.binary) ||
-		config.SemanticInputPath == "" || config.AgentKeyFile == "" || model == "" ||
-		model != config.AgentModel || strings.ContainsAny(model, " \t\r\n") || config.Timeout <= 0 ||
+		current.binaryDigest != digestBytes(current.binary) || config.validate() != nil ||
 		directory == "" || clean == "." || clean == string(filepath.Separator) {
 		return pairedScenarioFreshEvidence{}, errors.New("FORMAL_PAIRED_SCENARIO_LAUNCH_INPUT_INVALID")
 	}
@@ -205,7 +220,7 @@ func runPairedScenarioBinary(
 		"-campaign-dir", clean,
 		"-semantic-input", config.SemanticInputPath,
 		"-agent-key-file", config.AgentKeyFile,
-		"-agent-model", model,
+		"-agent-model", config.AgentModel,
 	)
 	command.Env = []string{"TZ=UTC"}
 	combined, err := command.CombinedOutput()
@@ -263,4 +278,61 @@ func loadFreshPairedScenarioTrialEvidence(
 func pairedScenarioDigest(value string) bool {
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == 32 && hex.EncodeToString(decoded) == value
+}
+
+func executePairedScenarioTrials(
+	ctx context.Context,
+	inputs []loadedFreshTrial,
+	variants map[string]defectbench.FormalVariant,
+	config pairedScenarioLaunchConfig,
+	artifactDir string,
+	runner pairedScenarioBinaryRunner,
+) (map[string]pairedScenarioFreshEvidence, error) {
+	clean := filepath.Clean(artifactDir)
+	if ctx == nil || len(inputs) == 0 || len(inputs) != len(variants) || runner == nil || config.validate() != nil ||
+		artifactDir == "" || clean == "." || clean == string(filepath.Separator) {
+		return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_INPUT_INVALID")
+	}
+	ordered := append([]loadedFreshTrial(nil), inputs...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].trialID < ordered[j].trialID })
+	seen := make(map[string]bool, len(ordered))
+	for _, current := range ordered {
+		variant, ok := variants[current.trialID]
+		if !ok || seen[current.trialID] || current.audit.Validate() != nil ||
+			current.audit.TrialID != current.trialID || current.audit.SUTBuildIdentity != variant.ExpectedBuildID ||
+			current.auditDigest != variant.ExpectedBuildAuditDigest ||
+			current.binaryDigest != variant.ExpectedBinaryDigest ||
+			current.audit.BinaryDigest != current.binaryDigest ||
+			current.binaryDigest != digestBytes(current.binary) {
+			return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_PREFLIGHT_FAILED")
+		}
+		seen[current.trialID] = true
+	}
+	if _, err := os.Lstat(clean); err == nil {
+		return nil, errors.New("FORMAL_PAIRED_SCENARIO_OUTPUT_EXISTS")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err := os.MkdirAll(clean, 0o755); err != nil {
+		return nil, err
+	}
+	result := make(map[string]pairedScenarioFreshEvidence, len(ordered))
+	for _, current := range ordered {
+		fresh, err := runner(ctx, current, config, filepath.Join(clean, current.trialID))
+		if err != nil {
+			return nil, fmt.Errorf("paired Scenario trial %s: %w", current.trialID, err)
+		}
+		variant := variants[current.trialID]
+		if fresh.TrialID != current.trialID || fresh.BuildID != variant.ExpectedBuildID ||
+			fresh.BuildAuditDigest != variant.ExpectedBuildAuditDigest ||
+			fresh.BinaryDigest != variant.ExpectedBinaryDigest ||
+			fresh.Root.RootMode != pairedScenarioFreshRootMode ||
+			fresh.Root.RootRule != pairedScenarioFreshRootRule ||
+			fresh.Scenario.Deterministic.Bundle.Qualification.Manifest.BuildID != variant.ExpectedBuildID ||
+			fresh.Scenario.Agent.Bundle.Qualification.Manifest.BuildID != variant.ExpectedBuildID {
+			return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_EVIDENCE_MISMATCH")
+		}
+		result[current.trialID] = fresh
+	}
+	return result, nil
 }

@@ -1,6 +1,6 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.17（A8cR3a evaluator-owned paired launcher 完成）
+> 状态：Draft v2.18（A8cR3b multi-SUT paired batch preflight 完成）
 > 日期：2026-08-15
 > 适用分支：`feature/agentic-consensus-testing`
 
@@ -652,8 +652,16 @@ A8cR3a 已补 evaluator-owned 的单 SUT 进程边界：复用现有 BuildAudit/
 临时可执行文件，在显式超时内启动不带 `-stateless-corpus` 的 paired strategy。进程结束后严格恢复 fresh-root
 summary 和两个 Campaign，并要求两份 Bundle 的 Manifest BuildID 等于 BuildAudit SUTBuildIdentity。本地伪
 二进制集成测试同时证明旧 corpus 未被传入、完整 evidence 可恢复、BuildID 替换会被拒绝；它没有调用模型服务。
-下一步复用现有 formal inputs 做多 trial 编排，并为 deterministic/Agent 分别聚合 candidate/control 结果，不新增
-schema、hash、gate 或评分公式。
+
+A8cR3b 已复用现有 formal fresh inputs 形成多 SUT 执行层。它先对所有 opaque trial 的 BuildAudit、审计摘要、
+二进制摘要、实际 bytes、预期 build identity、Trial ID 唯一性和 launcher 参数做整体预检，然后才创建批次目录并按
+Trial ID 稳定顺序调用单 SUT launcher。任一候选预检失败时是零 runner 调用和零批次工件。每个返回证据还会重验
+fresh-root 规则与两 arm Bundle BuildID。
+
+本阶段不新增 schema、hash、gate 或评分公式。现有 formal evaluator 是单 MethodSpec + v3 Bundle，paired Scenario
+是两 Campaign method + v2 终端 Bundle，因此暂不强行复用不同形的 verdict 契约。当前 batch 仍是内部顺序编排：尚无
+正式 CLI 和中断恢复，也没有运行真实 OpenRouter 或非公开 candidate/control pair。下一步先补薄 CLI 和 trial 级恢复，
+再对齐两种 Planner 各自的 candidate/control monitor 结果。
 
 ### A9：多 Agent 消融
 
