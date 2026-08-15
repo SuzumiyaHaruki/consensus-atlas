@@ -52,11 +52,13 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 	if err != nil {
 		return "", "", err
 	}
-	system := "Return exactly one RiskCandidate JSON object and no prose. The candidate may contain only id, summary, " +
-		"and ordered predicates. Use only supplied observation kinds and fields. Do not provide actions, capabilities, " +
+	system := "Return exactly one RiskCandidate JSON object and no prose. The candidate contains id, property_ref, " +
+		"inspiration_ref, summary, suspected_mechanism, and ordered predicates. Use only supplied property, issue-pattern, " +
+		"observation-kind, and observation-field references. Do not provide actions, capabilities, " +
 		"budgets, execution facts, assertions, scores, or verdicts. Predicate order is temporal order."
-	user := "Propose a new protocol risk with two to max_milestones ordered semantic milestones. Its id must differ from " +
-		"every existing knowledge.risks id. Reuse a bind_as token in at least two constraints when an entity must remain " +
+	user := "Propose a falsifiable trigger hypothesis for one supplied property, using two to max_milestones ordered " +
+		"semantic milestones. Use an issue pattern only as structural inspiration, or set inspiration_ref to original. " +
+		"Explain the suspected mechanism without claiming a verdict. Reuse a bind_as token in at least two constraints when an entity must remain " +
 		"the same across milestones. Every bind_as token must occur in at least two constraints; omit one-off field " +
 		"constraints instead of binding them. A bind_as token uses lowercase letters, digits, and hyphens only. " +
 		"If prior_feedback reports missing requirements, revise the candidate using only the " +
@@ -103,7 +105,16 @@ func riskAgentStructuredOutput(
 		"type": "object", "additionalProperties": false,
 		"properties": map[string]any{
 			"id": token,
+			"property_ref": map[string]any{
+				"type": "string", "enum": protocolPropertyIDs(view.Knowledge.Properties),
+			},
+			"inspiration_ref": map[string]any{
+				"type": "string", "enum": issuePatternIDs(view.Knowledge.IssuePatterns),
+			},
 			"summary": map[string]any{
+				"type": "string", "minLength": 1, "maxLength": 2048,
+			},
+			"suspected_mechanism": map[string]any{
 				"type": "string", "minLength": 1, "maxLength": 2048,
 			},
 			"predicates": map[string]any{
@@ -111,13 +122,32 @@ func riskAgentStructuredOutput(
 				"items": map[string]any{"oneOf": predicateVariants},
 			},
 		},
-		"required": []string{"id", "summary", "predicates"},
+		"required": []string{
+			"id", "property_ref", "inspiration_ref", "summary", "suspected_mechanism", "predicates",
+		},
 	}
 	encoded, err := json.Marshal(schema)
 	if err != nil {
 		return openRouterStructuredOutput{}, err
 	}
 	return openRouterStructuredOutput{Name: "risk_candidate", Schema: encoded}, nil
+}
+
+func protocolPropertyIDs(properties []controlexperiment.ProtocolProperty) []string {
+	result := make([]string, 0, len(properties))
+	for _, property := range properties {
+		result = append(result, property.ID)
+	}
+	return result
+}
+
+func issuePatternIDs(patterns []controlexperiment.HistoricalIssuePattern) []string {
+	result := make([]string, 0, len(patterns)+1)
+	result = append(result, "original")
+	for _, pattern := range patterns {
+		result = append(result, pattern.ID)
+	}
+	return result
 }
 
 func riskConstraintSchema(

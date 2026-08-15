@@ -71,7 +71,7 @@ func prepareAgenticEpisodeComposition(
 		if options.WorkerPath != "" {
 			return agenticEpisodeComposition{}, errors.New("ETCDRAFT_AGENTIC_EPISODE_WORKER_UNEXPECTED")
 		}
-		inputs, err := prepareEtcdraftSemanticCalibration(
+		inputs, err := prepareEtcdraftAgenticEpisode(
 			ctx, options.StatelessCorpus, options.SemanticInput, client,
 		)
 		if err != nil {
@@ -92,7 +92,7 @@ func prepareAgenticEpisodeComposition(
 		if options.WorkerPath == "" || options.StatelessCorpus != "" {
 			return agenticEpisodeComposition{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_WORKER_REQUIRED")
 		}
-		inputs, err := prepareOmnipaxosScenario(ctx, options.WorkerPath, options.SemanticInput)
+		inputs, err := prepareOmnipaxosAgenticEpisode(ctx, options.WorkerPath, options.SemanticInput)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}

@@ -97,7 +97,7 @@ func TestEtcdraftAdapterConfigurationMustMatchRootCorpus(t *testing.T) {
 	if err := os.WriteFile(path, encoded, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(60*time.Second))
 	defer cancel()
 	if _, err := prepareEtcdraftSemanticCalibration(
 		ctx, etcdraftTestRootCorpusPath, path, fixtureOpenRouterIntentClient(),
@@ -120,7 +120,7 @@ func TestEtcdraftWorkloadMustMatchRootCorpus(t *testing.T) {
 	if err := os.WriteFile(path, encoded, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(60*time.Second))
 	defer cancel()
 	if _, err := prepareEtcdraftSemanticCalibration(
 		ctx, etcdraftTestRootCorpusPath, path, fixtureOpenRouterIntentClient(),

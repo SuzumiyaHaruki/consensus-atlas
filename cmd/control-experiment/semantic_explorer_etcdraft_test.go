@@ -41,7 +41,7 @@ func etcdraftScenarioTestSemanticInput(t *testing.T, calls int, decisions int) s
 }
 
 func TestEtcdraftSemanticExplorerInputsAreValidAndSourceBound(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()
 	inputs, err := prepareEtcdraftSemanticCalibration(
@@ -167,7 +167,7 @@ func TestEtcdraftSemanticExplorerInputsAreValidAndSourceBound(t *testing.T) {
 }
 
 func TestEtcdraftSemanticExplorerCreatesResumesAndSealsTerminalArtifacts(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	corpusPath := etcdraftTestRootCorpusPath
 	semanticInputPath := filepath.Join(t.TempDir(), "semantic-input.json")

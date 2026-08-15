@@ -55,7 +55,7 @@ func TestScenarioSessionExperimentDigestBindsExecutionMethod(t *testing.T) {
 }
 
 func TestScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResumes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()
 	providerCalls := 0
@@ -218,7 +218,7 @@ func TestScenarioSessionAggregatesTwoEpisodesKeepsFeedbackMechanicalAndResumes(t
 }
 
 func TestScenarioSessionChargesDurableCallsWhenEpisodeFails(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()
 	transportAttempts := 0

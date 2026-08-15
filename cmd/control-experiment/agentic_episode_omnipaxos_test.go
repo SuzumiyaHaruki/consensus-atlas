@@ -17,14 +17,22 @@ import (
 )
 
 func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
-	inputs, err := prepareOmnipaxosScenario(
-		ctx, workerPath, "../../plans/agent/omnipaxos-message-loss-before-decision-v1.json",
+	inputs, err := prepareOmnipaxosAgenticEpisode(
+		ctx, workerPath, "../../plans/agent/omnipaxos-agentic-calibration-v1.json",
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	configuredBudget, err := agenticEpisodeBudgetFromExperiment(
+		inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
+		inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,
+	)
+	if err != nil || configuredBudget.MaxRiskCalls != 3 ||
+		configuredBudget.MaxScenarioCalls != 1 || configuredBudget.MaxTotalCalls != 4 {
+		t.Fatalf("OmniPaxos A9e1 budget does not permit Risk repair: %#v/%v", configuredBudget, err)
 	}
 	candidateBytes, err := json.Marshal(omnipaxosDiscoveredRiskCandidate())
 	if err != nil {

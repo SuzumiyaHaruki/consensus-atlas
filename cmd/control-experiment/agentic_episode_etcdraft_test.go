@@ -9,10 +9,10 @@ import (
 )
 
 func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
-	inputs, err := prepareEtcdraftSemanticCalibration(
-		ctx, etcdraftTestRootCorpusPath, etcdraftTestSemanticInputPath,
+	inputs, err := prepareEtcdraftAgenticEpisode(
+		ctx, "", "../../plans/agent/etcdraft-agentic-calibration-v1.json",
 		fixtureOpenRouterIntentClient(),
 	)
 	if err != nil {
@@ -31,8 +31,8 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
 	})
 	if err != nil || composition.Target.ID != "etcdraft-v2" ||
-		composition.Budget.MaxRiskCalls != 1 || composition.Budget.MaxScenarioCalls != 1 ||
-		composition.Budget.MaxTotalCalls != 2 || composition.Budget.MaxObservedTokens != 25000 ||
+		composition.Budget.MaxRiskCalls != 3 || composition.Budget.MaxScenarioCalls != 1 ||
+		composition.Budget.MaxTotalCalls != 4 || composition.Budget.MaxObservedTokens != 25000 ||
 		composition.Client.Model != openRouterFixtureModel ||
 		composition.Client.ReasoningEffort != "low" || composition.Client.MaxOutputTokens != 4096 ||
 		composition.Client.MaxRetries != inputs.experiment.ModelMaxRetries {

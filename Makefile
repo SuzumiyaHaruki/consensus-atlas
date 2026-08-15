@@ -23,14 +23,14 @@ test-race-core: audit-no-v1
 # before any long-running race witness starts.
 audit-race-shards:
 	@manifest=cmd/control-experiment/race-shards.txt; \
-	awk 'NF != 2 || $$1 !~ /^(method|execution|agent)$$/ || $$2 !~ /^Test[[:alnum:]_]+$$/ { \
+	awk 'NF != 2 || $$1 !~ /^(method|execution|agent|agent-integration)$$/ || $$2 !~ /^Test[[:alnum:]_]+$$/ { \
 		print "invalid race shard entry at line " NR ": " $$0 > "/dev/stderr"; bad=1 \
 	} END { if (NR == 0 || bad) exit 1 }' "$$manifest"
 	@duplicates="$$(awk '{print $$2}' cmd/control-experiment/race-shards.txt | sort | uniq -d)"; \
 	if test -n "$$duplicates"; then \
 		echo "duplicate race shard tests:" >&2; echo "$$duplicates" >&2; exit 1; \
 	fi
-	@for shard in method execution agent; do \
+	@for shard in method execution agent agent-integration; do \
 		count="$$(awk -v shard="$$shard" '$$1 == shard { count++ } END { print count + 0 }' \
 			cmd/control-experiment/race-shards.txt)"; \
 		test "$$count" -gt 0 || { echo "empty race shard: $$shard" >&2; exit 1; }; \
@@ -45,7 +45,7 @@ audit-race-shards:
 	fi
 
 test-race-control-shards: audit-race-shards
-	@set -e; for shard in method execution agent; do \
+	@set -e; for shard in method execution agent agent-integration; do \
 		pattern="$$(awk -v shard="$$shard" '$$1 == shard { \
 			if (count++) printf "|"; printf "%s", $$2 \
 		} END { print "" }' cmd/control-experiment/race-shards.txt)"; \

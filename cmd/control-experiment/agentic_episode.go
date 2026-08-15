@@ -97,7 +97,7 @@ type agenticEpisodeTarget struct {
 
 func (target agenticEpisodeTarget) validate() error {
 	if strings.TrimSpace(target.ID) == "" || strings.ContainsAny(target.ID, " /\\") ||
-		target.Knowledge.Validate() != nil || target.ObservationProjector == nil ||
+		target.Knowledge.ValidateAgentMaterials() != nil || target.ObservationProjector == nil ||
 		reflect.ValueOf(target.ObservationProjector).Kind() == reflect.Pointer &&
 			reflect.ValueOf(target.ObservationProjector).IsNil() ||
 		semantic.ValidateObservationCapabilities(target.ObservationProjector.Capabilities()) != nil ||

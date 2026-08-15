@@ -14,11 +14,11 @@ import (
 )
 
 func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
-	inputs, err := prepareOmnipaxosScenario(
-		ctx, workerPath, "../../plans/agent/omnipaxos-message-loss-before-decision-v1.json",
+	inputs, err := prepareOmnipaxosAgenticEpisode(
+		ctx, workerPath, "../../plans/agent/omnipaxos-agentic-calibration-v1.json",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -110,8 +110,12 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 
 func omnipaxosDiscoveredRiskCandidate() controlexperiment.RiskCandidate {
 	return controlexperiment.RiskCandidate{
-		ID:      "agent-message-loss-before-decision",
-		Summary: "Exercise an in-flight message loss and observe a later decision.",
+		ID:             "agent-message-loss-before-decision",
+		PropertyRef:    "client-operation-continuity",
+		InspirationRef: "message-loss-progress-coupling",
+		Summary:        "Exercise an in-flight message loss and observe a later decision.",
+		SuspectedMechanism: "A lost replication message may leave stale per-peer progress state " +
+			"that affects how the in-flight operation reaches a later decision.",
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked,
 				Constraints: []semantic.ObservationConstraint{{

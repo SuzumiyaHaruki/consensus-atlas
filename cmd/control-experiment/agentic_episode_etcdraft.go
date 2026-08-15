@@ -11,14 +11,57 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
+type etcdraftAgenticEpisodeInputs struct {
+	campaign   etcdraftStatelessCampaignInputs
+	root       controlruntime.Trace
+	knowledge  controlexperiment.ProtocolKnowledgePack
+	experiment etcdraftAgentExperimentConfig
+	client     openRouterIntentClient
+}
+
+func prepareEtcdraftAgenticEpisode(
+	ctx context.Context,
+	corpusPath string,
+	semanticInputPath string,
+	client openRouterIntentClient,
+) (etcdraftAgenticEpisodeInputs, error) {
+	knowledge, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(semanticInputPath)
+	if err != nil {
+		return etcdraftAgenticEpisodeInputs{}, err
+	}
+	var campaign etcdraftStatelessCampaignInputs
+	if corpusPath == "" {
+		campaign, err = prepareEtcdraftFreshCampaignInputs(ctx, workload)
+	} else {
+		campaign, err = loadEtcdraftStatelessCampaignInputsWithWorkload(ctx, corpusPath, workload)
+	}
+	if err != nil {
+		return etcdraftAgenticEpisodeInputs{}, err
+	}
+	root, err := campaign.corpus.Prefix(campaign.source, etcdraftSemanticCalibrationRootID)
+	if err != nil {
+		return etcdraftAgenticEpisodeInputs{}, err
+	}
+	client.ReasoningEffort = experiment.ModelReasoningEffort
+	client.ExcludeReasoning = experiment.ModelExcludeReasoning
+	client.MaxOutputTokens = experiment.ModelMaxOutputTokens
+	client.MaxRetries = experiment.ModelMaxRetries
+	if openRouterTransportFreeze(client).Validate() != nil {
+		return etcdraftAgenticEpisodeInputs{}, errors.New("ETCDRAFT_AGENTIC_TRANSPORT_CONFIG_INVALID")
+	}
+	return etcdraftAgenticEpisodeInputs{
+		campaign: campaign, root: root, knowledge: knowledge, experiment: experiment, client: client,
+	}, nil
+}
+
 // newEtcdraftAgenticEpisodeTarget is the second composition of the common
 // coordinator. It intentionally contains all etcd/raft-specific construction
 // so the Agent orchestration does not learn terms, roles or message types.
 func newEtcdraftAgenticEpisodeTarget(
-	inputs etcdraftSemanticCalibrationInputs,
+	inputs etcdraftAgenticEpisodeInputs,
 ) (agenticEpisodeTarget, error) {
-	if inputs.knowledge.Validate() != nil || inputs.root.Validate() != nil ||
-		inputs.campaign.qualification.Validate() != nil || inputs.experiment.validate() != nil {
+	if inputs.knowledge.ValidateAgentMaterials() != nil || inputs.root.Validate() != nil ||
+		inputs.campaign.qualification.Validate() != nil || inputs.experiment.validateAgentic() != nil {
 		return agenticEpisodeTarget{}, errors.New("ETCDRAFT_AGENTIC_EPISODE_INPUT_INVALID")
 	}
 	observationProjector := etcdraftv2.ObservationProjector{}
@@ -56,7 +99,10 @@ func newEtcdraftAgenticEpisodeTarget(
 			projector controlexperiment.SemanticPrefixProjector,
 			execution controlexperiment.ScenarioExecution,
 		) (scenarioTestingResult, error) {
-			return executeEtcdraftScenarioQualifiedRisk(ctx, inputs, execution, risk.Spec, projector)
+			return executeEtcdraftScenarioQualifiedRisk(
+				ctx, inputs.campaign, inputs.root, inputs.experiment,
+				execution, risk.Spec, projector,
+			)
 		},
 	}
 	if target.validate() != nil {

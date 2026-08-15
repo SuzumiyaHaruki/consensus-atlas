@@ -36,3 +36,20 @@ func buildSemanticAuthoring(
 	}
 	return knowledge, hypothesis, nil
 }
+
+// buildAgenticKnowledgeAuthoring is the seed-free Hypothesis-Agent input.
+// Curated TestHypothesis construction remains available only through the
+// legacy buildSemanticAuthoring path used by deterministic baselines.
+func buildAgenticKnowledgeAuthoring(
+	knowledgeSource controlexperiment.ProtocolKnowledgePack,
+	protocol string,
+) (controlexperiment.ProtocolKnowledgePack, error) {
+	if knowledgeSource.SchemaVersion != "" || knowledgeSource.Digest != "" || len(knowledgeSource.Risks) != 0 {
+		return controlexperiment.ProtocolKnowledgePack{}, errors.New("AGENTIC_INPUT_AUTHORING_FIELDS_INVALID")
+	}
+	knowledge, err := controlexperiment.NewProtocolKnowledgePack(knowledgeSource)
+	if err != nil || knowledge.Protocol != protocol || knowledge.ValidateAgentMaterials() != nil {
+		return controlexperiment.ProtocolKnowledgePack{}, errors.New("AGENTIC_INPUT_MATERIALS_INVALID")
+	}
+	return knowledge, nil
+}

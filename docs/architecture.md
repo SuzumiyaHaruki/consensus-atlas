@@ -9,6 +9,9 @@
 Agent 负责形成协议感知的测试意图；可信内核只把可验证的意图落实为真实 enabled Action；
 Replay/Oracle/evaluator 独立判定结果。规划可以是启发式的，执行事实和最终判定不能由 Agent 自报。
 
+当前实现范围是 leader-based CFT 共识库的受控协议/host-order 执行。受限 BFT 和生产进程/存储/网络故障面
+属于后续扩展，不是本文件的现行能力声明。
+
 ## 1. 端到端数据流
 
 ```text
@@ -39,13 +42,15 @@ SUT + Target Pack + Protocol Pack + Experiment Config
 
 - SUT：被测共识库或进程；
 - Target Pack：薄 Adapter/Binding、能力声明和 Evidence Extractor；
-- Protocol Pack：协议事实、共识风险、允许的关系与可观察里程碑；
+- Protocol Pack：Consensus Primer、Property Catalog、Historical Issue Pattern、允许的关系与可观察里程碑；
 - Experiment Config：拓扑、workload、fault envelope、时间/随机源策略和资源预算。
 
 Target Pack 中只有目标接口绑定与证据提取必须是代码。可审查、可变的拓扑、预算、工作负载和协议知识应逐步
-迁移到 JSON/YAML。A5 已将 etcd/raft 活动 Agent 路径的 ProtocolKnowledge、TestHypothesis、workload、
-Adapter topology/ticks、Runtime、FaultEnvelope 和 A2/A4 预算外移到 `plans/agent/*.json`；运行时转成
-原有可信类型，不引入第二套语义或 workload 契约。
+迁移到 JSON/YAML。A5 已将 legacy A2/A4 路径的 ProtocolKnowledge、TestHypothesis、workload、Adapter
+topology/ticks、Runtime、FaultEnvelope 和预算外移到 `plans/agent/*.json`。A9e1 的 `agentic-episode-v1`
+不再接收预置 Risk/TestHypothesis，而由 Agent 从 Primer、Property 和 Issue Pattern 提出机制与 predicates；
+两条路径加载后都转成原有可信类型，不引入第二套语义或 workload 契约。Agentic loader 只校验该入口实际消费的
+Scenario/Runtime/model 预算，不再要求 legacy Semantic Explorer 的 depth、work-item 或 explorer budget。
 
 Authoring JSON 只提供人工输入字段和外部运行上限。它不能提供 schema version、digest、执行 backend、
 Oracle 或 verdict；Agent 也不能修改这些预算。加载器严格拒绝未知字段和作者伪造的派生身份。
@@ -79,7 +84,7 @@ short planning intent        ---> trusted selector concretization
 
 Agent 可以：
 
-- 形成 `TestHypothesis`；
+- 形成 property-referenced Risk candidate 和不可信的机制解释；
 - 选择语义目标；
 - 对当前可信候选排序；
 - 后续以短时域 `ScenarioPlan` 表达若干语义选择器与期望观察点；
@@ -109,10 +114,15 @@ A6e 的协议语义不进入 `FrontierActionRef`：Scenario view 另带一个与
 Campaign，也不需要另一套配对运行协议。
 
 A6eR 现在把活动路径限制为单步当前 Action，避免模型预测 future ActionID。干预成功后，可信 closure 按固定
-优先级执行普通 effect、message 和自然 timer，直到 Risk 里程碑变化、客户端返回、自然推进静止或预算耗尽；
-随后 Runtime 重建 frontier/snapshot，target-local projector 只对该状态重新分类。stopped 多步计划的 leading
+优先级执行普通 effect、message 和自然 timer；它在客户端返回、自然推进静止、累计 decision 预算耗尽时停止，
+否则固定执行至最多 24 个普通动作的 planning checkpoint。Risk 里程碑变化会被逐步记录，但不会缩短该窗口或
+额外购买模型调用。随后 Runtime 重建 frontier/snapshot，target-local projector 只对该状态重新分类。stopped 多步计划的 leading
 applied prefix 会保留，rejected step 只进入反馈。整个 episode 仍受 call、decision、work、token 和 wall-clock
 上限约束。
+
+固定 closure 防止 Agent 通过碎片化 Risk 增加规划调用，但也可能跨过短暂干预窗口：若一个缺陷要求在第一项
+战略动作后、24 个普通动作内再次 drop/crash/partition，当前 Agent 可能来不及获得第二次规划点。该可达性风险
+必须在 defect capability pilot 中实测，再决定最小 checkpoint 修正。
 
 attempt 提交前的 provider failure 现在由 session 从 durable call audit 汇总已发生 ModelWork；Coordinator 只在
 WorkLedger 结构合法时将它写入已有 Campaign failure marker，终端 summary 将 failure work 与已提交 totals
@@ -294,8 +304,8 @@ episode/work/model/time 预算、checkpoint 和恢复。`ScenarioAgentFeedback` 
 上一 episode feedback；Oracle、PSS、testing outcome 和候选身份始终不进入 Agent 反馈。
 
 活动路径每次只允许模型选择一个当前 Action。可信 natural-progress closure 随后只执行 effect completion、
-普通消息投递和自然到期 timer，并在 Risk 里程碑变化、目标客户端返回、自然推进静止或 decision budget 耗尽时
-停止。Scenario 直接在产生当前 admissible frontier 的短生命 Runtime 上执行所选 closure Action；执行前重新核对
+普通消息投递和自然到期 timer；目标客户端返回、自然推进静止或 decision budget 耗尽会提前停止，否则到固定
+24-action planning checkpoint 才返回。Risk 里程碑变化只更新反馈，不会提前停止 closure。Scenario 直接在产生当前 admissible frontier 的短生命 Runtime 上执行所选 closure Action；执行前重新核对
 prefix digest/长度、snapshot digest 和 Action 成员关系，随后立即关闭 Runtime。这样不再为 materialization 重放
 同一 prefix，但 child 仍由 fresh Adapter 独立 Replay 验证，并继续生成 Trace 和完整 work 统计。Stateless DFS 与
 Semantic Explorer 仍保留原来的独立 materialization 路径。该闭包已抽为协议无关执行组件，但尚未完成所有

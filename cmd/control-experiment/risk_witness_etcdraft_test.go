@@ -14,7 +14,7 @@ import (
 )
 
 func TestEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	inputs, err := prepareEtcdraftSemanticCalibration(
 		ctx, etcdraftTestRootCorpusPath, etcdraftTestSemanticInputPath, fixtureOpenRouterIntentClient(),
@@ -111,7 +111,7 @@ func TestEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *test
 }
 
 func TestScenarioNaturalProgressUsesTrustedCheckpointAfterEtcdraftMilestone(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	inputs, err := prepareEtcdraftSemanticCalibration(
 		ctx, etcdraftTestRootCorpusPath, etcdraftTestSemanticInputPath, fixtureOpenRouterIntentClient(),

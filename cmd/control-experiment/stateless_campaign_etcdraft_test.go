@@ -39,7 +39,7 @@ func TestEtcdraftStatelessMethodSequencesArePredeclared(t *testing.T) {
 }
 
 func TestEtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 360*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(360*time.Second))
 	defer cancel()
 	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, etcdraftTestRootCorpusPath)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestEtcdraftUniformAttemptUsesFrozenCorpusAndQualifiedExecution(t *testing.
 }
 
 func TestEtcdraftStatelessCLIResumesAndStrictlyReadsArtifacts(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 360*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(360*time.Second))
 	defer cancel()
 	corpusPath := etcdraftTestRootCorpusPath
 	inputs, err := loadEtcdraftStatelessCampaignInputs(ctx, corpusPath)

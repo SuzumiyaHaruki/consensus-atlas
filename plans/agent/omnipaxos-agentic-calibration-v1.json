@@ -1,0 +1,87 @@
+{
+  "protocol_knowledge": {
+    "id": "omnipaxos-agentic-primer-a9e1",
+    "family": "paxos",
+    "protocol": "omnipaxos",
+    "knowledge": [
+      {
+        "id": "ballot-and-log-progress",
+        "text": "OmniPaxos coordinates ballot leadership, prepare and accept phases, replicated-log progress, decision, and application. A client operation may overlap several of these phases."
+      },
+      {
+        "id": "quorum-and-recovery",
+        "text": "Progress and safety depend on how quorum evidence, accepted suffixes, promises, and leader recovery interact across ballot changes."
+      },
+      {
+        "id": "partial-synchrony",
+        "text": "Message delay, loss, duplication, and natural timer expiry may change progress while participants remain non-Byzantine."
+      }
+    ],
+    "properties": [
+      {
+        "id": "consensus-agreement",
+        "summary": "Participants must not decide different commands for the same logical log position."
+      },
+      {
+        "id": "client-operation-continuity",
+        "summary": "A client operation must remain consistently related to the command that is replicated and decided across ballot transitions."
+      }
+    ],
+    "issue_patterns": [
+      {
+        "id": "epoch-transition-state-reuse",
+        "summary": "Evidence created in an older epoch is reused after a coordinator transition.",
+        "mechanism": "State that was valid under an earlier leadership context remains influential after the protocol has moved to a newer ballot."
+      },
+      {
+        "id": "incomplete-log-reconciliation",
+        "summary": "A coordinator transition reconciles only part of the replicated history.",
+        "mechanism": "Accepted or decided suffix information may be combined inconsistently when participants expose different log frontiers."
+      },
+      {
+        "id": "message-loss-progress-coupling",
+        "summary": "Selective message loss interacts with coordinator or replication progress.",
+        "mechanism": "The implementation may retain stale per-peer or per-operation state when normal progress changes direction after a lost message."
+      }
+    ]
+  },
+  "workload": {
+    "id": "omnipaxos-single-write-a9e1",
+    "target_selector": "single-coordinating-participant",
+    "invocations": [
+      {
+        "id": "omnipaxos-a9e1-request",
+        "value": "omnipaxos-a9e1-value",
+        "expected_status": "decided"
+      }
+    ]
+  },
+  "experiment": {
+    "runtime": {
+      "seed_hex": "6f6d6e697061786f732d613965312d6167656e746963",
+      "clock_error": 0,
+      "max_clones": 1
+    },
+    "fault_envelope": {
+      "max_crashes": 0,
+      "max_concurrent_crashes": 0,
+      "max_message_drops": 1,
+      "max_message_duplicates": 0,
+      "max_partitions": 0,
+      "max_active_partitions": 0
+    },
+    "scenario_max_calls": 1,
+    "scenario_max_steps": 1,
+    "scenario_max_decisions": 64,
+    "scenario_semantic_exposure": "full",
+    "session_budget": {
+      "max_attempts": 2,
+      "max_primary_scheduler_decisions": 4096,
+      "max_primary_work_units": 8192,
+      "max_replay_work_units": 4096,
+      "max_model_calls": 4,
+      "max_model_tokens": 20000
+    },
+    "session_wall_clock_ms": 300000
+  }
+}

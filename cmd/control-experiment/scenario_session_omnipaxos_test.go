@@ -18,7 +18,7 @@ import (
 )
 
 func TestOmniPaxosSessionRunsTwoQualifiedEpisodesAndRecovers(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
 	client := fixtureOpenRouterIntentClient()

@@ -17,7 +17,7 @@ import (
 )
 
 func TestA8PairedScenarioComparesOneEpisodeOnSameExecutionSubstrate(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	client := fixtureOpenRouterIntentClient()
 	providerCalls := 0

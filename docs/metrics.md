@@ -52,22 +52,32 @@ Recommended reports are:
 - time or decisions to reach common state-count thresholds;
 - unique Oracle failures and semantic counterexamples.
 
-## 2. Raft-family PSS v1 key
+## 2. Current Core PSS v1 key
 
-The declarative definition is in `families/raft/pss/raft-v1.json`; the executable projector is in `families/raft/state.go`.
+The active implementation is `internal/psscore`, with schema
+`consensus-atlas/core-pss/v1` and target-owned semantic mapping IDs. It combines two components:
 
-The projector retains:
+- `control`: participant lifecycle and relative incarnation rank, blocked links, plus pending Runtime messages,
+  temporal items and host effects;
+- `semantic`: target-projected participant modes, relative epoch/decision/value entities, stages and typed relations.
 
-- running/stopped and role relations;
-- relative term order;
-- vote and leader relations;
-- durable log shape and value-equality relations;
-- commit, durable and applied frontier relations;
-- snapshot frontier and voter relations.
+Native participant names are canonicalized by permutation; native item IDs, payloads and absolute deadlines are removed.
+Exact participant-permutation canonicalization is bounded to eight participants. The online sampler records the initial
+root and then one sample after every successfully applied Runtime action.
 
-It deliberately removes absolute node names, term numbers, log indexes, value bytes, event IDs and sender epochs. Exact node-permutation canonicalization is currently bounded to eight nodes.
+This definition has an important construct-validity limitation: `control.pending` makes the current unique-state count a
+mixture of protocol-semantic state and scheduler/control-frontier state. In a diagnostic re-projection of the A9d6
+OmniPaxos artifact, the reported 31 samples / 29 unique states become 5 unique states when only
+`control.pending` is removed. This is not a new effectiveness experiment; it demonstrates that the published 29 count
+must not be described as 29 distinct protocol states.
 
-Sampling occurs after an applied Ready acknowledge and after crash/restart. Persist, sync, emit and apply are excluded because they are host-integration microsteps, not separate protocol states for this metric. The mailbox and outstanding Ready are also excluded from the state key; their behavior belongs to ordering/fault coverage.
+Before formal search comparisons, derive and report two views from the same Trace:
+
+- protocol-semantic state discovery, excluding queue churn from the primary semantic key;
+- scheduler/control-frontier discovery, preserving pending-item and ordering diversity.
+
+Do not create a second Ledger or combine the two views into one score. Until these views and their invariance/separation
+tests are implemented, label existing Core PSS numbers as mixed control-state diagnostics.
 
 ## 3. Fixed-profile semantic coverage
 

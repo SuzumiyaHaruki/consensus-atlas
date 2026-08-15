@@ -132,6 +132,27 @@ curator input，路径不写入 evaluation ledger。CLI 要求 contract/exposure
 trial/audit/binary，并拒绝覆盖旧 artifact/output。实际执行和 MethodSpec timeout 复用原有
 fresh subprocess runner。当前 registry 只支持 official etcd/raft projector 与 Agreement monitor。
 
+## 当前方法与 Oracle adequacy 缺口
+
+现有 formal CLI/evaluator plumbing 尚未执行 A9 的 Risk Agent + Scenario Agent 方法；它不能把 A9d6 的公开
+OmniPaxos episode 转述为正式 defect trial。当前仓库也没有真实 private holdout，因而还不能计算 Agent 方法的
+root-cause kill rate 或与 Agora、deterministic search 的召回比较。
+
+在准备 private batch 前，先复用现有 Bundle、Replay、monitor 和 evaluator 做一个公开的 capability pilot：对每个
+少量已知根因或受控语义变异，使用 curator-owned ground-truth trigger 验证以下链条：
+
+```text
+root/workload -> controllable Action -> observable evidence -> trusted Oracle -> stable Replay
+```
+
+每个 candidate 配置同基线 correct control。该 pilot 首先测 Oracle/Adapter 的检出充分性，不测 Agent 搜索效果；
+只有 ground-truth trigger 被稳定检出后，该根因才可进入 search-recall 实验。已知优先缺口包括不同 frontier 的
+前缀冲突、跨 incarnation 持久性回退，以及 panic/worker-exit/timeout 的证据保留和完整计费。
+
+这一阶段不新增 Manifest、hash、冻结 contract、Ledger 或 admission gate。Git、版本、类型和普通测试能验证
+既有规则的实现一致性，却不能证明 projector/monitor 对目标缺陷类别有足够 recall；pilot 使用现有 evidence
+路径直接暴露缺失能力，之后只做由具体失败驱动的最小扩展。
+
 ## 公开样本的定位
 
 仓库共有七组公开 candidate/control pair。三组能由当前 `BundleBenchmark` 验证，但都指向同一个公开

@@ -40,7 +40,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.StringVar(&options.AgentModel, "agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
 	flags.StringVar(&options.WorkerPath, "worker", "", "target worker executable for a worker-backed Agent strategy")
 	flags.StringVar(&options.Target, "target", "", "target composition for an Agentic Episode")
-	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol knowledge and hypothesis JSON")
+	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol and Agent-planning JSON")
 	flags.StringVar(&options.ScenarioSemanticExposure, "scenario-semantic-exposure", "", "optional full or masked semantics")
 	flags.StringVar(&options.CampaignDirectory, "campaign-dir", "", "Campaign directory")
 	flags.StringVar(&options.CampaignObservationOut, "campaign-observation-out", "", "Campaign Observation output path")

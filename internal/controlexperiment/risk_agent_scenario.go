@@ -30,17 +30,18 @@ func BuildScenarioRiskHypothesis(
 	if err != nil || !reflect.DeepEqual(recomputed, assessment) || !assessment.Qualification.Qualified {
 		return ScenarioRiskHypothesis{}, errors.New("EXPERIMENT_SCENARIO_RISK_ASSESSMENT_INVALID")
 	}
-	definition, err := json.Marshal(assessment.Candidate.Predicates)
-	if err != nil || len(definition) > 2000 {
-		return ScenarioRiskHypothesis{}, errors.New("EXPERIMENT_SCENARIO_RISK_DEFINITION_INVALID")
+	candidateKnowledge, err := scenarioRiskCandidateKnowledge(assessment.Candidate)
+	if err != nil {
+		return ScenarioRiskHypothesis{}, err
 	}
+	knowledgeStatements := append([]KnowledgeStatement(nil), base.Knowledge...)
+	knowledgeStatements = append(knowledgeStatements, candidateKnowledge...)
 	knowledge := ProtocolKnowledgePack{
 		ID:     base.ID + "-with-" + assessment.Candidate.ID,
 		Family: base.Family, Protocol: base.Protocol,
-		Knowledge: append(append([]KnowledgeStatement(nil), base.Knowledge...), KnowledgeStatement{
-			ID:   assessment.Candidate.ID + "-ordered-predicates",
-			Text: "Trusted ordered predicates: " + string(definition),
-		}),
+		Knowledge:     knowledgeStatements,
+		Properties:    append([]ProtocolProperty(nil), base.Properties...),
+		IssuePatterns: append([]HistoricalIssuePattern(nil), base.IssuePatterns...),
 		Risks: append(cloneProtocolKnowledgeRisks(base.Risks), ProtocolRisk{
 			ID: assessment.Candidate.ID, Summary: assessment.Candidate.Summary,
 			RequiredCapabilities: scenarioRiskObservationRequirements(assessment.Qualification.Requirements),
@@ -64,6 +65,33 @@ func BuildScenarioRiskHypothesis(
 		Predicates:    cloneObservationPredicates(assessment.Candidate.Predicates),
 		Qualification: assessment.Qualification,
 	}, nil
+}
+
+// scenarioRiskCandidateKnowledge is shared by candidate validation and the
+// Scenario bridge so an accepted candidate cannot later exceed the existing
+// ProtocolKnowledge statement boundary after trusted prefixes are added.
+func scenarioRiskCandidateKnowledge(candidate RiskCandidate) ([]KnowledgeStatement, error) {
+	definition, err := json.Marshal(candidate.Predicates)
+	if err != nil {
+		return nil, errRiskCandidateBridge
+	}
+	statements := []KnowledgeStatement{
+		{
+			ID: candidate.ID + "-property",
+			Text: "Investigated property " + candidate.PropertyRef +
+				"; suspected mechanism: " + candidate.SuspectedMechanism,
+		},
+		{
+			ID:   candidate.ID + "-ordered-predicates",
+			Text: "Trusted ordered predicates: " + string(definition),
+		},
+	}
+	for _, statement := range statements {
+		if len(statement.Text) > protocolKnowledgeTextMaxBytes {
+			return nil, errRiskCandidateBridge
+		}
+	}
+	return statements, nil
 }
 
 func scenarioRiskObservationRequirements(requirements semantic.RiskRequirements) []string {

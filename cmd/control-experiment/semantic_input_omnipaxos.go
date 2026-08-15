@@ -18,6 +18,15 @@ type omnipaxosScenarioAuthoringSource struct {
 	Experiment omnipaxosScenarioExperimentConfig       `json:"experiment"`
 }
 
+// omnipaxosAgenticAuthoringSource deliberately excludes TestHypothesis so
+// strict decoding rejects every pre-seeded hypothesis, including an empty
+// JSON object. Curated hypotheses remain available through the legacy source.
+type omnipaxosAgenticAuthoringSource struct {
+	Knowledge  controlexperiment.ProtocolKnowledgePack `json:"protocol_knowledge"`
+	Workload   omnipaxosWorkloadAuthoringSource        `json:"workload"`
+	Experiment omnipaxosScenarioExperimentConfig       `json:"experiment"`
+}
+
 type omnipaxosWorkloadAuthoringSource struct {
 	ID             string                                 `json:"id"`
 	TargetSelector string                                 `json:"target_selector"`
@@ -129,4 +138,34 @@ func loadOmnipaxosScenarioAuthoringSource(
 			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{}, err
 	}
 	return knowledge, hypothesis, source.Experiment, workload, nil
+}
+
+func loadOmnipaxosAgenticAuthoringSource(
+	path string,
+) (
+	controlexperiment.ProtocolKnowledgePack,
+	omnipaxosScenarioExperimentConfig,
+	controlexperiment.WorkloadPlan,
+	error,
+) {
+	var source omnipaxosAgenticAuthoringSource
+	if path == "" || readStrictJSONFile(path, omnipaxosSemanticInputLimit, &source) != nil {
+		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
+			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_FILE_INVALID")
+	}
+	if source.Experiment.validate() != nil {
+		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
+			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_EXPERIMENT_INVALID")
+	}
+	workload, err := source.Workload.build()
+	if err != nil {
+		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
+			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_WORKLOAD_INVALID")
+	}
+	knowledge, err := buildAgenticKnowledgeAuthoring(source.Knowledge, "omnipaxos")
+	if err != nil || knowledge.Family != "paxos" {
+		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
+			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_MATERIALS_INVALID")
+	}
+	return knowledge, source.Experiment, workload, nil
 }

@@ -3,6 +3,8 @@ package controlexperiment
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -30,7 +32,11 @@ func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T
 			t.Fatal(err)
 		}
 		candidate := RiskCandidate{
-			ID: "recovery-after-restart", Summary: "Observe a decision after a participant restart.",
+			ID: "recovery-after-restart", PropertyRef: "bounded-progress",
+			InspirationRef: "message-loss-progress",
+			Summary:        "Observe a decision after a participant restart.",
+			SuspectedMechanism: "A restarted participant may fail to rejoin enough protocol activity " +
+				"to permit a later decision.",
 			Predicates: []semantic.ObservationPredicate{
 				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
 				{MilestoneID: "restart", Kind: semantic.ObservationNodeRestarted},
@@ -48,8 +54,11 @@ func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T
 				t.Fatalf("repair call lost mechanical feedback: %#v", view.Prior)
 			}
 			candidate = RiskCandidate{
-				ID:      "decision-after-inflight-message-loss",
-				Summary: "Observe a later decision after one in-flight message is dropped.",
+				ID: "decision-after-inflight-message-loss", PropertyRef: "bounded-progress",
+				InspirationRef: "message-loss-progress",
+				Summary:        "Observe a later decision after one in-flight message is dropped.",
+				SuspectedMechanism: "Loss of one in-flight protocol message may prevent the remaining " +
+					"participants from reaching a later decision.",
 				Predicates: []semantic.ObservationPredicate{
 					{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
 					{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped,
@@ -82,19 +91,22 @@ func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T
 
 func TestRiskCandidateRejectsExistingRiskAndMeaninglessBinding(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
+	legacyKnowledge := riskAgentLegacyFixtureKnowledge(t)
 	capabilities := []semantic.ObservationCapability{{
 		Kind:   semantic.ObservationWorkloadInvoked,
 		Fields: []semantic.ObservationField{semantic.ObservationFieldParticipantNode},
 	}}
 	actions := []control.ActionKind{control.ActionInvoke}
 	existing := RiskCandidate{
-		ID: "existing-risk", Summary: "Duplicate the curated risk.",
+		ID: "existing-risk", PropertyRef: "bounded-progress", InspirationRef: "message-loss-progress",
+		Summary:            "Duplicate the curated risk.",
+		SuspectedMechanism: "A known message-loss mechanism may prevent a later decision.",
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: "first", Kind: semantic.ObservationWorkloadInvoked},
 			{MilestoneID: "second", Kind: semantic.ObservationWorkloadInvoked},
 		},
 	}
-	if _, err := AssessRiskCandidate(knowledge, existing, capabilities, actions); err == nil {
+	if _, err := AssessRiskCandidate(legacyKnowledge, existing, capabilities, actions); err == nil {
 		t.Fatal("existing risk was accepted as a discovery")
 	}
 	meaningless := existing
@@ -122,11 +134,101 @@ func TestRiskCandidateRejectsExistingRiskAndMeaninglessBinding(t *testing.T) {
 	}
 }
 
+func TestAcceptedRiskCandidateClosesScenarioBridgeBounds(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	capabilities := []semantic.ObservationCapability{{Kind: semantic.ObservationWorkloadInvoked}}
+	actions := []control.ActionKind{control.ActionInvoke}
+	candidate := RiskCandidate{
+		ID: "scenario-bridge-boundary", PropertyRef: "bounded-progress", InspirationRef: "original",
+		Summary: "Exercise the exact Scenario bridge statement boundary.", SuspectedMechanism: "m",
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "first", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "second", Kind: semantic.ObservationWorkloadInvoked},
+		},
+	}
+	statements, err := scenarioRiskCandidateKnowledge(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.SuspectedMechanism += strings.Repeat(
+		"m", protocolKnowledgeTextMaxBytes-len(statements[0].Text),
+	)
+	if err := candidate.ValidateAgentDraft(); err != nil {
+		t.Fatalf("exact bridge boundary was rejected: %v", err)
+	}
+	assessment, err := AssessRiskCandidate(knowledge, candidate, capabilities, actions)
+	if err != nil || !assessment.Qualification.Qualified {
+		t.Fatalf("boundary candidate was not accepted: %#v/%v", assessment, err)
+	}
+	bridge, err := BuildScenarioRiskHypothesis(knowledge, assessment, capabilities, actions)
+	if err != nil || bridge.Knowledge.Validate() != nil {
+		t.Fatalf("accepted boundary candidate did not close the Scenario bridge: %#v/%v", bridge, err)
+	}
+
+	tooLongMechanism := candidate
+	tooLongMechanism.SuspectedMechanism += "m"
+	if err := tooLongMechanism.ValidateAgentDraft(); !errors.Is(err, errRiskCandidateBridge) {
+		t.Fatalf("oversized derived mechanism statement was accepted: %v", err)
+	}
+
+	tooLongPredicates := candidate
+	tooLongPredicates.SuspectedMechanism = "m"
+	tooLongPredicates.Predicates = cloneObservationPredicates(candidate.Predicates)
+	tooLongPredicates.Predicates[0].Constraints = []semantic.ObservationConstraint{{
+		Field: semantic.ObservationFieldRequestID, Equals: strings.Repeat("x", protocolKnowledgeTextMaxBytes),
+	}}
+	if err := tooLongPredicates.ValidateAgentDraft(); !errors.Is(err, errRiskCandidateBridge) {
+		t.Fatalf("oversized derived predicate statement was accepted: %v", err)
+	}
+}
+
+func TestAgentMaterialsBoundReferencesAndReserveOriginal(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	overlongProperty := knowledge
+	overlongProperty.Properties = append([]ProtocolProperty(nil), knowledge.Properties...)
+	overlongProperty.Properties[0].ID = strings.Repeat("p", agentMaterialReferenceMaxBytes+1)
+	if _, err := NewProtocolKnowledgePack(overlongProperty); err == nil {
+		t.Fatal("overlong Property reference was accepted")
+	}
+
+	reservedPattern := knowledge
+	reservedPattern.IssuePatterns = append([]HistoricalIssuePattern(nil), knowledge.IssuePatterns...)
+	reservedPattern.IssuePatterns[0].ID = "original"
+	if _, err := NewProtocolKnowledgePack(reservedPattern); err == nil {
+		t.Fatal("reserved original IssuePattern reference was accepted")
+	}
+}
+
 func riskAgentFixtureKnowledge(t *testing.T) ProtocolKnowledgePack {
 	t.Helper()
 	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
 		ID: "risk-agent-fixture-knowledge", Family: "paxos", Protocol: "fixture-paxos",
 		Knowledge: []KnowledgeStatement{{ID: "rounds", Text: "Decisions follow ordered message and round activity."}},
+		Properties: []ProtocolProperty{{
+			ID: "bounded-progress", Summary: "An invoked operation eventually reaches a decision under the configured bound.",
+		}},
+		IssuePatterns: []HistoricalIssuePattern{{
+			ID: "message-loss-progress", Summary: "Progress stalls after a protocol message is lost.",
+			Mechanism: "An implementation may omit a retry or recovery transition after message loss.",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := knowledge.ValidateAgentMaterials(); err != nil {
+		t.Fatal(err)
+	}
+	return knowledge
+}
+
+func riskAgentLegacyFixtureKnowledge(t *testing.T) ProtocolKnowledgePack {
+	t.Helper()
+	active := riskAgentFixtureKnowledge(t)
+	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
+		ID: active.ID, Family: active.Family, Protocol: active.Protocol,
+		Knowledge:     append([]KnowledgeStatement(nil), active.Knowledge...),
+		Properties:    append([]ProtocolProperty(nil), active.Properties...),
+		IssuePatterns: append([]HistoricalIssuePattern(nil), active.IssuePatterns...),
 		Risks: []ProtocolRisk{{
 			ID: "existing-risk", Summary: "A curated existing risk.",
 			RequiredCapabilities: []string{"runtime-message-control"},
@@ -136,6 +238,9 @@ func riskAgentFixtureKnowledge(t *testing.T) ProtocolKnowledgePack {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if knowledge.Validate() != nil || knowledge.ValidateAgentMaterials() == nil {
+		t.Fatal("legacy curated Risk must remain valid outside the active Agent-material boundary")
 	}
 	return knowledge
 }

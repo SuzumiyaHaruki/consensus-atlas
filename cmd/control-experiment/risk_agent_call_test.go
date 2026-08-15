@@ -20,11 +20,12 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		Knowledge: []controlexperiment.KnowledgeStatement{{
 			ID: "message-progress", Text: "A decision follows ordered message processing.",
 		}},
-		Risks: []controlexperiment.ProtocolRisk{{
-			ID: "existing-message-risk", Summary: "Existing message risk.",
-			RequiredCapabilities: []string{"runtime-message-control"},
-			RequiredActions:      []control.ActionKind{control.ActionDropMessage, control.ActionInvoke},
-			AllowedBackendIDs:    []string{controlexperiment.ScenarioPlanningBackendID},
+		Properties: []controlexperiment.ProtocolProperty{{
+			ID: "decision-continuity", Summary: "An operation remains related to its decision.",
+		}},
+		IssuePatterns: []controlexperiment.HistoricalIssuePattern{{
+			ID: "message-loss-progress", Summary: "Message loss changes progress state.",
+			Mechanism: "Stale peer state survives a lost message.",
 		}},
 	})
 	if err != nil {
@@ -37,7 +38,9 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	}
 	actions := []control.ActionKind{control.ActionInvoke, control.ActionDropMessage}
 	candidate := controlexperiment.RiskCandidate{
-		ID: "decision-after-message-loss", Summary: "Observe a decision after one message is dropped.",
+		ID: "decision-after-message-loss", PropertyRef: "decision-continuity",
+		InspirationRef: "message-loss-progress", Summary: "Observe a decision after one message is dropped.",
+		SuspectedMechanism: "Stale peer progress after a dropped message may affect a later decision.",
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
 			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
@@ -59,6 +62,9 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil ||
 			payload.ResponseFormat.JSONSchema.Name != "risk_candidate" ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observation_capabilities")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("issue_patterns")) ||
+			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("property_ref")) ||
+			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("suspected_mechanism")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("Every bind_as token must occur")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("^[a-z0-9]")) {
 			t.Fatalf("unexpected risk request: %#v/%v", payload, err)

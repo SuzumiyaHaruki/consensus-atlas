@@ -23,6 +23,8 @@ const (
 	RiskAgentReasonJSON        = "risk-candidate-json-invalid"
 	RiskAgentReasonCandidate   = "risk-candidate-invalid"
 	RiskAgentReasonBinding     = "risk-candidate-single-use-binding"
+	RiskAgentReasonProperty    = "risk-candidate-property-unknown"
+	RiskAgentReasonInspiration = "risk-candidate-inspiration-unknown"
 	RiskAgentReasonDuplicate   = "risk-candidate-existing-risk"
 	RiskAgentReasonUnqualified = "risk-candidate-unqualified"
 	RiskAgentReasonTokenBudget = "risk-agent-token-budget-exceeded"
@@ -32,14 +34,20 @@ var (
 	errRiskCandidateJSON      = errors.New("EXPERIMENT_RISK_CANDIDATE_JSON_INVALID")
 	errRiskCandidateDuplicate = errors.New("EXPERIMENT_RISK_CANDIDATE_EXISTING_RISK")
 	errRiskCandidateBinding   = errors.New("EXPERIMENT_RISK_CANDIDATE_BINDING_INVALID")
+	errRiskCandidateProperty  = errors.New("EXPERIMENT_RISK_CANDIDATE_PROPERTY_UNKNOWN")
+	errRiskCandidatePattern   = errors.New("EXPERIMENT_RISK_CANDIDATE_INSPIRATION_UNKNOWN")
+	errRiskCandidateBridge    = errors.New("EXPERIMENT_RISK_CANDIDATE_SCENARIO_BRIDGE_INVALID")
 )
 
 // RiskCandidate is deliberately only a semantic hypothesis. Family, order
 // edges, capabilities, execution controls and verdicts remain trusted inputs.
 type RiskCandidate struct {
-	ID         string                          `json:"id"`
-	Summary    string                          `json:"summary"`
-	Predicates []semantic.ObservationPredicate `json:"predicates"`
+	ID                 string                          `json:"id"`
+	PropertyRef        string                          `json:"property_ref,omitempty"`
+	InspirationRef     string                          `json:"inspiration_ref,omitempty"`
+	Summary            string                          `json:"summary"`
+	SuspectedMechanism string                          `json:"suspected_mechanism,omitempty"`
+	Predicates         []semantic.ObservationPredicate `json:"predicates"`
 }
 
 type RiskAgentBudget struct {
@@ -93,7 +101,7 @@ func (budget RiskAgentBudget) Validate() error {
 }
 
 func (view RiskAgentView) Validate() error {
-	if view.Knowledge.Validate() != nil ||
+	if view.Knowledge.ValidateAgentMaterials() != nil ||
 		semantic.ValidateObservationCapabilities(view.ObservationCapabilities) != nil ||
 		!validRiskAgentActions(view.Actions) || view.MaxMilestones != RiskCandidateMaxSteps {
 		return errors.New("EXPERIMENT_RISK_AGENT_VIEW_INVALID")
@@ -113,7 +121,7 @@ func DiscoverRiskWithPlanner(
 	planner RiskPlanner,
 ) (RiskAgentResult, error) {
 	if budget.Validate() != nil ||
-		knowledge.Validate() != nil || semantic.ValidateObservationCapabilities(capabilities) != nil ||
+		knowledge.ValidateAgentMaterials() != nil || semantic.ValidateObservationCapabilities(capabilities) != nil ||
 		!validRiskAgentActions(actions) || planner == nil {
 		return RiskAgentResult{}, errors.New("EXPERIMENT_RISK_AGENT_INPUT_INVALID")
 	}
@@ -157,8 +165,13 @@ func DiscoverRiskWithPlanner(
 		assessment, err := AssessRiskCandidate(knowledge, candidate, capabilities, actions)
 		if err != nil {
 			reason := RiskAgentReasonCandidate
-			if errors.Is(err, errRiskCandidateDuplicate) {
+			switch {
+			case errors.Is(err, errRiskCandidateDuplicate):
 				reason = RiskAgentReasonDuplicate
+			case errors.Is(err, errRiskCandidateProperty):
+				reason = RiskAgentReasonProperty
+			case errors.Is(err, errRiskCandidatePattern):
+				reason = RiskAgentReasonInspiration
 			}
 			attempt.Feedback = RiskAgentFeedback{
 				Outcome: RiskAgentStopped, ReasonCode: reason, CandidateID: candidate.ID,
@@ -202,7 +215,7 @@ func ParseRiskCandidate(data []byte) (RiskCandidate, error) {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return RiskCandidate{}, errRiskCandidateJSON
 	}
-	if err := candidate.Validate(); err != nil {
+	if err := candidate.ValidateAgentDraft(); err != nil {
 		return RiskCandidate{}, err
 	}
 	return candidate, nil
@@ -240,14 +253,55 @@ func (candidate RiskCandidate) Validate() error {
 	return nil
 }
 
+// ValidateAgentDraft requires the richer A9e authoring fields. Validate stays
+// backward compatible so previously published A9d artifacts remain readable.
+func (candidate RiskCandidate) ValidateAgentDraft() error {
+	if err := candidate.Validate(); err != nil {
+		return err
+	}
+	if !validMethodToken(candidate.PropertyRef) || len(candidate.PropertyRef) > agentMaterialReferenceMaxBytes ||
+		(candidate.InspirationRef != "original" && (!validMethodToken(candidate.InspirationRef) ||
+			len(candidate.InspirationRef) > agentMaterialReferenceMaxBytes)) ||
+		candidate.SuspectedMechanism == "" || len(candidate.SuspectedMechanism) > 2048 ||
+		strings.TrimSpace(candidate.SuspectedMechanism) != candidate.SuspectedMechanism {
+		return errors.New("EXPERIMENT_RISK_CANDIDATE_AGENT_FIELDS_INVALID")
+	}
+	if _, err := scenarioRiskCandidateKnowledge(candidate); err != nil {
+		return err
+	}
+	return nil
+}
+
 func AssessRiskCandidate(
 	knowledge ProtocolKnowledgePack,
 	candidate RiskCandidate,
 	capabilities []semantic.ObservationCapability,
 	actions []control.ActionKind,
 ) (RiskCandidateAssessment, error) {
-	if knowledge.Validate() != nil || candidate.Validate() != nil {
+	if knowledge.Validate() != nil || candidate.ValidateAgentDraft() != nil {
 		return RiskCandidateAssessment{}, errors.New("EXPERIMENT_RISK_CANDIDATE_INPUT_INVALID")
+	}
+	propertyFound := false
+	for _, property := range knowledge.Properties {
+		if property.ID == candidate.PropertyRef {
+			propertyFound = true
+			break
+		}
+	}
+	if !propertyFound {
+		return RiskCandidateAssessment{}, errRiskCandidateProperty
+	}
+	if candidate.InspirationRef != "original" {
+		patternFound := false
+		for _, pattern := range knowledge.IssuePatterns {
+			if pattern.ID == candidate.InspirationRef {
+				patternFound = true
+				break
+			}
+		}
+		if !patternFound {
+			return RiskCandidateAssessment{}, errRiskCandidatePattern
+		}
 	}
 	for _, existing := range knowledge.Risks {
 		if existing.ID == candidate.ID {

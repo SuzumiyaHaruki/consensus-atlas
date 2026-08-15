@@ -163,13 +163,16 @@ func executeEtcdraftScenarioQualified(
 		return etcdraftScenarioTestingResult{}, err
 	}
 	return executeEtcdraftScenarioQualifiedRisk(
-		ctx, inputs, execution, spec, etcdraftSemanticPrefixProjector{},
+		ctx, inputs.campaign, inputs.root, inputs.experiment,
+		execution, spec, etcdraftSemanticPrefixProjector{},
 	)
 }
 
 func executeEtcdraftScenarioQualifiedRisk(
 	ctx context.Context,
-	inputs etcdraftSemanticCalibrationInputs,
+	campaign etcdraftStatelessCampaignInputs,
+	root controlruntime.Trace,
+	experiment etcdraftAgentExperimentConfig,
 	execution controlexperiment.ScenarioExecution,
 	spec semantic.RiskWitnessSpec,
 	projector controlexperiment.SemanticPrefixProjector,
@@ -178,7 +181,7 @@ func executeEtcdraftScenarioQualifiedRisk(
 		return etcdraftScenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_INPUT_INVALID")
 	}
 	policy, err := controlexperiment.CompileScenarioPolicy(
-		"etcdraft-scenario-qualified-policy", inputs.root, execution,
+		"etcdraft-scenario-qualified-policy", root, execution,
 		[]control.ActionKind{
 			control.ActionInvoke, control.ActionCompleteEffect,
 			control.ActionDeliverMessage, control.ActionFireTemporal,
@@ -191,18 +194,18 @@ func executeEtcdraftScenarioQualifiedRisk(
 		SchemaVersion:    controlexperiment.SchemaVersionV2,
 		ID:               "etcdraft-scenario-qualified-testing",
 		PSSID:            etcdraftv2.CorePSSMappingID,
-		Runtime:          inputs.experiment.Runtime,
-		Admission:        &inputs.campaign.admission,
-		FaultEnvelope:    inputs.experiment.faultEnvelope(),
+		Runtime:          experiment.Runtime,
+		Admission:        &campaign.admission,
+		FaultEnvelope:    experiment.faultEnvelope(),
 		WorkloadRouterID: etcdraftv2.WorkloadRouterID,
 		DecisionsPerRun:  len(execution.FinalTrace.Records), RequireReplay: true,
-		Runs: []controlexperiment.RunPlan{{Run: 1, Policy: policy, Workload: &inputs.campaign.workload}},
+		Runs: []controlexperiment.RunPlan{{Run: 1, Policy: policy, Workload: &campaign.workload}},
 	}
 	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
+		return etcdraftv2.NewWithConfig(experiment.AdapterConfig)
 	}
 	_, bundle, err := controlexperiment.ExecuteQualifiedBundle(
-		ctx, config, inputs.campaign.qualification, factory, etcdraftv2.CorePSSMapper{},
+		ctx, config, campaign.qualification, factory, etcdraftv2.CorePSSMapper{},
 		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
 	)
 	if err != nil {
@@ -211,7 +214,7 @@ func executeEtcdraftScenarioQualifiedRisk(
 	risk, err := projector.Project(execution.FinalRisk.ID, spec, bundle.Trace)
 	if err != nil || bundle.Trace.Digest != execution.FinalTrace.Digest ||
 		!reflect.DeepEqual(risk, execution.FinalRisk) ||
-		!reflect.DeepEqual(bundle.Qualification, inputs.campaign.qualification) {
+		!reflect.DeepEqual(bundle.Qualification, campaign.qualification) {
 		return etcdraftScenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
 	result := newEtcdraftScenarioTestingResult(execution.PlanID, bundle, risk)

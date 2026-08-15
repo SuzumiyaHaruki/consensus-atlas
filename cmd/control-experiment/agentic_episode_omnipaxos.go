@@ -13,9 +13,41 @@ import (
 
 type omnipaxosAgenticEpisodeResult = agenticEpisodeResult
 
+type omnipaxosAgenticEpisodeInputs struct {
+	WorkerPath    string
+	Knowledge     controlexperiment.ProtocolKnowledgePack
+	Experiment    omnipaxosScenarioExperimentConfig
+	Workload      controlexperiment.WorkloadPlan
+	Root          controlruntime.Trace
+	Qualification omnipaxosScenarioQualification
+}
+
+func prepareOmnipaxosAgenticEpisode(
+	ctx context.Context,
+	workerPath string,
+	semanticInputPath string,
+) (omnipaxosAgenticEpisodeInputs, error) {
+	knowledge, experiment, workload, err := loadOmnipaxosAgenticAuthoringSource(semanticInputPath)
+	if err != nil {
+		return omnipaxosAgenticEpisodeInputs{}, err
+	}
+	root, err := buildOmnipaxosScenarioRoot(ctx, workerPath, experiment, workload)
+	if err != nil {
+		return omnipaxosAgenticEpisodeInputs{}, err
+	}
+	qualification, err := qualifyOmnipaxosScenario(ctx, workerPath)
+	if err != nil {
+		return omnipaxosAgenticEpisodeInputs{}, err
+	}
+	return omnipaxosAgenticEpisodeInputs{
+		WorkerPath: workerPath, Knowledge: knowledge, Experiment: experiment,
+		Workload: workload, Root: root, Qualification: qualification,
+	}, nil
+}
+
 func runOmnipaxosAgenticEpisode(
 	ctx context.Context,
-	inputs omnipaxosScenarioInputs,
+	inputs omnipaxosAgenticEpisodeInputs,
 	riskJournal *statelessAgentCallJournal,
 	scenarioJournal *scenarioAgentCallJournal,
 	budget agenticEpisodeBudget,
@@ -49,9 +81,9 @@ func omnipaxosAgenticEpisodeRecoveryBinding() agenticEpisodeRecoveryBinding {
 }
 
 func newOmnipaxosAgenticEpisodeTarget(
-	inputs omnipaxosScenarioInputs,
+	inputs omnipaxosAgenticEpisodeInputs,
 ) (agenticEpisodeTarget, error) {
-	if inputs.Knowledge.Validate() != nil || inputs.Root.Validate() != nil ||
+	if inputs.Knowledge.ValidateAgentMaterials() != nil || inputs.Root.Validate() != nil ||
 		inputs.Qualification.Bundle.Validate() != nil || inputs.WorkerPath == "" {
 		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_INPUT_INVALID")
 	}
