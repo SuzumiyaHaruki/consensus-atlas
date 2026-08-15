@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
 )
 
 func TestPairedScenarioEvidenceKeepsCampaignCostSeparateFromBundle(t *testing.T) {
@@ -36,6 +40,97 @@ func TestPairedScenarioEvidenceRejectsDifferentSUTIdentity(t *testing.T) {
 	if _, err := loadPairedScenarioTrialEvidence(root); err == nil ||
 		!strings.Contains(err.Error(), "ARTIFACT_INVALID") {
 		t.Fatalf("mismatched target identity error = %v", err)
+	}
+}
+
+func TestPairedScenarioLauncherUsesFreshRootsAndBindsBuildIdentity(t *testing.T) {
+	_, _, bundle := formalCLITestExecution(t)
+	root := t.TempDir()
+	template := filepath.Join(root, "template")
+	target := bundle.Trace.ManifestDigest
+	writePairedScenarioArm(t, template, pairedScenarioPlannerDeterministic, target, bundle)
+	writePairedScenarioArm(t, template, pairedScenarioPlannerAgent, target, bundle)
+	if err := writeJSON(filepath.Join(template, "summary.json"), map[string]any{
+		"classification":         "public-calibration-not-agent-effectiveness-holdout-or-correctness",
+		"target_id":              "fixture-target",
+		"target_identity_digest": target,
+		"semantic_exposure":      "full",
+		"root_mode":              pairedScenarioFreshRootMode,
+		"source_bundle_digest":   digestBytes([]byte("source")),
+		"root_corpus_digest":     digestBytes([]byte("corpus")),
+		"root_selection_rule":    pairedScenarioFreshRootRule,
+		"root_trace_digest":      digestBytes([]byte("root")),
+		"root_decisions":         28,
+		"same_trace":             true,
+		"deterministic":          map[string]any{},
+		"agent":                  map[string]any{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	script := []byte(fmt.Sprintf(`#!/bin/sh
+strategy=""
+output=""
+semantic=""
+key=""
+model=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -strategy) shift; strategy="$1" ;;
+    -campaign-dir) shift; output="$1" ;;
+    -semantic-input) shift; semantic="$1" ;;
+    -agent-key-file) shift; key="$1" ;;
+    -agent-model) shift; model="$1" ;;
+    -stateless-corpus) exit 41 ;;
+  esac
+  shift
+done
+[ "$strategy" = %q ] && [ -n "$output" ] && [ -n "$semantic" ] && [ -n "$key" ] && [ -n "$model" ] || exit 42
+/bin/cp -R %q "$output"
+`, pairedScenarioBinaryStrategy, template))
+	var audit sutbuild.Audit
+	if err := readStrictJSON(
+		"../../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/control.json",
+		&audit,
+	); err != nil {
+		t.Fatal(err)
+	}
+	audit.TrialID = "opaque-launch"
+	audit.SUTBuildIdentity = bundle.Qualification.Manifest.BuildID
+	audit.BinaryPath, audit.BinaryDigest = "<fixture>/sut", digestBytes(script)
+	auditBytes, err := json.Marshal(audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	semanticPath, keyPath := filepath.Join(root, "semantic.json"), filepath.Join(root, "key.txt")
+	if err := os.WriteFile(semanticPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("fixture-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	current := loadedFreshTrial{
+		trialID: "opaque-launch", audit: audit, auditDigest: digestBytes(auditBytes),
+		binary: script, binaryDigest: digestBytes(script),
+	}
+	evidence, err := runPairedScenarioBinary(context.Background(), current, pairedScenarioLaunchConfig{
+		SemanticInputPath: semanticPath, AgentKeyFile: keyPath,
+		AgentModel: "fixture/model", Timeout: 10 * time.Second,
+	}, filepath.Join(root, "launched"))
+	if err != nil || evidence.TrialID != current.trialID ||
+		evidence.BuildID != bundle.Qualification.Manifest.BuildID ||
+		evidence.Scenario.TargetIdentity != target || evidence.Root.RootMode != pairedScenarioFreshRootMode ||
+		evidence.Root.RootRule != pairedScenarioFreshRootRule {
+		t.Fatalf("launched paired evidence = %#v, err = %v", evidence, err)
+	}
+
+	mismatch := current
+	mismatch.audit.SUTBuildIdentity = "different-build"
+	if _, err := runPairedScenarioBinary(context.Background(), mismatch, pairedScenarioLaunchConfig{
+		SemanticInputPath: semanticPath, AgentKeyFile: keyPath,
+		AgentModel: "fixture/model", Timeout: 10 * time.Second,
+	}, filepath.Join(root, "mismatched")); err == nil ||
+		!strings.Contains(err.Error(), "BUILD_IDENTITY_MISMATCH") {
+		t.Fatalf("mismatched build identity error = %v", err)
 	}
 }
 

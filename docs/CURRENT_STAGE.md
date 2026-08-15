@@ -4,15 +4,15 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8cR2 per-SUT fresh root
+阶段：A8cR3a evaluator-owned paired binary launcher
 
 ## 一句话状态
 
 ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
 共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；真实 OpenRouter 公开预跑已经完成，
 evaluator 已能从该执行单位恢复两 arm 的 Bundle 和完整 Campaign 成本；下一步解决非公开
-candidate/control 的 evaluator-owned 执行编排。paired runner 已能从当前 SUT 生成 fresh source/root，
-并让两种 Planner 共享同一 prepared inputs；不再把官方 SUT 的 corpus digest 套到其他构建上。
+candidate/control 的多 trial 编排与结果聚合。evaluator 已能校验 BuildAudit/二进制后启动单个 opaque SUT 的
+fresh-root paired trial，并把两 arm Bundle 的 BuildID 重新关联到审计身份。
 
 ## 输入什么
 
@@ -110,6 +110,8 @@ Qualification 或 `cmd/control-experiment` 边界。
   2 次模型调用、15,418 tokens。该公开样本是可归因的负结果，不是 Agent 优势证据；
 - A8cR2 在缺省 paired 路径中按当前 SUT 的 source trace 生成 fresh corpus；默认身份与构建时注入的替代
   SUT 身份都通过同一 paired 集成测试，没有读取或放宽官方 corpus identity；
+- A8cR3a 已用本地伪二进制贯通 evaluator-owned 进程启动、fresh-root summary、两 arm Campaign 恢复和
+  BuildAudit/Bundle BuildID 匹配；该测试没有读取 key 或访问模型服务；
 - 两协议的 artifact 都保存完整 Bundle/Risk/Oracle，并能拒绝篡改；
 - deterministic canonical/uniform stateless Campaign 和 Semantic Explorer 仍可作为 A8 对照方法。
 
@@ -207,7 +209,22 @@ selection rule、root digest 和实际 root decisions，旧的显式 corpus 模�
 
 集成测试同时覆盖默认 build identity 和通过 `ldflags` 注入的替代 SUT identity。两者都完成 paired Scenario，
 说明新路径不依赖官方 corpus identity。它尚未启动真实 source-variation binary，也未产生正式 candidate/control
-verdict；下一小步把该入口交给 evaluator-owned launcher，并关联现有 BuildAudit。
+verdict；A8cR3a 已在 evaluator 侧补齐单 SUT launcher，正式多 trial 聚合仍未完成。
+
+## A8cR3a：evaluator-owned paired binary launcher
+
+`cmd/defect-eval` 现在可以接收一份已由现有 `loadFreshTrials` 校验过的 BuildAudit 与二进制，在独立临时路径
+恢复可执行文件，并在 evaluator 超时下启动 `etcdraft-a8-paired-scenario-v1`。命令不传
+`-stateless-corpus`，所以被测二进制必须走 A8cR2 的 SUT-local fresh-root 路径。
+
+进程成功后，evaluator 严格读取根 `summary.json` 和 deterministic/Agent 两个 Campaign，检查 fresh-root mode、
+selection rule、source/corpus/root digest、共享 SUT identity、相同执行预算及实际 model work。两个终端 Bundle
+中的 Manifest BuildID 还必须等于 BuildAudit 的 `SUTBuildIdentity`，避免“二进制摘要正确但 Campaign 来自另一
+构建”的证据替换。
+
+本地集成测试使用只复制预建 Campaign fixture 的临时脚本；脚本遇到 `-stateless-corpus` 会立即失败。正向路径
+完成全部恢复，篡改 BuildAudit BuildID 后被拒绝。这里没有调用 OpenRouter，也没有把 launcher 暴露成新的正式
+CLI 模式；下一小步复用现有 formal inputs，把多个 trial 逐个交给该 launcher，再分别聚合两种 Planner 的结果。
 
 ## 本轮减负结果
 
@@ -222,11 +239,11 @@ verdict；下一小步把该入口交给 evaluator-owned launcher，并关联现
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8cR2）：
+当前 Go 规模（包含 A8cR3a）：
 
-- 生产代码：33,625 行；
-- 测试代码：15,246 行；
-- 合计：48,871 行。
+- 生产代码：33,765 行；
+- 测试代码：15,341 行；
+- 合计：49,106 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
@@ -237,7 +254,7 @@ A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增�
 尚未完成：
 
 - 非公开 candidate/control 正式效果实验；
-- paired trial runner 与非公开 candidate/control evaluator 的衔接；
+- paired trial 的多 opaque SUT CLI 编排与 candidate/control 结果聚合；
 - A9 的双角色 Agent 消融；
 - 多次重复实验与置信区间；
 - fixed Profile obligation coverage 接入当前 Session 汇总；
@@ -263,8 +280,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步由 evaluator 按 BuildAudit 启动 opaque SUT binary 的 fresh-root paired trial，再把两种方法的 Campaign
-evidence 交给现有 candidate/control monitor 评测。
+下一小步让 evaluator 复用现有 formal inputs 批量启动 fresh-root paired trial，再把 deterministic 与 Agent 的
+Campaign evidence 分别交给 candidate/control monitor 评测。
 在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
 
 ## 当前验证
@@ -280,6 +297,7 @@ evidence 交给现有 candidate/control monitor 评测。
 - evaluator 侧 paired Campaign 恢复、完整成本保留和 SUT identity 错配拒绝；
 - Scenario prepared Runtime 消费、materialization 去重和保留 fresh child verification 的成本回归；
 - per-SUT fresh root、两 Planner 共享 prepared inputs，以及替代 SUT build identity 回归；
+- evaluator-owned paired binary 启动、fresh-root summary 严格恢复和 BuildAudit/Bundle identity 关联；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

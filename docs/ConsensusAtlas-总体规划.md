@@ -1,6 +1,6 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.16（A8cR2 per-SUT fresh root 完成）
+> 状态：Draft v2.17（A8cR3a evaluator-owned paired launcher 完成）
 > 日期：2026-08-15
 > 适用分支：`feature/agentic-consensus-testing`
 
@@ -645,9 +645,15 @@ Invoke、其后 Crash 和同节点 Restart 这三个 Action 里程碑生成 fres
 deterministic 与 Agent 两臂；两 arm 仍分别计入 source work。显式 `root-corpus.json` 入口保留用于公开实验复现，
 原有精确身份校验没有放宽。默认身份和构建时注入的替代 SUT identity 都通过 paired 集成测试。
 
-这仍不是正式 private pair：当前 runner 的分类仍是 public calibration，尚未由 evaluator 按 BuildAudit 启动
-opaque candidate/control binaries 并聚合结果。下一步只补这段 evaluator-owned orchestration，不新增 schema、
-hash、gate 或评分公式。
+这仍不是正式 private pair：当前 runner 的分类仍是 public calibration，尚未聚合 opaque candidate/control
+binaries 的方法结果。
+
+A8cR3a 已补 evaluator-owned 的单 SUT 进程边界：复用现有 BuildAudit/二进制摘要校验，从已审计 bytes 创建
+临时可执行文件，在显式超时内启动不带 `-stateless-corpus` 的 paired strategy。进程结束后严格恢复 fresh-root
+summary 和两个 Campaign，并要求两份 Bundle 的 Manifest BuildID 等于 BuildAudit SUTBuildIdentity。本地伪
+二进制集成测试同时证明旧 corpus 未被传入、完整 evidence 可恢复、BuildID 替换会被拒绝；它没有调用模型服务。
+下一步复用现有 formal inputs 做多 trial 编排，并为 deterministic/Agent 分别聚合 candidate/control 结果，不新增
+schema、hash、gate 或评分公式。
 
 ### A9：多 Agent 消融
 

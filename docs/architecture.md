@@ -301,6 +301,11 @@ prefix digest/长度、snapshot digest 和 Action 成员关系，随后立即关
 Semantic Explorer 仍保留原来的独立 materialization 路径。该闭包已抽为协议无关执行组件，但尚未完成所有
 baseline 的配对接线，因此当前结果不能用于宣称 LLM 优势。
 
+效果评测的进程边界由 evaluator 持有。它先复用现有 BuildAudit 与二进制摘要校验，再从审计后的 bytes 创建
+临时可执行文件，在显式超时内启动 fresh-root paired strategy。终端根 summary、两个 Campaign 和 Bundle 必须
+相互匹配，且 Bundle Manifest BuildID 必须回指 BuildAudit 的 SUTBuildIdentity。当前只完成单 SUT launcher；
+多 trial CLI 与 candidate/control verdict 聚合尚未接线，因此该能力不能被描述为正式 holdout 实验。
+
 A6b 在 session attempt artifact 中保存每个 qualified bundle 已有的规范 Core PSS 状态键。终端派生视图对这些
 键取并集，同时汇总 Agent/Testing/Replay episode 数、Risk 最佳进展和 Oracle violations；CampaignSummary 继续
 拥有 work/model/time 成本。该视图不持久化第二份账本，也不参与下一次 `ScenarioAgentView`。A4c 单 episode
