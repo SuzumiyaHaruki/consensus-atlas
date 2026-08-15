@@ -64,7 +64,7 @@ func ExecuteScenarioNaturalProgress(
 		PlanID: id, Status: ScenarioStatusCompleted, FinalTrace: root, FinalRisk: rootRisk,
 	}}
 	for decision := 0; decision < maxDecisions; decision++ {
-		view, snapshot, reconstruction, err := ReconstructRiskFrontierState(
+		view, snapshot, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
 			ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+1), spec,
 			result.Execution.FinalRisk, result.Execution.FinalTrace,
 			len(result.Execution.FinalTrace.Records), runtimeConfig, faultEnvelope, newAdapter,
@@ -74,11 +74,17 @@ func ExecuteScenarioNaturalProgress(
 			return ScenarioProgressResult{}, err
 		}
 		if scenarioClientTerminal(snapshot) {
+			if err := runtime.Close(); err != nil {
+				return ScenarioProgressResult{}, err
+			}
 			result.StopReason = ScenarioProgressClientTerminal
 			break
 		}
 		action, ok := scenarioNaturalProgressAction(view.Actions)
 		if !ok {
+			if err := runtime.Close(); err != nil {
+				return ScenarioProgressResult{}, err
+			}
 			result.StopReason = ScenarioProgressQuiescent
 			break
 		}
@@ -86,15 +92,14 @@ func ExecuteScenarioNaturalProgress(
 			fmt.Sprintf("%s-choice-%02d", id, decision+1), view, spec, action.ActionID,
 		)
 		if err != nil {
-			return ScenarioProgressResult{}, err
+			return ScenarioProgressResult{}, errors.Join(err, runtime.Close())
 		}
 		frontier, err := scenarioActionFrontier(view)
 		if err != nil {
-			return ScenarioProgressResult{}, err
+			return ScenarioProgressResult{}, errors.Join(err, runtime.Close())
 		}
-		child, materialization, verification, err := materializeDFSChild(
-			ctx, frontier, choice.Action, result.Execution.FinalTrace,
-			runtimeConfig, faultEnvelope, newAdapter,
+		child, materialization, verification, err := materializeDFSChildFromRuntime(
+			ctx, frontier, choice.Action, runtime, runtimeConfig, newAdapter,
 		)
 		addDFSPhase(&result.Execution.Work.ChildMaterialization, materialization)
 		addDFSPhase(&result.Execution.Work.ChildVerification, verification)

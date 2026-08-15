@@ -62,6 +62,14 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		len(result.FinalTrace.Records) != len(root.Records)+2 || result.Work.ChildVerification.WorkUnits == 0 {
 		t.Fatalf("two-step scenario did not execute through trusted frontiers: %#v", result)
 	}
+	if result.Work.FrontierReconstruction.SetupAttempts != 2 ||
+		result.Work.ChildMaterialization.SetupAttempts != 0 ||
+		result.Work.ChildMaterialization.PrepareActions != 0 ||
+		result.Work.ChildMaterialization.SchedulerDecisions != 2 ||
+		result.Work.ChildMaterialization.WorkUnits != 2 ||
+		result.Work.ChildVerification.SetupAttempts != 2 {
+		t.Fatalf("scenario repeated a reconstructed prefix before materialization: %#v", result.Work)
+	}
 	policy, err := CompileScenarioPolicy(
 		"fixture-a4-qualified-policy", root, result,
 		[]control.ActionKind{control.ActionFireTemporal},

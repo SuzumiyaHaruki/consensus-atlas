@@ -130,32 +130,59 @@ func ReconstructRiskFrontierState(
 	faultEnvelope *FaultEnvelope,
 	newAdapter AdapterFactory,
 ) (RiskFrontierView, controlruntime.Snapshot, PhaseWork, error) {
+	view, snapshot, runtime, work, err := reconstructRiskFrontierRuntime(
+		ctx, id, spec, result, trace, completedDecisions, runtimeConfig, faultEnvelope, newAdapter,
+	)
+	if err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
+	}
+	if err := runtime.Close(); err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
+	}
+	return view, snapshot, work, nil
+}
+
+// reconstructRiskFrontierRuntime is the Scenario-only prepared form of
+// ReconstructRiskFrontierState. The caller must either consume the returned
+// Runtime with materializeDFSChildFromRuntime or close it without exposing
+// any state derived after this frontier.
+func reconstructRiskFrontierRuntime(
+	ctx context.Context,
+	id string,
+	spec semantic.RiskWitnessSpec,
+	result semantic.RiskWitnessResult,
+	trace controlruntime.Trace,
+	completedDecisions int,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	newAdapter AdapterFactory,
+) (RiskFrontierView, controlruntime.Snapshot, *controlruntime.Runtime, PhaseWork, error) {
 	prefix, err := ExecutionTracePrefix(trace, completedDecisions)
 	if err != nil {
-		return RiskFrontierView{}, controlruntime.Snapshot{}, PhaseWork{}, err
+		return RiskFrontierView{}, controlruntime.Snapshot{}, nil, PhaseWork{}, err
 	}
 	if result.ExecutionDigest != prefix.Digest || result.TargetIdentityDigest != prefix.ManifestDigest {
-		return RiskFrontierView{}, controlruntime.Snapshot{}, PhaseWork{}, errors.New("EXPERIMENT_FRONTIER_PROGRESS_PREFIX_MISMATCH")
+		return RiskFrontierView{}, controlruntime.Snapshot{}, nil, PhaseWork{}, errors.New("EXPERIMENT_FRONTIER_PROGRESS_PREFIX_MISMATCH")
 	}
 	progress, err := semantic.NewRiskWitnessProgress(spec, result)
 	if err != nil {
-		return RiskFrontierView{}, controlruntime.Snapshot{}, PhaseWork{}, err
+		return RiskFrontierView{}, controlruntime.Snapshot{}, nil, PhaseWork{}, err
 	}
 	frontier, runtime, work, err := reconstructActionFrontierPrefix(
 		ctx, id, prefix, runtimeConfig, faultEnvelope, newAdapter,
 	)
 	if err != nil {
-		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
+		if runtime != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+		return RiskFrontierView{}, controlruntime.Snapshot{}, nil, work, err
 	}
 	snapshot := runtime.Snapshot()
-	if err := runtime.Close(); err != nil {
-		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
-	}
 	view, err := newRiskFrontierView(id, spec, progress, frontier)
 	if err != nil {
-		return RiskFrontierView{}, controlruntime.Snapshot{}, work, err
+		return RiskFrontierView{}, controlruntime.Snapshot{}, nil, work, errors.Join(err, runtime.Close())
 	}
-	return view, snapshot, work, nil
+	return view, snapshot, runtime, work, nil
 }
 
 func newRiskFrontierView(

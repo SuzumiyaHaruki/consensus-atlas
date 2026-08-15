@@ -292,8 +292,11 @@ episode/work/model/time 预算、checkpoint 和恢复。`ScenarioAgentFeedback` 
 
 活动路径每次只允许模型选择一个当前 Action。可信 natural-progress closure 随后只执行 effect completion、
 普通消息投递和自然到期 timer，并在 Risk 里程碑变化、目标客户端返回、自然推进静止或 decision budget 耗尽时
-停止。每个 closure Action 仍经过当前 admissible frontier、fresh Adapter materialization、Replay、Trace 和 work
-统计。该闭包已抽为协议无关执行组件，但尚未完成所有 baseline 的配对接线，因此当前结果不能用于宣称 LLM 优势。
+停止。Scenario 直接在产生当前 admissible frontier 的短生命 Runtime 上执行所选 closure Action；执行前重新核对
+prefix digest/长度、snapshot digest 和 Action 成员关系，随后立即关闭 Runtime。这样不再为 materialization 重放
+同一 prefix，但 child 仍由 fresh Adapter 独立 Replay 验证，并继续生成 Trace 和完整 work 统计。Stateless DFS 与
+Semantic Explorer 仍保留原来的独立 materialization 路径。该闭包已抽为协议无关执行组件，但尚未完成所有
+baseline 的配对接线，因此当前结果不能用于宣称 LLM 优势。
 
 A6b 在 session attempt artifact 中保存每个 qualified bundle 已有的规范 Core PSS 状态键。终端派生视图对这些
 键取并集，同时汇总 Agent/Testing/Replay episode 数、Risk 最佳进展和 Oracle violations；CampaignSummary 继续

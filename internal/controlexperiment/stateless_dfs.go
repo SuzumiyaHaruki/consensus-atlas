@@ -573,39 +573,108 @@ func materializeDFSChild(
 	if err != nil {
 		return controlruntime.Trace{}, materialization, PhaseWork{}, err
 	}
-	defer runtime.Close()
 	if view.Digest != wantView.Digest {
+		closeErr := runtime.Close()
 		return controlruntime.Trace{}, materialization, PhaseWork{},
-			errors.New("EXPERIMENT_STATELESS_DFS_FRONTIER_DRIFT")
+			errors.Join(errors.New("EXPERIMENT_STATELESS_DFS_FRONTIER_DRIFT"), closeErr)
+	}
+	child, selection, err := executeDFSChildOnRuntime(ctx, wantView, action, runtime)
+	addDFSPhase(&materialization, selection)
+	if err != nil {
+		return controlruntime.Trace{}, materialization, PhaseWork{}, err
+	}
+	verification, err := verifyDFSChild(ctx, child, runtimeConfig, newAdapter)
+	return child, materialization, verification, err
+}
+
+// materializeDFSChildFromRuntime executes against the exact Runtime that
+// produced wantView. This removes a duplicate prefix replay while retaining
+// the independent fresh child verification.
+func materializeDFSChildFromRuntime(
+	ctx context.Context,
+	wantView ActionFrontierView,
+	action FrontierActionRef,
+	runtime *controlruntime.Runtime,
+	runtimeConfig RuntimeConfig,
+	newAdapter AdapterFactory,
+) (controlruntime.Trace, PhaseWork, PhaseWork, error) {
+	child, materialization, err := executeDFSChildOnRuntime(ctx, wantView, action, runtime)
+	if err != nil {
+		return controlruntime.Trace{}, materialization, PhaseWork{}, err
+	}
+	verification, err := verifyDFSChild(ctx, child, runtimeConfig, newAdapter)
+	return child, materialization, verification, err
+}
+
+func executeDFSChildOnRuntime(
+	ctx context.Context,
+	wantView ActionFrontierView,
+	action FrontierActionRef,
+	runtime *controlruntime.Runtime,
+) (controlruntime.Trace, PhaseWork, error) {
+	var work PhaseWork
+	if runtime == nil {
+		return controlruntime.Trace{}, work, errors.New("EXPERIMENT_STATELESS_DFS_PREPARED_RUNTIME_INVALID")
+	}
+	if wantView.Validate() != nil {
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_STATELESS_DFS_PREPARED_RUNTIME_INVALID"), runtime.Close(),
+		)
+	}
+	prefix, err := runtime.Trace()
+	if err != nil || prefix.Digest != wantView.PrefixTraceDigest ||
+		len(prefix.Records) != wantView.PrefixDecisions {
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_STATELESS_DFS_PREPARED_RUNTIME_DRIFT"), err, runtime.Close(),
+		)
+	}
+	snapshotDigest, err := runtime.Snapshot().Digest()
+	if err != nil || snapshotDigest != wantView.SnapshotDigest {
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_STATELESS_DFS_PREPARED_RUNTIME_DRIFT"), err, runtime.Close(),
+		)
 	}
 	found := false
-	for _, candidate := range view.Actions {
+	for _, candidate := range wantView.Actions {
 		if reflect.DeepEqual(candidate, action) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		return controlruntime.Trace{}, materialization, PhaseWork{},
-			errors.New("EXPERIMENT_STATELESS_DFS_ACTION_NOT_ADMISSIBLE")
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_STATELESS_DFS_ACTION_NOT_ADMISSIBLE"), runtime.Close(),
+		)
 	}
 	if _, err := runtime.Select(ctx, action.ActionID); err != nil {
-		return controlruntime.Trace{}, materialization, PhaseWork{}, err
+		return controlruntime.Trace{}, work, errors.Join(err, runtime.Close())
 	}
-	chargeDecisions(&materialization, 1)
+	chargeDecisions(&work, 1)
 	child, err := runtime.Trace()
 	if err != nil {
-		return controlruntime.Trace{}, materialization, PhaseWork{}, err
+		return controlruntime.Trace{}, work, errors.Join(err, runtime.Close())
 	}
+	if err := runtime.Close(); err != nil {
+		return controlruntime.Trace{}, work, err
+	}
+	return child, work, nil
+}
+
+func verifyDFSChild(
+	ctx context.Context,
+	child controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	newAdapter AdapterFactory,
+) (PhaseWork, error) {
 	var verification PhaseWork
 	chargeSetup(&verification)
 	adapter, err := newAdapter()
 	if err != nil {
-		return controlruntime.Trace{}, materialization, verification, err
+		return verification, err
 	}
 	config, err := runtimeConfig.runtimeConfig()
 	if err != nil {
-		return controlruntime.Trace{}, materialization, verification, err
+		return verification, err
 	}
 	verificationRuntime, replay, err := controlruntime.ReplayWithProgress(ctx, adapter, config, child)
 	if replay.RuntimeInitialized {
@@ -614,12 +683,12 @@ func materializeDFSChild(
 	chargePrepareActions(&verification, replay.PrepareActions)
 	chargeDecisions(&verification, replay.Decisions)
 	if err != nil {
-		return controlruntime.Trace{}, materialization, verification, err
+		return verification, err
 	}
 	if err := verificationRuntime.Close(); err != nil {
-		return controlruntime.Trace{}, materialization, verification, err
+		return verification, err
 	}
-	return child, materialization, verification, nil
+	return verification, nil
 }
 
 func prefixReplayWork(prefix controlruntime.Trace) PhaseWork {

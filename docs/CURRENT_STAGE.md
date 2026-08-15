@@ -1,17 +1,18 @@
 # 当前阶段
 
-日期：2026-08-14
+日期：2026-08-15
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8c evaluator 侧 paired Campaign evidence
+阶段：A8cR1 Scenario materialization 去重
 
 ## 一句话状态
 
 ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
 共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；真实 OpenRouter 公开预跑已经完成，
 evaluator 已能从该执行单位恢复两 arm 的 Bundle 和完整 Campaign 成本；下一步解决非公开
-candidate/control 不能直接复用官方 SUT root corpus 的身份绑定。
+candidate/control 不能直接复用官方 SUT root corpus 的身份绑定。Scenario 已先消除 Frontier 与
+materialization 之间对同一 prefix 的重复重放，但保留每个 child 的独立 fresh verification。
 
 ## 输入什么
 
@@ -172,6 +173,24 @@ Trace，candidate binary 会在规划前被拒绝。下一小步应当使可信 
 root 选择规则构建 fresh source/root，两种 planner 再共享该 SUT 的同一 root。不能忽略 identity 校验，也不能
 把官方 root digest 强行应用到 candidate。
 
+## A8cR1：Scenario materialization 去重
+
+优化前，Scenario 每处理一个 Action 会 fresh Replay prefix 重建 Frontier，选定 Action 后又 fresh Replay
+同一 prefix 以 materialize child，最后再用新 Adapter Replay child 做独立验证。现在第一步返回的
+短生命 Runtime 由 materialization 直接消费。Select 前会重新核对 prefix digest/长度、snapshot digest 和
+Action 成员关系；Select 后立即关闭该 Runtime，fresh child Replay 不变。因此 Agent 仍然只看到独立
+验证过的状态。DFS 和 Semantic Explorer 原有 materialization 路径继续使用独立重建。
+
+对 A8b 同一条 28→54 decision Trace 按当前 ledger 机械重算：
+
+- Primary：`2443 -> 1338`，减少 1,105（45.23%）；
+- Replay：仍为 `1253`，因为 26 个 child 仍逐个 fresh 验证；
+- Bundle：仍为 `56/56`，Agent model work 仍独立计数。
+
+A8 配对与确定性 Scenario 集成测试保持 Trace/Risk/Oracle 行为不变。成本回归测试要求
+`ChildMaterialization` 不再新增 setup/prepare/prefix replay，而 `ChildVerification` 仍有 fresh setup。下一轮先继续
+per-SUT fresh root；segment-level Replay 批处理留作后续独立优化。
+
 ## 本轮减负结果
 
 本轮已完成：
@@ -185,11 +204,11 @@ root 选择规则构建 fresh source/root，两种 planner 再共享该 SUT 的�
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8c）：
+当前 Go 规模（包含 A8cR1）：
 
-- 生产代码：33,413 行；
-- 测试代码：15,235 行；
-- 合计：48,648 行。
+- 生产代码：33,517 行；
+- 测试代码：15,243 行；
+- 合计：48,760 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
@@ -240,6 +259,7 @@ A8 先形成一个最小、可预注册的配对实验：
 - etcd/raft deterministic/Agent 共用 Scenario core 与 qualified testing 的集成测试；
 - A8 单 episode paired runner 的同预算、同 Trace 和无 provider/key 恢复测试；
 - evaluator 侧 paired Campaign 恢复、完整成本保留和 SUT identity 错配拒绝；
+- Scenario prepared Runtime 消费、materialization 去重和保留 fresh child verification 的成本回归；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

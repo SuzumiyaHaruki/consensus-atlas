@@ -633,6 +633,12 @@ Campaign 中恢复完整 Bundle、Campaign config/checkpoint 与 primary/replay/
 SUT identity 和 execution budget。这不把方法轴误作 SUT 版本轴。必须保留 Campaign 成本：真实预跑中
 它为 2,443/1,253，而嵌套 Bundle 只有 56/56，直接复用旧 Bundle evaluator 会严重低估方法成本。
 
+A8cR1 消除了 Scenario Frontier reconstruction 与 child materialization 对同一 prefix 的重复重放。产生 Frontier
+的短生命 Runtime 由当前 Action 直接消费；Select 前重新核对 prefix digest/长度、snapshot digest 和 Action
+成员关系，Select 后立即关闭。child 仍由 fresh Adapter 独立 Replay 验证，DFS 与 Semantic Explorer 路径不变。
+按 A8b 不变的 28→54 decision Trace 和现有 ledger 机械重算，Primary 从 2,443 降至 1,338（减少 45.23%），
+Replay 仍为 1,253，最终 Bundle 仍为 56/56；model calls/tokens 继续单列。这不是一次新的真实模型实验结果。
+
 下一个阻塞不在 monitor：当前 `root-corpus.json` 精确绑定官方 SUT 的 Manifest/source Bundle/Trace，
 candidate binary 会在 Agent 规划前被拒绝。private evaluator 必须对每个 opaque SUT 用相同 root 选择规则生成
 fresh source/root，然后让两 planner 共享该 SUT 内的同一 root；不放宽 identity 校验，不把官方 digest 强套给

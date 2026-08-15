@@ -139,7 +139,7 @@ func ExecuteBoundedScenarioPlan(
 			})
 			break
 		}
-		view, reconstruction, err := ReconstructRiskFrontierView(
+		view, _, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
 			ctx, fmt.Sprintf("%s-step-%02d", executionID, index+1), spec, result.FinalRisk,
 			result.FinalTrace, len(result.FinalTrace.Records), runtimeConfig, faultEnvelope, newAdapter,
 		)
@@ -153,6 +153,9 @@ func ExecuteBoundedScenarioPlan(
 			ViewDigest: view.Digest, MatchCount: len(matches), RiskProgress: progress,
 		}
 		if len(matches) != 1 {
+			if err := runtime.Close(); err != nil {
+				return ScenarioExecution{}, err
+			}
 			result.Status = ScenarioStatusStopped
 			feedback.ReasonCode = ScenarioReasonNoMatch
 			if len(matches) > 1 {
@@ -166,14 +169,14 @@ func ExecuteBoundedScenarioPlan(
 			fmt.Sprintf("%s-choice-%02d", executionID, index+1), view, spec, matches[0].ActionID,
 		)
 		if err != nil {
-			return ScenarioExecution{}, err
+			return ScenarioExecution{}, errors.Join(err, runtime.Close())
 		}
 		frontier, err := scenarioActionFrontier(view)
 		if err != nil {
-			return ScenarioExecution{}, err
+			return ScenarioExecution{}, errors.Join(err, runtime.Close())
 		}
-		child, materialization, verification, err := materializeDFSChild(
-			ctx, frontier, choice.Action, result.FinalTrace, runtimeConfig, faultEnvelope, newAdapter,
+		child, materialization, verification, err := materializeDFSChildFromRuntime(
+			ctx, frontier, choice.Action, runtime, runtimeConfig, newAdapter,
 		)
 		addDFSPhase(&result.Work.ChildMaterialization, materialization)
 		addDFSPhase(&result.Work.ChildVerification, verification)
