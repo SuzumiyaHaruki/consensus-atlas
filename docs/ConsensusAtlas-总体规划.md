@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.15（A6f 最小共识 Oracle 闭环完成）
-> 日期：2026-08-14
+> 状态：Draft v2.16（A8cR2 per-SUT fresh root 完成）
+> 日期：2026-08-15
 > 适用分支：`feature/agentic-consensus-testing`
 
 ## 0. 一句话目标
@@ -639,10 +639,15 @@ A8cR1 消除了 Scenario Frontier reconstruction 与 child materialization 对�
 按 A8b 不变的 28→54 decision Trace 和现有 ledger 机械重算，Primary 从 2,443 降至 1,338（减少 45.23%），
 Replay 仍为 1,253，最终 Bundle 仍为 56/56；model calls/tokens 继续单列。这不是一次新的真实模型实验结果。
 
-下一个阻塞不在 monitor：当前 `root-corpus.json` 精确绑定官方 SUT 的 Manifest/source Bundle/Trace，
-candidate binary 会在 Agent 规划前被拒绝。private evaluator 必须对每个 opaque SUT 用相同 root 选择规则生成
-fresh source/root，然后让两 planner 共享该 SUT 内的同一 root；不放宽 identity 校验，不把官方 digest 强套给
-candidate。本阶段没有新增 schema、hash、gate 或评分公式。
+A8cR2 已解除该输入阻塞。paired runner 未显式提供 corpus 时，先在当前 SUT 上生成 source Bundle，再以首次
+Invoke、其后 Crash 和同节点 Restart 这三个 Action 里程碑生成 fresh corpus；decision 位置和所有 digest 都来自
+当前 Trace，不复制官方 0/28/54。fresh source/corpus/root/frontier/spec 只构造一次，同一 prepared inputs 交给
+deterministic 与 Agent 两臂；两 arm 仍分别计入 source work。显式 `root-corpus.json` 入口保留用于公开实验复现，
+原有精确身份校验没有放宽。默认身份和构建时注入的替代 SUT identity 都通过 paired 集成测试。
+
+这仍不是正式 private pair：当前 runner 的分类仍是 public calibration，尚未由 evaluator 按 BuildAudit 启动
+opaque candidate/control binaries 并聚合结果。下一步只补这段 evaluator-owned orchestration，不新增 schema、
+hash、gate 或评分公式。
 
 ### A9：多 Agent 消融
 

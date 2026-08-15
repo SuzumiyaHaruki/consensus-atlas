@@ -218,6 +218,36 @@ func loadEtcdraftStatelessCampaignInputsWithWorkload(
 	if corpusPath == "" {
 		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_CORPUS_PATH_INVALID")
 	}
+	inputs, err := prepareEtcdraftStatelessCampaignSource(ctx, workload)
+	if err != nil {
+		return etcdraftStatelessCampaignInputs{}, err
+	}
+	if err := readStrictJSONFile(corpusPath, 64<<10, &inputs.corpus); err != nil ||
+		inputs.corpus.Validate(inputs.source) != nil {
+		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_CORPUS_INVALID")
+	}
+	return inputs, nil
+}
+
+func prepareEtcdraftFreshCampaignInputs(
+	ctx context.Context,
+	workload controlexperiment.WorkloadPlan,
+) (etcdraftStatelessCampaignInputs, error) {
+	inputs, err := prepareEtcdraftStatelessCampaignSource(ctx, workload)
+	if err != nil {
+		return etcdraftStatelessCampaignInputs{}, err
+	}
+	inputs.corpus, err = newEtcdraftFreshRootCorpus(inputs.source)
+	if err != nil {
+		return etcdraftStatelessCampaignInputs{}, err
+	}
+	return inputs, nil
+}
+
+func prepareEtcdraftStatelessCampaignSource(
+	ctx context.Context,
+	workload controlexperiment.WorkloadPlan,
+) (etcdraftStatelessCampaignInputs, error) {
 	if err := workload.Validate(); err != nil {
 		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_WORKLOAD_INVALID")
 	}
@@ -227,19 +257,57 @@ func loadEtcdraftStatelessCampaignInputsWithWorkload(
 	if err != nil {
 		return etcdraftStatelessCampaignInputs{}, err
 	}
-	var corpus controlexperiment.StatelessRootCorpus
-	if err := readStrictJSONFile(corpusPath, 64<<10, &corpus); err != nil ||
-		corpus.Validate(source) != nil {
-		return etcdraftStatelessCampaignInputs{}, errors.New("ETCDRAFT_STATELESS_CORPUS_INVALID")
-	}
 	qualification, admission, _, err := etcdraftQualifiedWorkload(ctx)
 	if err != nil {
 		return etcdraftStatelessCampaignInputs{}, err
 	}
 	return etcdraftStatelessCampaignInputs{
-		source: source, corpus: corpus, qualification: qualification,
+		source: source, qualification: qualification,
 		admission: admission, workload: workload,
 	}, nil
+}
+
+// newEtcdraftFreshRootCorpus applies one target-local selection rule to the
+// current SUT's source trace. It chooses common Action milestones rather than
+// copying decision numbers or digests from the official-source corpus.
+func newEtcdraftFreshRootCorpus(
+	source controlexperiment.ExecutionBundle,
+) (controlexperiment.StatelessRootCorpus, error) {
+	if source.Validate() != nil {
+		return controlexperiment.StatelessRootCorpus{}, errors.New("ETCDRAFT_FRESH_ROOT_SOURCE_INVALID")
+	}
+	invoked, restarted := -1, -1
+	var crashed control.NodeID
+	for index, record := range source.Trace.Records {
+		switch record.Action.Kind {
+		case control.ActionInvoke:
+			if invoked < 0 {
+				invoked = index + 1
+			}
+		case control.ActionCrash:
+			if invoked >= 0 && crashed == "" {
+				crashed = record.Action.Node.Node
+			}
+		case control.ActionRestart:
+			if crashed != "" && record.Action.Node.Node == crashed {
+				restarted = index + 1
+			}
+		}
+		if restarted >= 0 {
+			break
+		}
+	}
+	if invoked <= 0 || crashed == "" || restarted <= invoked {
+		return controlexperiment.StatelessRootCorpus{}, errors.New("ETCDRAFT_FRESH_ROOT_MILESTONES_MISSING")
+	}
+	return controlexperiment.NewStatelessRootCorpus(
+		"etcdraft-a8-fresh-roots", "first-invoke-crash-restart-actions-v1", source,
+		[]controlexperiment.StatelessRootSpec{
+			{ID: "initial", PhaseID: "source-initial-state", Decisions: 0},
+			{ID: "invoked", PhaseID: "workload-invoked-milestone", Decisions: invoked},
+			{ID: "restarted", PhaseID: "crashed-node-restarted-milestone", Decisions: restarted},
+		},
+	)
 }
 
 func newEtcdraftStatelessCampaignMethods(

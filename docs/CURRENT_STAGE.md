@@ -4,15 +4,15 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8cR1 Scenario materialization 去重
+阶段：A8cR2 per-SUT fresh root
 
 ## 一句话状态
 
 ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Scenario Agent 已接入同一个 paired trial runner，
 共享 root、自然推进、执行预算、qualified executor、Replay 和 Oracle；真实 OpenRouter 公开预跑已经完成，
 evaluator 已能从该执行单位恢复两 arm 的 Bundle 和完整 Campaign 成本；下一步解决非公开
-candidate/control 不能直接复用官方 SUT root corpus 的身份绑定。Scenario 已先消除 Frontier 与
-materialization 之间对同一 prefix 的重复重放，但保留每个 child 的独立 fresh verification。
+candidate/control 的 evaluator-owned 执行编排。paired runner 已能从当前 SUT 生成 fresh source/root，
+并让两种 Planner 共享同一 prepared inputs；不再把官方 SUT 的 corpus digest 套到其他构建上。
 
 ## 输入什么
 
@@ -29,7 +29,8 @@ materialization 之间对同一 prefix 的重复重放，但保留每个 child �
 
 - `plans/agent/etcdraft-leader-change-inflight-v1.json`；
 - `plans/agent/omnipaxos-message-loss-before-decision-v1.json`；
-- `benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json`；
+- `benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json`（仅用于既有公开实验复现；paired
+  runner 缺省从当前 SUT 生成 fresh root）；
 - `adapters/<target>/` 与 `qualifications/<target>/`。
 
 ## 如何处理
@@ -107,6 +108,8 @@ Qualification 或 `cmd/control-experiment` 边界。
 - A8b 真实同底座 paired preflight 使用同一 root 和一个 episode：deterministic 与 Agent 都消耗 2,443 primary、
   1,253 replay work，得到相同 Trace、38 个 Core PSS 状态、Risk reached 和 0 Oracle violation；Agent 额外使用
   2 次模型调用、15,418 tokens。该公开样本是可归因的负结果，不是 Agent 优势证据；
+- A8cR2 在缺省 paired 路径中按当前 SUT 的 source trace 生成 fresh corpus；默认身份与构建时注入的替代
+  SUT 身份都通过同一 paired 集成测试，没有读取或放宽官方 corpus identity；
 - 两协议的 artifact 都保存完整 Bundle/Risk/Oracle，并能拒绝篡改；
 - deterministic canonical/uniform stateless Campaign 和 Semantic Explorer 仍可作为 A8 对照方法。
 
@@ -168,10 +171,10 @@ client，并用 Session/A8 回归测试确认 artifact 中实际 retry 上限为
 这个分离很重要：真实 A8b 中每 arm 的 Campaign 成本为 2,443/1,253，而嵌套 Bundle 的局部执行成本
 只有 56/56。直接把 Bundle 交给旧 `FreshBundleEvidence` 会漏记 root 构建、frontier 重建和规划成本。
 
-当前还不能运行真实 private pair：`root-corpus.json` 精确绑定官方 SUT 的 Manifest、source Bundle 和
-Trace，candidate binary 会在规划前被拒绝。下一小步应当使可信 evaluator 对每个 opaque SUT 用相同的
-root 选择规则构建 fresh source/root，两种 planner 再共享该 SUT 的同一 root。不能忽略 identity 校验，也不能
-把官方 root digest 强行应用到 candidate。
+旧 `root-corpus.json` 仍精确绑定官方 SUT 的 Manifest、source Bundle 和 Trace；显式提供该文件时，任何身份
+或配置错配仍会被拒绝。A8cR2 通过另一条缺省 paired 路径解决 candidate 构建的输入问题，不放宽旧校验。
+当前尚缺 evaluator-owned 的 opaque binary 启动、BuildAudit 关联和 candidate/control 结果聚合，因此这条
+fresh-root 路径仍是 calibration 能力，不是正式 private pair 结果。
 
 ## A8cR1：Scenario materialization 去重
 
@@ -188,8 +191,23 @@ Action 成员关系；Select 后立即关闭该 Runtime，fresh child Replay 不
 - Bundle：仍为 `56/56`，Agent model work 仍独立计数。
 
 A8 配对与确定性 Scenario 集成测试保持 Trace/Risk/Oracle 行为不变。成本回归测试要求
-`ChildMaterialization` 不再新增 setup/prepare/prefix replay，而 `ChildVerification` 仍有 fresh setup。下一轮先继续
-per-SUT fresh root；segment-level Replay 批处理留作后续独立优化。
+`ChildMaterialization` 不再新增 setup/prepare/prefix replay，而 `ChildVerification` 仍有 fresh setup。
+per-SUT fresh root 已在 A8cR2 完成；segment-level Replay 批处理留作后续独立优化。
+
+## A8cR2：per-SUT fresh root
+
+paired runner 在未提供 `-stateless-corpus` 时，先由当前 SUT 生成 source Bundle，再以同一个 target-local 规则
+选择三个 Action 里程碑：初态、首次 Invoke、首次 Invoke 后 crash 节点的 Restart。该规则从当前 Trace 计算
+decision 位置，不复制官方 corpus 的 0/28/54、prefix digest 或 Manifest。生成的 corpus 继续由现有
+`StatelessRootCorpus` 校验并绑定当前 source/Trace/Manifest。
+
+fresh source、corpus、root、frontier 和 spec 只构造一次，并作为同一个 prepared inputs 分别传给 deterministic
+与 Agent Campaign；两 arm 的逻辑账本仍各自计入 source work。根 summary 仅在 fresh 模式记录 source、corpus、
+selection rule、root digest 和实际 root decisions，旧的显式 corpus 模式保持原有 summary，便于复现 A8b 工件。
+
+集成测试同时覆盖默认 build identity 和通过 `ldflags` 注入的替代 SUT identity。两者都完成 paired Scenario，
+说明新路径不依赖官方 corpus identity。它尚未启动真实 source-variation binary，也未产生正式 candidate/control
+verdict；下一小步把该入口交给 evaluator-owned launcher，并关联现有 BuildAudit。
 
 ## 本轮减负结果
 
@@ -204,11 +222,11 @@ per-SUT fresh root；segment-level Replay 批处理留作后续独立优化。
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8cR1）：
+当前 Go 规模（包含 A8cR2）：
 
-- 生产代码：33,517 行；
-- 测试代码：15,243 行；
-- 合计：48,760 行。
+- 生产代码：33,625 行；
+- 测试代码：15,246 行；
+- 合计：48,871 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
@@ -245,7 +263,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步实现 per-SUT fresh root，再把 paired evidence 交给现有 private candidate/control monitor 评测。
+下一小步由 evaluator 按 BuildAudit 启动 opaque SUT binary 的 fresh-root paired trial，再把两种方法的 Campaign
+evidence 交给现有 candidate/control monitor 评测。
 在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
 
 ## 当前验证
@@ -260,6 +279,7 @@ A8 先形成一个最小、可预注册的配对实验：
 - A8 单 episode paired runner 的同预算、同 Trace 和无 provider/key 恢复测试；
 - evaluator 侧 paired Campaign 恢复、完整成本保留和 SUT identity 错配拒绝；
 - Scenario prepared Runtime 消费、materialization 去重和保留 fresh child verification 的成本回归；
+- per-SUT fresh root、两 Planner 共享 prepared inputs，以及替代 SUT build identity 回归；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

@@ -47,7 +47,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.Int64Var(&options.CampaignWallClock, "campaign-wall-clock-ms", 0, "Campaign wall-clock ceiling")
 	flags.IntVar(&options.CampaignModelTokens, "campaign-model-tokens-per-attempt", 0, "model-token allowance per attempt")
 	flags.BoolVar(&options.CampaignResume, "campaign-resume", false, "resume an exact Campaign")
-	flags.StringVar(&options.StatelessCorpus, "stateless-corpus", "", "frozen root corpus")
+	flags.StringVar(&options.StatelessCorpus, "stateless-corpus", "", "root corpus (paired Scenario defaults to SUT-local fresh roots)")
 	flags.StringVar(&options.Strategy, "strategy", options.Strategy, "qualified or explicit opt-in Agent strategy")
 	flags.IntVar(&options.Decisions, "decisions", options.Decisions, "charged decisions per run")
 	flags.Uint64Var(&options.PolicySeed, "policy-seed", options.PolicySeed, "public random-policy seed")

@@ -163,7 +163,12 @@ func prepareEtcdraftSemanticCalibration(
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}
-	inputs, err := loadEtcdraftStatelessCampaignInputsWithWorkload(ctx, corpusPath, workload)
+	var inputs etcdraftStatelessCampaignInputs
+	if corpusPath == "" {
+		inputs, err = prepareEtcdraftFreshCampaignInputs(ctx, workload)
+	} else {
+		inputs, err = loadEtcdraftStatelessCampaignInputsWithWorkload(ctx, corpusPath, workload)
+	}
 	if err != nil {
 		return etcdraftSemanticCalibrationInputs{}, err
 	}

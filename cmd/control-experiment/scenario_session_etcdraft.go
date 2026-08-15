@@ -68,6 +68,27 @@ func runEtcdraftScenarioSession(
 			return etcdraftScenarioSessionSummary{}, err
 		}
 	}
+	return runEtcdraftScenarioSessionWithInputs(ctx, clean, options, inputs)
+}
+
+// runEtcdraftScenarioSessionWithInputs lets a paired trial give both planners
+// the exact same SUT-local source, corpus and root instead of regenerating or
+// reloading them independently.
+func runEtcdraftScenarioSessionWithInputs(
+	ctx context.Context,
+	directory string,
+	options etcdraftScenarioSessionOptions,
+	inputs etcdraftSemanticCalibrationInputs,
+) (etcdraftScenarioSessionSummary, error) {
+	clean := filepath.Clean(directory)
+	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
+		!validateAgentKeyFileName(options.AgentKeyFile) || options.ReadKey == nil ||
+		inputs.client.HTTP == nil || inputs.spec.ValidateInputs(
+		inputs.campaign, inputs.root, inputs.frontier, inputs.riskSpec, inputs.knowledge,
+		inputs.hypothesis, inputs.experiment, inputs.searchSpec,
+	) != nil {
+		return etcdraftScenarioSessionSummary{}, errors.New("ETCDRAFT_SCENARIO_SESSION_INPUTS_INVALID")
+	}
 	config, err := newEtcdraftScenarioSessionConfig(inputs)
 	if err != nil {
 		return etcdraftScenarioSessionSummary{}, err

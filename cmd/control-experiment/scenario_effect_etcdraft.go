@@ -16,6 +16,7 @@ const (
 	etcdraftA8DeterministicSessionID = "etcdraft-a8-deterministic-scenario-v1"
 	etcdraftA8DeterministicClass     = "public-calibration-deterministic-scenario-control"
 	etcdraftA8PairClass              = "public-calibration-not-agent-effectiveness-holdout-or-correctness"
+	etcdraftA8FreshRootMode          = "sut-local-fresh"
 )
 
 type etcdraftA8PairedScenarioOptions struct {
@@ -47,6 +48,12 @@ type etcdraftA8PairedScenarioSummary struct {
 	TargetID       string                `json:"target_id"`
 	TargetIdentity string                `json:"target_identity_digest"`
 	SemanticMode   string                `json:"semantic_exposure"`
+	RootMode       string                `json:"root_mode,omitempty"`
+	SourceDigest   string                `json:"source_bundle_digest,omitempty"`
+	CorpusDigest   string                `json:"root_corpus_digest,omitempty"`
+	RootRule       string                `json:"root_selection_rule,omitempty"`
+	RootDigest     string                `json:"root_trace_digest,omitempty"`
+	RootDecisions  int                   `json:"root_decisions,omitempty"`
 	SameTrace      bool                  `json:"same_trace"`
 	Deterministic  etcdraftA8ScenarioArm `json:"deterministic"`
 	Agent          etcdraftA8ScenarioArm `json:"agent"`
@@ -58,7 +65,7 @@ func runEtcdraftA8PairedScenario(
 ) (etcdraftA8PairedScenarioSummary, error) {
 	clean := filepath.Clean(options.Directory)
 	if options.Directory == "" || clean == "." || clean == string(filepath.Separator) ||
-		options.CorpusPath == "" || options.SemanticInputPath == "" ||
+		options.SemanticInputPath == "" ||
 		!validateAgentKeyFileName(options.AgentKeyFile) || options.Client.HTTP == nil || options.ReadKey == nil {
 		return etcdraftA8PairedScenarioSummary{}, errors.New("ETCDRAFT_A8_PAIR_OPTIONS_INVALID")
 	}
@@ -95,11 +102,10 @@ func runEtcdraftA8PairedScenario(
 	if err != nil {
 		return etcdraftA8PairedScenarioSummary{}, err
 	}
-	if _, err := runEtcdraftScenarioSession(ctx, etcdraftScenarioSessionOptions{
-		Directory: agentDirectory, CorpusPath: options.CorpusPath,
-		SemanticInputPath: options.SemanticInputPath, Resume: agentResume,
+	if _, err := runEtcdraftScenarioSessionWithInputs(ctx, agentDirectory, etcdraftScenarioSessionOptions{
+		Directory: agentDirectory, Resume: agentResume,
 		AgentKeyFile: options.AgentKeyFile, Client: options.Client, ReadKey: options.ReadKey,
-	}); err != nil {
+	}, inputs); err != nil {
 		return etcdraftA8PairedScenarioSummary{}, err
 	}
 	baseline, err := readEtcdraftA8ScenarioArm(
@@ -122,6 +128,14 @@ func runEtcdraftA8PairedScenario(
 		SemanticMode:   string(inputs.experiment.ScenarioSemanticExposure),
 		SameTrace:      baseline.TraceDigest == agent.TraceDigest,
 		Deterministic:  baseline, Agent: agent,
+	}
+	if options.CorpusPath == "" {
+		summary.RootMode = etcdraftA8FreshRootMode
+		summary.SourceDigest = inputs.campaign.source.Digest
+		summary.CorpusDigest = inputs.campaign.corpus.Digest
+		summary.RootRule = inputs.campaign.corpus.SelectionRuleID
+		summary.RootDigest = inputs.root.Digest
+		summary.RootDecisions = len(inputs.root.Records)
 	}
 	path := filepath.Join(clean, "summary.json")
 	if options.Resume {

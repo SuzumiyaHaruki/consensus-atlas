@@ -52,7 +52,7 @@ func TestA8PairedScenarioComparesOneEpisodeOnSameExecutionSubstrate(t *testing.T
 	directory := filepath.Join(t.TempDir(), "a8-paired")
 	keyReads := 0
 	options := etcdraftA8PairedScenarioOptions{
-		Directory: directory, CorpusPath: etcdraftTestRootCorpusPath,
+		Directory:         directory,
 		SemanticInputPath: etcdraftTestSemanticInputPath, AgentKeyFile: "fixture-key-source",
 		Client: client, ReadKey: func(string) (string, error) {
 			keyReads++
@@ -62,6 +62,9 @@ func TestA8PairedScenarioComparesOneEpisodeOnSameExecutionSubstrate(t *testing.T
 	summary, err := runEtcdraftA8PairedScenario(ctx, options)
 	if err != nil || summary.Classification != etcdraftA8PairClass || !summary.SameTrace ||
 		summary.SemanticMode != string(controlexperiment.ScenarioSemanticExposureFull) ||
+		summary.RootMode != etcdraftA8FreshRootMode || len(summary.SourceDigest) != 64 ||
+		len(summary.CorpusDigest) != 64 || summary.RootRule != "first-invoke-crash-restart-actions-v1" ||
+		len(summary.RootDigest) != 64 || summary.RootDecisions <= 0 ||
 		summary.Deterministic.Planner != scenarioPlannerDeterministic ||
 		summary.Agent.Planner != scenarioPlannerAgent ||
 		summary.Deterministic.PrimaryWorkUnits != summary.Agent.PrimaryWorkUnits ||

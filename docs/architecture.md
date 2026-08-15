@@ -1,6 +1,6 @@
 # ConsensusAtlas 架构
 
-日期：2026-08-14
+日期：2026-08-15
 
 本文件描述当前代码和已经确定的演进边界，而不是历史阶段。系统只保留一条权威主线：
 
@@ -49,7 +49,10 @@ Adapter topology/ticks、Runtime、FaultEnvelope 和 A2/A4 预算外移到 `plan
 
 Authoring JSON 只提供人工输入字段和外部运行上限。它不能提供 schema version、digest、执行 backend、
 Oracle 或 verdict；Agent 也不能修改这些预算。加载器严格拒绝未知字段和作者伪造的派生身份。
-拓扑、时间参数或 workload 与已有 root corpus 不一致时，现有 Adapter manifest、bundle 和 Replay 校验会拒绝组合。
+拓扑、时间参数或 workload 与显式 root corpus 不一致时，现有 Adapter manifest、bundle 和 Replay 校验会拒绝组合。
+paired 评测的缺省路径不跨 SUT 复用 corpus：它先在当前 SUT 上生成 source，再按首次 Invoke、其后 Crash 和同节点
+Restart 的 target-local Action 规则选择 fresh root。确定性与 Agent 两臂消费同一个 prepared inputs；显式 corpus
+入口仅用于复现已有公开实验，继续执行精确身份校验。
 
 ### 输出
 

@@ -87,10 +87,10 @@ func runEtcdraftA8PairedScenarioCLI(
 	options controlExperimentOptions,
 	stdout io.Writer,
 ) error {
-	if options.CampaignDirectory == "" || options.StatelessCorpus == "" || options.SemanticInput == "" ||
+	if options.CampaignDirectory == "" || options.SemanticInput == "" ||
 		options.AgentKeyFile == "" || options.AgentModel == "" || options.WorkerPath != "" ||
 		options.ScenarioSemanticExposure != "" || options.hasNonSessionFlags() {
-		return errors.New("A8 paired Scenario requires -campaign-dir, -stateless-corpus, -semantic-input, -agent-key-file, -agent-model, and optional -campaign-resume")
+		return errors.New("A8 paired Scenario requires -campaign-dir, -semantic-input, -agent-key-file, -agent-model, optional -stateless-corpus, and optional -campaign-resume")
 	}
 	summary, err := runEtcdraftA8PairedScenario(ctx, etcdraftA8PairedScenarioOptions{
 		Directory: options.CampaignDirectory, CorpusPath: options.StatelessCorpus,
