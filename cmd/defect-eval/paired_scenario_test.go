@@ -272,16 +272,36 @@ func TestFormalPairedScenarioBatchRequiresAuditedSemanticsAndRecoversCompletedTr
 		context.Background(), filepath.Join(root, "contract.json"), exposurePath, inputsPath,
 		config, artifacts, runner,
 	)
-	if err != nil || len(first) != 6 || runnerCalls != 6 {
-		t.Fatalf("first paired batch evidence=%d calls=%d err=%v", len(first), runnerCalls, err)
+	if err != nil || len(first.Evidence) != 6 || runnerCalls != 6 ||
+		first.Deterministic.Summary.Controls != 3 || first.Deterministic.Summary.Candidates != 3 ||
+		first.Deterministic.Summary.FalsePositives != 0 || first.Deterministic.Summary.KilledCandidates != 0 ||
+		first.Agent.Summary != first.Deterministic.Summary {
+		t.Fatalf("first paired batch outcome=%#v calls=%d err=%v", first, runnerCalls, err)
+	}
+	methodDrift := make(map[string]pairedScenarioFreshEvidence, len(first.Evidence))
+	for trialID, current := range first.Evidence {
+		methodDrift[trialID] = current
+	}
+	drifted := methodDrift["opaque-06"]
+	if drifted.Scenario.Agent.Bundle.SchemaVersion == controlexperiment.ExecutionBundleSchemaVersionV3 {
+		drifted.Scenario.Agent.Bundle.SchemaVersion = controlexperiment.ExecutionBundleSchemaVersionV2
+	} else {
+		drifted.Scenario.Agent.Bundle.SchemaVersion = controlexperiment.ExecutionBundleSchemaVersionV3
+	}
+	methodDrift["opaque-06"] = drifted
+	separate, err := evaluatePairedScenarioMethods(contract, methodDrift)
+	if err != nil || separate.Deterministic.Summary.InvalidTrials != 0 ||
+		separate.Agent.Summary.InvalidTrials != 1 {
+		t.Fatalf("method axes were not evaluated separately: %#v err=%v", separate, err)
 	}
 	runnerCalls = 0
 	second, err := runFormalPairedScenarioBatch(
 		context.Background(), filepath.Join(root, "contract.json"), exposurePath, inputsPath,
 		config, artifacts, runner,
 	)
-	if err != nil || len(second) != 6 || runnerCalls != 0 {
-		t.Fatalf("resumed paired batch evidence=%d calls=%d err=%v", len(second), runnerCalls, err)
+	if err != nil || len(second.Evidence) != 6 || runnerCalls != 0 ||
+		second.Agent.Summary != first.Agent.Summary || second.Deterministic.Summary != first.Deterministic.Summary {
+		t.Fatalf("resumed paired batch outcome=%#v calls=%d err=%v", second, runnerCalls, err)
 	}
 	if err := run([]string{
 		"-paired-scenario", "-formal-contract", filepath.Join(root, "contract.json"),

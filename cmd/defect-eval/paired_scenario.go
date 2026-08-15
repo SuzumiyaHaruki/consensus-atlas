@@ -15,8 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 )
 
 const (
@@ -75,6 +77,17 @@ type pairedScenarioBinaryRunner func(
 	string,
 ) (pairedScenarioFreshEvidence, error)
 
+type pairedScenarioMethodOutcome struct {
+	Results []defectbench.BundleTrialResult
+	Summary defectbench.FormalEvaluationSummary
+}
+
+type pairedScenarioBatchOutcome struct {
+	Evidence      map[string]pairedScenarioFreshEvidence
+	Deterministic pairedScenarioMethodOutcome
+	Agent         pairedScenarioMethodOutcome
+}
+
 // pairedScenarioArmEvidence is the evaluator-side view of one completed A8
 // arm. CampaignWork deliberately remains separate from Bundle.Work: the
 // former also charges source construction, frontier reconstruction and model
@@ -108,38 +121,84 @@ func runFormalPairedScenarioBatch(
 	config pairedScenarioLaunchConfig,
 	artifactDir string,
 	runner pairedScenarioBinaryRunner,
-) (map[string]pairedScenarioFreshEvidence, error) {
+) (pairedScenarioBatchOutcome, error) {
 	if ctx == nil || runner == nil || config.validate() != nil {
-		return nil, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_INPUT_INVALID")
+		return pairedScenarioBatchOutcome{}, errors.New("FORMAL_PAIRED_SCENARIO_BATCH_INPUT_INVALID")
 	}
 	var contract defectbench.FormalBenchmarkContract
 	if err := readStrictJSON(contractPath, &contract); err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
 	var exposure defectbench.FormalExposureAudit
 	if err := readStrictJSON(exposurePath, &exposure); err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
 	semantic, err := os.ReadFile(config.SemanticInputPath)
 	if err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
 	if err := validatePairedScenarioExposure(contract, exposure, semantic); err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
 	var inputs formalFreshInputs
 	if err := readStrictJSON(inputsPath, &inputs); err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
 	sources, variants, err := validateFormalFreshInputs(inputsPath, inputs, contract)
 	if err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
 	loaded, err := loadFreshTrials(sources)
 	if err != nil {
-		return nil, err
+		return pairedScenarioBatchOutcome{}, err
 	}
-	return executePairedScenarioTrials(ctx, loaded, variants, config, artifactDir, runner)
+	evidence, err := executePairedScenarioTrials(ctx, loaded, variants, config, artifactDir, runner)
+	if err != nil {
+		return pairedScenarioBatchOutcome{}, err
+	}
+	methods, err := evaluatePairedScenarioMethods(contract, evidence)
+	if err != nil {
+		return pairedScenarioBatchOutcome{}, err
+	}
+	methods.Evidence = evidence
+	return methods, nil
+}
+
+func evaluatePairedScenarioMethods(
+	contract defectbench.FormalBenchmarkContract,
+	evidence map[string]pairedScenarioFreshEvidence,
+) (pairedScenarioBatchOutcome, error) {
+	if err := contract.Validate(); err != nil {
+		return pairedScenarioBatchOutcome{}, err
+	}
+	deterministic := make(map[string]controlexperiment.ExecutionBundle, len(evidence))
+	agent := make(map[string]controlexperiment.ExecutionBundle, len(evidence))
+	for trialID, current := range evidence {
+		deterministic[trialID] = current.Scenario.Deterministic.Bundle
+		agent[trialID] = current.Scenario.Agent.Bundle
+	}
+	evaluate := func(
+		bundles map[string]controlexperiment.ExecutionBundle,
+	) (pairedScenarioMethodOutcome, error) {
+		first, ok := bundles[contract.Pairs[0].Control.TrialID]
+		if !ok {
+			return pairedScenarioMethodOutcome{}, errors.New("FORMAL_METHOD_TRIAL_MISSING")
+		}
+		results, summary, err := defectbench.EvaluateFormalMethodBundlesInMemory(
+			contract, first.SchemaVersion, bundles,
+			etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		)
+		return pairedScenarioMethodOutcome{Results: results, Summary: summary}, err
+	}
+	deterministicResult, err := evaluate(deterministic)
+	if err != nil {
+		return pairedScenarioBatchOutcome{}, err
+	}
+	agentResult, err := evaluate(agent)
+	if err != nil {
+		return pairedScenarioBatchOutcome{}, err
+	}
+	return pairedScenarioBatchOutcome{Deterministic: deterministicResult, Agent: agentResult}, nil
 }
 
 func validatePairedScenarioExposure(

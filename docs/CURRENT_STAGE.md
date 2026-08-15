@@ -4,7 +4,7 @@
 
 分支：`feature/agentic-consensus-testing`
 
-阶段：A8cR3c resumable paired batch CLI
+阶段：A8cR4a in-memory paired method evaluation
 
 ## 一句话状态
 
@@ -13,7 +13,8 @@ ConsensusAtlas 已进入效果评测阶段：etcd/raft 的确定性方法与 Sce
 evaluator 已能从该执行单位恢复两 arm 的 Bundle 和完整 Campaign 成本。现在它还能先对全部
 opaque trial 的 BuildAudit、二进制和预期身份做集合预检，只有全部通过才按稳定 Trial ID 顺序启动。
 `defect-eval -paired-scenario` 已暴露该路径；重运行时完整 trial 由 evaluator 直接恢复，只有中断 trial 才重新启动
-SUT 并进入既有 Campaign resume。
+SUT 并进入既有 Campaign resume。完整批次随后在内存中分别聚合 deterministic 和 Agent 的 control pass、
+false positive、candidate survived/killed 与 invalid，不再把方法轴与 SUT 版本轴混在一起。
 
 ## 输入什么
 
@@ -117,6 +118,8 @@ Qualification 或 `cmd/control-experiment` 边界。
   候选的预期二进制摘要时，六个 runner 调用都不会发生，也不会创建批次工件目录；
 - A8cR3c 已验证首轮执行六个 trial、终端重运行零 runner/零 key 访问，以及未审计 semantic bytes 在任何
   SUT 启动前被拒绝；该测试使用本地 fixture，未访问 OpenRouter；
+- A8cR4a 将六个 fixture 对每种方法独立归类为 3 control pass + 3 candidate survived；人为仅修改 Agent 轴一个
+  Bundle schema 时，Agent 记录 1 invalid，deterministic 仍为 0 invalid；
 - 两协议的 artifact 都保存完整 Bundle/Risk/Oracle，并能拒绝篡改；
 - deterministic canonical/uniform stateless Campaign 和 Semantic Explorer 仍可作为 A8 对照方法。
 
@@ -181,7 +184,8 @@ client，并用 Session/A8 回归测试确认 artifact 中实际 retry 上限为
 旧 `root-corpus.json` 仍精确绑定官方 SUT 的 Manifest、source Bundle 和 Trace；显式提供该文件时，任何身份
 或配置错配仍会被拒绝。A8cR2 通过另一条缺省 paired 路径解决 candidate 构建的输入问题，不放宽旧校验。
 A8cR3a 已补 evaluator-owned opaque binary 启动与 BuildAudit 关联，A8cR3b 已补内部多 trial 预检与编排。
-当前仍缺正式 CLI、中断恢复和 candidate/control 结果聚合，因此这条 fresh-root 路径还不是正式 private pair 结果。
+A8cR3c 已补可恢复 CLI，A8cR4a 已补内存中的双方法 candidate/control 聚合。当前仍缺双方法契约和 sealed result，
+因此这条 fresh-root 路径还不是正式 private pair 结果。
 
 ## A8cR1：Scenario materialization 去重
 
@@ -269,6 +273,24 @@ formal exposure audit 还必须包含这次 CLI 实际读取的 semantic JSON �
 当前仍是顺序执行，没有真实非公开 inputs，也没有调用 OpenRouter。批次不额外写另一份状态或大型 JSON；
 Campaign 目录就是唯一恢复依据。
 
+## A8cR4a：in-memory paired method evaluation
+
+新的内存评测原语按单个 method 接收完整 opaque Bundle 集。它复用 formal contract 中与 SUT 有关的 pair、
+control/candidate、root cause、Profile、预期 build/config、预算和 trusted composition，并对每个 Bundle 执行：
+
+- Bundle 自身校验、同 method schema 一致性、Profile/build/config 匹配；
+- decision/primary-work 预算、projector 校验和 TraceIntegrity；
+- contract 指定 monitor 的精确解析和执行；
+- control-pass/false-positive、candidate-survived/killed 或 invalid 分类。
+
+paired evaluator 把 deterministic 和 Agent Bundle 拆成两个独立集合，分别执行上述原语。CLI 只在 stdout 报告两边的
+`killed/candidates`、false positive 和 invalid 计数；不写新 JSON、不 seal 为 formal verdict。`BundleTrialResult` 中的 work 仍是局部
+Bundle 成本，效率比较必须继续使用外层 Campaign work，不能把 56/56 再次误当为 2,443/1,253。
+
+这仍是 calibration 而不是正式 holdout result。v1 `FormalBenchmarkContract` 同时绑定单个 MethodSpec 和 v3 schema，
+无法同时表达 paired Scenario 的两个 method。R4a 因此只复用其 SUT/composition 子集，method schema 从各自第一个 control
+Bundle 取得并对同方法全集强制一致。在定义双方法契约前，不持久化这份评测。
+
 ## 本轮减负结果
 
 本轮已完成：
@@ -282,11 +304,11 @@ Campaign 目录就是唯一恢复依据。
 - 把 `control-experiment.run()` 收敛为 flag 解析与四路显式分派；
 - 删除 11 份阶段流水账，历史由 Git 保存。
 
-当前 Go 规模（包含 A8cR3c）：
+当前 Go 规模（包含 A8cR4a）：
 
-- 生产代码：33,975 行；
-- 测试代码：15,522 行；
-- 合计：49,497 行。
+- 生产代码：34,101 行；
+- 测试代码：15,542 行；
+- 合计：49,643 行。
 
 A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增加 154 行 Go。CLI 主入口的最高圈复杂度热点仍已
 消除；A8b 为可执行 paired runner 增加 428 行，其中生产 342 行、测试 86 行。测试约占 31%，这是确定性执行、
@@ -297,7 +319,7 @@ A8 前减负净减少 647 行 Go；A8a 在不增加新文件的情况下净增�
 尚未完成：
 
 - 非公开 candidate/control 正式效果实验；
-- paired trial 的 candidate/control 结果聚合；
+- paired trial 的双方法正式契约与 sealed candidate/control 结果；
 - A9 的双角色 Agent 消融；
 - 多次重复实验与置信区间；
 - fixed Profile obligation coverage 接入当前 Session 汇总；
@@ -323,8 +345,8 @@ A8 先形成一个最小、可预注册的配对实验：
 5. PSS、Risk、义务覆盖、计划修正次数和成本只作为解释性指标；
 6. 每个 arm 重复多次，不以单次成功或状态数宣称优势。
 
-下一小步是在不混淆 method 轴与 SUT 版本轴的前提下，把 deterministic 与 Agent 的 Campaign evidence
-分别交给 candidate/control monitor 评测；先定义最小内存聚合，不立即新增另一套持久化 schema。
+下一小步是根据 R4a 实际证据字段，定义能同时绑定 deterministic/Agent 的最小 method contract；
+只有它能解决现有单 MethodSpec 不能表达双方法的具体失败，才允许增加 sealed 结果。
 在预注册前不增加第三 Agent、通用 DSL、新 PSS 维度或新的评分公式。
 
 ## 当前验证
@@ -343,6 +365,7 @@ A8 先形成一个最小、可预注册的配对实验：
 - evaluator-owned paired binary 启动、fresh-root summary 严格恢复和 BuildAudit/Bundle identity 关联；
 - multi-SUT 全集预检、稳定 trial 顺序、返回证据重验及篡改时零 runner 调用；
 - paired Scenario CLI 参数隔离、semantic exposure bytes 关联、已完成 trial 零 SUT/key 恢复和中断目录 resume；
+- deterministic/Agent 独立 monitor 聚合、control/candidate 分类及单轴 schema 漂移不污染另一轴；
 - semantic authoring、CLI 参数边界与 qualified execution；
 - `internal/controlexperiment` 与 `internal/defectbench`；
 - unused production check；

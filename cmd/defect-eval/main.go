@@ -97,7 +97,7 @@ func run(args []string) error {
 			*candidateAuditPath != "" || *candidateBinaryPath != "" {
 			return errors.New("paired Scenario requires formal contract, exposure audit, inputs, fresh artifacts, semantic input, Agent key/model, and no evaluation-output flags")
 		}
-		evidence, err := runFormalPairedScenarioBatch(
+		outcome, err := runFormalPairedScenarioBatch(
 			context.Background(), *formalContractPath, *formalExposurePath, *formalInputsPath,
 			pairedScenarioLaunchConfig{
 				SemanticInputPath: *semanticInputPath, AgentKeyFile: *agentKeyFile,
@@ -108,7 +108,15 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("paired Scenario trials=%d artifacts=%s\n", len(evidence), *freshArtifacts)
+		fmt.Printf(
+			"paired Scenario trials=%d deterministic=%d/%d agent=%d/%d false_positive=%d/%d invalid=%d/%d artifacts=%s\n",
+			len(outcome.Evidence),
+			outcome.Deterministic.Summary.KilledCandidates, outcome.Deterministic.Summary.Candidates,
+			outcome.Agent.Summary.KilledCandidates, outcome.Agent.Summary.Candidates,
+			outcome.Deterministic.Summary.FalsePositives, outcome.Agent.Summary.FalsePositives,
+			outcome.Deterministic.Summary.InvalidTrials, outcome.Agent.Summary.InvalidTrials,
+			*freshArtifacts,
+		)
 		return nil
 	}
 	formalMode := *formalContractPath != "" || *formalExposurePath != "" || *formalInputsPath != ""

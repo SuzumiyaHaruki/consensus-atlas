@@ -1,6 +1,6 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.19（A8cR3c resumable paired batch CLI 完成）
+> 状态：Draft v2.20（A8cR4a in-memory paired method evaluation 完成）
 > 日期：2026-08-15
 > 适用分支：`feature/agentic-consensus-testing`
 
@@ -670,7 +670,16 @@ summary/Campaign 恢复，不启动 SUT、不读 key；未完成 trial 用同一
 CLI 实际读取的 semantic JSON bytes 必须出现在通过的 formal exposure audit 中。它防止“审计 A，执行时换成包含
 私有标签的 B”这个具体失败；Git、版本号、类型和普通测试都不能限制运行时的外部文件选择。实现复用既有
 exposure SHA-256 digest，没有新建摘要类型、状态 schema 或另一套 gate。当前未运行真实 OpenRouter 或非公开 pair。
-下一步先定义两种 Planner 各自 candidate/control monitor 结果的最小内存聚合，不立即新增持久化 schema。
+
+A8cR4a 已完成两种 Planner 各自 candidate/control monitor 结果的最小内存聚合。单 method 原语复用 contract 的
+pair/control/candidate/root cause、Profile、build/config、预算和 trusted composition，并执行 Bundle 校验、projector、
+TraceIntegrity 和指定 monitor。paired evaluator 对 deterministic 和 Agent 分别调用，CLI 只报告两组 killed/candidate、
+false-positive 和 invalid 计数。修改 Agent 轴一个 Bundle schema 的测试只使 Agent 增加 1 invalid，deterministic 不受影响。
+
+R4a 不写新 JSON，也不 seal 为 formal verdict。v1 contract 的单 MethodSpec/v3 schema 无法同时表达 paired Scenario
+的两种 method，所以本阶段只复用其 SUT/composition 子集，各 method 的实际 schema 在集合内强制一致。另外，
+`BundleTrialResult` 的 work 是局部 Bundle 成本，效率评测仍必须使用外层 Campaign work。下一步只定义解决
+“单 MethodSpec 无法表达双方法”的最小 method contract，不扩展新评分或通用 DSL。
 
 ### A9：多 Agent 消融
 

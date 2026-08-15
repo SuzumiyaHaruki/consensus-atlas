@@ -309,8 +309,14 @@ batch：它在任一进程启动前对全部 BuildAudit、二进制和预期身�
 
 `defect-eval -paired-scenario` 将该 batch 暴露为薄 CLI。已完成 trial 从 evaluator 侧严格恢复，不启动 SUT 或读 key；
 未完成 trial 向同一审计二进制传入 `-campaign-resume`，继续使用 Campaign journal。CLI 实际使用的 semantic JSON
-bytes 必须在 formal exposure audit 中，防止审计后替换外部输入。尚未完成 candidate/control verdict 聚合，因此该能力不能被
+bytes 必须在 formal exposure audit 中，防止审计后替换外部输入。尚未完成 sealed candidate/control verdict，因此该能力不能被
 描述为正式 holdout 实验。
+
+批次完成后，evaluator 会在内存中将 deterministic/Agent Bundle 拆成两个 method 集合。每个集合复用 contract 的
+SUT pair、Profile、build/config、预算与 trusted composition，经 Bundle/Projection/TraceIntegrity 校验后分类 control pass/
+false positive 和 candidate survived/killed。两轴的 invalid 不会彼此污染。该视图只用现有 `BundleTrialResult`，不持久化、
+不 seal；外层 Campaign work 仍是方法效率的唯一总成本。v1 formal contract 只能绑定单 MethodSpec，因此正式双方法
+contract/result 仍未完成。
 
 A6b 在 session attempt artifact 中保存每个 qualified bundle 已有的规范 Core PSS 状态键。终端派生视图对这些
 键取并集，同时汇总 Agent/Testing/Replay episode 数、Risk 最佳进展和 Oracle violations；CampaignSummary 继续
