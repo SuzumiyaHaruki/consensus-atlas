@@ -127,12 +127,14 @@ func executeOmnipaxosScenarioQualifiedRisk(
 	execution controlexperiment.ScenarioExecution,
 	spec semantic.RiskWitnessSpec,
 	projector controlexperiment.SemanticPrefixProjector,
+	methodSpecDigest string,
 ) (scenarioTestingResult, error) {
 	if workerPath == "" || experiment.validate() != nil || workload.Validate() != nil ||
 		qualification.Bundle.Validate() != nil || qualification.Admission.Validate() != nil ||
 		qualification.Admission.VerifyQualification(qualification.Bundle.Qualification) != nil ||
 		spec.Validate() != nil || projector == nil || root.Validate() != nil || execution.FinalTrace.Validate() != nil ||
 		execution.FinalRisk.Validate(spec) != nil ||
+		methodSpecDigest != "" && !validAgenticSHA256(methodSpecDigest) ||
 		len(execution.Steps) == 0 || len(execution.Steps) > len(execution.FinalTrace.Records) {
 		return scenarioTestingResult{}, errors.New("OMNIPAXOS_SCENARIO_QUALIFIED_INPUT_INVALID")
 	}
@@ -162,10 +164,18 @@ func executeOmnipaxosScenarioQualifiedRisk(
 	factory := func() (control.Adapter, error) {
 		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	}
-	_, bundle, err := controlexperiment.ExecuteQualifiedBundle(
-		ctx, config, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
-		omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{},
-	)
+	var bundle controlexperiment.ExecutionBundle
+	if methodSpecDigest == "" {
+		_, bundle, err = controlexperiment.ExecuteQualifiedBundle(
+			ctx, config, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
+			omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{},
+		)
+	} else {
+		_, bundle, err = controlexperiment.ExecuteQualifiedBundleV3(
+			ctx, config, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
+			omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{}, methodSpecDigest,
+		)
+	}
 	if err != nil {
 		return scenarioTestingResult{}, err
 	}

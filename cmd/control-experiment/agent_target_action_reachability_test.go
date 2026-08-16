@@ -66,7 +66,7 @@ func TestEtcdraftComposableActionsAreReachableAndReplayable(t *testing.T) {
 		}}
 		execution, runErr := controlexperiment.ExecuteBoundedScenarioPlan(
 			ctx, plan.ID, plan, 2, 2, spec, rootRisk, inputs.root,
-			inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector,
+			inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector, 0,
 			prepareEtcdraftScenarioAction,
 		)
 		if runErr != nil || execution.Status != controlexperiment.ScenarioStatusCompleted {
@@ -152,7 +152,7 @@ func appendMissingRootActions(
 		}
 		execution, err := controlexperiment.ExecuteBoundedScenarioPlan(
 			ctx, plan.ID, plan, 1, 1, spec, rootRisk, root, runtimeConfig, envelope,
-			factory, projector,
+			factory, projector, 0,
 		)
 		if err != nil || execution.Status != controlexperiment.ScenarioStatusCompleted {
 			t.Fatalf("%s path was not reachable and replayable: %#v/%v", kind, execution, err)

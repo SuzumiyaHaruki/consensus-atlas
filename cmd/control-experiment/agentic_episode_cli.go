@@ -16,6 +16,7 @@ func runAgenticEpisodeCLI(
 ) error {
 	withoutTarget := options
 	withoutTarget.Target = ""
+	withoutTarget.MethodSpecDigest = ""
 	withoutTarget.InvestigationEpisodes = 1
 	withoutTarget.KnowledgeSourceMounts = nil
 	if options.CampaignDirectory == "" || options.Target == "" ||
@@ -120,6 +121,9 @@ func prepareAgenticEpisodeComposition(
 	if options.AgentModel == "" || options.AgentKeyFile == "" || options.SemanticInput == "" {
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_ACTIVE_INPUT_REQUIRED")
 	}
+	if options.MethodSpecDigest != "" && !validAgenticSHA256(options.MethodSpecDigest) {
+		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_METHOD_SPEC_INVALID")
+	}
 	knowledgeSourceMounts, err := prepareKnowledgeSourceMounts(options.KnowledgeSourceMounts)
 	if err != nil {
 		return agenticEpisodeComposition{}, err
@@ -140,6 +144,7 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
+		target.MethodSpecDigest = options.MethodSpecDigest
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.experiment.ScenarioMaxCalls, inputs.experiment.ScenarioMaxSteps,
 			inputs.experiment.ScenarioMaxDecisions, inputs.experiment.SessionBudget,
@@ -160,6 +165,7 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
+		target.MethodSpecDigest = options.MethodSpecDigest
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
 			inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,

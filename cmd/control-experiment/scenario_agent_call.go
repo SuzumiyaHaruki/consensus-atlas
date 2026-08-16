@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion       = "scenario-agent-complete-intent-v8"
-	scenarioPlanStructuredOutputName = "scenario_plan_v2"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v9"
+	scenarioInvestigationStructuredOutputName = "scenario_investigation_v3"
 )
 
 type scenarioAgentCallJournal struct {
@@ -79,7 +79,7 @@ func (journal *scenarioAgentCallJournal) Planner(
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
-	output, err := scenarioPlanStructuredOutput(view.MaxSteps)
+	output, err := scenarioInvestigationStructuredOutput(view)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
@@ -98,8 +98,25 @@ func (journal *scenarioAgentCallJournal) Planner(
 	})
 }
 
-func scenarioPlanStructuredOutput(maxSteps int) (openRouterStructuredOutput, error) {
-	if maxSteps <= 0 || maxSteps > controlexperiment.ScenarioPlanMaxSteps {
+func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentView) (openRouterStructuredOutput, error) {
+	if scenarioSelectionOnlyView(view) {
+		stringField := map[string]any{"type": "string", "minLength": 1}
+		schema := map[string]any{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]any{
+				"intent":         map[string]any{"type": "string", "enum": []string{controlexperiment.ScenarioIntentSelect}},
+				"from_branch_id": stringField,
+			},
+			"required": []string{"intent", "from_branch_id"},
+		}
+		encoded, err := json.Marshal(schema)
+		if err != nil {
+			return openRouterStructuredOutput{}, err
+		}
+		return openRouterStructuredOutput{Name: scenarioInvestigationStructuredOutputName, Schema: encoded}, nil
+	}
+	if view.MaxSteps <= 0 || view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
+		len(view.AvailableIntents) == 0 {
 		return openRouterStructuredOutput{}, errors.New("SCENARIO_AGENT_OUTPUT_SCHEMA_INVALID")
 	}
 	stringField := map[string]any{"type": "string", "minLength": 1}
@@ -122,12 +139,12 @@ func scenarioPlanStructuredOutput(maxSteps int) (openRouterStructuredOutput, err
 			},
 		},
 	}
-	schema := map[string]any{
+	plan := map[string]any{
 		"type": "object", "additionalProperties": false,
 		"properties": map[string]any{
 			"id": stringField,
 			"steps": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": maxSteps,
+				"type": "array", "minItems": 1, "maxItems": view.MaxSteps,
 				"items": map[string]any{
 					"type": "object", "additionalProperties": false,
 					"properties": map[string]any{
@@ -139,27 +156,45 @@ func scenarioPlanStructuredOutput(maxSteps int) (openRouterStructuredOutput, err
 		},
 		"required": []string{"id", "steps"},
 	}
+	schema := map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{
+			"intent":    map[string]any{"type": "string", "enum": view.AvailableIntents},
+			"branch_id": stringField, "from_branch_id": stringField,
+			"reference_branch_id": stringField,
+			"omitted_step_ids": map[string]any{
+				"type": "array", "minItems": 1, "items": stringField,
+			},
+			"plan": plan,
+		},
+		"required": []string{"intent", "plan"},
+	}
 	encoded, err := json.Marshal(schema)
 	if err != nil {
 		return openRouterStructuredOutput{}, err
 	}
-	return openRouterStructuredOutput{Name: scenarioPlanStructuredOutputName, Schema: encoded}, nil
+	return openRouterStructuredOutput{Name: scenarioInvestigationStructuredOutputName, Schema: encoded}, nil
 }
 
 func scenarioAgentPrompt(
 	spec semantic.RiskWitnessSpec,
 	view controlexperiment.ScenarioAgentView,
 ) (string, string, error) {
+	selectionOnly := scenarioSelectionOnlyView(view)
 	if spec.Validate() != nil || view.Knowledge.Validate() != nil ||
 		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
 		view.Hypothesis.Validate(
 			view.Knowledge, spec, controlexperiment.ScenarioPlanningBackendID,
 		) != nil || view.AcceptedHypothesis != nil &&
 		view.AcceptedHypothesis.Validate(view.Knowledge, view.Hypothesis, spec) != nil ||
-		view.Frontier.Validate(spec) != nil || view.MaxSteps <= 0 ||
+		view.Frontier.Validate(spec) != nil ||
 		!scenarioPromptMilestonesMatch(spec, view.OrderedMilestones) ||
 		view.Semantics.Validate(view.Frontier) != nil ||
-		view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps || len(view.Frontier.Actions) == 0 {
+		selectionOnly && (view.MaxSteps != 0 || view.DecisionAllowance != 0 ||
+			view.RemainingDecisions < 0 || len(view.Branches) == 0) ||
+		!selectionOnly && (view.MaxSteps <= 0 || view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
+			view.DecisionAllowance < view.MaxSteps || view.RemainingDecisions < view.DecisionAllowance ||
+			len(view.Frontier.Actions) == 0) {
 		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
 	}
 	promptView := view
@@ -173,18 +208,25 @@ func scenarioAgentPrompt(
 		"as unavailable evidence rather than permission to invent an internal transition. "
 	if promptView.AcceptedHypothesis != nil {
 		agentView = struct {
-			AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis"`
-			TargetSurface      *controlexperiment.AgentTargetSurface        `json:"target_surface,omitempty"`
-			OrderedMilestones  []string                                     `json:"ordered_milestones"`
-			Frontier           controlexperiment.RiskFrontierView           `json:"root_frontier"`
-			Semantics          controlexperiment.ScenarioSemanticExposure   `json:"action_semantics"`
-			MaxSteps           int                                          `json:"max_steps"`
-			Prior              *controlexperiment.ScenarioAgentFeedback     `json:"prior_feedback,omitempty"`
+			AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext    `json:"accepted_hypothesis"`
+			TargetSurface      *controlexperiment.AgentTargetSurface           `json:"target_surface,omitempty"`
+			OrderedMilestones  []string                                        `json:"ordered_milestones"`
+			Frontier           controlexperiment.RiskFrontierView              `json:"root_frontier"`
+			Semantics          controlexperiment.ScenarioSemanticExposure      `json:"action_semantics"`
+			MaxSteps           int                                             `json:"max_steps"`
+			DecisionAllowance  int                                             `json:"decision_allowance"`
+			RemainingDecisions int                                             `json:"remaining_decisions"`
+			AvailableIntents   []string                                        `json:"available_intents"`
+			Branches           []controlexperiment.ScenarioInvestigationBranch `json:"branches,omitempty"`
+			Prior              *controlexperiment.ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
 		}{
 			AcceptedHypothesis: promptView.AcceptedHypothesis,
 			TargetSurface:      promptView.TargetSurface, OrderedMilestones: promptView.OrderedMilestones,
 			Frontier: promptView.Frontier, Semantics: promptView.Semantics,
-			MaxSteps: promptView.MaxSteps, Prior: promptView.Prior,
+			MaxSteps: promptView.MaxSteps, DecisionAllowance: promptView.DecisionAllowance,
+			RemainingDecisions: promptView.RemainingDecisions,
+			AvailableIntents:   promptView.AvailableIntents,
+			Branches:           promptView.Branches, Prior: promptView.Prior,
 		}
 		implementationContext = "Use accepted_hypothesis as the investigated mechanism and executable witness. It is an " +
 			"Agent proposal accepted for execution, not a protocol fact or verdict. "
@@ -205,11 +247,22 @@ func scenarioAgentPrompt(
 	if err != nil {
 		return "", "", err
 	}
-	system := "Return exactly one ScenarioPlan JSON object and no prose. Use only id, steps, and selector_fields listed in " +
-		"the frozen input. action_id is valid only for an Action in the supplied current root_frontier. " +
+	if selectionOnly {
+		system := "Return exactly one ScenarioInvestigationProposal JSON object and no prose. " +
+			"This is a final zero-Action selection call: provide exactly intent=select and one from_branch_id listed in branches. " +
+			"Do not provide plan, Action, assertion, verdict, budget, or any other field."
+		user := "Choose the stored branch that best represents the investigation result. This call executes no Runtime Action, " +
+			"but its model usage is still charged. Frozen input JSON:\n" + string(encoded)
+		return system, user, nil
+	}
+	system := "Return exactly one ScenarioInvestigationProposal JSON object and no prose. Choose intent only from " +
+		"available_intents. Except for select, the nested plan may use only id, steps, and selector_fields listed in the input. " +
+		"select is a zero-Action final choice: provide only intent=select and from_branch_id, and omit plan. " +
+		"action_id is valid only for an Action in the supplied current root_frontier or a branch's available_actions when " +
+		"continuing from that branch. control and ablate execute from an earlier root checkpoint and must use semantic selectors. " +
 		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
-	user := "Create one complete but bounded test intent of at most max_steps that advances the supplied hypothesis. " +
+	user := "Create one complete but bounded investigation proposal of at most max_steps that advances the supplied hypothesis. " +
 		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. " +
 		implementationContext +
 		"A later step may use after_milestone only with an ID listed in ordered_milestones; the trusted " +
@@ -217,25 +270,33 @@ func scenarioAgentPrompt(
 		"A trusted concretizer requires " +
 		"each selector to match exactly one current admissible Action. A completed prior_feedback means the trusted root has " +
 		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback includes the complete " +
-		"previous_plan and failed_step; return a complete revised plan from the current frontier and repair its mechanical reason. " +
+		"previous_proposal and failed_step; use revise with a complete repaired plan from the current frontier. " +
+		"Use branch with a new branch_id to retain an intervention result. Use control with a new branch_id and an existing " +
+		"reference_branch_id; it will execute from the referenced branch's root checkpoint. Use ablate only when available, name " +
+		"the omitted_step_ids from the reference branch's applied_interventions, and supply a shorter plan. Branch metadata reports " +
+		"the strategic Actions actually applied, not merely proposed plan text. Use select with from_branch_id to finalize a stored path " +
+		"without executing another Action; use from_branch_id with continue to promote and extend a path, or with branch to fork " +
+		"another candidate. revise repairs only the current selected path. minimize is intentionally " +
+		"unavailable until a trusted finding exists. " +
 		"When present, prior_feedback.progress_delta is the compact trusted account of decisions, new milestones, the first missing " +
 		"milestone, transition novelty, repeated scheduling-pattern depth, and recent Action kinds. Use it to continue, revise, or " +
 		"change the intervention; repetition is search feedback and is not itself a protocol verdict. " +
+		"decision_allowance bounds this proposal plus its deterministic natural-progress slice; remaining_decisions is the " +
+		"episode-wide successful Action budget still available. " +
 		"Frozen input JSON:\n" + string(encoded)
 	if view.MaxSteps == 1 {
-		system += " Return exactly one step using the exact action_id of one current Action."
-		user = "Choose one current strategic intervention that advances the hypothesis. After it executes, a deterministic " +
-			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until the temporary " +
-			"single-step compatibility checkpoint, the client operation terminates, natural progress is quiescent, or the total " +
-			"decision budget ends. prior_feedback " +
-			"contains the previous strategic intervention and the closure stop reason; routine closure steps remain in the audit rather " +
-			"than this prompt. Treat the supplied current frontier and Risk progress as authoritative. Frozen input JSON:\n" +
-			string(encoded)
+		system += " For every non-select intent, the nested plan must contain exactly one step."
 	} else {
-		system += " For every step after the first, omit action_id and use stable semantic selector fields because executing an " +
+		system += " For every non-select intent and every step after the first, omit action_id and use stable semantic selector " +
+			"fields because executing an " +
 			"earlier step rebuilds the frontier and may invalidate every current ActionID."
 	}
 	return system, user, nil
+}
+
+func scenarioSelectionOnlyView(view controlexperiment.ScenarioAgentView) bool {
+	return len(view.AvailableIntents) == 1 &&
+		view.AvailableIntents[0] == controlexperiment.ScenarioIntentSelect
 }
 
 func scenarioPromptMilestonesMatch(spec semantic.RiskWitnessSpec, values []string) bool {

@@ -83,7 +83,8 @@ separate:
   bug/verdict, trusted assertion, concrete Action sequence, or future absolute
   decision number.
 - `SemanticExplorerProposal` may only order the current trusted semantic queue;
-  `ScenarioPlan` may only use current or mechanically exposed selectors. The
+  `ScenarioInvestigationProposal` may select coordinator-owned branch checkpoints,
+  and its nested `ScenarioPlan` may only use current or mechanically exposed selectors. The
   trusted search input owns the backend, root, fault envelope, total budget,
   and stop rule.
 - Explorer/Scenario feedback may expose only pre-registered mechanical

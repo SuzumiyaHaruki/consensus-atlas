@@ -25,7 +25,7 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
                          │
                          ▼
                   Scenario Agent
-          continue / repair + 多步 Action 意图
+   continue / revise / branch / control / ablate / select
                          │
                          ▼
        Target composition → Control Runtime → Trace
@@ -35,12 +35,16 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
               PSS / Risk progress / Oracle
                          │
                          ▼
-              summary.json + bundle.json
+     summary.json + bundle.json / branch-evidence.json
 ```
 
 客户端 workload 返回只结束当前自然推进段，不等于调查结束。Risk 尚未达到且模型、决策预算仍存在时，系统会把
 最新 frontier 和 `ProgressDelta` 返回 Scenario Agent。一个完整计划内的战略 Action、`after_milestone` 和自然推进
 共享同一 live Runtime；形成候选后再做一次 fresh Replay。
+分支候选不会隐式覆盖主路径；Agent 可以用零 Runtime Action 的 `select` 选择已有分支。
+即使没有选择，每个唯一且 fresh-Replay 稳定的分支仍会独立运行 Target Oracle。
+最后 select-only 调用不消耗 Runtime decision，但正常计入模型调用/token。跨 Episode Memory
+不包含 Oracle finding 或 Oracle 派生 outcome。
 
 ## 当前 Target
 
@@ -68,10 +72,13 @@ Replay，不理解 term、ballot 或具体消息语义。
 - Risk/Scenario provider journal，支持精确恢复且不重复已完成调用；
 - `summary.json`：停止原因、预算、Risk、PSS 和 Oracle 摘要；
 - `bundle.json`：完整 Trace、决策投影、Replay 和执行证据；
+- `branch-evidence.json`：未选择但已验证候选的 Bundle、Oracle 和独立执行成本；
 - capability gap、fidelity notice、planning/execution failure 的分离状态。
 
 PSS、Risk reached 和 candidate accepted 都不是缺陷 verdict。缺陷结论必须来自 replay-stable 的独立 Oracle，或由
 后续 evaluator 对保存证据重新判断。
+对 formal trial，evaluator 在给予 finding credit 前汇总主路径和全部分支的 decisions 与
+qualified primary work，不允许每个分支单独重用完整预算。
 
 ## 代码结构
 
@@ -139,7 +146,9 @@ git diff --check
 普通测试不读取 key、不访问模型服务。完整 race 只在明确里程碑运行。
 
 当前已经证明两个真实 CFT 库可以复用同一 Agent/Runtime/Replay/Oracle 流程，且 Agentic Episode
-目录可直接进入 private pair/exposure/Oracle 评测边界。这仍未证明 Agent 优于其他搜索方法，
+目录的主 Bundle 和分支 Bundle 都可直接进入 private pair/exposure/Oracle 评测边界。
+正式 Agentic 评测现在同时核算 Scenario 搜索、全部 qualified evidence 和模型成本，
+并要求 V3 `MethodSpecDigest` 将 Episode/Bundle 绑定到 formal contract。这仍未证明 Agent 优于其他搜索方法，
 也尚未发现新的实现问题。旧 A8 paired evaluator/session 已删除，不参与新 Agentic holdout 路径。
 
 继续阅读：[`docs/architecture.md`](docs/architecture.md)、[`docs/CURRENT_STAGE.md`](docs/CURRENT_STAGE.md) 和

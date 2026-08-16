@@ -64,8 +64,10 @@ func executeEtcdraftScenarioQualifiedRisk(
 	execution controlexperiment.ScenarioExecution,
 	spec semantic.RiskWitnessSpec,
 	projector controlexperiment.SemanticPrefixProjector,
+	methodSpecDigest string,
 ) (scenarioTestingResult, error) {
-	if spec.Validate() != nil || projector == nil || execution.FinalRisk.Validate(spec) != nil {
+	if spec.Validate() != nil || projector == nil || execution.FinalRisk.Validate(spec) != nil ||
+		methodSpecDigest != "" && !validAgenticSHA256(methodSpecDigest) {
 		return scenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_INPUT_INVALID")
 	}
 	policy, err := controlexperiment.CompileScenarioPolicy(
@@ -95,10 +97,18 @@ func executeEtcdraftScenarioQualifiedRisk(
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(experiment.AdapterConfig)
 	}
-	_, bundle, err := controlexperiment.ExecuteQualifiedBundle(
-		ctx, config, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
-		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
-	)
+	var bundle controlexperiment.ExecutionBundle
+	if methodSpecDigest == "" {
+		_, bundle, err = controlexperiment.ExecuteQualifiedBundle(
+			ctx, config, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
+			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
+		)
+	} else {
+		_, bundle, err = controlexperiment.ExecuteQualifiedBundleV3(
+			ctx, config, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
+			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, methodSpecDigest,
+		)
+	}
 	if err != nil {
 		return scenarioTestingResult{}, err
 	}

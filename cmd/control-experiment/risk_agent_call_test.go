@@ -55,7 +55,7 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	memory := []controlexperiment.RiskExplorationMemoryEntry{{
 		Episode: 1, CandidateID: "earlier-risk", Summary: "Earlier candidate.",
 		SuspectedMechanism: "An earlier ordering was already investigated.",
-		EpisodeOutcome:     "completed", RiskStatus: semantic.RiskWitnessNotReached,
+		EpisodeOutcome:     controlexperiment.RiskMemoryOutcomeRiskNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
 		ProtocolPSSStates: 2, NewProtocolPSSStates: 1,
 		ModelCalls: 2, ModelTokens: 12, SearchWorkUnits: 5, ExecutionWorkUnits: 4,
@@ -98,6 +98,7 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("target_dossier")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observable-only")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("exploration_memory")) ||
+			bytes.Contains([]byte(payload.Messages[1].Content), []byte("oracle_findings")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("property_ref")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("mechanism_steps")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("support_refs")) ||
@@ -146,6 +147,14 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	replayed, work, err := planRiskCandidate(context.Background(), recovered, calledView)
 	if err != nil || !bytes.Equal(replayed, content) || work != result.ModelWork || transportCalls != 1 {
 		t.Fatalf("risk recovery changed evidence: %q/%#v/%v calls=%d", replayed, work, err, transportCalls)
+	}
+	selectionOutput, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
+		MaxSteps: 0, DecisionAllowance: 0, RemainingDecisions: 0,
+		AvailableIntents: []string{controlexperiment.ScenarioIntentSelect},
+	})
+	if err != nil || !bytes.Contains(selectionOutput.Schema, []byte("from_branch_id")) ||
+		bytes.Contains(selectionOutput.Schema, []byte(`"plan"`)) {
+		t.Fatalf("final selection schema can still request Runtime work: %s/%v", selectionOutput.Schema, err)
 	}
 }
 

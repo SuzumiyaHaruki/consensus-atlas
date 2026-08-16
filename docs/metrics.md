@@ -136,9 +136,13 @@ The retained `internal/defectbench` substrate defines the intended method-level 
 - false-positive rate on correct controls;
 - invalid-trial and total primary/replay cost.
 
-The current Agentic artifact is not yet wired into that holdout evaluator. When it is, the evaluator must recompute
-registered Oracle monitors from stored traces and require identity, budget, Replay and conformance evidence. Coverage and
-PSS discoveries remain explanatory covariates; they cannot create finding credit. See `docs/defect-benchmark.md`.
+The current Agentic artifact is wired into the holdout evaluator. The evaluator recomputes registered Oracle monitors from
+the selected Bundle and every retained branch Bundle, and requires identity, aggregate trial budget, Replay and conformance
+evidence. Scenario frontier/search work and all qualified primary work are summed before any finding receives credit;
+Replay remains separately reported. Model calls/tokens are checked against the same declared `AgenticLogicalBudget`.
+Formal Agentic evidence uses Bundle v3, and summary/branch trace and work declarations must agree with the Bundle and the
+contract's `MethodSpecDigest`. Branch count is bounded by the Scenario call limit. Coverage and PSS discoveries remain
+explanatory covariates and cannot create finding credit. See `docs/defect-benchmark.md`.
 
 ## 6. Known limitations and safeguards
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
@@ -46,17 +47,18 @@ type FormalPair struct {
 // requires at least three matching pairs and three distinct root-cause labels;
 // label independence still requires curator review outside this mechanism.
 type FormalBenchmarkContract struct {
-	SchemaVersion        string                `json:"schema_version"`
-	ID                   string                `json:"id"`
-	FamilyID             string                `json:"family_id"`
-	ProfileDigest        string                `json:"profile_digest"`
-	BlindingNonce        string                `json:"blinding_nonce"`
-	MethodSpecDigest     string                `json:"method_spec_digest"`
-	RequiredBundleSchema string                `json:"required_bundle_schema"`
-	Budget               BundleBudget          `json:"budget"`
-	Composition          FormalCompositionSpec `json:"composition"`
-	Pairs                []FormalPair          `json:"pairs"`
-	Digest               string                `json:"digest"`
+	SchemaVersion        string                                  `json:"schema_version"`
+	ID                   string                                  `json:"id"`
+	FamilyID             string                                  `json:"family_id"`
+	ProfileDigest        string                                  `json:"profile_digest"`
+	BlindingNonce        string                                  `json:"blinding_nonce"`
+	MethodSpecDigest     string                                  `json:"method_spec_digest"`
+	RequiredBundleSchema string                                  `json:"required_bundle_schema"`
+	Budget               BundleBudget                            `json:"budget"`
+	AgenticBudget        *controlexperiment.AgenticLogicalBudget `json:"agentic_budget,omitempty"`
+	Composition          FormalCompositionSpec                   `json:"composition"`
+	Pairs                []FormalPair                            `json:"pairs"`
+	Digest               string                                  `json:"digest"`
 }
 
 type FormalOpaqueTrial struct {
@@ -67,20 +69,25 @@ type FormalOpaqueTrial struct {
 // not expose pair membership, candidate/control kind, root cause, build, or
 // trusted projector/monitor identity.
 type FormalOpaqueView struct {
-	SchemaVersion        string              `json:"schema_version"`
-	BenchmarkID          string              `json:"benchmark_id"`
-	BenchmarkCommitment  string              `json:"benchmark_commitment"`
-	FamilyID             string              `json:"family_id"`
-	ProfileDigest        string              `json:"profile_digest"`
-	MethodSpecDigest     string              `json:"method_spec_digest"`
-	RequiredBundleSchema string              `json:"required_bundle_schema"`
-	Budget               BundleBudget        `json:"budget"`
-	Trials               []FormalOpaqueTrial `json:"trials"`
-	Digest               string              `json:"digest"`
+	SchemaVersion        string                                  `json:"schema_version"`
+	BenchmarkID          string                                  `json:"benchmark_id"`
+	BenchmarkCommitment  string                                  `json:"benchmark_commitment"`
+	FamilyID             string                                  `json:"family_id"`
+	ProfileDigest        string                                  `json:"profile_digest"`
+	MethodSpecDigest     string                                  `json:"method_spec_digest"`
+	RequiredBundleSchema string                                  `json:"required_bundle_schema"`
+	Budget               BundleBudget                            `json:"budget"`
+	AgenticBudget        *controlexperiment.AgenticLogicalBudget `json:"agentic_budget,omitempty"`
+	Trials               []FormalOpaqueTrial                     `json:"trials"`
+	Digest               string                                  `json:"digest"`
 }
 
 func (contract FormalBenchmarkContract) Seal() (FormalBenchmarkContract, error) {
 	contract.SchemaVersion = FormalBenchmarkContractSchemaVersion
+	if contract.AgenticBudget != nil {
+		copy := *contract.AgenticBudget
+		contract.AgenticBudget = &copy
+	}
 	contract.Composition.MonitorIDs = append([]string(nil), contract.Composition.MonitorIDs...)
 	sort.Strings(contract.Composition.MonitorIDs)
 	contract.Pairs = append([]FormalPair(nil), contract.Pairs...)
@@ -125,6 +132,11 @@ func (contract FormalBenchmarkContract) validateContent() error {
 	}
 	if contract.Budget.MaxDecisions <= 0 || contract.Budget.MaxPrimaryWorkUnits <= 0 {
 		return errors.New("FORMAL_BENCHMARK_BUDGET_INVALID")
+	}
+	if contract.AgenticBudget != nil && (contract.AgenticBudget.Validate() != nil ||
+		contract.AgenticBudget.MaxPrimarySchedulerDecisions != contract.Budget.MaxDecisions ||
+		contract.AgenticBudget.MaxPrimaryWorkUnits != contract.Budget.MaxPrimaryWorkUnits) {
+		return errors.New("FORMAL_BENCHMARK_AGENTIC_BUDGET_INVALID")
 	}
 	if strings.TrimSpace(contract.Composition.ProjectorID) == "" ||
 		contract.Composition.ProjectorID != strings.TrimSpace(contract.Composition.ProjectorID) ||
@@ -221,6 +233,10 @@ func (contract FormalBenchmarkContract) OpaqueView() (FormalOpaqueView, error) {
 		ProfileDigest: contract.ProfileDigest, MethodSpecDigest: contract.MethodSpecDigest,
 		RequiredBundleSchema: contract.RequiredBundleSchema, Budget: contract.Budget,
 	}
+	if contract.AgenticBudget != nil {
+		copy := *contract.AgenticBudget
+		view.AgenticBudget = &copy
+	}
 	for _, pair := range contract.Pairs {
 		view.Trials = append(view.Trials,
 			FormalOpaqueTrial{TrialID: pair.Control.TrialID},
@@ -232,6 +248,10 @@ func (contract FormalBenchmarkContract) OpaqueView() (FormalOpaqueView, error) {
 
 func (view FormalOpaqueView) Seal() (FormalOpaqueView, error) {
 	view.SchemaVersion = FormalOpaqueViewSchemaVersion
+	if view.AgenticBudget != nil {
+		copy := *view.AgenticBudget
+		view.AgenticBudget = &copy
+	}
 	view.Trials = append([]FormalOpaqueTrial(nil), view.Trials...)
 	sort.Slice(view.Trials, func(i, j int) bool { return view.Trials[i].TrialID < view.Trials[j].TrialID })
 	view.Digest = ""
@@ -272,6 +292,11 @@ func (view FormalOpaqueView) validateContent() error {
 		!bundleDigestValid(view.MethodSpecDigest) || view.RequiredBundleSchema == "" ||
 		view.Budget.MaxDecisions <= 0 || view.Budget.MaxPrimaryWorkUnits <= 0 || len(view.Trials) < 6 {
 		return errors.New("FORMAL_OPAQUE_VIEW_INVALID")
+	}
+	if view.AgenticBudget != nil && (view.AgenticBudget.Validate() != nil ||
+		view.AgenticBudget.MaxPrimarySchedulerDecisions != view.Budget.MaxDecisions ||
+		view.AgenticBudget.MaxPrimaryWorkUnits != view.Budget.MaxPrimaryWorkUnits) {
+		return errors.New("FORMAL_OPAQUE_AGENTIC_BUDGET_INVALID")
 	}
 	seen := map[string]bool{}
 	for _, trial := range view.Trials {

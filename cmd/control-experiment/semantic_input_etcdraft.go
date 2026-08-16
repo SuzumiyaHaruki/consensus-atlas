@@ -93,9 +93,7 @@ func (config etcdraftAgentExperimentConfig) validateAgentic() error {
 }
 
 func validAgenticBudget(budget controlexperiment.AgenticLogicalBudget, wallClockMS int64) bool {
-	return budget.MaxAttempts > 0 && budget.MaxPrimarySchedulerDecisions > 0 &&
-		budget.MaxPrimaryWorkUnits > 0 && budget.MaxReplayWorkUnits > 0 &&
-		budget.MaxModelCalls > 0 && budget.MaxModelTokens > 0 && wallClockMS > 0
+	return budget.Validate() == nil && wallClockMS > 0
 }
 
 func (config etcdraftAgentExperimentConfig) faultEnvelope() *controlexperiment.FaultEnvelope {

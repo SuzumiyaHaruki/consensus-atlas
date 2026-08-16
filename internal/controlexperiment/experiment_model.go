@@ -596,6 +596,15 @@ type AgenticLogicalBudget struct {
 	MaxModelTokens               int `json:"max_model_tokens"`
 }
 
+func (budget AgenticLogicalBudget) Validate() error {
+	if budget.MaxAttempts <= 0 || budget.MaxPrimarySchedulerDecisions <= 0 ||
+		budget.MaxPrimaryWorkUnits <= 0 || budget.MaxReplayWorkUnits <= 0 ||
+		budget.MaxModelCalls <= 0 || budget.MaxModelTokens <= 0 {
+		return errors.New("EXPERIMENT_AGENTIC_LOGICAL_BUDGET_INVALID")
+	}
+	return nil
+}
+
 type ResourceAccounting struct {
 	WallTime string `json:"wall_time"`
 	CPUTime  string `json:"cpu_time"`

@@ -127,8 +127,9 @@ Risk Agent 接收协议知识、Property、issue pattern、Target surface、历�
 
 ### 5.2 Scenario Agent
 
-Scenario Agent 接收当前 frontier、共识语义提示、Risk milestone 进度、上次计划和 `ProgressDelta`，输出完整但有界的
-多步计划。selector 会在执行时绑定当前 enabled Action：零匹配、多匹配、陈旧 ID 和越界计划都会形成机械反馈。
+Scenario Agent 接收当前 frontier、共识语义提示、Risk milestone 进度、上次 proposal、紧凑 branch 反馈和
+`ProgressDelta`，输出完整但有界的 Investigation Proposal。其嵌套 `ScenarioPlan` 的 selector 会在执行时绑定当前
+enabled Action：零匹配、多匹配、陈旧 ID 和越界计划都会形成机械反馈。
 
 一个合法计划执行完并不自动结束调查。只要 Risk 未达到且调用/决策预算仍存在，coordinator 会继续 Agent 循环。
 
@@ -142,9 +143,40 @@ Risk/Scenario 调用各自使用 durable journal。每次请求、响应、usage
 ### 6.1 live branch
 
 `ExecuteBoundedScenarioPlan` 从 root 重建一次 Runtime。战略 step、`after_milestone` 的自然推进和后续 step 都追加到同一
-live branch。只有计划形成候选或需要输出可信 Bundle 时才 fresh Replay 完整 Trace。
+live branch。计划后的周期性自然推进也使用这一个 Runtime。片段完成后只 fresh Replay 一次完整 Trace；Replay 成功后
+保留该验证 Runtime 投影出的 frontier/snapshot 作为下一轮 Agent 的可信输入，不再重建同一前缀。
 
 这避免长度为 N 的计划反复恢复相同 prefix，同时保留最终证据可重放性。
+
+Coordinator 每轮以 `ceil(remainingDecisions/remainingCalls)` 重新计算自然推进反馈粒度，并同时考虑本轮计划步数
+和剩余全局预算。早期片段因 client terminal、quiescence 或计划停止而少用的 Action 会重新分配给后续调用。
+`decision_allowance` 约束“计划 + 本轮自然推进”，`remaining_decisions` 表示 episode 尚可使用的成功 Action。
+这两个值属于资源边界，不授权 Agent 创建 Action 或改变终止/verdict 语义。
+
+真实 Target 的长轨迹回归从同一 Adapter 的确定性初态开始，以 exact policy 将最终 Scenario Trace 再执行为
+qualified Bundle。测试同时要求 target-local epoch/ballot Observation、protocol/control/joint PSS、stable Replay
+和完整 Oracle registry。没有 workload 的校准 Risk 保持 `not-reached`；它验证执行容量，不伪装为缺陷发现。
+
+`branch` 保存可信 Trace 检查点和路径结果；`control`、`ablate` 从参考 branch 的根检查点重建 Runtime，因而比较
+共享相同前置状态。三种实验 intent 只创建候选，不隐式覆盖最终证据。`continue + from_branch_id`
+选择并继续路径；`select + from_branch_id` 只选择已有路径，其 proposal 不带计划、不消耗 Runtime decision。
+存在分支时，最后 Scenario 调用会收窄为 select-only view；即使 decision 已为零也能执行该调用，
+但 provider call 和 token 仍按普通模型工作计费。
+调用耗尽但尚未选择时仍返回 `final-selection-required`，不任取最后执行的实验路径。分支探索全部计入
+同一 decision budget，结果分别记录总 Action、最终选中路径 Action 和实验分支 Action。
+
+选择不是 Oracle admission。Coordinator 保留每个 fresh-Replay 成功的候选，按 Trace digest 去重后逐个运行
+qualified execution 和 Target Oracle。主路径写入 `bundle.json`，其他候选及独立 work 写入
+`branch-evidence.json`。在线 Agent 不获取私有 Oracle 反馈；终态恢复和 holdout evaluator 均重新验证全部
+候选，因此“实际执行到问题但 Agent 未选该分支”不会变成漏报。
+
+跨 Episode Memory 不属于 Oracle 边界。它只暴露枚举的机械 outcome、Risk milestone、PSS 和成本；
+Oracle violation 数量、Oracle 派生 assessment 以及基于 Oracle 选出的代表分支都禁止进入 Risk Agent prompt。
+
+每条 branch 公开可信执行得到的 `applied_interventions`。ablate 只能引用完整成功的干预计划，被删除 ID 必须属于
+实际执行成功的战略步骤；control/ablate 在可信解析层禁止 checkpoint-local `action_id`，必须在共享根重新用语义
+selector 绑定。Agent 只看到根/终点 decision、最终可用 Action、计划、实际干预和 `ProgressDelta`；完整分支 Trace
+不重复进入模型输入。
 
 ### 6.2 终止状态
 
@@ -205,12 +237,21 @@ Qualification 验证 Adapter/Runtime 的机械能力。Target surface 进一步�
 
 ## 10. 输出与评测
 
-Agentic Episode 保存紧凑 `summary.json` 和完整 `bundle.json`。summary 可以从 bundle、journal 和 Target recovery binding
+Agentic Episode 保存紧凑 `summary.json`、可选主路径 `bundle.json` 和可选
+`branch-evidence.json`。summary 可以从 bundle、branch evidence、journal 和 Target recovery binding
 重新派生；终态恢复不访问 SUT、provider 或 key。
 
 `cmd/defect-eval` 支持保存 Bundle/MethodSpec 的旧评测，也能通过 `-agentic-inputs` 直接消费
 当前 Agentic Episode 目录。私有 contract 提供 pair、SUT 身份、预算和 monitor composition；
-summary 只提供方法状态/成本，独立 evaluator 从 Bundle 重算 verdict。旧 A8 paired launcher/session 不参与此路径。
+summary 只提供方法状态/成本，独立 evaluator 从主路径及所有分支 Bundle 重算 verdict。
+对一个 trial，任一合法候选的独立 monitor finding 都会进入可信结果；方法自报的 Risk/Oracle 字段不参与判定。
+在检查 finding 前，evaluator 先汇总 Scenario frontier/search work、所有候选的 Trace decisions、
+qualified primary work 和 replay work；decisions/primary work 任一超过 formal trial 的现有预算，
+或模型 calls/tokens 超过同一 `AgenticLogicalBudget`，就将该 trial 标记为 invalid。
+正式 Agentic 路径只接受 V3 Bundle；summary 必须声明主路径和每个 branch evidence，而且
+Plan/Risk ID、Trace digest、work 与 `MethodSpecDigest` 都要与文件和 formal contract 交叉一致。
+因此未声明分支和其他方法生成的 Bundle 不能借 Agentic Episode 目录获得 finding credit。
+旧 A8 paired launcher/session 不参与此路径。
 
 评价面保持分离：
 

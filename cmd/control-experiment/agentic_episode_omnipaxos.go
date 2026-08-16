@@ -147,10 +147,11 @@ func newOmnipaxosAgenticEpisodeTarget(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
 			execution controlexperiment.ScenarioExecution,
+			methodSpecDigest string,
 		) (scenarioTestingResult, error) {
 			return executeOmnipaxosScenarioQualifiedRisk(
 				ctx, inputs.WorkerPath, inputs.Experiment, inputs.Workload, inputs.Qualification,
-				inputs.Root, execution, risk.Spec, projector,
+				inputs.Root, execution, risk.Spec, projector, methodSpecDigest,
 			)
 		},
 	}

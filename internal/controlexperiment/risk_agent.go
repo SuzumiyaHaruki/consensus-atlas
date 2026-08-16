@@ -28,6 +28,12 @@ const (
 	RiskKnowledgeRequestsTotal   = 2
 	RiskKnowledgeRequestMaxLines = 80
 
+	RiskMemoryOutcomeExecutionCompleted = "execution-completed"
+	RiskMemoryOutcomeBudgetExhausted    = "budget-exhausted"
+	RiskMemoryOutcomeRiskNearMiss       = "risk-near-miss"
+	RiskMemoryOutcomePlanningStopped    = "planning-stopped"
+	RiskMemoryOutcomeExecutionFailed    = "execution-failed"
+
 	RiskAgentAccepted = "accepted"
 	RiskAgentStopped  = "stopped"
 
@@ -145,8 +151,9 @@ type RiskCandidateReview struct {
 }
 
 // RiskExplorationMemoryEntry is a compact, trusted summary of one earlier
-// episode. Exact execution and verdict evidence stay in the original
-// artifacts; this view only helps the Agent avoid repeating an investigation.
+// episode. Exact execution and all Oracle-derived evidence stay in the
+// original artifacts; this view only helps the Agent avoid repeating an
+// investigation through mechanical execution, Risk, PSS and cost feedback.
 type RiskExplorationMemoryEntry struct {
 	Episode               int      `json:"episode"`
 	CandidateID           string   `json:"candidate_id,omitempty"`
@@ -159,7 +166,6 @@ type RiskExplorationMemoryEntry struct {
 	FirstMissingMilestone string   `json:"first_missing_milestone,omitempty"`
 	ProtocolPSSStates     int      `json:"protocol_pss_states,omitempty"`
 	NewProtocolPSSStates  int      `json:"new_protocol_pss_states,omitempty"`
-	OracleFindings        int      `json:"oracle_findings,omitempty"`
 	MechanicalReasonCodes []string `json:"mechanical_reason_codes,omitempty"`
 	ModelCalls            int      `json:"model_calls"`
 	ModelTokens           int      `json:"model_tokens"`
@@ -846,11 +852,11 @@ func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
 	}
 	previousEpisode := 0
 	for _, value := range values {
-		if value.Episode <= previousEpisode || value.EpisodeOutcome == "" ||
-			len(value.EpisodeOutcome) > 128 || value.ModelCalls < 0 || value.ModelTokens < 0 ||
+		if value.Episode <= previousEpisode || !validRiskMemoryOutcome(value.EpisodeOutcome) ||
+			value.ModelCalls < 0 || value.ModelTokens < 0 ||
 			value.SearchWorkUnits < 0 || value.ExecutionWorkUnits < 0 ||
 			value.ProtocolPSSStates < 0 || value.NewProtocolPSSStates < 0 ||
-			value.NewProtocolPSSStates > value.ProtocolPSSStates || value.OracleFindings < 0 ||
+			value.NewProtocolPSSStates > value.ProtocolPSSStates ||
 			(value.RepeatedCandidate && value.CandidateID == "") {
 			return false
 		}
@@ -878,6 +884,17 @@ func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
 		previousEpisode = value.Episode
 	}
 	return true
+}
+
+func validRiskMemoryOutcome(outcome string) bool {
+	switch outcome {
+	case RiskMemoryOutcomeExecutionCompleted, RiskMemoryOutcomeBudgetExhausted,
+		RiskMemoryOutcomeRiskNearMiss, RiskMemoryOutcomePlanningStopped,
+		RiskMemoryOutcomeExecutionFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func validRiskKnowledgeView(view RiskAgentView) bool {

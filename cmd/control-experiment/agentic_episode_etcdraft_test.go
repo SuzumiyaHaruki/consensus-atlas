@@ -43,12 +43,16 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		len(target.Surface.Capabilities.FidelityBoundaries) != 1 {
 		t.Fatalf("etcd/raft dynamic Agent surface was not derived from active inputs: %#v", target.Surface)
 	}
+	methodSpecDigest := formalTestStringDigest("agentic-etcdraft-method")
 	composition, err := prepareAgenticEpisodeComposition(ctx, controlExperimentOptions{
 		Target:        "etcdraft-v2",
 		SemanticInput: "../../plans/agent/etcdraft-agentic-calibration-v1.json",
 		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
+		MethodSpecDigest: methodSpecDigest,
 	})
 	if err != nil || composition.Target.ID != "etcdraft-v2" ||
+		composition.Target.MethodSpecDigest != methodSpecDigest || composition.Budget.Logical == nil ||
+		*composition.Budget.Logical != inputs.experiment.SessionBudget ||
 		composition.Budget.MaxRiskCalls != 3 || composition.Budget.MaxScenarioCalls != 3 ||
 		composition.Budget.MaxScenarioPlanSteps != 4 ||
 		composition.Budget.MaxTotalCalls != 6 || composition.Budget.MaxObservedTokens != 50000 ||
@@ -195,10 +199,77 @@ func TestAgenticOracleRegistryRejectsMetadataExecutionDrift(t *testing.T) {
 		Oracle: oracle.Result{Checked: []string{"agreement", "trace-integrity"}},
 	}
 	result := assessTestingEvidence(
-		assessment, testing, controlexperiment.ScenarioExecution{}, controlruntime.Trace{}, 1,
+		assessment, testing, controlexperiment.ScenarioAgentResult{},
 	)
 	if result.Status != agenticEvidenceRiskUnverified ||
 		result.ReasonCode != "property-oracle-not-executed" {
 		t.Fatalf("missing registered property monitor was accepted: %#v", result)
+	}
+}
+
+func TestAgenticEvidenceUsesGlobalScenarioDecisionAccounting(t *testing.T) {
+	assessment := agenticEvidenceAssessment{
+		Status: agenticEvidencePlanningFailed, PropertyID: "agreement",
+	}
+	testing := scenarioTestingResult{
+		Risk: semantic.RiskWitnessResult{
+			Status:            semantic.RiskWitnessNotReached,
+			MissingMilestones: []string{"ordered-intervention"},
+		},
+	}
+	scenario := controlexperiment.ScenarioAgentResult{
+		Status:        controlexperiment.ScenarioAgentCompleted,
+		StopReason:    controlexperiment.ScenarioAgentStopDecisionBudget,
+		DecisionsUsed: 512, SelectedPathDecisions: 112,
+		BranchExplorationDecisions: 400,
+		Execution:                  &controlexperiment.ScenarioExecution{},
+	}
+	result := assessTestingEvidence(assessment, testing, scenario)
+	if result.Status != agenticEvidenceBudgetExhausted ||
+		result.ReasonCode != "runtime-decision-budget-exhausted" ||
+		result.FirstMissingMilestone != "ordered-intervention" {
+		t.Fatalf("global branch cost was inferred from the shorter selected trace: %#v", result)
+	}
+	scenario.StopReason = controlexperiment.ScenarioAgentStopCallBudget
+	result = assessTestingEvidence(assessment, testing, scenario)
+	if result.Status != agenticEvidenceBudgetExhausted ||
+		result.ReasonCode != "scenario-call-budget-exhausted" {
+		t.Fatalf("an executed investigation that exhausted planner calls was misclassified: %#v", result)
+	}
+}
+
+func TestUnselectedReplayStableBranchRunsIndependentOracle(t *testing.T) {
+	calls := 0
+	target := agenticEpisodeTarget{Execute: func(
+		context.Context,
+		controlexperiment.ScenarioRiskHypothesis,
+		controlexperiment.SemanticPrefixProjector,
+		controlexperiment.ScenarioExecution,
+		string,
+	) (scenarioTestingResult, error) {
+		calls++
+		return scenarioTestingResult{Oracle: oracle.Result{
+			Checked:    []string{"agreement"},
+			Violations: []oracle.Violation{{Monitor: "agreement", Step: 1, Message: "candidate violation"}},
+		}}, nil
+	}}
+	scenario := controlexperiment.ScenarioAgentResult{
+		StopReason: controlexperiment.ScenarioAgentStopDecisionBudget,
+		CandidateExecutions: []controlexperiment.ScenarioCandidateExecution{{
+			BranchID: "final-treatment", Intent: controlexperiment.ScenarioIntentBranch,
+			Execution: controlexperiment.ScenarioExecution{
+				FinalTrace: controlruntime.Trace{Digest: "candidate-trace"},
+			},
+		}},
+	}
+	branches, err := executeAgenticBranchCandidates(
+		context.Background(), target, controlexperiment.ScenarioRiskHypothesis{}, nil, scenario,
+	)
+	assessment := assessUnselectedBranchEvidence(
+		agenticEvidenceAssessment{Status: agenticEvidenceInconclusive}, branches, scenario,
+	)
+	if err != nil || calls != 1 || len(branches) != 1 ||
+		assessment.Status != agenticEvidenceOracleFinding || assessment.ReasonCode != "agreement" {
+		t.Fatalf("unselected replay-stable branch bypassed the independent Oracle: %#v/%v", branches, err)
 	}
 }

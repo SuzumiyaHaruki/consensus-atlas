@@ -61,13 +61,16 @@ type ScenarioStepFeedback struct {
 // final Trace remains the sole exact execution record and every applied choice
 // was materialized and fresh-replayed by the existing stateless substrate.
 type ScenarioExecution struct {
-	PlanID            string                     `json:"plan_id"`
-	Status            string                     `json:"status"`
-	Steps             []ScenarioStepFeedback     `json:"steps"`
-	AutomaticProgress []ScenarioStepFeedback     `json:"automatic_progress,omitempty"`
-	FinalTrace        controlruntime.Trace       `json:"final_trace"`
-	FinalRisk         semantic.RiskWitnessResult `json:"final_risk"`
-	Work              StatelessDFSWork           `json:"work"`
+	PlanID               string                     `json:"plan_id"`
+	Status               string                     `json:"status"`
+	Steps                []ScenarioStepFeedback     `json:"steps"`
+	AutomaticProgress    []ScenarioStepFeedback     `json:"automatic_progress,omitempty"`
+	NaturalProgressStop  string                     `json:"natural_progress_stop,omitempty"`
+	FinalTrace           controlruntime.Trace       `json:"final_trace"`
+	FinalRisk            semantic.RiskWitnessResult `json:"final_risk"`
+	Work                 StatelessDFSWork           `json:"work"`
+	continuationFrontier *RiskFrontierView
+	continuationSnapshot *controlruntime.Snapshot
 }
 
 // ScenarioActionPreparer materializes one trusted, target-composed Action only
@@ -134,6 +137,7 @@ func ExecuteBoundedScenarioPlan(
 	faultEnvelope *FaultEnvelope,
 	newAdapter AdapterFactory,
 	projector SemanticPrefixProjector,
+	naturalProgressLimit int,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
 	if !validMethodToken(executionID) || plan.Validate() != nil || maxSteps <= 0 ||
@@ -142,6 +146,7 @@ func ExecuteBoundedScenarioPlan(
 		rootRisk.Validate(spec) != nil || rootRisk.ExecutionDigest != root.Digest ||
 		rootRisk.TargetIdentityDigest != root.ManifestDigest || newAdapter == nil ||
 		isNilSemanticComponent(projector) || projector.ID() != rootRisk.ProjectorID ||
+		naturalProgressLimit < 0 || naturalProgressLimit > maxDecisions ||
 		len(preparers) > 1 || len(preparers) == 1 && preparers[0] == nil {
 		return ScenarioExecution{}, errors.New("EXPERIMENT_SCENARIO_EXECUTION_INPUT_INVALID")
 	}
@@ -383,17 +388,61 @@ func ExecuteBoundedScenarioPlan(
 			}
 		}
 	}
+	if result.Status == ScenarioStatusCompleted && naturalProgressLimit > 0 {
+		remaining := maxDecisions - (len(result.FinalTrace.Records) - len(root.Records))
+		if remaining > naturalProgressLimit {
+			remaining = naturalProgressLimit
+		}
+		if remaining > 0 {
+			if view.PrefixTraceDigest != result.FinalTrace.Digest {
+				if refreshErr := refreshFrontier(executionID + "-natural-frontier"); refreshErr != nil {
+					return ScenarioExecution{}, closeWith(refreshErr)
+				}
+			}
+			live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
+				ctx, executionID+"-natural", remaining, spec, result.FinalRisk,
+				result.FinalTrace, view, snapshot, faultEnvelope, runtime, projector,
+			)
+			addDFSPhase(&result.Work.ChildMaterialization, live.Work.ChildMaterialization)
+			result.NaturalProgressStop = live.StopReason
+			result.AutomaticProgress = append(result.AutomaticProgress, live.Steps...)
+			result.FinalTrace, result.FinalRisk = live.FinalTrace, live.FinalRisk
+			if liveErr != nil {
+				return result, &StatelessDFSExecutionError{
+					Work: result.Work, cause: closeWith(liveErr),
+				}
+			}
+		}
+	}
 	if err := runtime.Close(); err != nil {
 		return ScenarioExecution{}, err
 	}
 	if len(result.FinalTrace.Records) > len(root.Records) {
-		verification, verifyErr := verifyDFSChild(ctx, result.FinalTrace, runtimeConfig, newAdapter)
+		verificationRuntime, verification, verifyErr := verifyDFSChildRuntime(
+			ctx, result.FinalTrace, runtimeConfig, newAdapter,
+		)
 		addDFSPhase(&result.Work.ChildVerification, verification)
 		if verifyErr != nil {
+			if verificationRuntime != nil {
+				verifyErr = errors.Join(verifyErr, verificationRuntime.Close())
+			}
 			result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
 				result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
 			return result, &StatelessDFSExecutionError{Work: result.Work, cause: verifyErr}
 		}
+		if verificationRuntime == nil {
+			return result, errors.New("EXPERIMENT_SCENARIO_VERIFICATION_RUNTIME_MISSING")
+		}
+		continuation, continuationSnapshot, continuationErr := projectRiskFrontierFromLiveRuntime(
+			ctx, executionID+"-verified-frontier", spec, result.FinalRisk, result.FinalTrace,
+			faultEnvelope, verificationRuntime,
+		)
+		continuationErr = errors.Join(continuationErr, verificationRuntime.Close())
+		if continuationErr != nil {
+			return result, continuationErr
+		}
+		result.continuationFrontier = &continuation
+		result.continuationSnapshot = &continuationSnapshot
 	}
 	result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
 		result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits

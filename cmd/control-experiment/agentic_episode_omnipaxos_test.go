@@ -94,7 +94,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				}
 			}
 			content = candidateBytes
-		case scenarioPlanStructuredOutputName:
+		case scenarioInvestigationStructuredOutputName:
 			view := a4bScenarioViewFromPayload(t, payload)
 			if view.AcceptedHypothesis == nil ||
 				view.AcceptedHypothesis.Candidate.ID != omnipaxosDiscoveredRiskCandidate().ID ||
@@ -109,12 +109,15 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			for index, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDropMessage &&
 					view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
-					content, err = json.Marshal(controlexperiment.ScenarioPlan{
-						ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{{
-							ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
-								ActionID: action.ActionID,
-							},
-						}},
+					content, err = json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+						Intent: controlexperiment.ScenarioIntentContinue,
+						Plan: controlexperiment.ScenarioPlan{
+							ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{{
+								ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
+									ActionID: action.ActionID,
+								},
+							}},
+						},
 					})
 					break
 				}
@@ -193,11 +196,47 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		t.Fatalf("terminal artifact recovery drifted: %#v terminal=%t err=%v",
 			recoveredArtifact, terminal, err)
 	}
+	branchOnly := result
+	branchOnly.Testing = nil
+	branchOnly.BranchTesting = []agenticBranchTestingResult{{
+		BranchID: "offline-treatment", Intent: controlexperiment.ScenarioIntentBranch,
+		Testing: *result.Testing,
+	}}
+	branchOnly.Metrics, err = agenticEpisodeMetricsFromEvidence(nil, branchOnly.BranchTesting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchOnly.Work.QualifiedExecution = controlexperiment.WorkLedger{}
+	branchOnly.Work.BranchQualifiedExecutions = []agenticBranchExecutionWork{{
+		BranchID: "offline-treatment", Work: result.Testing.Bundle.Work,
+	}}
+	scenarioCopy := *result.Scenario
+	scenarioCopy.Agent.Status = controlexperiment.ScenarioAgentStopped
+	scenarioCopy.Agent.StopReason = controlexperiment.ScenarioAgentStopFinalSelectionRequired
+	scenarioCopy.Agent.SelectedPathDecisions = 0
+	scenarioCopy.Agent.BranchExplorationDecisions = scenarioCopy.Agent.DecisionsUsed
+	branchOnly.Scenario = &scenarioCopy
+	branchDirectory := t.TempDir()
+	if _, err := persistAgenticEpisodeArtifacts(
+		branchDirectory, "omnipaxos-v2", budget, branchOnly,
+	); err != nil {
+		t.Fatal(err)
+	}
+	recoveredBranch, terminal, err := recoverAgenticEpisodeArtifacts(
+		branchDirectory, omnipaxosAgenticEpisodeRecoveryBinding(),
+	)
+	if err != nil || !terminal || recoveredBranch.Testing != nil ||
+		len(recoveredBranch.BranchTesting) != 1 ||
+		recoveredBranch.BranchTesting[0].Testing.Bundle.Trace.Digest != result.Testing.Bundle.Trace.Digest {
+		t.Fatalf("offline branch evidence was not durably recoverable: %#v terminal=%t err=%v",
+			recoveredBranch, terminal, err)
+	}
 	memory, err := deriveAgenticExplorationMemory([]recoveredAgenticEpisode{
 		recoveredArtifact, recoveredArtifact,
 	})
 	if err != nil || len(memory) != 2 || memory[0].CandidateID != result.RiskAgent.Accepted.Candidate.ID ||
 		memory[0].RepeatedCandidate || memory[0].RiskStatus != semantic.RiskWitnessReached ||
+		memory[0].EpisodeOutcome != controlexperiment.RiskMemoryOutcomeExecutionCompleted ||
 		len(memory[0].SatisfiedMilestones) != len(result.Testing.Risk.SatisfiedMilestones) ||
 		memory[0].ProtocolPSSStates != result.Metrics.ProtocolPSSStates ||
 		memory[0].NewProtocolPSSStates != result.Metrics.ProtocolPSSStates ||
@@ -206,6 +245,14 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		memory[0].MechanicalReasonCodes[0] != controlexperiment.RiskAgentReasonBinding ||
 		!memory[1].RepeatedCandidate || memory[1].NewProtocolPSSStates != 0 {
 		t.Fatalf("exploration memory did not derive prior evidence: %#v/%v", memory, err)
+	}
+	oracleLabel := recoveredArtifact.Summary
+	oracleLabel.Assessment.Status = agenticEvidenceOracleFinding
+	mechanicalLabel := recoveredArtifact.Summary
+	mechanicalLabel.Assessment.Status = agenticEvidenceInconclusive
+	if agenticMemoryEpisodeOutcome(oracleLabel, memory[0].RiskStatus) !=
+		agenticMemoryEpisodeOutcome(mechanicalLabel, memory[0].RiskStatus) {
+		t.Fatal("Oracle-derived assessment changed Agent-facing episode outcome")
 	}
 	if _, terminal, err := recoverAgenticEpisodeArtifacts(
 		t.TempDir(), omnipaxosAgenticEpisodeRecoveryBinding(),

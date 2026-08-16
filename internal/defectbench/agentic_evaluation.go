@@ -12,7 +12,11 @@ import (
 )
 
 const (
-	AgenticHoldoutEvaluationSchemaVersion = "consensus-atlas/agentic-holdout-evaluation/v1"
+	// v2 records the formal method identity and evaluates complete Agentic
+	// search, model and qualified-execution cost. Keeping the old v1 label
+	// would make reports with materially different accounting semantics
+	// indistinguishable to downstream readers.
+	AgenticHoldoutEvaluationSchemaVersion = "consensus-atlas/agentic-holdout-evaluation/v2"
 
 	AgenticEpisodeCompleted       = "completed"
 	AgenticEpisodeRiskStopped     = "risk-agent-stopped"
@@ -25,11 +29,19 @@ const (
 // EpisodeStatus, EvidenceStatus and ModelWork are method-reported explanatory
 // data. Only the evaluator's projector and monitors may determine Result.
 type AgenticTrialEvidence struct {
-	TargetID       string
-	EpisodeStatus  string
-	EvidenceStatus string
-	ModelWork      controlexperiment.ModelWork
-	Bundle         *controlexperiment.ExecutionBundle
+	TargetID              string
+	MethodSpecDigest      string
+	EpisodeStatus         string
+	EvidenceStatus        string
+	Budget                controlexperiment.AgenticLogicalBudget
+	RiskAttempts          int
+	ScenarioAttempts      int
+	ScenarioDecisionsUsed int
+	ModelWork             controlexperiment.ModelWork
+	ScenarioFrontier      controlexperiment.PhaseWork
+	ScenarioSearch        controlexperiment.StatelessDFSWork
+	Bundle                *controlexperiment.ExecutionBundle
+	CandidateBundles      []controlexperiment.ExecutionBundle
 }
 
 type AgenticHoldoutTrialResult struct {
@@ -45,6 +57,7 @@ type AgenticHoldoutEvaluation struct {
 	SchemaVersion       string                      `json:"schema_version"`
 	BenchmarkID         string                      `json:"benchmark_id"`
 	ContractDigest      string                      `json:"contract_digest"`
+	MethodSpecDigest    string                      `json:"method_spec_digest"`
 	ExposureAuditDigest string                      `json:"exposure_audit_digest"`
 	TargetID            string                      `json:"target_id"`
 	Pairs               []FormalPairEvaluation      `json:"pairs"`
@@ -84,6 +97,7 @@ func EvaluateAgenticHoldoutBundles(
 	report := AgenticHoldoutEvaluation{
 		SchemaVersion: AgenticHoldoutEvaluationSchemaVersion,
 		BenchmarkID:   contract.ID, ContractDigest: contract.Digest,
+		MethodSpecDigest:    contract.MethodSpecDigest,
 		ExposureAuditDigest: exposure.Digest, TargetID: targetID,
 	}
 	budget := BundleBenchmark{Budget: contract.Budget}
@@ -151,6 +165,10 @@ func admitAgenticHoldoutEvaluation(
 		contract.RequiredBundleSchema != controlexperiment.ExecutionBundleSchemaVersionV3 {
 		return nil, errors.New("AGENTIC_HOLDOUT_BUNDLE_SCHEMA_UNSUPPORTED")
 	}
+	if contract.RequiredBundleSchema != controlexperiment.ExecutionBundleSchemaVersionV3 ||
+		contract.AgenticBudget == nil || contract.AgenticBudget.Validate() != nil {
+		return nil, errors.New("AGENTIC_HOLDOUT_FORMAL_METHOD_BUDGET_REQUIRED")
+	}
 	return ResolveFormalComposition(contract, projector, registeredMonitors...)
 }
 
@@ -162,14 +180,15 @@ func evaluateAgenticHoldoutTrial(
 	projector semantic.DecisionProjector,
 	monitors []oracle.BundleMonitor,
 ) BundleTrialResult {
+	bundles := agenticEvidenceBundles(evidence)
 	invalid := func(reason string) BundleTrialResult {
 		result := BundleTrialResult{
 			TrialID: variant.TrialID, VariantID: variant.VariantID, Kind: variant.Kind,
 			RootCauseID: variant.RootCauseID, Status: BundleStatusInvalid, InvalidReason: reason,
 		}
-		if evidence.Bundle != nil {
-			result.BundleDigest = evidence.Bundle.Digest
-			result.BuildID = evidence.Bundle.Qualification.Manifest.BuildID
+		if len(bundles) != 0 {
+			result.BundleDigest = bundles[0].Digest
+			result.BuildID = bundles[0].Qualification.Manifest.BuildID
 		}
 		return result
 	}
@@ -177,31 +196,178 @@ func evaluateAgenticHoldoutTrial(
 		return invalid("AGENTIC_HOLDOUT_EPISODE_METADATA_INVALID")
 	}
 	if evidence.EpisodeStatus != AgenticEpisodeCompleted {
-		if evidence.Bundle != nil {
+		if len(bundles) != 0 {
 			return invalid("AGENTIC_HOLDOUT_UNEXPECTED_BUNDLE")
 		}
 		return invalid("AGENTIC_HOLDOUT_EPISODE_INCOMPLETE")
 	}
-	if evidence.Bundle == nil {
+	if len(bundles) == 0 {
 		return invalid("AGENTIC_HOLDOUT_COMPLETED_BUNDLE_MISSING")
 	}
-	if evidence.Bundle.SchemaVersion != contract.RequiredBundleSchema ||
-		evidence.Bundle.Qualification.Profile.Digest != contract.ProfileDigest {
-		return invalid("AGENTIC_HOLDOUT_BUNDLE_CONTRACT_MISMATCH")
+	if evidence.MethodSpecDigest != contract.MethodSpecDigest {
+		return invalid("AGENTIC_HOLDOUT_METHOD_IDENTITY_MISMATCH")
 	}
-	return evaluateBundleVariantWithMonitors(
-		budget, variant, *evidence.Bundle, projector, monitors,
-	)
+	if evidence.Budget != *contract.AgenticBudget {
+		return invalid("AGENTIC_HOLDOUT_AGENTIC_BUDGET_MISMATCH")
+	}
+	if len(bundles) > evidence.Budget.MaxAttempts {
+		return invalid("AGENTIC_HOLDOUT_ATTEMPT_BUDGET_EXCEEDED")
+	}
+	if evidence.ModelWork.Calls > evidence.Budget.MaxModelCalls ||
+		evidence.ModelWork.TotalTokens > evidence.Budget.MaxModelTokens {
+		return invalid("AGENTIC_HOLDOUT_MODEL_BUDGET_EXCEEDED")
+	}
+	searchDecisions, searchPrimary, searchOK := agenticSearchWork(evidence)
+	if !searchOK || evidence.ScenarioDecisionsUsed > searchDecisions {
+		return invalid("AGENTIC_HOLDOUT_SEARCH_WORK_INVALID")
+	}
+	results := make([]BundleTrialResult, 0, len(bundles))
+	for _, bundle := range bundles {
+		if bundle.SchemaVersion != contract.RequiredBundleSchema ||
+			bundle.Qualification.Profile.Digest != contract.ProfileDigest ||
+			bundle.Identity.MethodSpecDigest != contract.MethodSpecDigest {
+			return invalid("AGENTIC_HOLDOUT_BUNDLE_CONTRACT_MISMATCH")
+		}
+		result := evaluateBundleVariantWithMonitors(
+			budget, variant, bundle, projector, monitors,
+		)
+		results = append(results, result)
+	}
+	for _, result := range results {
+		if result.Status == BundleStatusInvalid {
+			return result
+		}
+	}
+	totalDecisions, totalPrimary, totalReplay, totalsOK := agenticAggregateTrialWork(results)
+	if totalsOK {
+		totalDecisions, totalsOK = safeAgenticAdd(totalDecisions, searchDecisions)
+	}
+	if totalsOK {
+		totalPrimary, totalsOK = safeAgenticAdd(totalPrimary, searchPrimary)
+	}
+	if !totalsOK || totalDecisions > contract.Budget.MaxDecisions ||
+		totalPrimary > contract.Budget.MaxPrimaryWorkUnits {
+		result := invalid("AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED")
+		result.Decisions, result.PrimaryWork, result.ReplayWork = totalDecisions, totalPrimary, totalReplay
+		return result
+	}
+	if totalReplay > evidence.Budget.MaxReplayWorkUnits {
+		result := invalid("AGENTIC_HOLDOUT_REPLAY_BUDGET_EXCEEDED")
+		result.Decisions, result.PrimaryWork, result.ReplayWork = totalDecisions, totalPrimary, totalReplay
+		return result
+	}
+	for _, result := range results {
+		if result.Finding != nil {
+			result.Decisions, result.PrimaryWork, result.ReplayWork = totalDecisions, totalPrimary, totalReplay
+			return result
+		}
+	}
+	result := results[0]
+	result.Decisions, result.PrimaryWork, result.ReplayWork = totalDecisions, totalPrimary, totalReplay
+	return result
+}
+
+func agenticSearchWork(evidence AgenticTrialEvidence) (int, int, bool) {
+	phases := []controlexperiment.PhaseWork{
+		evidence.ScenarioFrontier,
+		evidence.ScenarioSearch.FrontierReconstruction,
+		evidence.ScenarioSearch.ChildMaterialization,
+		evidence.ScenarioSearch.ChildVerification,
+	}
+	decisions, primary := 0, 0
+	for _, phase := range phases {
+		if phase.SetupAttempts < 0 || phase.RuntimeInitializations < 0 ||
+			phase.RuntimeInitializations > phase.SetupAttempts || phase.PrepareActions < 0 ||
+			phase.SchedulerDecisions < 0 ||
+			phase.WorkUnits != phase.SetupAttempts+phase.PrepareActions+phase.SchedulerDecisions {
+			return 0, 0, false
+		}
+		var ok bool
+		decisions, ok = safeAgenticAdd(decisions, phase.SchedulerDecisions)
+		if !ok {
+			return 0, 0, false
+		}
+		primary, ok = safeAgenticAdd(primary, phase.WorkUnits)
+		if !ok {
+			return 0, 0, false
+		}
+	}
+	if evidence.ScenarioSearch.TotalWorkUnits !=
+		evidence.ScenarioSearch.FrontierReconstruction.WorkUnits+
+			evidence.ScenarioSearch.ChildMaterialization.WorkUnits+
+			evidence.ScenarioSearch.ChildVerification.WorkUnits {
+		return 0, 0, false
+	}
+	return decisions, primary, true
+}
+
+func agenticAggregateTrialWork(results []BundleTrialResult) (int, int, int, bool) {
+	decisions, primary, replay := 0, 0, 0
+	for _, result := range results {
+		if result.Decisions < 0 || result.PrimaryWork < 0 || result.ReplayWork < 0 {
+			return decisions, primary, replay, false
+		}
+		var ok bool
+		decisions, ok = safeAgenticAdd(decisions, result.Decisions)
+		if !ok {
+			return decisions, primary, replay, false
+		}
+		primary, ok = safeAgenticAdd(primary, result.PrimaryWork)
+		if !ok {
+			return decisions, primary, replay, false
+		}
+		replay, ok = safeAgenticAdd(replay, result.ReplayWork)
+		if !ok {
+			return decisions, primary, replay, false
+		}
+	}
+	return decisions, primary, replay, true
+}
+
+func safeAgenticAdd(left int, right int) (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+	if left < 0 || right < 0 || right > maxInt-left {
+		return left, false
+	}
+	return left + right, true
+}
+
+func agenticEvidenceBundles(evidence AgenticTrialEvidence) []controlexperiment.ExecutionBundle {
+	bundles := make([]controlexperiment.ExecutionBundle, 0, len(evidence.CandidateBundles)+1)
+	if evidence.Bundle != nil {
+		bundles = append(bundles, *evidence.Bundle)
+	}
+	bundles = append(bundles, evidence.CandidateBundles...)
+	return bundles
 }
 
 func validAgenticTrialEvidence(evidence AgenticTrialEvidence) bool {
-	if strings.TrimSpace(evidence.TargetID) == "" || strings.TrimSpace(evidence.EvidenceStatus) == "" ||
-		evidence.ModelWork.Calls < 0 || evidence.ModelWork.InputTokens < 0 ||
-		evidence.ModelWork.OutputTokens < 0 || evidence.ModelWork.TotalTokens < 0 ||
-		evidence.ModelWork.TotalTokens != evidence.ModelWork.InputTokens+evidence.ModelWork.OutputTokens {
+	if !validAgenticTrialMetadata(
+		evidence.TargetID, evidence.EpisodeStatus, evidence.EvidenceStatus, evidence.ModelWork,
+	) ||
+		!bundleDigestValid(evidence.MethodSpecDigest) || evidence.Budget.Validate() != nil ||
+		evidence.RiskAttempts < 0 || evidence.ScenarioAttempts < 0 ||
+		evidence.RiskAttempts+evidence.ScenarioAttempts != evidence.ModelWork.Calls ||
+		evidence.ScenarioDecisionsUsed < 0 ||
+		len(evidence.CandidateBundles) > controlexperiment.ScenarioAgentMaxCalls {
 		return false
 	}
-	switch evidence.EpisodeStatus {
+	return true
+}
+
+func validAgenticTrialMetadata(
+	targetID string,
+	episodeStatus string,
+	evidenceStatus string,
+	modelWork controlexperiment.ModelWork,
+) bool {
+	if strings.TrimSpace(targetID) == "" || strings.TrimSpace(evidenceStatus) == "" ||
+		modelWork.Calls < 0 || modelWork.InputTokens < 0 || modelWork.OutputTokens < 0 ||
+		modelWork.TotalTokens < 0 ||
+		modelWork.TotalTokens != modelWork.InputTokens+modelWork.OutputTokens {
+		return false
+	}
+	switch episodeStatus {
 	case AgenticEpisodeCompleted, AgenticEpisodeRiskStopped, AgenticEpisodeScenarioStopped,
 		AgenticEpisodeTokenStopped, AgenticEpisodeExecutionFailed:
 		return true
@@ -213,6 +379,7 @@ func validAgenticTrialEvidence(evidence AgenticTrialEvidence) bool {
 func (report AgenticHoldoutEvaluation) Validate() error {
 	if report.SchemaVersion != AgenticHoldoutEvaluationSchemaVersion ||
 		!validBundleID(report.BenchmarkID) || !bundleDigestValid(report.ContractDigest) ||
+		!bundleDigestValid(report.MethodSpecDigest) ||
 		!bundleDigestValid(report.ExposureAuditDigest) || strings.TrimSpace(report.TargetID) == "" ||
 		len(report.Pairs) < 3 || len(report.Results) != len(report.Pairs)*2 {
 		return errors.New("AGENTIC_HOLDOUT_EVALUATION_INVALID")
@@ -221,10 +388,9 @@ func (report AgenticHoldoutEvaluation) Validate() error {
 	seen := make(map[string]bool, len(report.Results))
 	for _, current := range report.Results {
 		if !validBundleID(current.TrialID) || seen[current.TrialID] || current.TargetID != report.TargetID ||
-			current.TrialID != current.Result.TrialID || !validAgenticTrialEvidence(AgenticTrialEvidence{
-			TargetID: current.TargetID, EpisodeStatus: current.EpisodeStatus,
-			EvidenceStatus: current.EvidenceStatus, ModelWork: current.ModelWork,
-		}) {
+			current.TrialID != current.Result.TrialID || !validAgenticTrialMetadata(
+			current.TargetID, current.EpisodeStatus, current.EvidenceStatus, current.ModelWork,
+		) {
 			return errors.New("AGENTIC_HOLDOUT_TRIAL_RESULT_INVALID")
 		}
 		if err := validateAgenticTrustedResult(current.Result); err != nil {

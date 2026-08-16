@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"reflect"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
@@ -39,13 +39,19 @@ func addAgentModelWork(total *controlexperiment.ModelWork, value controlexperime
 
 var errAgenticEpisodeTokenThreshold = errors.New("AGENTIC_EPISODE_MODEL_TOKEN_THRESHOLD_REACHED")
 
+func validAgenticSHA256(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == 32 && hex.EncodeToString(decoded) == value
+}
+
 type agenticEpisodeBudget struct {
-	MaxRiskCalls         int `json:"max_risk_calls"`
-	MaxScenarioCalls     int `json:"max_scenario_calls"`
-	MaxTotalCalls        int `json:"max_total_calls"`
-	MaxObservedTokens    int `json:"max_observed_tokens"`
-	MaxScenarioPlanSteps int `json:"max_scenario_plan_steps"`
-	MaxRuntimeDecisions  int `json:"max_runtime_decisions"`
+	MaxRiskCalls         int                                     `json:"max_risk_calls"`
+	MaxScenarioCalls     int                                     `json:"max_scenario_calls"`
+	MaxTotalCalls        int                                     `json:"max_total_calls"`
+	MaxObservedTokens    int                                     `json:"max_observed_tokens"`
+	MaxScenarioPlanSteps int                                     `json:"max_scenario_plan_steps"`
+	MaxRuntimeDecisions  int                                     `json:"max_runtime_decisions"`
+	Logical              *controlexperiment.AgenticLogicalBudget `json:"logical_budget,omitempty"`
 }
 
 func (budget agenticEpisodeBudget) validate() error {
@@ -57,24 +63,45 @@ func (budget agenticEpisodeBudget) validate() error {
 		budget.MaxRuntimeDecisions <= 0 || budget.MaxRuntimeDecisions > controlexperiment.ScenarioAgentMaxDecisions {
 		return errors.New("AGENTIC_EPISODE_BUDGET_INVALID")
 	}
+	if budget.Logical != nil && (budget.Logical.Validate() != nil ||
+		budget.MaxTotalCalls != budget.Logical.MaxModelCalls ||
+		budget.MaxObservedTokens != budget.Logical.MaxModelTokens ||
+		budget.MaxRuntimeDecisions > budget.Logical.MaxPrimarySchedulerDecisions) {
+		return errors.New("AGENTIC_EPISODE_LOGICAL_BUDGET_INVALID")
+	}
 	return nil
 }
 
 type agenticEpisodeMetrics struct {
-	CandidateAccepted bool `json:"candidate_accepted"`
-	RiskReached       bool `json:"risk_reached"`
-	CorePSSSamples    int  `json:"core_pss_samples"`
-	UniquePSSStates   int  `json:"unique_pss_states"`
-	ProtocolPSSStates int  `json:"protocol_pss_states,omitempty"`
-	ControlPSSStates  int  `json:"control_pss_states,omitempty"`
-	OracleFindings    int  `json:"oracle_findings"`
+	CandidateAccepted  bool `json:"candidate_accepted"`
+	ExecutedCandidates int  `json:"executed_candidates"`
+	BranchCandidates   int  `json:"branch_candidates"`
+	RiskReached        bool `json:"risk_reached"`
+	CorePSSSamples     int  `json:"core_pss_samples"`
+	UniquePSSStates    int  `json:"unique_pss_states"`
+	ProtocolPSSStates  int  `json:"protocol_pss_states,omitempty"`
+	ControlPSSStates   int  `json:"control_pss_states,omitempty"`
+	OracleFindings     int  `json:"oracle_findings"`
 }
 
 type agenticEpisodeWork struct {
-	Model              controlexperiment.ModelWork        `json:"model"`
-	ScenarioFrontier   controlexperiment.PhaseWork        `json:"scenario_frontier"`
-	ScenarioSearch     controlexperiment.StatelessDFSWork `json:"scenario_search"`
-	QualifiedExecution controlexperiment.WorkLedger       `json:"qualified_execution"`
+	Model                     controlexperiment.ModelWork        `json:"model"`
+	ScenarioFrontier          controlexperiment.PhaseWork        `json:"scenario_frontier"`
+	ScenarioSearch            controlexperiment.StatelessDFSWork `json:"scenario_search"`
+	QualifiedExecution        controlexperiment.WorkLedger       `json:"qualified_execution"`
+	BranchQualifiedExecutions []agenticBranchExecutionWork       `json:"branch_qualified_executions,omitempty"`
+}
+
+type agenticBranchExecutionWork struct {
+	BranchID string                       `json:"branch_id"`
+	Work     controlexperiment.WorkLedger `json:"work"`
+}
+
+type agenticBranchTestingResult struct {
+	BranchID          string                `json:"branch_id"`
+	Intent            string                `json:"intent"`
+	ReferenceBranchID string                `json:"reference_branch_id,omitempty"`
+	Testing           scenarioTestingResult `json:"testing"`
 }
 
 // agenticEvidenceAssessment separates orchestration completion from what the
@@ -92,6 +119,7 @@ type agenticEvidenceAssessment struct {
 }
 
 type agenticEpisodeResult struct {
+	MethodSpecDigest      string                                      `json:"method_spec_digest,omitempty"`
 	Status                string                                      `json:"status"`
 	RiskAgent             controlexperiment.RiskAgentResult           `json:"risk_agent"`
 	RiskProviderCalls     []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
@@ -99,6 +127,7 @@ type agenticEpisodeResult struct {
 	ScenarioProviderCalls []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
 	Failure               *controlexperiment.MethodFailure            `json:"failure,omitempty"`
 	Testing               *scenarioTestingResult                      `json:"testing,omitempty"`
+	BranchTesting         []agenticBranchTestingResult                `json:"branch_testing,omitempty"`
 	Metrics               agenticEpisodeMetrics                       `json:"metrics"`
 	Work                  agenticEpisodeWork                          `json:"work"`
 	Assessment            agenticEvidenceAssessment                   `json:"evidence_assessment"`
@@ -117,6 +146,7 @@ type agenticEpisodeObservationProjector interface {
 // its runtime composition and qualified testing callback.
 type agenticEpisodeTarget struct {
 	ID                   string
+	MethodSpecDigest     string
 	Knowledge            controlexperiment.ProtocolKnowledgePack
 	Surface              controlexperiment.AgentTargetSurface
 	ObservationProjector agenticEpisodeObservationProjector
@@ -130,12 +160,14 @@ type agenticEpisodeTarget struct {
 		controlexperiment.ScenarioRiskHypothesis,
 		controlexperiment.SemanticPrefixProjector,
 		controlexperiment.ScenarioExecution,
+		string,
 	) (scenarioTestingResult, error)
 }
 
 func (target agenticEpisodeTarget) validate() error {
 	actions := target.Surface.Capabilities.ComposableActions
 	if strings.TrimSpace(target.ID) == "" || strings.ContainsAny(target.ID, " /\\") ||
+		target.MethodSpecDigest != "" && !validAgenticSHA256(target.MethodSpecDigest) ||
 		target.Knowledge.ValidateAgentMaterials() != nil || target.ObservationProjector == nil ||
 		target.Surface.ValidateAgainstKnowledge(target.Knowledge) != nil ||
 		target.Surface.TargetID != target.ID ||
@@ -170,7 +202,7 @@ func runAgenticEpisode(
 	activateScenarioKey func() error,
 ) (agenticEpisodeResult, error) {
 	result := agenticEpisodeResult{
-		Status: agenticEpisodeRiskStopped,
+		MethodSpecDigest: target.MethodSpecDigest, Status: agenticEpisodeRiskStopped,
 		Assessment: agenticEvidenceAssessment{
 			Status: agenticEvidencePlanningFailed, ReasonCode: "risk-candidate-unavailable",
 		},
@@ -297,28 +329,133 @@ func runAgenticEpisode(
 		}
 		return result, scenarioErr
 	}
+	result.BranchTesting, err = executeAgenticBranchCandidates(
+		ctx, target, scenarioRisk, projector, scenario.Agent,
+	)
+	if err != nil {
+		return result, err
+	}
+	for _, branch := range result.BranchTesting {
+		result.Work.BranchQualifiedExecutions = append(
+			result.Work.BranchQualifiedExecutions,
+			agenticBranchExecutionWork{BranchID: branch.BranchID, Work: branch.Testing.Bundle.Work},
+		)
+	}
 	if scenario.Agent.Execution == nil {
+		if len(result.BranchTesting) > 0 {
+			result.Status = agenticEpisodeCompleted
+			result.Metrics, err = agenticEpisodeMetricsFromEvidence(nil, result.BranchTesting)
+			if err != nil {
+				return result, err
+			}
+			result.Assessment = assessUnselectedBranchEvidence(
+				result.Assessment, result.BranchTesting, scenario.Agent,
+			)
+			return result, nil
+		}
 		result.Status = agenticEpisodeScenarioStopped
-		result.Assessment.Status = agenticEvidencePlanningFailed
-		result.Assessment.ReasonCode = "scenario-planning-failed"
+		switch scenario.Agent.StopReason {
+		case controlexperiment.ScenarioAgentStopDecisionBudget:
+			result.Assessment.Status = agenticEvidenceBudgetExhausted
+			result.Assessment.ReasonCode = "runtime-decision-budget-exhausted"
+		case controlexperiment.ScenarioAgentStopFinalSelectionRequired:
+			result.Assessment.Status = agenticEvidenceInconclusive
+			result.Assessment.ReasonCode = "scenario-final-selection-required"
+		default:
+			result.Assessment.Status = agenticEvidencePlanningFailed
+			result.Assessment.ReasonCode = "scenario-planning-failed"
+		}
 		return result, nil
 	}
-	testing, err := target.Execute(ctx, scenarioRisk, projector, *scenario.Agent.Execution)
+	testing, err := target.Execute(
+		ctx, scenarioRisk, projector, *scenario.Agent.Execution, target.MethodSpecDigest,
+	)
 	if err != nil {
 		return result, err
 	}
 	result.Testing = &testing
 	result.Status = agenticEpisodeCompleted
-	result.Metrics, err = testingAgenticEpisodeMetrics(testing)
+	result.Metrics, err = agenticEpisodeMetricsFromEvidence(&testing, result.BranchTesting)
 	if err != nil {
 		return result, err
 	}
 	result.Work.QualifiedExecution = testing.Bundle.Work
 	result.Assessment = assessTestingEvidence(
-		result.Assessment, testing, *scenario.Agent.Execution, coreInputs.Root,
-		budget.MaxRuntimeDecisions,
+		result.Assessment, testing, scenario.Agent,
 	)
+	result.Assessment = overrideWithBranchOracleFinding(result.Assessment, result.BranchTesting)
 	return result, nil
+}
+
+func executeAgenticBranchCandidates(
+	ctx context.Context,
+	target agenticEpisodeTarget,
+	risk controlexperiment.ScenarioRiskHypothesis,
+	projector controlexperiment.SemanticPrefixProjector,
+	scenario controlexperiment.ScenarioAgentResult,
+) ([]agenticBranchTestingResult, error) {
+	seen := make(map[string]bool, len(scenario.CandidateExecutions)+1)
+	if scenario.Execution != nil {
+		seen[scenario.Execution.FinalTrace.Digest] = true
+	}
+	result := make([]agenticBranchTestingResult, 0, len(scenario.CandidateExecutions))
+	for _, candidate := range scenario.CandidateExecutions {
+		digest := candidate.Execution.FinalTrace.Digest
+		if digest == "" || seen[digest] {
+			continue
+		}
+		seen[digest] = true
+		testing, err := target.Execute(
+			ctx, risk, projector, candidate.Execution, target.MethodSpecDigest,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, agenticBranchTestingResult{
+			BranchID: candidate.BranchID, Intent: candidate.Intent,
+			ReferenceBranchID: candidate.ReferenceBranchID, Testing: testing,
+		})
+	}
+	return result, nil
+}
+
+func assessUnselectedBranchEvidence(
+	assessment agenticEvidenceAssessment,
+	branches []agenticBranchTestingResult,
+	scenario controlexperiment.ScenarioAgentResult,
+) agenticEvidenceAssessment {
+	for _, branch := range branches {
+		candidate := assessTestingEvidence(assessment, branch.Testing, scenario)
+		if candidate.Status == agenticEvidenceOracleFinding {
+			return candidate
+		}
+	}
+	for _, branch := range branches {
+		if branch.Testing.Risk.Status == semantic.RiskWitnessReached {
+			return assessTestingEvidence(assessment, branch.Testing, scenario)
+		}
+	}
+	assessment.Status = agenticEvidenceInconclusive
+	assessment.ReasonCode = "scenario-final-selection-required"
+	if scenario.StopReason == controlexperiment.ScenarioAgentStopDecisionBudget {
+		assessment.Status = agenticEvidenceBudgetExhausted
+		assessment.ReasonCode = "runtime-decision-budget-exhausted"
+	}
+	return assessment
+}
+
+func overrideWithBranchOracleFinding(
+	assessment agenticEvidenceAssessment,
+	branches []agenticBranchTestingResult,
+) agenticEvidenceAssessment {
+	for _, branch := range branches {
+		if len(branch.Testing.Oracle.Violations) > 0 {
+			assessment.Status = agenticEvidenceOracleFinding
+			assessment.ReasonCode = branch.Testing.Oracle.Violations[0].Monitor
+			return assessment
+		}
+	}
+	return assessment
 }
 
 func (target agenticEpisodeTarget) acceptedEvidenceAssessment(
@@ -378,9 +515,7 @@ func assessRiskAgentStop(result controlexperiment.RiskAgentResult) agenticEviden
 func assessTestingEvidence(
 	assessment agenticEvidenceAssessment,
 	testing scenarioTestingResult,
-	execution controlexperiment.ScenarioExecution,
-	root controlruntime.Trace,
-	maxDecisions int,
+	scenario controlexperiment.ScenarioAgentResult,
 ) agenticEvidenceAssessment {
 	if len(testing.Oracle.Violations) > 0 {
 		assessment.Status = agenticEvidenceOracleFinding
@@ -404,9 +539,13 @@ func assessTestingEvidence(
 	if len(testing.Risk.MissingMilestones) > 0 {
 		assessment.FirstMissingMilestone = testing.Risk.MissingMilestones[0]
 	}
-	if len(execution.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+	switch scenario.StopReason {
+	case controlexperiment.ScenarioAgentStopDecisionBudget:
 		assessment.Status = agenticEvidenceBudgetExhausted
 		assessment.ReasonCode = "runtime-decision-budget-exhausted"
+	case controlexperiment.ScenarioAgentStopCallBudget:
+		assessment.Status = agenticEvidenceBudgetExhausted
+		assessment.ReasonCode = "scenario-call-budget-exhausted"
 	}
 	return assessment
 }

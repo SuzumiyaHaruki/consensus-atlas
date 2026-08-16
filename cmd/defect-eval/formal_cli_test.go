@@ -147,6 +147,13 @@ func TestFormalModeRejectsMixedPublicFlags(t *testing.T) {
 func formalCLITestExecution(
 	t *testing.T,
 ) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {
+	return formalCLITestExecutionForMethod(t, "public-formal-cli-fixture-m5-21o")
+}
+
+func formalCLITestExecutionForMethod(
+	t *testing.T,
+	methodID string,
+) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {
 	t.Helper()
 	qualified, err := qualification.Run(context.Background())
 	if err != nil {
@@ -201,7 +208,7 @@ func formalCLITestExecution(
 		t.Fatal(err)
 	}
 	spec, err := controlexperiment.NewMethodSpec(controlexperiment.MethodSpec{
-		ID: "public-formal-cli-fixture-m5-21o", Strategy: "workload-evaluation-v3",
+		ID: methodID, Strategy: "workload-evaluation-v3",
 		Decisions: 32, PolicySeed: 1,
 		Budget: controlexperiment.MethodBudget{
 			MaxExecutionAttempts: 1, MaxPrimaryWorkUnits: 34, MaxReplayWorkUnits: 34,

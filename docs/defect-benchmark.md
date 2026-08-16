@@ -134,9 +134,21 @@ fresh subprocess runner。当前 registry 只支持 official etcd/raft projector
 
 ## 当前方法与 Oracle adequacy 缺口
 
-现有 formal CLI/evaluator plumbing 尚未执行 A9 的 Risk Agent + Scenario Agent 方法；它不能把 A9d6 的公开
-OmniPaxos episode 转述为正式 defect trial。当前仓库也没有真实 private holdout，因而还不能计算 Agent 方法的
-root-cause kill rate 或与 Agora、deterministic search 的召回比较。
+当前 `cmd/defect-eval -agentic-inputs` 已能将 Risk Agent + Scenario Agent 产生的 Episode 目录
+直接映射到 `FormalBenchmarkContract`/`FormalExposureAudit` 的私有 pair 评测。它只读取
+summary 中的方法状态和 model work，并对 `bundle.json` 及 `branch-evidence.json` 中每个候选
+重新执行 contract 选定的 projector/monitor。任一合法候选命中 Oracle 都会进入 trial 结果；
+Agent 自报的 finding 和分支选择不能创建或隐藏结论。
+评估器在查看 finding 前先汇总 Scenario frontier/search work 和所有候选的
+decisions/qualified primary work；Replay 单独汇总。模型 calls/tokens 与完整执行工作一起
+对照 formal contract 复用的 `AgenticLogicalBudget`，任一超限都使整个 trial 为 invalid。
+分支数同时受 Scenario Agent 调用上限约束。正式 Agentic Bundle 为 V3 evidence，summary、
+branch evidence 和 formal contract 使用同一 `MethodSpecDigest`，并交叉校验 Trace/work，
+防止跨方法 Bundle 替换。
+
+当前仓库仍没有真实 private holdout，因而还不能计算 Agent 方法的 root-cause kill rate，
+也不能与 Agora、deterministic search 比较召回。现有 holdout bridge 证明的是“活动 Agentic 证据可被
+独立评测”，不是“已有有效的 holdout 数据”。
 
 在准备 private batch 前，先复用现有 Bundle、Replay、monitor 和 evaluator 做一个公开的 capability pilot：对每个
 少量已知根因或受控语义变异，使用 curator-owned ground-truth trigger 验证以下链条：

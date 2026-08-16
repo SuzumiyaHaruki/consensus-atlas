@@ -139,9 +139,17 @@ Scenario Agent 看到可信 frontier 和语义反馈，输出完整但有界的�
 - `revise`：修正 selector 或时序；
 - `branch/control`：从同一 checkpoint 做对照；
 - `ablate`：移除一个干预检查因果必要性；
+- `select`：不执行新 Action，选择一个已存在且已重放的 branch；
 - `minimize`：对已确认 finding 缩短轨迹。
 
-当前首先实现 continue/revise。branch/control/ablate/minimize 在底座稳定后扩展，不通过预置固定场景替代 Agent 判断。
+当前已实现 continue/revise，以及基于确定性 Trace 检查点的 branch/control/ablate。control 与 ablate
+从参考 branch 的同一根执行，但三者只保存候选路径。`continue + from_branch_id` 可选择并继续，
+`select + from_branch_id` 可以零 Runtime Action 成本直接选择已有路径。存在分支时，最后一次
+Scenario 调用保留为 select-only；它仍正常计入模型调用和 token 成本。选择只决定 Agent 的最终解释路径；
+每个唯一、fresh-Replay 稳定的候选都会离线运行 Target Oracle，不依赖 Agent 选择正确。
+消融计划必须删除 reference branch 中实际执行成功的 `applied_interventions`，不能删除仅出现在 proposal 文本中
+但从未执行的步骤。control/ablate 只能用语义 selector 在共享根重新绑定。minimize 必须等待可信 Oracle finding，
+不能在 Scenario 阶段仅凭 Risk reached 提前宣称完成。
 
 ### 3.3 Analysis Agent
 
@@ -235,10 +243,26 @@ Target 使用一个 registry 同时生成 Agent capability 和实际 monitor 列
 - Agent 调用/token；
 - Runtime decision allowance。
 
+当前 Coordinator 将 episode decision budget 按剩余调用轮次切成周期反馈片段，并同时公开本轮
+`decision_allowance` 和全局 `remaining_decisions`。战略计划、`after_milestone` 与片段内自然推进共享
+一个 live Runtime；每轮按 `ceil(remainingDecisions/remainingCalls)` 重算反馈粒度，片段末尾的一次 fresh Replay
+同时负责候选验证和下一轮 frontier/snapshot 生成。结果直接保存 `DecisionsUsed`、`StopReason`、
+`SelectedPathDecisions` 和 `BranchExplorationDecisions`，不从最终 Trace 反推全局探索成本。
+协议无关 256 Action 校准以 4 次 Agent 调用完成，计得 4 次重建、4 次验证、645 个 Replay decision 和
+1298 work unit。etcd/raft 与 OmniPaxos 的真实 Adapter 也分别完成 128 Action 校准：两者 Scenario work
+均为 658，qualified primary/replay 均为 129/129，并产生非空的 target-local Observation、protocol/control/joint
+PSS 和完整 Oracle 检查。该结果只证明执行与证据容量；真实 LLM 的长时自适应效果仍需后续实验验证。
+
 ### 5.3 恢复
 
 provider journal 先落盘请求/响应和 usage。Episode 恢复重用已完成调用；终态从 bundle 重新派生 Risk/PSS/Oracle，不访问
-provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分开保存。
+provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分开保存。主路径保存为
+`bundle.json`，未选择但已验证的候选保存为 `branch-evidence.json`；恢复时两者都重新投影
+Risk/PSS/Oracle，并核对分支执行成本。
+
+跨 Episode Exploration Memory 是 Agent-facing 材料，因此只允许白名单中的机械 outcome：
+`execution-completed`、`budget-exhausted`、`risk-near-miss`、`planning-stopped`、`execution-failed`。
+Oracle finding 数量和 Oracle 派生的 assessment 不得进入 Memory，也不得用于选择向 Agent 展示的代表分支。
 
 ## 6. 评价设计
 
@@ -275,7 +299,16 @@ provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分�
 - 无源码、无反馈、无 Memory 等消融。
 
 所有方法使用相同 Target、初始材料、预算核算和 Oracle。当前旧 A8 paired evaluator 已删除；新的 evaluator 必须直接
-消费活动 Agentic artifact，不能维护第二套执行契约。
+消费活动 Agentic artifact 中的主 Bundle 和所有分支 Bundle，不能维护第二套执行契约，也不能只因
+Agent 未选择某个分支就忽略其独立 Oracle 结果。
+所有候选的 decisions 和 qualified primary work 必须在评价 finding 前汇总到同一 trial 预算；
+不能让每个分支各自重用一遍完整预算。
+正式 Agentic trial 的 primary work 不仅是最终 Bundle，而是
+`Scenario frontier + Scenario search + 主路径/所有候选 qualified primary`；Replay 单独汇总。
+模型 calls/tokens 和上述执行工作都必须对照预声明的 `AgenticLogicalBudget`，不能只作解释字段。
+正式 Agentic Bundle 必须使用 V3 evidence，且 Episode summary、分支声明、Trace/work 与
+`MethodSpecDigest` 必须与实际 Bundle 和 formal contract 交叉一致，防止其他方法的短 Bundle
+被归到 Agent 方法名下。
 
 ## 7. 当前实现状态
 
@@ -289,13 +322,17 @@ provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分�
 - protocol/control/joint PSS；
 - durable provider journal、episode/investigation 恢复；
 - capability/fidelity/execution outcome 分类；
+- Agentic artifact → private holdout evaluator；
+- branch/control/ablate 调查编排；
+- 零 Action 分支选择、全候选 Oracle 执行及 `branch-evidence.json` 恢复；
+- 完整 Agentic 搜索/模型/候选执行成本核算与 V3 方法归属；
+- 256 Action 周期反馈、live branch 与单次 promotion Replay 校准；
+- etcd/raft 与 OmniPaxos 的 128 Action 真实 Target 证据校准；
 - A2/A8/旧 Campaign 路径清理。
 
 尚未完成：
 
-- 当前 Agentic artifact 的 private holdout evaluator；
-- branch/control/ablate/minimize；
-- 数百 Action 长时校准；
+- Oracle finding 后的 trace minimize；
 - 更广但受控的源码导航；
 - 第三个非 Raft/Paxos 形态 Target；
 - Agent 相对 baseline 的长时效果证据；
@@ -313,7 +350,7 @@ provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分�
 
 完成标准：活动 CLI、两个 Target、终态恢复和 Bundle evaluator 均可编译测试；文档只描述当前路径。
 
-### M2：Agentic holdout evaluator（当前）
+### M2：Agentic holdout evaluator（已完成）
 
 - 定义 evaluator 输入为当前 episode summary/bundle/journal audit；
 - 对 control/candidate SUT 使用同一 Agentic 方法和预算；
@@ -326,16 +363,51 @@ etcd/raft 和 OmniPaxos projector 验证。后续可按需注册 target-local mo
 
 不增加无具体失败场景的 frozen contract 或 gate；优先复用现有 Bundle/MethodSpec/defectbench 类型。
 
-### M3：长轨迹与自适应调查
+### M3：长轨迹执行与反馈底座（已完成）
 
-- 运行数百 Action 的 PreVote/ballot/message-delay 场景；
-- 实现 branch/control/ablate；
-- 让 Agent 根据 ProgressDelta 切换或放弃假设；
-- 测量 live branch 相对重复 Replay 的成本。
+- 协议无关 256 Action 成本/反馈校准已完成；
+- etcd/raft 与 OmniPaxos 的 128 Action 真实 Target 校准已完成；
+- branch/control/ablate 已实现；分支共享检查点语义，探索成本统一计入 decision budget；
+- replay/setup 数随 Agent 反馈片段增长，而不随每个 Action 增长。
 
-### M4：Agent 能力释放
+### M3.1：调查语义闭环（已完成）
+
+- 全局探索预算和停止原因进入 `ScenarioAgentResult`，Episode 不再用最终路径长度猜测总成本；
+- branch/control/ablate 不再隐式成为最终证据，分支晋升必须显式选择；
+- ablate 基于实际执行成功的干预，control/ablate 的 exact ActionID 在可信层拒绝；
+- 反馈片段按剩余预算和剩余调用动态重算。
+
+### M3.2：分支证据与 Oracle 闭环（已完成）
+
+- 实验分支在最后一个 decision 到达 Risk 时仍保留可重放候选；
+- `select` 只引用已有 branch，不包含计划也不执行 Runtime Action；
+- 所有唯一候选独立运行 Target Oracle，成本与主路径分开记账；
+- Episode 可以只有分支证据而没有任意选取的主 Bundle，持久化、恢复和 holdout evaluator 均支持此语义。
+
+### M3.3：正式实验边界（已完成）
+
+- Agent-facing Memory 移除 Oracle 数量和 Oracle 派生 outcome，只保留机械状态、Risk/PSS 进展和成本；
+- holdout 在判定 finding 前汇总主路径和所有分支的 decisions/primary work；
+- 分支数受 Scenario 调用上限约束，超额 CLI 证据直接拒绝；
+- 最后 Scenario 调用在存在分支时只允许 select，不消耗 Runtime decision，但计入模型成本。
+
+### M3.4：完整成本与方法归属（已完成，待版本化收口）
+
+- formal contract 直接复用 `AgenticLogicalBudget`，evaluator 同时核对搜索 decisions/work、
+  全部 qualified primary/replay work 和模型 calls/tokens；
+- 搜索成本超限时，即使最终 Bundle 很短也必须将 trial 记为 `invalid`；
+- Agentic Episode 在正式模式下生成 V3 Bundle，summary、branch evidence、Trace/work 和
+  contract 的 `MethodSpecDigest` 必须一致；
+- summary 未声明的分支文件、跨方法 Bundle 替换和超预算模型工作均由普通回归测试拒绝。
+
+这里没有新增预算 DSL、hash 或并行评测路径；只复用现有 logical budget、V3 method digest
+和 Episode 已记录的 work 字段。历史 OpenRouter r5 等 V2 公开校准工件因缺少这些正式绑定，
+仅保留为流程校准，不能直接被纳入 private holdout。
+
+### M4：Agent 能力释放（下一阶段）
 
 - 扩大只读源码搜索范围；
+- 让 Agent 根据真实 ProgressDelta 选择 continue/revise/branch 或放弃假设；
 - 增加 investigation 调用/时间预算；
 - 在隔离工作区允许 native-test candidate；
 - 从已确认根因生成变体并自动最小化。

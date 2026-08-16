@@ -302,6 +302,9 @@ func runAgenticEpisodeDirectory(
 		testing := *result.Testing
 		recovered.Testing = &testing
 	}
+	recovered.BranchTesting = append(
+		[]agenticBranchTestingResult(nil), result.BranchTesting...,
+	)
 	return recovered, nil
 }
 
@@ -341,14 +344,19 @@ func agenticEpisodeBudgetFromExperiment(
 	maxRuntimeDecisions int,
 	logical controlexperiment.AgenticLogicalBudget,
 ) (agenticEpisodeBudget, error) {
+	if logical.Validate() != nil {
+		return agenticEpisodeBudget{}, errors.New("AGENTIC_EPISODE_LOGICAL_BUDGET_INVALID")
+	}
 	riskCalls := logical.MaxModelCalls - scenarioCalls
 	if riskCalls > controlexperiment.RiskAgentMaxCalls {
 		riskCalls = controlexperiment.RiskAgentMaxCalls
 	}
+	logicalCopy := logical
 	budget := agenticEpisodeBudget{
 		MaxRiskCalls: riskCalls, MaxScenarioCalls: scenarioCalls,
 		MaxTotalCalls: logical.MaxModelCalls, MaxObservedTokens: logical.MaxModelTokens,
 		MaxScenarioPlanSteps: maxPlanSteps, MaxRuntimeDecisions: maxRuntimeDecisions,
+		Logical: &logicalCopy,
 	}
 	return budget, budget.validate()
 }

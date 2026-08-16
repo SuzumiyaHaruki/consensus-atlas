@@ -77,8 +77,9 @@ func runScenarioAgentEpisodeCore(
 }
 
 // runScenarioEpisodeCore is the shared trusted execution substrate used by
-// active Agentic target compositions. A planner supplies only ScenarioPlan
-// JSON and model accounting; frontier reconstruction, concretization, natural
+// active Agentic target compositions. A planner supplies only an investigation
+// proposal with a bounded ScenarioPlan and model accounting; branch selection,
+// frontier reconstruction, concretization, natural
 // progress, Replay and qualification remain trusted.
 func runScenarioEpisodeCore(
 	ctx context.Context,

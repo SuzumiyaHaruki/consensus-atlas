@@ -79,12 +79,15 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 			for index, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDropMessage &&
 					view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
-					plan, err := json.Marshal(controlexperiment.ScenarioPlan{
-						ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
-							ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
-								ActionID: action.ActionID,
-							},
-						}},
+					plan, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+						Intent: controlexperiment.ScenarioIntentContinue,
+						Plan: controlexperiment.ScenarioPlan{
+							ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
+								ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
+									ActionID: action.ActionID,
+								},
+							}},
+						},
 					})
 					return plan, controlexperiment.ModelWork{
 						Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7,
@@ -99,12 +102,15 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
 		t.Fatalf("discovered Risk did not reach through Scenario Runtime: %#v/%v", scenario.Agent, err)
 	}
+	methodSpecDigest := formalTestStringDigest("agentic-omnipaxos-method")
 	testingResult, err := executeOmnipaxosScenarioQualifiedRisk(
 		ctx, workerPath, inputs.Experiment, inputs.Workload, inputs.Qualification,
-		inputs.Root, *scenario.Agent.Execution, scenarioRisk.Spec, projector,
+		inputs.Root, *scenario.Agent.Execution, scenarioRisk.Spec, projector, methodSpecDigest,
 	)
 	if err != nil || !testingResult.Replay.Stable || len(testingResult.Oracle.Violations) != 0 ||
 		testingResult.Risk.RiskID != candidate.ID ||
+		testingResult.Bundle.SchemaVersion != controlexperiment.ExecutionBundleSchemaVersionV3 ||
+		testingResult.Bundle.Identity.MethodSpecDigest != methodSpecDigest ||
 		testingResult.Bundle.Trace.Digest != scenario.Agent.Execution.FinalTrace.Digest {
 		t.Fatalf("discovered Risk lost qualified evidence: %#v/%v", testingResult, err)
 	}

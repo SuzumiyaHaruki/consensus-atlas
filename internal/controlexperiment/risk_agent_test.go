@@ -325,7 +325,7 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 	memory := []RiskExplorationMemoryEntry{{
 		Episode: 1, CandidateID: "earlier-message-loss", Summary: "Earlier investigation.",
 		SuspectedMechanism: "A message-loss ordering was investigated previously.",
-		EpisodeOutcome:     "completed", RiskStatus: semantic.RiskWitnessNotReached,
+		EpisodeOutcome:     RiskMemoryOutcomeRiskNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
 		ProtocolPSSStates: 3, NewProtocolPSSStates: 2,
 		MechanicalReasonCodes: []string{RiskAgentReasonUnqualified},

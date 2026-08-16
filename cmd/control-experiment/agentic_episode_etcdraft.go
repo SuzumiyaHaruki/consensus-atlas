@@ -188,10 +188,11 @@ func newEtcdraftAgenticEpisodeTarget(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
 			execution controlexperiment.ScenarioExecution,
+			methodSpecDigest string,
 		) (scenarioTestingResult, error) {
 			return executeEtcdraftScenarioQualifiedRisk(
 				ctx, inputs.execution, inputs.root, inputs.experiment,
-				execution, risk.Spec, projector,
+				execution, risk.Spec, projector, methodSpecDigest,
 			)
 		},
 	}

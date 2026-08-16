@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
@@ -36,14 +37,68 @@ type agenticHoldoutInputs struct {
 // navigation/accounting fields. Unknown summary fields remain outside the
 // trusted verdict path; the full Bundle is validated independently.
 type agenticEpisodeSummaryProjection struct {
-	TargetID string `json:"target_id"`
-	Status   string `json:"status"`
-	Work     struct {
-		Model controlexperiment.ModelWork `json:"model"`
+	TargetID              string `json:"target_id"`
+	MethodSpecDigest      string `json:"method_spec_digest"`
+	Status                string `json:"status"`
+	RiskAttempts          int    `json:"risk_attempts"`
+	ScenarioAttempts      int    `json:"scenario_attempts"`
+	ScenarioDecisionsUsed int    `json:"scenario_decisions_used"`
+	PlanID                string `json:"plan_id"`
+	RiskResultID          string `json:"risk_result_id"`
+	TraceDigest           string `json:"trace_digest"`
+	Budget                struct {
+		MaxRiskCalls         int                                     `json:"max_risk_calls"`
+		MaxScenarioCalls     int                                     `json:"max_scenario_calls"`
+		MaxTotalCalls        int                                     `json:"max_total_calls"`
+		MaxObservedTokens    int                                     `json:"max_observed_tokens"`
+		MaxScenarioPlanSteps int                                     `json:"max_scenario_plan_steps"`
+		MaxRuntimeDecisions  int                                     `json:"max_runtime_decisions"`
+		Logical              *controlexperiment.AgenticLogicalBudget `json:"logical_budget"`
+	} `json:"budget"`
+	BranchEvidence []agenticBranchSummaryProjection `json:"branch_evidence"`
+	Work           struct {
+		Model                     controlexperiment.ModelWork        `json:"model"`
+		ScenarioFrontier          controlexperiment.PhaseWork        `json:"scenario_frontier"`
+		ScenarioSearch            controlexperiment.StatelessDFSWork `json:"scenario_search"`
+		QualifiedExecution        controlexperiment.WorkLedger       `json:"qualified_execution"`
+		BranchQualifiedExecutions []agenticBranchWorkProjection      `json:"branch_qualified_executions"`
 	} `json:"work"`
 	Assessment struct {
 		Status string `json:"status"`
 	} `json:"evidence_assessment"`
+}
+
+type agenticBranchSummaryProjection struct {
+	BranchID          string                       `json:"branch_id"`
+	Intent            string                       `json:"intent"`
+	ReferenceBranchID string                       `json:"reference_branch_id"`
+	PlanID            string                       `json:"plan_id"`
+	RiskResultID      string                       `json:"risk_result_id"`
+	TraceDigest       string                       `json:"trace_digest"`
+	Work              controlexperiment.WorkLedger `json:"work"`
+}
+
+type agenticBranchWorkProjection struct {
+	BranchID string                       `json:"branch_id"`
+	Work     controlexperiment.WorkLedger `json:"work"`
+}
+
+// The private evaluator deliberately projects only the independently checked
+// execution bundle from each persisted branch. Agent-reported Risk and Oracle
+// fields remain outside the trusted verdict path.
+type agenticBranchEvidenceProjection struct {
+	BranchID          string          `json:"branch_id"`
+	Intent            string          `json:"intent"`
+	ReferenceBranchID string          `json:"reference_branch_id,omitempty"`
+	Testing           json.RawMessage `json:"testing"`
+}
+
+type agenticTestingProjection struct {
+	PlanID string                            `json:"plan_id"`
+	Bundle controlexperiment.ExecutionBundle `json:"execution_bundle"`
+	Risk   struct {
+		ID string `json:"id"`
+	} `json:"risk"`
 }
 
 func runAgenticHoldoutEvaluation(
@@ -130,27 +185,134 @@ func loadAgenticHoldoutEvidence(
 		if err != nil {
 			return nil, fmt.Errorf("load Agentic summary %s: %w", input.TrialID, err)
 		}
+		if !validAgenticEpisodeSummaryProjection(summary, contract) {
+			return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_SUMMARY_INVALID: %s", input.TrialID)
+		}
 		current := defectbench.AgenticTrialEvidence{
-			TargetID: summary.TargetID, EpisodeStatus: summary.Status,
-			EvidenceStatus: summary.Assessment.Status, ModelWork: summary.Work.Model,
+			TargetID: summary.TargetID, MethodSpecDigest: summary.MethodSpecDigest,
+			EpisodeStatus: summary.Status, EvidenceStatus: summary.Assessment.Status,
+			Budget: *summary.Budget.Logical, RiskAttempts: summary.RiskAttempts,
+			ScenarioAttempts:      summary.ScenarioAttempts,
+			ScenarioDecisionsUsed: summary.ScenarioDecisionsUsed,
+			ModelWork:             summary.Work.Model, ScenarioFrontier: summary.Work.ScenarioFrontier,
+			ScenarioSearch: summary.Work.ScenarioSearch,
 		}
 		bundlePath := filepath.Join(directory, "bundle.json")
 		if bundleInfo, bundleErr := os.Lstat(bundlePath); bundleErr == nil {
-			if !bundleInfo.Mode().IsRegular() || bundleInfo.Mode()&os.ModeSymlink != 0 {
+			if !bundleInfo.Mode().IsRegular() || bundleInfo.Mode()&os.ModeSymlink != 0 ||
+				summary.PlanID == "" {
 				return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BUNDLE_INVALID: %s", input.TrialID)
 			}
 			var bundle controlexperiment.ExecutionBundle
-			if err := readStrictJSON(bundlePath, &bundle); err != nil {
-				return nil, err
+			if err := readStrictJSON(bundlePath, &bundle); err != nil ||
+				!agenticSummaryBundleMatches(
+					summary.MethodSpecDigest, summary.PlanID, summary.RiskResultID,
+					summary.TraceDigest, summary.Work.QualifiedExecution, bundle,
+				) {
+				return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BUNDLE_INVALID: %s", input.TrialID)
 			}
 			current.Bundle = &bundle
 		} else if !errors.Is(bundleErr, os.ErrNotExist) {
 			return nil, bundleErr
+		} else if summary.PlanID != "" {
+			return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BUNDLE_INVALID: %s", input.TrialID)
+		}
+		branchPath := filepath.Join(directory, "branch-evidence.json")
+		if branchInfo, branchErr := os.Lstat(branchPath); branchErr == nil {
+			if !branchInfo.Mode().IsRegular() || branchInfo.Mode()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", input.TrialID)
+			}
+			var branches []agenticBranchEvidenceProjection
+			if err := readStrictJSON(branchPath, &branches); err != nil || len(branches) == 0 ||
+				len(branches) > controlexperiment.ScenarioAgentMaxCalls ||
+				len(branches) != len(summary.BranchEvidence) {
+				return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", input.TrialID)
+			}
+			seenBranches := make(map[string]bool, len(branches))
+			for index, branch := range branches {
+				declared := summary.BranchEvidence[index]
+				if strings.TrimSpace(branch.BranchID) == "" || strings.TrimSpace(branch.Intent) == "" ||
+					seenBranches[branch.BranchID] || len(branch.Testing) == 0 ||
+					branch.BranchID != declared.BranchID || branch.Intent != declared.Intent ||
+					branch.ReferenceBranchID != declared.ReferenceBranchID {
+					return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", input.TrialID)
+				}
+				var testing agenticTestingProjection
+				if err := json.Unmarshal(branch.Testing, &testing); err != nil ||
+					!agenticSummaryBundleMatches(
+						summary.MethodSpecDigest, declared.PlanID, declared.RiskResultID,
+						declared.TraceDigest, declared.Work, testing.Bundle,
+					) || testing.PlanID != declared.PlanID || testing.Risk.ID != declared.RiskResultID {
+					return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", input.TrialID)
+				}
+				current.CandidateBundles = append(current.CandidateBundles, testing.Bundle)
+				seenBranches[branch.BranchID] = true
+			}
+		} else if !errors.Is(branchErr, os.ErrNotExist) {
+			return nil, branchErr
+		} else if len(summary.BranchEvidence) != 0 {
+			return nil, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", input.TrialID)
 		}
 		evidence[input.TrialID] = current
 		seenTrials[input.TrialID], seenDirectories[directory] = true, true
 	}
 	return evidence, nil
+}
+
+func validAgenticEpisodeSummaryProjection(
+	summary agenticEpisodeSummaryProjection,
+	contract defectbench.FormalBenchmarkContract,
+) bool {
+	hasPrimary := summary.PlanID != "" && summary.RiskResultID != "" && summary.TraceDigest != ""
+	if summary.TargetID == "" || summary.MethodSpecDigest != contract.MethodSpecDigest ||
+		summary.Budget.Logical == nil || summary.Budget.Logical.Validate() != nil ||
+		contract.AgenticBudget == nil || *summary.Budget.Logical != *contract.AgenticBudget ||
+		summary.Budget.MaxRiskCalls <= 0 || summary.Budget.MaxScenarioCalls <= 0 ||
+		summary.Budget.MaxRiskCalls+summary.Budget.MaxScenarioCalls > summary.Budget.MaxTotalCalls ||
+		summary.Budget.MaxTotalCalls != summary.Budget.Logical.MaxModelCalls ||
+		summary.Budget.MaxObservedTokens != summary.Budget.Logical.MaxModelTokens ||
+		summary.Budget.MaxScenarioPlanSteps <= 0 ||
+		summary.Budget.MaxRuntimeDecisions <= 0 ||
+		summary.Budget.MaxRuntimeDecisions > summary.Budget.Logical.MaxPrimarySchedulerDecisions ||
+		summary.RiskAttempts < 0 || summary.ScenarioAttempts < 0 ||
+		summary.RiskAttempts > summary.Budget.MaxRiskCalls ||
+		summary.ScenarioAttempts > summary.Budget.MaxScenarioCalls ||
+		summary.RiskAttempts+summary.ScenarioAttempts != summary.Work.Model.Calls ||
+		summary.ScenarioDecisionsUsed < 0 ||
+		summary.ScenarioDecisionsUsed > summary.Budget.MaxRuntimeDecisions ||
+		hasPrimary != (summary.PlanID != "" || summary.RiskResultID != "" || summary.TraceDigest != "") ||
+		!hasPrimary && !reflect.DeepEqual(
+			summary.Work.QualifiedExecution, controlexperiment.WorkLedger{},
+		) ||
+		len(summary.BranchEvidence) != len(summary.Work.BranchQualifiedExecutions) ||
+		len(summary.BranchEvidence) > summary.ScenarioAttempts ||
+		len(summary.BranchEvidence) > controlexperiment.ScenarioAgentMaxCalls {
+		return false
+	}
+	for index, branch := range summary.BranchEvidence {
+		work := summary.Work.BranchQualifiedExecutions[index]
+		if branch.BranchID == "" || branch.Intent == "" || branch.PlanID == "" ||
+			branch.RiskResultID == "" || branch.TraceDigest == "" ||
+			work.BranchID != branch.BranchID || !reflect.DeepEqual(work.Work, branch.Work) {
+			return false
+		}
+	}
+	return true
+}
+
+func agenticSummaryBundleMatches(
+	methodSpecDigest string,
+	planID string,
+	riskResultID string,
+	traceDigest string,
+	work controlexperiment.WorkLedger,
+	bundle controlexperiment.ExecutionBundle,
+) bool {
+	return planID != "" && riskResultID != "" && traceDigest != "" &&
+		bundle.Validate() == nil &&
+		bundle.SchemaVersion == controlexperiment.ExecutionBundleSchemaVersionV3 &&
+		bundle.Identity.MethodSpecDigest == methodSpecDigest &&
+		bundle.Trace.Digest == traceDigest && reflect.DeepEqual(bundle.Work, work)
 }
 
 func readAgenticEpisodeSummary(path string) (agenticEpisodeSummaryProjection, error) {

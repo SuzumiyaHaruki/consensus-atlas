@@ -70,71 +70,21 @@ func ExecuteScenarioNaturalProgress(
 	closeWith := func(cause error) error {
 		return errors.Join(cause, runtime.Close())
 	}
-	closureLimit := maxDecisions
-	for decision := 0; decision < closureLimit; decision++ {
-		if scenarioClientTerminal(snapshot) {
-			result.StopReason = ScenarioProgressClientTerminal
-			break
+	live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
+		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
+		faultEnvelope, runtime, projector,
+	)
+	addDFSPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
+	result.StopReason = live.StopReason
+	result.Execution.Steps = live.Steps
+	result.Execution.FinalTrace, result.Execution.FinalRisk = live.FinalTrace, live.FinalRisk
+	if liveErr != nil {
+		result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
+			result.Execution.Work.ChildMaterialization.WorkUnits +
+			result.Execution.Work.ChildVerification.WorkUnits
+		return result, &StatelessDFSExecutionError{
+			Work: result.Execution.Work, cause: closeWith(liveErr),
 		}
-		action, ok := scenarioNaturalProgressAction(view.Actions)
-		if !ok {
-			result.StopReason = ScenarioProgressQuiescent
-			break
-		}
-		choice, err := NewFrontierChoice(
-			fmt.Sprintf("%s-choice-%02d", id, decision+1), view, spec, action.ActionID,
-		)
-		if err != nil {
-			return ScenarioProgressResult{}, closeWith(err)
-		}
-		frontier, err := scenarioActionFrontier(view)
-		if err != nil {
-			return ScenarioProgressResult{}, closeWith(err)
-		}
-		child, materialization, err := executeDFSChildOnLiveRuntime(
-			ctx, frontier, choice.Action, runtime,
-		)
-		addDFSPhase(&result.Execution.Work.ChildMaterialization, materialization)
-		if err != nil {
-			result.Execution.Work.TotalWorkUnits =
-				result.Execution.Work.FrontierReconstruction.WorkUnits +
-					result.Execution.Work.ChildMaterialization.WorkUnits +
-					result.Execution.Work.ChildVerification.WorkUnits
-			return result, &StatelessDFSExecutionError{
-				Work: result.Execution.Work, cause: closeWith(err),
-			}
-		}
-		risk, err := projector.Project(
-			fmt.Sprintf("%s-risk-%02d", id, decision+1), spec, child,
-		)
-		if err != nil || risk.Validate(spec) != nil || risk.ProjectorID != projector.ID() ||
-			risk.ExecutionDigest != child.Digest || risk.TargetIdentityDigest != child.ManifestDigest {
-			return ScenarioProgressResult{}, closeWith(
-				errors.New("EXPERIMENT_SCENARIO_PROGRESS_RISK_INVALID"),
-			)
-		}
-		progress, err := semantic.NewRiskWitnessProgress(spec, risk)
-		if err != nil {
-			return ScenarioProgressResult{}, closeWith(err)
-		}
-		result.Execution.Steps = append(result.Execution.Steps, ScenarioStepFeedback{
-			StepID: fmt.Sprintf("natural-progress-%02d", decision+1), Outcome: ScenarioStepApplied,
-			Decision: view.NextDecision, ViewDigest: view.Digest, MatchCount: 1,
-			Choice: &choice, RiskProgress: progress,
-		})
-		result.Execution.FinalTrace, result.Execution.FinalRisk = child, risk
-		if decision+1 < closureLimit {
-			view, snapshot, err = projectRiskFrontierFromLiveRuntime(
-				ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+2), spec,
-				result.Execution.FinalRisk, result.Execution.FinalTrace, faultEnvelope, runtime,
-			)
-			if err != nil {
-				return ScenarioProgressResult{}, closeWith(err)
-			}
-		}
-	}
-	if result.StopReason == "" {
-		result.StopReason = ScenarioProgressBudget
 	}
 	if err := runtime.Close(); err != nil {
 		return ScenarioProgressResult{}, err
@@ -151,6 +101,89 @@ func ExecuteScenarioNaturalProgress(
 	result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
 		result.Execution.Work.ChildMaterialization.WorkUnits +
 		result.Execution.Work.ChildVerification.WorkUnits
+	return result, nil
+}
+
+type scenarioLiveProgressResult struct {
+	StopReason string
+	Steps      []ScenarioStepFeedback
+	FinalTrace controlruntime.Trace
+	FinalRisk  semantic.RiskWitnessResult
+	Work       StatelessDFSWork
+}
+
+func executeScenarioNaturalProgressOnLiveRuntime(
+	ctx context.Context,
+	id string,
+	maxDecisions int,
+	spec semantic.RiskWitnessSpec,
+	rootRisk semantic.RiskWitnessResult,
+	root controlruntime.Trace,
+	view RiskFrontierView,
+	snapshot controlruntime.Snapshot,
+	faultEnvelope *FaultEnvelope,
+	runtime *controlruntime.Runtime,
+	projector SemanticPrefixProjector,
+) (scenarioLiveProgressResult, error) {
+	result := scenarioLiveProgressResult{FinalTrace: root, FinalRisk: rootRisk}
+	for decision := 0; decision < maxDecisions; decision++ {
+		if scenarioClientTerminal(snapshot) {
+			result.StopReason = ScenarioProgressClientTerminal
+			break
+		}
+		action, ok := scenarioNaturalProgressAction(view.Actions)
+		if !ok {
+			result.StopReason = ScenarioProgressQuiescent
+			break
+		}
+		choice, err := NewFrontierChoice(
+			fmt.Sprintf("%s-choice-%02d", id, decision+1), view, spec, action.ActionID,
+		)
+		if err != nil {
+			return result, err
+		}
+		frontier, err := scenarioActionFrontier(view)
+		if err != nil {
+			return result, err
+		}
+		child, materialization, err := executeDFSChildOnLiveRuntime(
+			ctx, frontier, choice.Action, runtime,
+		)
+		addDFSPhase(&result.Work.ChildMaterialization, materialization)
+		if err != nil {
+			return result, err
+		}
+		risk, err := projector.Project(
+			fmt.Sprintf("%s-risk-%02d", id, decision+1), spec, child,
+		)
+		if err != nil || risk.Validate(spec) != nil || risk.ProjectorID != projector.ID() ||
+			risk.ExecutionDigest != child.Digest || risk.TargetIdentityDigest != child.ManifestDigest {
+			return result, errors.New("EXPERIMENT_SCENARIO_PROGRESS_RISK_INVALID")
+		}
+		progress, err := semantic.NewRiskWitnessProgress(spec, risk)
+		if err != nil {
+			return result, err
+		}
+		result.Steps = append(result.Steps, ScenarioStepFeedback{
+			StepID: fmt.Sprintf("natural-progress-%02d", decision+1), Outcome: ScenarioStepApplied,
+			Decision: view.NextDecision, ViewDigest: view.Digest, MatchCount: 1,
+			Choice: &choice, RiskProgress: progress,
+		})
+		result.FinalTrace, result.FinalRisk = child, risk
+		if decision+1 < maxDecisions {
+			view, snapshot, err = projectRiskFrontierFromLiveRuntime(
+				ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+2), spec,
+				result.FinalRisk, result.FinalTrace, faultEnvelope, runtime,
+			)
+			if err != nil {
+				return result, err
+			}
+		}
+	}
+	if result.StopReason == "" {
+		result.StopReason = ScenarioProgressBudget
+	}
+	result.Work.TotalWorkUnits = result.Work.ChildMaterialization.WorkUnits
 	return result, nil
 }
 

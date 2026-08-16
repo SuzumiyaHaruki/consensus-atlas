@@ -750,15 +750,36 @@ func verifyDFSChild(
 	runtimeConfig RuntimeConfig,
 	newAdapter AdapterFactory,
 ) (PhaseWork, error) {
+	verificationRuntime, verification, err := verifyDFSChildRuntime(
+		ctx, child, runtimeConfig, newAdapter,
+	)
+	if err != nil {
+		if verificationRuntime != nil {
+			err = errors.Join(err, verificationRuntime.Close())
+		}
+		return verification, err
+	}
+	if err := verificationRuntime.Close(); err != nil {
+		return verification, err
+	}
+	return verification, nil
+}
+
+func verifyDFSChildRuntime(
+	ctx context.Context,
+	child controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	newAdapter AdapterFactory,
+) (*controlruntime.Runtime, PhaseWork, error) {
 	var verification PhaseWork
 	chargeSetup(&verification)
 	adapter, err := newAdapter()
 	if err != nil {
-		return verification, err
+		return nil, verification, err
 	}
 	config, err := runtimeConfig.runtimeConfig()
 	if err != nil {
-		return verification, err
+		return nil, verification, err
 	}
 	verificationRuntime, replay, err := controlruntime.ReplayWithProgress(ctx, adapter, config, child)
 	if replay.RuntimeInitialized {
@@ -767,12 +788,9 @@ func verifyDFSChild(
 	chargePrepareActions(&verification, replay.PrepareActions)
 	chargeDecisions(&verification, replay.Decisions)
 	if err != nil {
-		return verification, err
+		return verificationRuntime, verification, err
 	}
-	if err := verificationRuntime.Close(); err != nil {
-		return verification, err
-	}
-	return verification, nil
+	return verificationRuntime, verification, nil
 }
 
 func prefixReplayWork(prefix controlruntime.Trace) PhaseWork {

@@ -1,19 +1,20 @@
 package defectbench
 
 import (
-	"encoding/json"
-	"os"
+	"context"
 	"testing"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
 
 func TestAgenticHoldoutRecomputesVerdictsFromCompletedEpisodeBundles(t *testing.T) {
 	contract, exposure, evidence := agenticHoldoutFixture(t)
 	report, err := EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, omnipaxosv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -40,12 +41,12 @@ func TestAgenticHoldoutRecomputesVerdictsFromCompletedEpisodeBundles(t *testing.
 func TestAgenticHoldoutClassifiesIncompleteEpisodeAsInvalidTrial(t *testing.T) {
 	contract, exposure, evidence := agenticHoldoutFixture(t)
 	trialID := contract.Pairs[0].Candidate.TrialID
-	evidence[trialID] = AgenticTrialEvidence{
-		TargetID: "omnipaxos-v2", EpisodeStatus: AgenticEpisodeRiskStopped,
-		EvidenceStatus: "planning-failed", ModelWork: controlexperiment.ModelWork{},
-	}
+	incomplete := evidence[trialID]
+	incomplete.EpisodeStatus, incomplete.EvidenceStatus = AgenticEpisodeRiskStopped, "planning-failed"
+	incomplete.Bundle, incomplete.CandidateBundles = nil, nil
+	evidence[trialID] = incomplete
 	report, err := EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, omnipaxosv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -62,19 +63,208 @@ func TestAgenticHoldoutClassifiesIncompleteEpisodeAsInvalidTrial(t *testing.T) {
 	}
 }
 
-func agenticHoldoutFixture(
-	t *testing.T,
-) (FormalBenchmarkContract, FormalExposureAudit, map[string]AgenticTrialEvidence) {
-	t.Helper()
-	data, err := os.ReadFile(
-		"../../benchmarks/experiments/agentic-investigation-a9e4c4-openrouter-omnipaxos-r5/episode-0001/bundle.json",
+func TestAgenticHoldoutChargesSearchModelAndMethodIdentity(t *testing.T) {
+	contract, exposure, evidence := agenticHoldoutFixture(t)
+	trialID := contract.Pairs[0].Candidate.TrialID
+	original := evidence[trialID]
+
+	highSearch := original
+	highSearch.ScenarioFrontier = controlexperiment.PhaseWork{
+		SetupAttempts: contract.Budget.MaxPrimaryWorkUnits,
+		WorkUnits:     contract.Budget.MaxPrimaryWorkUnits,
+	}
+	evidence[trialID] = highSearch
+	report, err := EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var bundle controlexperiment.ExecutionBundle
-	if err := json.Unmarshal(data, &bundle); err != nil || bundle.Validate() != nil {
-		t.Fatalf("archived Agentic bundle invalid: %v", err)
+	assertAgenticInvalidReason(
+		t, report, trialID, "AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED",
+	)
+
+	overModel := original
+	overModel.RiskAttempts = contract.AgenticBudget.MaxModelCalls + 1
+	overModel.ModelWork = controlexperiment.ModelWork{
+		Calls: overModel.RiskAttempts, InputTokens: overModel.RiskAttempts,
+		TotalTokens: overModel.RiskAttempts,
+	}
+	evidence[trialID] = overModel
+	report, err = EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAgenticInvalidReason(t, report, trialID, "AGENTIC_HOLDOUT_MODEL_BUDGET_EXCEEDED")
+
+	otherMethod := original
+	otherBundle := agenticHoldoutTestBundle(
+		t, testFormalDigest("other-agentic-method"),
+		"626173652d6167656e7469632d686f6c646f75742d736565642d7633",
+	)
+	otherMethod.Bundle = &otherBundle
+	evidence[trialID] = otherMethod
+	report, err = EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAgenticInvalidReason(t, report, trialID, "AGENTIC_HOLDOUT_BUNDLE_CONTRACT_MISMATCH")
+}
+
+func assertAgenticInvalidReason(
+	t *testing.T,
+	report AgenticHoldoutEvaluation,
+	trialID string,
+	reason string,
+) {
+	t.Helper()
+	for _, result := range report.Results {
+		if result.TrialID == trialID {
+			if result.Result.Status != BundleStatusInvalid || result.Result.InvalidReason != reason {
+				t.Fatalf("trial %s invalid result = %#v", trialID, result.Result)
+			}
+			return
+		}
+	}
+	t.Fatalf("trial %s result missing", trialID)
+}
+
+func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testing.T) {
+	contract, exposure, evidence := agenticHoldoutFixture(t)
+	branchBundle := agenticHoldoutTestBundle(
+		t, contract.MethodSpecDigest,
+		"6272616e63682d6167656e7469632d686f6c646f75742d736565642d7633",
+	)
+	for index := range contract.Pairs {
+		contract.Pairs[index].Control.ExpectedConfigDigest = ""
+		contract.Pairs[index].Candidate.ExpectedConfigDigest = ""
+	}
+	contract, err := contract.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := contract.OpaqueView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, err = AuditFormalExposure(
+		contract, view, []FormalPublicArtifact{{Bytes: []byte(`{"trial_id":"opaque-01"}`)}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	branchOnlyID := contract.Pairs[0].Control.TrialID
+	branchOnly := evidence[branchOnlyID]
+	branchOnly.Bundle = nil
+	branchOnly.CandidateBundles = []controlexperiment.ExecutionBundle{branchBundle}
+	evidence[branchOnlyID] = branchOnly
+
+	findingID := contract.Pairs[0].Candidate.TrialID
+	withBranch := evidence[findingID]
+	withBranch.CandidateBundles = []controlexperiment.ExecutionBundle{branchBundle}
+	evidence[findingID] = withBranch
+
+	report, err := EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{},
+		digestFindingMonitor{digest: branchBundle.Digest},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range report.Results {
+		switch result.TrialID {
+		case branchOnlyID:
+			if result.Result.Status != BundleStatusFalsePositive ||
+				result.Result.BundleDigest != branchBundle.Digest {
+				t.Fatalf("branch-only control result = %#v", result.Result)
+			}
+		case findingID:
+			if result.Result.Status != BundleStatusKilled ||
+				result.Result.BundleDigest != branchBundle.Digest {
+				t.Fatalf("unselected finding result = %#v", result.Result)
+			}
+		}
+	}
+	primaryBundle := *withBranch.Bundle
+	contract.Budget.MaxDecisions = max(len(primaryBundle.Trace.Records), len(branchBundle.Trace.Records))
+	contract.Budget.MaxPrimaryWorkUnits = max(
+		primaryBundle.Work.Primary.WorkUnits, branchBundle.Work.Primary.WorkUnits,
+	)
+	limitedBudget := *contract.AgenticBudget
+	limitedBudget.MaxPrimarySchedulerDecisions = contract.Budget.MaxDecisions
+	limitedBudget.MaxPrimaryWorkUnits = contract.Budget.MaxPrimaryWorkUnits
+	contract.AgenticBudget = &limitedBudget
+	for trialID, current := range evidence {
+		current.Budget = limitedBudget
+		evidence[trialID] = current
+	}
+	contract, err = contract.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err = contract.OpaqueView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, err = AuditFormalExposure(
+		contract, view, []FormalPublicArtifact{{Bytes: []byte(`{"trial_id":"opaque-01"}`)}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err = EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{},
+		digestFindingMonitor{digest: branchBundle.Digest},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range report.Results {
+		if result.TrialID == findingID &&
+			(result.Result.Status != BundleStatusInvalid ||
+				result.Result.InvalidReason != "AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED" ||
+				result.Result.Decisions != len(primaryBundle.Trace.Records)+len(branchBundle.Trace.Records) ||
+				result.Result.PrimaryWork != primaryBundle.Work.Primary.WorkUnits+
+					branchBundle.Work.Primary.WorkUnits) {
+			t.Fatalf("multi-candidate budget was not aggregated before finding: %#v", result.Result)
+		}
+	}
+}
+
+type digestFindingMonitor struct {
+	digest string
+}
+
+func (digestFindingMonitor) Name() string { return "agreement" }
+
+func (monitor digestFindingMonitor) CheckBundle(
+	bundle controlexperiment.ExecutionBundle,
+) []oracle.Violation {
+	if bundle.Digest != monitor.digest {
+		return nil
+	}
+	return []oracle.Violation{{
+		Monitor: monitor.Name(), Step: len(bundle.Trace.Records), Message: "test branch finding",
+	}}
+}
+
+func agenticHoldoutFixture(
+	t *testing.T,
+) (FormalBenchmarkContract, FormalExposureAudit, map[string]AgenticTrialEvidence) {
+	t.Helper()
+	methodSpecDigest := testFormalDigest("agentic-holdout-method")
+	bundle := agenticHoldoutTestBundle(
+		t, methodSpecDigest,
+		"626173652d6167656e7469632d686f6c646f75742d736565642d7633",
+	)
+	budget := controlexperiment.AgenticLogicalBudget{
+		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 512, MaxPrimaryWorkUnits: 1024,
+		MaxReplayWorkUnits: 1024, MaxModelCalls: 6, MaxModelTokens: 50_000,
 	}
 	pair := func(index int, root string) FormalPair {
 		controlTrial := "opaque-0" + string(rune('1'+(index-1)*2))
@@ -98,11 +288,15 @@ func agenticHoldoutFixture(
 		ID: "agentic-holdout-fixture", FamilyID: "leader-cft",
 		ProfileDigest:        bundle.Qualification.Profile.Digest,
 		BlindingNonce:        testFormalDigest("agentic-holdout-nonce"),
-		MethodSpecDigest:     testFormalDigest("agentic-holdout-method"),
+		MethodSpecDigest:     methodSpecDigest,
 		RequiredBundleSchema: bundle.SchemaVersion,
-		Budget:               BundleBudget{MaxDecisions: 256, MaxPrimaryWorkUnits: 512},
+		Budget: BundleBudget{
+			MaxDecisions:        budget.MaxPrimarySchedulerDecisions,
+			MaxPrimaryWorkUnits: budget.MaxPrimaryWorkUnits,
+		},
+		AgenticBudget: &budget,
 		Composition: FormalCompositionSpec{
-			ProjectorID: omnipaxosv2.DecisionProjectionID, MonitorIDs: []string{"agreement"},
+			ProjectorID: etcdraftv2.DecisionProjectionID, MonitorIDs: []string{"agreement"},
 		},
 		Pairs: []FormalPair{
 			pair(1, "private-root-alpha"), pair(2, "private-root-beta"),
@@ -127,11 +321,71 @@ func agenticHoldoutFixture(
 		for _, trialID := range []string{pair.Control.TrialID, pair.Candidate.TrialID} {
 			copyBundle := bundle
 			evidence[trialID] = AgenticTrialEvidence{
-				TargetID: "omnipaxos-v2", EpisodeStatus: AgenticEpisodeCompleted,
-				EvidenceStatus: "oracle-finding", ModelWork: controlexperiment.ModelWork{},
-				Bundle: &copyBundle,
+				TargetID: "etcdraft-v2", MethodSpecDigest: methodSpecDigest,
+				EpisodeStatus: AgenticEpisodeCompleted, EvidenceStatus: "oracle-finding",
+				Budget: budget, ModelWork: controlexperiment.ModelWork{}, Bundle: &copyBundle,
 			}
 		}
 	}
 	return contract, exposure, evidence
+}
+
+func agenticHoldoutTestBundle(
+	t *testing.T,
+	methodSpecDigest string,
+	seedHex string,
+) controlexperiment.ExecutionBundle {
+	t.Helper()
+	qualified, err := qualification.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err := controlexperiment.BindExecutionAdmission(
+		qualified.Qualification,
+		controlexperiment.ExecutionRequirements{Capabilities: qualified.Profile.RequiredCapabilityIDs()},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := etcdraftv2.InputPayload(etcdraftv2.Input{
+		Operation: etcdraftv2.OperationPropose, RequestID: "agentic-holdout-write", Value: []byte("alpha"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workload := controlexperiment.WorkloadPlan{
+		SchemaVersion: controlexperiment.WorkloadPlanVersion, ID: "agentic-holdout-workload",
+		TargetSelector: controlexperiment.TargetSingleCoordinatingMember,
+		Invocations: []controlexperiment.WorkloadInvocation{{
+			ID: "agentic-holdout-write", Input: payload, ExpectedStatus: "committed",
+		}},
+	}
+	config := controlexperiment.Config{
+		SchemaVersion: controlexperiment.SchemaVersionV2, ID: "agentic-holdout-v3",
+		PSSID:     etcdraftv2.CorePSSMappingID,
+		Runtime:   controlexperiment.RuntimeConfig{SeedHex: seedHex, MaxClones: 1},
+		Admission: &admission, WorkloadRouterID: etcdraftv2.WorkloadRouterID,
+		DecisionsPerRun: 32, RequireReplay: true,
+		Runs: []controlexperiment.RunPlan{{
+			Run: 1, Workload: &workload,
+			Policy: controlexperiment.Policy{
+				Version: controlexperiment.PolicyVersion, ID: "agentic-holdout-policy",
+				Priority: []control.ActionKind{
+					control.ActionInvoke, control.ActionCompleteEffect,
+					control.ActionDeliverMessage, control.ActionFireTemporal,
+				},
+			},
+		}},
+	}
+	factory := func() (control.Adapter, error) {
+		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+	}
+	_, bundle, err := controlexperiment.ExecuteQualifiedBundleV3(
+		context.Background(), config, qualified, factory, etcdraftv2.CorePSSMapper{},
+		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, methodSpecDigest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bundle
 }
