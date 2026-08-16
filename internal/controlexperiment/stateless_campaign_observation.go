@@ -26,6 +26,7 @@ type StatelessCampaignAttemptObservation struct {
 	Method         StatelessTraversalMethod `json:"method"`
 	Outcome        string                   `json:"outcome"`
 	Failure        *MethodFailure           `json:"failure,omitempty"`
+	PSSView        string                   `json:"pss_view,omitempty"`
 
 	DiscoveryDigest              string                    `json:"discovery_digest,omitempty"`
 	CorpusBaselinePSSStates      int                       `json:"corpus_baseline_pss_states,omitempty"`
@@ -56,6 +57,7 @@ type StatelessCampaignObservation struct {
 	HeadCheckpointDigest string `json:"head_checkpoint_digest"`
 	CorpusDigest         string `json:"corpus_digest"`
 	Strategy             string `json:"strategy"`
+	PSSView              string `json:"pss_view,omitempty"`
 
 	Status        string      `json:"status"`
 	StopReason    string      `json:"stop_reason"`
@@ -101,6 +103,7 @@ func NewStatelessCampaignObservation(
 		observation.FailureWork = &failureWork
 	}
 	novel := make(map[string]bool)
+	aggregatePSSView := ""
 	for index, projection := range projections {
 		source := summary.Attempts[index]
 		artifact := projection.Artifact
@@ -125,6 +128,14 @@ func NewStatelessCampaignObservation(
 		if artifact.Outcome == CampaignAttemptCompleted {
 			observation.Completed++
 			discovery := artifact.Discovery
+			attempt.PSSView = discovery.PSSView
+			view := normalizedStatelessPSSView(discovery.PSSView)
+			if aggregatePSSView == "" {
+				aggregatePSSView = view
+				observation.PSSView = discovery.PSSView
+			} else if aggregatePSSView != view {
+				return StatelessCampaignObservation{}, errors.New("EXPERIMENT_STATELESS_OBSERVATION_PSS_VIEW_MIXED")
+			}
 			attempt.DiscoveryDigest = discovery.Digest
 			attempt.CorpusBaselinePSSStates = discovery.CorpusBaselinePSSStates
 			attempt.CorpusBaselinePSSSetDigest = discovery.CorpusBaselinePSSSetDigest
@@ -174,6 +185,7 @@ func (observation StatelessCampaignObservation) Validate() error {
 		!validMethodToken(observation.TargetID) || !validSHA256(observation.TargetIdentityDigest) ||
 		!validSHA256(observation.SpecDigest) || !validSHA256(observation.SummaryDigest) ||
 		!validSHA256(observation.HeadCheckpointDigest) || !validSHA256(observation.CorpusDigest) ||
+		!validStatelessPSSView(observation.PSSView) ||
 		observation.Strategy == "" || !validStatelessObservationStatus(observation.Status, observation.StopReason) ||
 		observation.AttemptCount != len(observation.Attempts) ||
 		observation.Completed+observation.Failed != observation.AttemptCount ||
@@ -200,7 +212,9 @@ func (observation StatelessCampaignObservation) Validate() error {
 		}
 		if attempt.Outcome == CampaignAttemptCompleted {
 			completed++
-			if attempt.Failure != nil || !validSHA256(attempt.DiscoveryDigest) ||
+			if attempt.Failure != nil || !validStatelessPSSView(attempt.PSSView) ||
+				normalizedStatelessPSSView(attempt.PSSView) != normalizedStatelessPSSView(observation.PSSView) ||
+				!validSHA256(attempt.DiscoveryDigest) ||
 				!validSHA256(attempt.CorpusBaselinePSSSetDigest) ||
 				!validSHA256(attempt.LocalIncrementalPSSSetDigest) ||
 				!validSHA256(attempt.CorpusNovelPSSSetDigest) || attempt.QualifiedExecutionAttempts <= 0 ||
@@ -215,7 +229,7 @@ func (observation StatelessCampaignObservation) Validate() error {
 			for _, key := range attempt.CorpusNovelPSSKeys {
 				union[key] = true
 			}
-		} else if attempt.Outcome != CampaignAttemptFailed || attempt.Failure == nil {
+		} else if attempt.Outcome != CampaignAttemptFailed || attempt.Failure == nil || attempt.PSSView != "" {
 			return errors.New("EXPERIMENT_STATELESS_OBSERVATION_FAILED_INVALID")
 		} else {
 			failed++
@@ -296,7 +310,13 @@ func sameStatelessCampaignFailure(left *MethodFailure, right *MethodFailure) boo
 	if left == nil || right == nil {
 		return left == nil && right == nil
 	}
-	return *left == *right
+	if left.Phase != right.Phase || left.Code != right.Code || left.Decision != right.Decision {
+		return false
+	}
+	if left.Terminal == nil || right.Terminal == nil {
+		return left.Terminal == nil && right.Terminal == nil
+	}
+	return left.Terminal.Digest == right.Terminal.Digest
 }
 
 func (observation StatelessCampaignObservation) seal() (StatelessCampaignObservation, error) {

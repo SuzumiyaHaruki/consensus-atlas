@@ -22,6 +22,7 @@ type controlExperimentOptions struct {
 	WorkerPath               string
 	Target                   string
 	SemanticInput            string
+	KnowledgeSourceMounts    []string
 	ScenarioSemanticExposure string
 	CampaignDirectory        string
 	CampaignObservationOut   string
@@ -29,6 +30,7 @@ type controlExperimentOptions struct {
 	CampaignWallClock        int64
 	CampaignModelTokens      int
 	CampaignResume           bool
+	InvestigationEpisodes    int
 	StatelessCorpus          string
 	Strategy                 string
 	Decisions                int
@@ -39,7 +41,8 @@ func (options controlExperimentOptions) hasNonSessionFlags() bool {
 	return options.Out != "" || options.BundleOut != "" || options.CampaignObservationOut != "" ||
 		options.CampaignAttempts != 0 || options.CampaignWallClock != 0 || options.CampaignModelTokens != 0 ||
 		options.BundleEvidenceVersion != 0 || options.MethodSpecDigest != "" || options.Target != "" ||
-		options.Decisions != 96 || options.PolicySeed != 1
+		len(options.KnowledgeSourceMounts) != 0 ||
+		options.InvestigationEpisodes != 1 || options.Decisions != 96 || options.PolicySeed != 1
 }
 
 func runOmnipaxosSessionCLI(
@@ -129,7 +132,7 @@ func writeScenarioSessionSummary(
 		summary.Campaign.Totals.Model.TotalTokens,
 	)
 	fmt.Fprintf(
-		stdout, "testing_episodes=%d replay_stable=%d pss_states=%d risk=%s oracle_violations=%d\n",
+		stdout, "testing_episodes=%d replay_stable=%d pss_joint_states=%d risk=%s oracle_violations=%d\n",
 		summary.TestingEpisodes, summary.ReplayStableEpisodes, summary.UniqueCorePSSStates,
 		summary.BestRiskStatus, summary.OracleViolations,
 	)
@@ -154,7 +157,7 @@ func runEtcdraftSemanticExplorerCLI(
 	if artifact.Digest != "" {
 		if artifact.Testing != nil {
 			fmt.Fprintf(
-				stdout, "artifact=%s status=%s selected=%s pss_states=%d replay=%t oracle_violations=%d model_calls=%d model_tokens=%d digest=%s\n",
+				stdout, "artifact=%s status=%s selected=%s pss_joint_states=%d replay=%t oracle_violations=%d model_calls=%d model_tokens=%d digest=%s\n",
 				filepath.Join(options.CampaignDirectory, "artifact.json"), artifact.Status,
 				artifact.Testing.SelectedCandidateID, artifact.Testing.UniqueCorePSSStates,
 				artifact.Testing.Replay.Stable, len(artifact.Testing.Oracle.Violations),
@@ -181,6 +184,7 @@ func runEtcdraftStatelessCampaignCLI(
 		options.Decisions != 96 || options.BundleOut != "" || options.BundleEvidenceVersion != 0 ||
 		options.MethodSpecDigest != "" || options.AgentKeyFile != "" || options.AgentModel != "" ||
 		options.SemanticInput != "" || options.ScenarioSemanticExposure != "" || options.WorkerPath != "" ||
+		len(options.KnowledgeSourceMounts) != 0 ||
 		options.CampaignModelTokens != 0 ||
 		(options.Strategy == etcdraftStatelessCanonicalCampaignStrategy && options.PolicySeed != 1) {
 		return errors.New("Stateless Campaign strategy requires only -stateless-corpus, -out, Campaign, and uniform seed flags")
@@ -260,6 +264,9 @@ func validateQualifiedCLIOptions(options controlExperimentOptions) error {
 	}
 	if options.Target != "" {
 		return errors.New("-target requires the Agentic Episode strategy")
+	}
+	if len(options.KnowledgeSourceMounts) != 0 {
+		return errors.New("-knowledge-source-mount requires the Agentic Episode strategy")
 	}
 	if options.Out == "" {
 		return errors.New("-out is required")

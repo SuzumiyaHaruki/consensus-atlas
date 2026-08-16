@@ -20,30 +20,179 @@
     "properties": [
       {
         "id": "consensus-agreement",
-        "summary": "Participants must not decide different commands for the same logical log position."
+        "summary": "Participants must not decide different commands for the same logical log position.",
+        "evidence_level": "oracle-backed"
       },
       {
         "id": "client-operation-continuity",
-        "summary": "A client operation must remain consistently related to the command that is replicated and decided across ballot transitions."
+        "summary": "A client operation must remain consistently related to the command that is replicated and decided across ballot transitions.",
+        "evidence_level": "observable-only"
+      },
+      {
+        "id": "ballot-leadership-safety",
+        "summary": "Leadership and promise evidence must not authorize incompatible decisions across ballots.",
+        "evidence_level": "observable-only"
+      },
+      {
+        "id": "decided-prefix-consistency",
+        "summary": "Every shared decided position must identify the same command across participants even when their decided frontiers differ.",
+        "evidence_level": "oracle-backed"
+      },
+      {
+        "id": "recovery-suffix-continuity",
+        "summary": "A coordinator transition must reconcile accepted and decided suffixes without losing or changing an already represented client operation.",
+        "evidence_level": "hypothesis-only"
+      },
+      {
+        "id": "bounded-coordinator-recovery",
+        "summary": "After recoverable message disruption ends and a quorum can communicate, the protocol should resume coordinator and decision progress within an explicit investigation bound.",
+        "evidence_level": "hypothesis-only"
       }
     ],
     "issue_patterns": [
       {
         "id": "epoch-transition-state-reuse",
         "summary": "Evidence created in an older epoch is reused after a coordinator transition.",
-        "mechanism": "State that was valid under an earlier leadership context remains influential after the protocol has moved to a newer ballot."
+        "mechanism": "State that was valid under an earlier leadership context remains influential after the protocol has moved to a newer ballot.",
+        "applicability": "Use when a promise, accepted suffix, per-peer progress record or client-operation identity can be followed across an observed ballot or coordinator change.",
+        "boundary": "A higher ballot legitimately incorporates quorum evidence from earlier ballots; the test needs an inconsistent reuse, not merely reuse itself."
       },
       {
         "id": "incomplete-log-reconciliation",
         "summary": "A coordinator transition reconciles only part of the replicated history.",
-        "mechanism": "Accepted or decided suffix information may be combined inconsistently when participants expose different log frontiers."
+        "mechanism": "Accepted or decided suffix information may be combined inconsistently when participants expose different log frontiers.",
+        "applicability": "Use when participants expose unequal decided or accepted frontiers before a coordinator transition and later share a decided position.",
+        "boundary": "Different frontier lengths are legal; only conflicting commands at a shared position or a causally missing operation constitute contrary evidence."
       },
       {
         "id": "message-loss-progress-coupling",
         "summary": "Selective message loss interacts with coordinator or replication progress.",
-        "mechanism": "The implementation may retain stale per-peer or per-operation state when normal progress changes direction after a lost message."
+        "mechanism": "The implementation may retain stale per-peer or per-operation state when normal progress changes direction after a lost message.",
+        "applicability": "Use when the selected message has a known semantic class and later coordinator, promise or decision progress is observable.",
+        "boundary": "The current target cannot attribute every opaque message to a specific client operation; causal claims must stay within exposed fields."
+      },
+      {
+        "id": "promise-recovery-regression",
+        "summary": "Promise or ballot progress regresses or is interpreted inconsistently during coordinator recovery.",
+        "mechanism": "A newer coordinator combines quorum responses without preserving the strongest applicable promise and suffix evidence.",
+        "applicability": "Use when promise number, priority and participant identity can be observed before and after a coordinator transition.",
+        "boundary": "A change of the preferred leader under a higher promise is expected and is not itself a regression."
+      },
+      {
+        "id": "duplicate-delivery-state-reuse",
+        "summary": "A delayed or duplicated protocol message is accepted after its original ballot or progress context has changed.",
+        "mechanism": "Message identity remains syntactically valid while its causal context is stale, causing repeated or inconsistent progress handling.",
+        "applicability": "Use only with a message produced by the official target and duplicated by the Runtime; no payload modification is allowed.",
+        "boundary": "Duplicate processing that is idempotent or only changes retransmission behavior is not a safety problem."
+      },
+      {
+        "id": "timer-symmetry-liveness",
+        "summary": "Repeatedly aligned periodic pulses prevent a communicating quorum from retaining a stable coordinator.",
+        "mechanism": "Competing ballot leadership attempts repeatedly overlap before deterministic priority or timing can stabilize progress.",
+        "applicability": "Use with natural periodic pulse Actions and the configured leader priorities.",
+        "boundary": "The active worker has fixed unequal priorities and no exposed RNG path; claims about randomized timeout failure do not apply to this composition."
       }
-    ]
+    ],
+    "target_dossier": {
+      "scope": "crates.io omnipaxos 0.2.2 running inside a three-node Rust worker with MemoryStorage and a ConsensusAtlas message/timer Adapter; this is a protocol-core harness, not a production storage or process deployment.",
+      "assumptions": [
+        {
+          "id": "cft-participants",
+          "summary": "Running participants use the unmodified OmniPaxos API and do not forge, mutate or equivocate messages; the active target controls only produced message delivery and natural periodic pulses.",
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:Check", "adapters/omnipaxosv2/worker/src/main.rs:Cluster"]
+        },
+        {
+          "id": "in-memory-storage",
+          "summary": "Every node uses omnipaxos_storage MemoryStorage inside one worker process; the active target provides no durable restart semantics.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Node", "adapters/omnipaxosv2/worker/src/main.rs:Cluster::new"]
+        },
+        {
+          "id": "deterministic-priority-election",
+          "summary": "The active worker configures election timeout 2 and distinct leader priorities 3, 2 and 1; it exposes no SUT RNG call in the exercised core.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster::new", "adapters/omnipaxosv2/adapter.go:Manifest"]
+        }
+      ],
+      "components": [
+        {
+          "id": "official-omnipaxos-nodes",
+          "summary": "The worker owns three OmniPaxos instances and invokes their append, tick, handle_incoming, outgoing_messages and decided-log APIs.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster"]
+        },
+        {
+          "id": "json-worker-boundary",
+          "summary": "The Go Adapter controls a long-lived Rust worker through request/response JSON operations reset, append, step and tick.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker.go", "adapters/omnipaxosv2/worker/src/main.rs:handle"]
+        },
+        {
+          "id": "runtime-owned-network",
+          "summary": "Messages returned by outgoing_messages become stored Runtime items, while decisions and node promise views become target evidence.",
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:capture", "adapters/omnipaxosv2/worker/src/main.rs:take_messages"]
+        },
+        {
+          "id": "decision-prefix-evidence",
+          "summary": "The worker reports a cumulative digest for every decided prefix position so the shared Agreement Oracle can compare common positions without requiring equal frontier lengths.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:decided_prefixes", "adapters/omnipaxosv2/model.go:workerDecisionPrefix"]
+        }
+      ],
+      "contracts": [
+        {
+          "id": "produced-message-only",
+          "summary": "The Adapter may deliver, drop or duplicate only messages emitted by an OmniPaxos node; step validates the encoded receiver before calling handle_incoming.",
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:Check", "adapters/omnipaxosv2/worker/src/main.rs:step"]
+        },
+        {
+          "id": "append-origin-identity",
+          "summary": "A client entry carries request identity and origin, and the worker accepts append only when the encoded origin matches the invoked participant.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:WorkerEntry", "adapters/omnipaxosv2/worker/src/main.rs:append"]
+        },
+        {
+          "id": "decided-result-source",
+          "summary": "Client-visible decided results are derived from read_decided_suffix and preserve the request ID, origin and value stored in the decided entry.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:take_decisions", "adapters/omnipaxosv2/model.go:workerDecision"]
+        }
+      ],
+      "control_semantics": [
+        {
+          "id": "stored-message-control",
+          "summary": "Deliver, drop and duplicate select existing produced messages. Duplication copies a Runtime item; neither path changes payload bytes or sender identity.",
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:Check", "adapters/omnipaxosv2/adapter.go:ApplyRuntimeAction"]
+        },
+        {
+          "id": "natural-periodic-pulse",
+          "summary": "fire-temporal-event consumes the current participant pulse and invokes OmniPaxos.tick; it does not directly assign ballot, promise or coordinator state.",
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:RunUntilYield", "adapters/omnipaxosv2/worker/src/main.rs:tick"]
+        },
+        {
+          "id": "no-node-lifecycle-control",
+          "summary": "Crash and restart are absent from the qualified OmniPaxos Action surface. A candidate requiring participant restart cannot be executed by this target.",
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:Manifest"]
+        }
+      ],
+      "active_experiment": [
+        {
+          "id": "worker-priority-config",
+          "summary": "The active worker uses election timeout 2, resend timeout 100, batch size 1 and unequal priorities favoring n1.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster::new"]
+        }
+      ],
+      "blind_spots": [
+        {
+          "id": "no-persistence-or-restart",
+          "summary": "MemoryStorage and the missing lifecycle surface prevent this target from testing promise, accepted-log or application recovery after process or power loss.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Node", "adapters/omnipaxosv2/adapter.go:Manifest"]
+        },
+        {
+          "id": "coarse-message-type-hints",
+          "summary": "The worker exposes a message type hint but not every internal phase field or client-operation relationship, so some causal distinctions remain unavailable to the Agent and Oracle.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:MessageView", "adapters/omnipaxosv2/model.go:workerMessage"]
+        },
+        {
+          "id": "protocol-core-not-production-host",
+          "summary": "The worker excludes durable storage, external transport, client retries and multi-process supervision; findings apply first to this protocol-core composition.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs", "adapters/omnipaxosv2/worker.go"]
+        }
+      ]
+    }
   },
   "workload": {
     "id": "omnipaxos-single-write-a9e1",
@@ -70,8 +219,8 @@
       "max_partitions": 0,
       "max_active_partitions": 0
     },
-    "scenario_max_calls": 1,
-    "scenario_max_steps": 1,
+    "scenario_max_calls": 3,
+    "scenario_max_steps": 4,
     "scenario_max_decisions": 64,
     "scenario_semantic_exposure": "full",
     "session_budget": {
@@ -79,8 +228,8 @@
       "max_primary_scheduler_decisions": 4096,
       "max_primary_work_units": 8192,
       "max_replay_work_units": 4096,
-      "max_model_calls": 4,
-      "max_model_tokens": 20000
+      "max_model_calls": 6,
+      "max_model_tokens": 50000
     },
     "session_wall_clock_ms": 300000
   }

@@ -11,6 +11,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
 )
 
 func TestEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *testing.T) {
@@ -110,7 +111,7 @@ func TestEtcdraftRiskIsReachableThroughNaturalElectionBeyondAgentHorizon(t *test
 	t.Logf("reachable extension decisions=%d kinds=%v", len(extension), extension)
 }
 
-func TestScenarioNaturalProgressUsesTrustedCheckpointAfterEtcdraftMilestone(t *testing.T) {
+func TestCompleteScenarioPlanWaitsForEtcdraftMilestoneBeforeRestart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	inputs, err := prepareEtcdraftSemanticCalibration(
@@ -141,37 +142,45 @@ func TestScenarioNaturalProgressUsesTrustedCheckpointAfterEtcdraftMilestone(t *t
 			break
 		}
 	}
-	intervention, err := controlexperiment.ExecuteBoundedScenarioPlan(
-		ctx, "scenario-progress-crash",
-		controlexperiment.ScenarioPlan{ID: "scenario-progress-crash", Steps: []controlexperiment.ScenarioStep{{
-			ID:       "crash-old-coordinator",
-			Selector: controlexperiment.FrontierActionSelector{ActionID: crash.ActionID},
-		}}},
-		1, inputs.riskSpec, rootRisk, inputs.root, inputs.experiment.Runtime,
+	execution, err := controlexperiment.ExecuteBoundedScenarioPlan(
+		ctx, "complete-scenario-leader-change",
+		controlexperiment.ScenarioPlan{ID: "complete-scenario-leader-change", Steps: []controlexperiment.ScenarioStep{
+			{
+				ID:       "crash-old-coordinator",
+				Selector: controlexperiment.FrontierActionSelector{ActionID: crash.ActionID},
+			},
+			{
+				ID:             "restart-after-change",
+				AfterMilestone: raftfamily.MilestoneCoordinatorChangedInflight,
+				Selector: controlexperiment.FrontierActionSelector{
+					Kind: control.ActionRestart, Node: crash.Node.Node,
+				},
+			},
+		}},
+		2, 40, inputs.riskSpec, rootRisk, inputs.root, inputs.experiment.Runtime,
 		inputs.experiment.faultEnvelope(), factory, projector,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	progress, err := controlexperiment.ExecuteScenarioNaturalProgress(
-		ctx, "scenario-progress-closure", 31, inputs.riskSpec,
-		intervention.FinalRisk, intervention.FinalTrace, inputs.experiment.Runtime,
-		inputs.experiment.faultEnvelope(), factory, projector,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kinds := make([]control.ActionKind, 0, len(progress.Execution.Steps))
-	for _, step := range progress.Execution.Steps {
+	kinds := make([]control.ActionKind, 0, len(execution.AutomaticProgress))
+	for _, step := range execution.AutomaticProgress {
 		kinds = append(kinds, step.Choice.Action.Kind)
 	}
-	if progress.StopReason != controlexperiment.ScenarioProgressPlanningCheckpoint ||
-		len(progress.Execution.Steps) != controlexperiment.ScenarioNaturalProgressCheckpointActions ||
-		len(progress.Execution.FinalRisk.SatisfiedMilestones) < 2 {
-		t.Fatalf("natural progress did not preserve the trusted checkpoint: stop=%s kinds=%v risk=%#v",
-			progress.StopReason, kinds, progress.Execution.FinalRisk)
+	if execution.Status != controlexperiment.ScenarioStatusCompleted || len(execution.Steps) != 2 ||
+		len(execution.AutomaticProgress) == 0 || execution.FinalRisk.Status != semantic.RiskWitnessReached ||
+		execution.Steps[0].Choice == nil || execution.Steps[0].Choice.Action.Kind != control.ActionCrash ||
+		execution.Steps[1].Choice == nil || execution.Steps[1].Choice.Action.Kind != control.ActionRestart ||
+		execution.Steps[1].Decision <= execution.Steps[0].Decision+1 {
+		t.Fatalf("complete plan did not wait for natural leader change: kinds=%v execution=%#v", kinds, execution)
 	}
-	t.Logf("natural progress decisions=%d kinds=%v", len(kinds), kinds)
+	if _, err := controlexperiment.CompileScenarioPolicy(
+		"complete-scenario-policy", inputs.root, execution,
+		controlexperiment.ScenarioNaturalProgressPriority(),
+	); err != nil {
+		t.Fatalf("complete plan with automatic progress did not compile: %v", err)
+	}
+	t.Logf("automatic progress decisions=%d kinds=%v", len(kinds), kinds)
 }
 
 func etcdraftReachabilityProgressAction(

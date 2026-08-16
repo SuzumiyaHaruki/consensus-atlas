@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion       = "scenario-agent-receding-horizon-v6"
-	scenarioPlanStructuredOutputName = "scenario_plan_v1"
+	scenarioAgentPromptVersion       = "scenario-agent-complete-intent-v7"
+	scenarioPlanStructuredOutputName = "scenario_plan_v2"
 )
 
 type scenarioAgentCallJournal struct {
@@ -130,8 +130,10 @@ func scenarioPlanStructuredOutput(maxSteps int) (openRouterStructuredOutput, err
 				"type": "array", "minItems": 1, "maxItems": maxSteps,
 				"items": map[string]any{
 					"type": "object", "additionalProperties": false,
-					"properties": map[string]any{"id": stringField, "selector": selector},
-					"required":   []string{"id", "selector"},
+					"properties": map[string]any{
+						"id": stringField, "after_milestone": stringField, "selector": selector,
+					},
+					"required": []string{"id", "selector"},
 				},
 			},
 		},
@@ -149,9 +151,11 @@ func scenarioAgentPrompt(
 	view controlexperiment.ScenarioAgentView,
 ) (string, string, error) {
 	if spec.Validate() != nil || view.Knowledge.Validate() != nil ||
+		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
 		view.Hypothesis.Validate(
 			view.Knowledge, spec, controlexperiment.ScenarioPlanningBackendID,
 		) != nil || view.Frontier.Validate(spec) != nil || view.MaxSteps <= 0 ||
+		!scenarioPromptMilestonesMatch(spec, view.OrderedMilestones) ||
 		view.Semantics.Validate(view.Frontier) != nil ||
 		view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps || len(view.Frontier.Actions) == 0 {
 		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
@@ -182,7 +186,13 @@ func scenarioAgentPrompt(
 		"the frozen input. action_id is valid only for an Action in the supplied current root_frontier. " +
 		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
-	user := "Create a short plan of at most max_steps that advances the supplied hypothesis. A trusted concretizer requires " +
+	user := "Create one complete but bounded test intent of at most max_steps that advances the supplied hypothesis. " +
+		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. Use target_dossier as implementation " +
+		"context: preserve stated public contracts and treat blind spots " +
+		"as unavailable evidence rather than permission to invent an internal transition. " +
+		"A later step may use after_milestone only with an ID listed in ordered_milestones; the trusted " +
+		"executor will advance ordinary effects, messages, and naturally due timers until that milestone is observed. " +
+		"A trusted concretizer requires " +
 		"each selector to match exactly one current admissible Action. A completed prior_feedback means the trusted root has " +
 		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback includes the complete " +
 		"previous_plan and failed_step; return a complete revised plan from the current frontier and repair its mechanical reason. " +
@@ -190,9 +200,9 @@ func scenarioAgentPrompt(
 	if view.MaxSteps == 1 {
 		system += " Return exactly one step using the exact action_id of one current Action."
 		user = "Choose one current strategic intervention that advances the hypothesis. After it executes, a deterministic " +
-			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until its trusted " +
-			"planning checkpoint, the client operation terminates, natural progress is quiescent, or the decision budget ends. " +
-			"Risk progress is reported but does not shorten that closure. prior_feedback " +
+			"trusted closure handles ordinary complete-effect, deliver-message, and fire-temporal-event progress until the temporary " +
+			"single-step compatibility checkpoint, the client operation terminates, natural progress is quiescent, or the total " +
+			"decision budget ends. prior_feedback " +
 			"contains the previous strategic intervention and the closure stop reason; routine closure steps remain in the audit rather " +
 			"than this prompt. Treat the supplied current frontier and Risk progress as authoritative. Frozen input JSON:\n" +
 			string(encoded)
@@ -201,4 +211,16 @@ func scenarioAgentPrompt(
 			"earlier step rebuilds the frontier and may invalidate every current ActionID."
 	}
 	return system, user, nil
+}
+
+func scenarioPromptMilestonesMatch(spec semantic.RiskWitnessSpec, values []string) bool {
+	if len(values) != len(spec.Milestones) {
+		return false
+	}
+	for index, milestone := range spec.Milestones {
+		if values[index] != milestone.ID {
+			return false
+		}
+	}
+	return true
 }

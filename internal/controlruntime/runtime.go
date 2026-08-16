@@ -44,6 +44,7 @@ type Runtime struct {
 	lastEvidence control.EvidenceEnvelope
 	lastAudit    control.EntropyAuditEnvelope
 	failed       error
+	terminal     *TerminalOutcome
 }
 
 type cycleResult struct {
@@ -230,7 +231,19 @@ func (runtime *Runtime) Select(ctx context.Context, id control.ActionID) (Action
 		}
 	}
 	if err != nil {
-		return ActionRecord{}, runtime.fail(err)
+		prefix, traceErr := runtime.successfulPrefixTrace()
+		if traceErr != nil {
+			return ActionRecord{}, runtime.fail(errors.Join(err, traceErr))
+		}
+		class, code := control.ClassifyExecutionFailure(err)
+		outcome, outcomeErr := newTerminalOutcome(
+			class, code, runtime.step+1, prefix, enabledDigest, *selected,
+		)
+		if outcomeErr != nil {
+			return ActionRecord{}, runtime.fail(errors.Join(err, outcomeErr))
+		}
+		runtime.terminal = &outcome
+		return ActionRecord{}, runtime.fail(&TerminalExecutionError{Terminal: outcome, cause: err})
 	}
 	delete(runtime.offered, selected.ID)
 	runtime.refreshItemStates()
@@ -584,6 +597,9 @@ func (runtime *Runtime) verifyStableAudit(ctx context.Context) error {
 }
 
 func (runtime *Runtime) Trace() (Trace, error) {
+	if runtime.terminal != nil {
+		return runtime.successfulPrefixTrace()
+	}
 	copyTrace := cloneTrace(runtime.trace)
 	var err error
 	copyTrace.FinalStateDigest, err = runtime.stateDigest()
@@ -593,12 +609,26 @@ func (runtime *Runtime) Trace() (Trace, error) {
 	return copyTrace.Seal()
 }
 
+func (runtime *Runtime) successfulPrefixTrace() (Trace, error) {
+	copyTrace := cloneTrace(runtime.trace)
+	return copyTrace.Seal()
+}
+
 func (runtime *Runtime) DecisionLog() []control.ActionID {
 	result := make([]control.ActionID, len(runtime.trace.Records))
 	for index, record := range runtime.trace.Records {
 		result[index] = record.Action.ID
 	}
 	return result
+}
+
+func (runtime *Runtime) TerminalOutcome() (TerminalOutcome, bool) {
+	if runtime == nil || runtime.terminal == nil {
+		return TerminalOutcome{}, false
+	}
+	outcome := *runtime.terminal
+	outcome.AttemptedAction = cloneAction(outcome.AttemptedAction)
+	return outcome, true
 }
 
 func (runtime *Runtime) fail(err error) error {

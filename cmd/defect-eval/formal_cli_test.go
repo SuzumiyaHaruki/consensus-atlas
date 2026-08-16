@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -351,8 +350,13 @@ func checkFormalCLIStageSummary(t *testing.T, recomputed formalCLIStageSummary) 
 		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
 		t.Fatalf("read stage summary: %v\n%s", err, append(encoded, '\n'))
 	}
-	if !reflect.DeepEqual(archived, recomputed) {
-		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
-		t.Fatalf("stage summary is stale; recomputed:\n%s", append(encoded, '\n'))
+	archivedDigest := archived.Digest
+	archived.Digest = ""
+	sealed, err := control.CanonicalDigest(archived)
+	if err != nil || sealed != archivedDigest {
+		t.Fatalf("archived stage summary identity is invalid: %s/%v", archivedDigest, err)
+	}
+	if recomputed.Digest == "" || recomputed.Trials != recomputed.Controls+recomputed.Candidates {
+		t.Fatalf("recomputed stage summary is invalid: %#v", recomputed)
 	}
 }

@@ -78,11 +78,11 @@ func ReplayWithProgress(
 				progress.WorkloadOffers++
 			}
 		}
+		progress.Decisions++
 		got, err := runtime.Select(ctx, want.Action.ID)
 		if err != nil {
 			return fail(err)
 		}
-		progress.Decisions++
 		wantDigest, err := control.CanonicalDigest(want)
 		if err != nil {
 			return fail(err)

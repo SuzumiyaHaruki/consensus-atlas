@@ -27,9 +27,10 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout io.Writer) error {
 	options := controlExperimentOptions{
-		Strategy:   "workload",
-		Decisions:  96,
-		PolicySeed: 1,
+		Strategy:              "workload",
+		Decisions:             96,
+		PolicySeed:            1,
+		InvestigationEpisodes: 1,
 	}
 	flags := flag.NewFlagSet("control-experiment", flag.ContinueOnError)
 	flags.StringVar(&options.Out, "out", "", "report output path")
@@ -41,6 +42,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.StringVar(&options.WorkerPath, "worker", "", "target worker executable for a worker-backed Agent strategy")
 	flags.StringVar(&options.Target, "target", "", "target composition for an Agentic Episode")
 	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol and Agent-planning JSON")
+	var knowledgeSourceMounts repeatableStringFlag
+	flags.Var(&knowledgeSourceMounts, "knowledge-source-mount", "repeatable repo=<directory> or <reference-prefix>=<directory> read-only Agent source mount")
 	flags.StringVar(&options.ScenarioSemanticExposure, "scenario-semantic-exposure", "", "optional full or masked semantics")
 	flags.StringVar(&options.CampaignDirectory, "campaign-dir", "", "Campaign directory")
 	flags.StringVar(&options.CampaignObservationOut, "campaign-observation-out", "", "Campaign Observation output path")
@@ -48,6 +51,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.Int64Var(&options.CampaignWallClock, "campaign-wall-clock-ms", 0, "Campaign wall-clock ceiling")
 	flags.IntVar(&options.CampaignModelTokens, "campaign-model-tokens-per-attempt", 0, "model-token allowance per attempt")
 	flags.BoolVar(&options.CampaignResume, "campaign-resume", false, "resume an exact Campaign")
+	flags.IntVar(&options.InvestigationEpisodes, "investigation-episodes", options.InvestigationEpisodes, "Agentic Investigation episode limit")
 	flags.StringVar(&options.StatelessCorpus, "stateless-corpus", "", "root corpus (paired Scenario defaults to SUT-local fresh roots)")
 	flags.StringVar(&options.Strategy, "strategy", options.Strategy, "qualified or explicit opt-in Agent strategy")
 	flags.IntVar(&options.Decisions, "decisions", options.Decisions, "charged decisions per run")
@@ -55,6 +59,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	options.KnowledgeSourceMounts = append([]string(nil), knowledgeSourceMounts...)
 	switch options.Strategy {
 	case agenticEpisodeStrategy:
 		return runAgenticEpisodeCLI(ctx, options, stdout)

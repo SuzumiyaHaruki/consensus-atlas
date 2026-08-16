@@ -207,7 +207,7 @@ func recoverStatelessAgentCall(
 		}
 		call.result = new(controlexperiment.StatelessAgentCallResult)
 		if err := readStrictJSONFile(
-			filepath.Join(directory, "result.json"), 32<<10, call.result,
+			filepath.Join(directory, "result.json"), 2<<20, call.result,
 		); err != nil || call.result.ValidateInputs(call.intent, *call.dispatch) != nil {
 			return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_RESULT_INVALID")
 		}
@@ -354,12 +354,12 @@ func (journal *statelessAgentCallJournal) dispatch(
 		Status:  plan.successStatus(),
 		Content: call.Content, ResponseDigest: call.ResponseDigest, Response: call.Response,
 		DurationMillis: call.DurationMillis, Work: call.Work,
-		TransportAttempts: call.TransportAttempts,
+		TransportAttempts: call.TransportAttempts, ProviderUsageStatus: call.UsageStatus,
 	}
 	var terminalErr error
 	if transportErr != nil || call.FailureCode != "" {
 		result.Status = controlexperiment.StatelessAgentCallFailed
-		result.FailureCode = "agent-transport-failed"
+		result.FailureCode = "agent-transport-ambiguous"
 		if transportErr == nil && call.FailureCode == agentFailureHTTP {
 			result.FailureCode = "agent-http-status-rejected"
 		} else if transportErr == nil && call.FailureCode != agentFailureTransport {

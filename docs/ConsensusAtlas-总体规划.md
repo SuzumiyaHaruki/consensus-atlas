@@ -1,7 +1,7 @@
 # ConsensusAtlas 总体规划
 
-> 状态：Draft v2.31（A9e1 输入迁移完成；A9e2 capability / Oracle adequacy pilot 准备）
-> 日期：2026-08-15
+> 状态：Draft v2.51（Agent Input v2：单次 provider 传输与轻量知识查询）
+> 日期：2026-08-16
 > 适用分支：`feature/agentic-consensus-testing`
 
 ## 0. 一句话目标
@@ -37,6 +37,15 @@ Agent 的计划可以不确定、不可达并在反馈后修正；一旦计划�
 Replay、语义证据和正式 verdict 必须可验证。系统不要求相同 prompt 永远产生相同输出，而要求相同的已接受
 计划与随机输入能够被确定地执行和重放。
 
+Agora 的 etcd/raft 三小时实验说明，一个有意义的候选往往需要数十次策略、测试生成与修复调用，以及数十到
+数百个实际控制步骤。该实验产生了持久化顺序和同步 PreVote timer 两类有价值的边界场景，同时也暴露了
+绕过 Ready/Advance 契约、使用测试私有 hook 后直接宣称核心缺陷的误判。因此 ConsensusAtlas 不能把 Agent 压缩为一次调用或
+固定长度的排序器，也不能把 Agora 的源码修改和自行断言权一起照搬。
+
+确定性约束的对象是“已发生的执行”，而不是要求 Agent 在初始启动前预知整条轨迹。Agent 可以根据每次机械反馈继续、
+修改或放弃假设；Runtime 记录实际选中的具体 Action 和执行结果。候选一旦形成，必须从相同初始 root 新建 SUT，在不调用
+LLM 的情况下精确重放实际 Action 轨迹，再由独立 Oracle/evaluator 分类。
+
 ## 1. 最终用户流程
 
 ### 1.1 输入什么
@@ -70,7 +79,7 @@ SUT + Target Pack + Protocol Pack + Experiment Config
                          v
                Explorer Role
                          |
-             bounded ScenarioPlan
+          revisable complete ScenarioPlan
                          |
                          v
         trusted concretizer + Control Runtime
@@ -90,7 +99,7 @@ SUT + Target Pack + Protocol Pack + Experiment Config
                            evaluator / session summary
 ```
 
-Hypothesis Role 决定测什么，Explorer Role 决定如何构造短场景，Analysis Role 根据公开机械反馈提出修正。
+Hypothesis Role 决定测什么，Explorer Role 决定如何构造完整但可修正的场景，Analysis Role 根据公开机械反馈提出修正。
 三个角色首先是认知职责，不预设必须对应三个 LLM 实例。可信层决定 selector 能否解析、enabled Action、执行事实、
 语义真值和正式 verdict。
 
@@ -168,21 +177,24 @@ WAL/fsync、部分写入、I/O 中途崩溃和进程资源故障尚不可控或�
 它不输出预期缺陷标签、可执行 Oracle 或完整动作脚本。可执行性要求由机械 compiler 从 Observation
 predicate 推导，不接受 Agent 自行声明“已满足能力”。
 
-### 3.2 Explorer 与 ScenarioPlan
+### 3.2 Explorer 与 Adaptive Investigation
 
-当前 Explorer 已从候选排序推进到 A4b 的有限短计划和一次反馈修正。后续完整 Explorer 将接收
-hypothesis、当前 prefix、规范化共识关系、PSS/Risk progress 和剩余预算，输出短时域 `ScenarioPlan`：
+当前 Explorer 已从候选排序推进到完整但有界的 `ScenarioPlan` 和机械反馈修正。下一步不再继续压缩单次计划，
+而是让多个新鲜 root episode 组成一个配置时间的 Adaptive Investigation。Explorer 接收 hypothesis、当前 prefix、
+规范化共识关系、PSS/Risk progress、上轮失败和剩余总预算，输出：
 
 - semantic objective 与允许的 Action class；
 - 当前 ActionID，或基于节点角色、消息类别、workload/epoch 关系的 selector；
-- 局部约束、停止条件和每步工作量上限。
+- 局部约束和每步工作量上限；
+- 执行失败后的修复、场景后缀修订、对照/消融请求或从 root 重建新分支。
 
 Trusted Concretizer 每一步重新读取 `Runtime.EnabledActions()`。A4a 已对零匹配、多匹配和外部步数预算分别
 返回 `no-match`、`ambiguous`、`budget-exhausted`；后续加入显式局部约束时再增加
 `precondition-failed`。Agent 不能创造未来 ActionID、消息、节点角色或里程碑事实。
 
-Explorer 不应逐 scheduler decision 调用模型。ScenarioPlan 是可修正的短计划；具体 Action 仍逐步由可信层
-解析和记录，防止 Agent 退化成昂贵随机 scheduler。
+Explorer 不应逐 scheduler decision 调用模型，但也不应被固定为三次 Scenario call 或固定 Action 长度。
+单个 ScenarioPlan 仍有界，整个 Investigation 由总 wall time、model work、Runtime work 和无新证据停止条件约束。
+具体 Action 始终由可信层解析和记录；当前“最多三次调用”只是小型 calibration 配置，不是研究方法的固定定义。
 
 ### 3.3 Analysis 职责
 
@@ -216,13 +228,36 @@ PSS 用来归一化协议状态，忽略 term 数值、节点编号或无关独�
 
 PSS 不单独构成质量分数。Agent 若只追逐新 PSS，可能生成许多易达但无测试价值的轨迹。
 
-当前 `core-pss/v1` 还把 Runtime 中 pending message、timer 和 effect 纳入 `control.pending`，并在每个成功
-Action 后采样。因此它实际度量的是“协议语义图 + 控制 frontier”，不能把 unique count 直接解释为不同的协议
-状态。对 A9d6 OmniPaxos 工件做的诊断性派生中，31 个 sample 原有 29 个 unique；仅去除
-`control.pending` 后只剩 5 个 unique。该重算不是新的效果实验，但证明当前数字主要受队列变化影响。
+Agora 的同步 PreVote 场景给出了一个具体反例：50 轮选举在统一 Action 下至少需要约 500 个 timer/message
+动作，完整展开持久化 effect 和对隔离节点的消息处理后可接近 700–900 个 Action；但绝对 term 被相对 epoch
+归一化后，50 轮可能只有 3–6 个 protocol PSS。这是 PSS 有意的语义合并，却也证明唯一状态数无法表达
+“在同一选举循环中持续 50 轮无进展”的时间深度。
 
-正式评测应从同一 Trace 分别派生 protocol-semantic state discovery 和 scheduler/control-frontier discovery，
-不新建 Ledger，也不把两个视图合成总分。在定义和回归测试收敛前，现有 Core PSS 只作为混合控制状态诊断量。
+因此长时实验从同一 Trace/Bundle 分开报告：
+
+- state breadth：唯一 protocol/control/joint PSS；
+- transition breadth：唯一 `protocol PSS -> ActionKind -> protocol PSS`；
+- temporal depth：重复语义循环的最大连续次数与无进展长度；
+- property progress：Risk milestone/义务的时序进展；
+- outcome：独立 Oracle 与 fresh Replay 结果。
+
+这些不合成一个总分。特别是 Core PSS 不应为了计数增长而收入绝对 term 或每轮计数。
+
+`core-pss/v1` 的原始 State 继续完整保留 Runtime lifecycle/incarnation、partition、pending message/timer/effect
+和 target-owned SemanticGraph，但 A9e3b 不再只用其联合 digest 解释协议状态发现量。从同一 State 派生：
+
+- protocol view：`mapping_id + SemanticGraph`，衡量规范化协议语义进展；
+- control view：lifecycle/incarnation、partition 与 pending frontier，衡量调度环境多样性；
+- joint view：旧 State digest，只作兼容和诊断。
+
+protocol/control 分别做 participant 对称归一化，避免联合状态的控制细节替协议视图选择节点别名。A9d6
+OmniPaxos 工件的 31 个 sample 因而得到 4 protocol、28 control、29 joint；早期“删除 pending 后 5 个”的
+诊断没有独立重做别名归一化。Agentic summary/CLI 同时报告三列，stateless novelty 使用 protocol key；所有
+Bundle 都从保存的 State 重算，双视图不进入 Bundle 摘要链。三个数字都没有完备分母，不合成总分，也不直接
+产生 defect verdict。
+
+stateless discovery 从 A9e3b 起显式记录 `pss_view=protocol`。历史缺省工件按 `joint` 解释，聚合 Observation
+不得混用两种 key；这样既不改写旧 Bundle/root corpus 身份，也不让跨版本恢复制造虚假的 novelty。
 
 ### 4.2 测试义务
 
@@ -252,7 +287,7 @@ A9 起将其拆成三层：
 至少分开报告：
 
 1.义务覆盖：在冻结 Profile 内取得强证据的比例；
-2. PSS/Risk discovery：随 work 增长的状态、转换和 milestone 曲线；
+2. PSS/Risk discovery：随 work 增长的状态、`PSS-Action-PSS` 转换、重复循环深度和 milestone 曲线；
 3. finding：隐藏根因检出和正确 control 误报；
 4. cost：执行、重放与模型成本。
 
@@ -263,18 +298,18 @@ A9 起将其拆成三层：
 通用 Oracle 只消费协议无关的最小决策投影，例如 participant、decision position 和 value digest。
 target-local projector 可以理解协议 Evidence，但不能改变 Oracle 规则。
 
-当前 Oracle 独立于 Agent，但并不等于 Oracle 已充分。已知三个必须在正式缺陷评测前闭合的失败场景是：
+当前 Oracle 独立于 Agent，但并不等于 Oracle 已充分。A9e2 已校准三个必须在正式缺陷评测前闭合的失败场景：
 
-1. Agreement 只比较相同 frontier position 的累积前缀摘要。若节点 A 暴露位置 2 的 `[x,y]`，节点 B 从位置 1
-   跳到位置 3 的 `[x,z,w]`，位置 2 已冲突但当前 observation 没有相同 position 可比，可能得到零 violation；
-2. etcd/raft log-progress 只在同一 `(node, incarnation)` 内检查单调性。节点从 applied 5 重启为新 incarnation
-   的 applied 3 不会被当前 monitor 判为持久性回退；
-3. SUT panic、worker 退出或 timeout 可能在完整 Trace、Replay 和 work 计量形成前终止执行，进而被批量评测
-   记为基础设施失败而不是可重放的 SUT outcome。
+1. 已闭合：Agreement 原来只比较当前 frontier 的单一累积摘要，会漏掉不同 frontier 的共享位置冲突。两个
+   Target 现在各自生成逐位置前缀承诺，通用 Oracle 规则不变，已校准冲突检出与一致 control；
+2. 已闭合（限定 etcd/raft durable-image Adapter）：log-progress 原来按 `(node, incarnation)` 分段，重启回退会
+   失忆；现在按逻辑节点跨 incarnation 比较 commit、applied 和既有 application prefix；
+3. 已确认、待修复：真实 OmniPaxos worker 被暂停时，Action context deadline 不会传播到 worker call；进程随后
+   异常退出只返回通用 `INVALID_EXECUTION`。失败动作不进入 sealed Trace，fresh Replay 只验证成功前缀，不能
+   复现或分类 timeout/exit，也没有完整的 attempt work 证据。panic 尚未单独校准。
 
-Git、版本号、类型和普通测试只能验证当前 projector/monitor 按既定规则执行，不能证明这些规则对缺陷类别有
-足够 recall。下一阶段应使用带 ground-truth trigger 的已知缺陷和正确 control 做 Oracle adequacy pilot；只有
-pilot 暴露的具体缺口才增加逐槽 decision evidence、跨重启存储证据或执行结果分类，不先扩通用 Oracle DSL。
+Git、版本号、类型和普通测试只能验证 projector/monitor 按既定规则执行，不能证明规则对缺陷类别有足够
+recall。上述两个修复都来自先失败的 ground-truth 反例，而不是预先扩 DSL；同一原则继续用于执行结果分类。
 
 正式评价使用：
 
@@ -309,9 +344,10 @@ pilot 暴露的具体缺口才增加逐槽 decision evidence、跨重启存储�
 - provider 请求持久化、无凭证恢复和显式 opt-in 模型调用；
 - 通用 Observation History、typed equality binding 与 linear Risk matcher；
 - etcd/raft 与 OmniPaxos 分别从真实 Trace/Evidence 投影同一组 workload、message、temporal、coordinator、epoch、decision 事实；
-- Scenario natural progress 按可信固定 Action 窗口返回规划点，Agent 自定 milestone 不再改变规划调用频率；
+- Scenario 可表达完整但有界的多步意图；后续步骤可引用既有 Risk milestone 作为机械前置条件，
+  可信执行器在其间只推进普通 effect/message/自然 timer；
 - 一次真实 direct-DeepSeek 历史校准和一次显式选择 DeepSeek 的 OpenRouter Scenario 校准。
-- 一次真实 DeepSeek/OpenRouter 两 episode session，包含有界传输重试、qualified testing、
+- 一次真实 DeepSeek/OpenRouter 两 episode session，包含受审计的单次传输、qualified testing、
   PSS/Risk/Replay/Oracle 聚合和无 provider 恢复。
 - 同一 `agentic-episode-v1` 在 etcd/raft 与 OmniPaxos composition 上复用；真实 OmniPaxos A9d6 完成
   Risk Agent、Scenario Agent、Replay/PSS/Oracle 闭环。
@@ -321,12 +357,13 @@ pilot 暴露的具体缺口才增加逐槽 decision evidence、跨重启存储�
 
 ### 尚未完成
 
-- unequal-frontier Agreement、跨 incarnation persistence 和 panic/hang 的充分证据与结果分类；
-- defect capability / Oracle adequacy pilot；
+- panic/partial-side-effect 的充分终端结果分类；
+- 将当前小型 calibration 的固定少量 Scenario 调用提升为有总资源边界的 Adaptive Investigation；
+- 从初始 root 用统一 Action 重建 Agora 级别的持久化/crash-recovery 和长选举循环校准；
 - 当前 A9 Risk+Scenario 方法接入 formal evaluator；
 - 仓库外、人工复核的非公开 candidate/control 数据与重复实验；
 - 多 Agent 同预算消融；
-- 具有候选 portfolio、`continue`、hypothesis revision 和 Exploration Memory 的 Investigation loop。
+- 长时公开调查与 private holdout 的分层证据。
 
 当前 legacy A2/A4 路径仍可从 JSON 读取固定 Hypothesis；A9e1 已从 `agentic-episode-v1` 输入移除预置
 Risk/TestHypothesis，改为 Consensus Primer、Property Catalog 和 Historical Issue Pattern。Binding、证据解码、
@@ -442,7 +479,8 @@ A6b 已在 session attempt artifact 中保存 qualified bundle 的规范 Core PS
 
 A6c 真实运行使用 `deepseek/deepseek-v4-flash`：2 个 episode 共 2 次逻辑模型调用、10,984 tokens。
 第一次调用在第 3 次传输才成功，第二次一次成功；因此 OpenRouter 对无响应传输错误和
-HTTP 408/429/5xx 最多重试 2 次，并分开记录 `model_calls` 与 `transport_attempts`。两轮都 Replay stable、
+HTTP 408/429/5xx 当时最多重试 2 次，并分开记录 `model_calls` 与 `transport_attempts`。该历史策略已被
+A9e4c11 的单次 POST 收紧策略取代。两轮都 Replay stable、
 0 Oracle violation，最终 PSS 状态并集为 23；RiskWitness 仍为 `not-reached`。这是公开校准，不证明 Agent
 优于 baseline。
 
@@ -515,7 +553,7 @@ effect completion、消息投递和自然 temporal event 推动新 leader，再�
 但它暴露了当前评测的结构问题：Agent 只能给出 4 步计划，计划合法完成后 episode 立即结束，新 episode
 又从 root 开始，因此无法通过多个短计划累积长时域进展。
 
-该修正最终收敛为“单步战略干预 + 可信自然推进”：活动 JSON 的 `scenario_max_steps=1`，模型只引用当前
+该修正在 A6eR 当时收敛为“单步战略干预 + 可信自然推进”：当时 JSON 的 `scenario_max_steps=1`，模型只引用当前
 ActionID；干预执行后，协议无关 closure 只选择 `complete-effect`、`deliver-message` 和
 `fire-temporal-event`。目标客户端返回、自然推进静止或累计 decision 预算耗尽会提前停止；否则固定执行到
 最多 24 个普通动作的 planning checkpoint。Risk 里程碑变化只更新逐步反馈，不会缩短窗口或增加规划调用。
@@ -827,7 +865,24 @@ A9e 的 Agent 材料分为：
 - Root/Workload/Fault catalogs：由可信代码具体化 Agent 的语义 intent；
 - Exploration Memory：从已保存工件折叠的重复度、Witness 前缀、PSS 增量、失败原因和成本。
 
-Hypothesis Agent 先自由形成简短候选，再将被选中的一个展开为 property reference、suspected mechanism 和有序
+从 A9e4c6 起，Consensus Primer 不再承担所有目标知识。活动输入增加结构化 Target Dossier：
+
+- Scope/Assumptions：本轮测试协议核心、宿主组合还是生产系统，以及采用的故障与时间假设；
+- Components：目标实现中的协议核心、host loop、存储、网络和证据投影组件；
+- Contracts：Ready/持久化、消息发布、客户端完成和恢复等公共顺序约束；
+- Control Semantics：Action 的语义效果和明确不具备的效果；
+- Active Experiment：只保留公共 Manifest 无法机械给出的关键实现配置；
+- Blind Spots：当前 Adapter/worker 看不到或不能控制的行为。
+
+Dossier 是带来源的可编辑知识，不是第二套协议模型，也不授予执行或判定权。本轮拓扑、workload、Runtime 参数、
+fault allowance 与 temporal/crash/effect 能力由 `AgentTargetSurface` 从已验证 Manifest 和活动配置机械派生；
+若二者冲突，Agent 以动态 Surface 为准。Property 同时声明当前证据级别：
+`hypothesis-only` 允许形成研究方向，`observable-only` 表示能获得相关事实但没有充分 Oracle，
+`oracle-backed` 表示已有独立判定路径。该标签不代表性质成立，也不允许 Agent 自报 finding。
+Historical Issue Pattern 同时携带适用条件与边界，避免把宿主契约违规、测试私有字段或 Adapter 盲区误写成核心实现问题。
+
+Hypothesis Agent 先自由形成 2–3 项有序候选 portfolio。顺序表示 Agent 的调查优先级，不是可信分数；可信代码
+逐项复用既有语法、知识引用、Observation 与 Action 能力审查，并将第一个机械合格项展开为 property reference、绑定到 milestone 的 mechanism steps 和有序
 Observation predicates。Scenario Agent 在当前 frontier 上选择真实 Action 或 `continue`。语法修复、能力修复、执行修复和
 跨 Investigation 策略修复分层进行，不用一个巨型 prompt 代替闭环。
 
@@ -838,19 +893,89 @@ A9e 实施顺序：
 
 1. A9e1（已完成）：Agentic 输入移除预置 Risk/TestHypothesis，增加 Primer、Issue Pattern、Property 和自由机制解释；
    etcd/raft 输入不再携带 legacy Explorer 预算，两个目标都为 Risk Agent 保留最多三次提议/修复和一次 Scenario 调用；
-2. A9e2：defect capability / Oracle adequacy pilot。选择少量历史缺陷、受控语义变异和正确 control，先用
-   ground-truth trigger 逐项验证 root/workload、Action、Observation、Oracle、Replay 能否共同检出；
-3. A9e3：只修 pilot 证明的表达和结果缺口，优先处理 unequal-frontier Agreement、跨 incarnation persistence、
-   panic/hang 保留以及 PSS protocol/control 两视图；
-4. A9e4：实现 Investigation loop，包括短候选 portfolio、机械能力筛选、Root/Workload/Fault intent、
-   `act | continue`、hypothesis revision、失败隔离和 Exploration Memory；固定 24-action closure 的短暂干预窗口
-   必须作为可达性变量评测；
-5. A9e5：把当前 Risk+Scenario 方法接入 formal evaluator，按完整 Campaign work/token/time 运行配置时间 session，
-   最后在仓库外 private matching pairs 上进行同 exposure、同预算的重复比较。
+2. A9e2（已完成当前三类 adequacy pilot）：A9e2a 已用真实 etcd/raft 前缀复现 client result
+   过早结束调查，并将它改为返回剩余 Scenario 调用预算的可信 checkpoint；RiskReached 也不再跳过当前
+   natural-progress closure。A9e2b 先确认累计摘要无法判定 unequal-frontier 冲突，再用两个 Target 的逐位置
+   前缀承诺闭合反例。A9e2c 已用正确重启 control 与受控 application loss 验证 etcd/raft 跨 incarnation
+   persistence monitor。A9e2d 已用真实 worker stop/deadline/exit 证明失败动作没有 sealed outcome、deadline 未传播、
+   fresh Replay 只验证成功前缀；
+3. A9e3（已完成）：只修 pilot 证明的剩余缺口。A9e3a 已增加绑定成功前缀、enabled 集、尝试 Action、稳定 class/code 与
+   decision 的 terminal outcome sidecar，让 worker call 尊重 context，并把失败尝试纳入 work 和 Agent/Campaign
+   持久化；A9e3b 已从同一 Core PSS State 独立派生 protocol/control/joint 统计，并让 stateless novelty 使用
+   protocol key；
+4. A9e4（真实两轮校准已完成）：A9e4a 已将现有 `ScenarioPlan` 收敛为完整但有界的测试意图。后续步骤可用
+   `after_milestone` 引用已有的有序 Observation；执行器在条件满足前逐步执行可信自然推进，
+   每次重建 frontier 并重算 Risk。完整计划内的 milestone 等待不再受 24-action checkpoint 限制，只保留
+   episode 总决策预算、client terminal 和 quiescence 这些机械终点。真实 etcd/raft 校准已用一个计划完成
+   `crash -> 自然换主 -> restart`，其中实际自动推进 24 步，该数字是轨迹结果而不是上限。
+   A9e4b 已将 etcd/raft 与 OmniPaxos 的活动 `agentic-calibration` 输入改为最多 4 个战略步骤，
+   Scenario 最多 3 次调用：第一次是完整计划，后两次只是机械拒绝后的修复上限。计划成功后使用所有
+   剩余 decision 预算运行到 client terminal、quiescence 或预算终点，不再因 24 个动作返回 Agent。
+   旧 A6/A8 单步 session 仍保留兼容窗口，不影响 A9 Agentic 主线。A9e4c1 已把活动 provider schema 改为
+   2–3 项 portfolio，并逐项机械审查、稳定选择首个合格项；旧单候选 JSON 只保留读取兼容。
+   这尚未证明 portfolio 提高发现率，也没有加入 Agent 自报评分。A9e4c2 已从恢复后的 summary/Bundle 重新派生
+   最近最多 8 轮的紧凑 Exploration Memory：候选重复、Risk near-miss、首个缺失 milestone、当轮/新增 protocol
+   PSS 状态、机械拒绝、Oracle finding 数和真实成本。它随下一轮 Risk 请求进入既有 provider journal，不单独持久化，
+   也不参与 verdict。相同 OmniPaxos episode 的第二次投影得到 0 个新增 protocol state，证明增量按跨轮并集计算。
+   A9e4c3 已加入内部多轮 Investigation coordinator。每轮使用新的 `episode-NNNN` 目录，完成后从磁盘恢复
+   summary/Bundle，再重算 Memory 驱动下一轮；外层在启动前检查 episode、model call、token 和 runtime decision
+   allowance。两轮 OmniPaxos fixture 证明第二轮请求收到第一轮 Memory，重复候选被标记且新增 protocol state 为 0；
+   调用额度不足则在建 episode 和访问 provider 前停止。当前 runtime decision 采用每轮上限的保守预留，
+   A9e4c4 已在现有 `agentic-episode-v1` 上增加 `-investigation-episodes N`，总预算由单轮配置乘以 N；
+   `-campaign-resume` 从连续 `episode-NNNN` 恢复完成轮次，并可继续最后一个 partial journal 或创建下一轮。
+   两轮 OmniPaxos fixture 恢复到三轮时只新增第三轮的 2 次 provider 调用，旧轮次没有重复，且没有根级
+   manifest/session ledger。真实 OpenRouter 两轮 OmniPaxos 校准中，第二轮读取首轮 near-miss、PSS 与成本后
+   改变了 hypothesis，并使用三次 Scenario 修复；但没有新增 protocol PSS state，两轮 Risk 均未达到。
+   第二轮文字机制声称依赖 dropped accept message，witness predicates 却没有 `message-dropped`，证明下一小步
+   应先闭合 hypothesis-to-witness 一致性，而不是直接扩大评测规模。A9e4c5 已让活动 provider 为每个
+   predicate 输出同序、同 milestone ID、同 Observation kind 的 mechanism step，并由可信代码生成最终机制说明；
+   缺失或错配产生稳定反馈进入既有 Risk 修复循环。该结构消除了独立机制文本与执行 witness 分叉的路径，
+   但不宣称可信代码理解 rationale 的自然语言含义。A9e4c6 已完成 Agent Input v2 第一阶段：
+   两个活动目标均增加 Target Dossier、Property 证据级别和带适用边界的 Issue Pattern；Dossier 随
+   Risk→Scenario 传递，不新增执行权限、身份账本或 gate；
+5. Agent Input v2 第二阶段（A9e4c7 已完成）：通用 `AgentTargetSurface` 从 Manifest、workload、Runtime 和
+   fault allowance 派生本轮真实 topology、输入、时间/随机参数与 host 能力，并同时进入 Risk/Scenario Agent。
+   活动 JSON 已删除重复 workload/fault 文本，静态实现配置仍保留在 Dossier；没有新增 digest、冻结 contract 或 gate。
+   A9e4c8 已建立只读 Knowledge Discovery 基础：从 Dossier `evidence_refs` 派生 allowlist，读取仓库根内的
+   有界 UTF-8 片段，并机械拒绝未声明路径、越界、符号链接逃逸、缺失 locator 和资源超限。它不执行命令、
+   不写文件，读取内容也不成为可信 evidence 或 verdict。A9e4c9 已为仓库外的已声明 SUT 源码增加显式只读
+   source mount：CLI 把虚拟 reference prefix 映射到调用方给出的本地目录，不猜测 module cache，也不把本机路径
+   写入知识材料。官方 etcd/raft Ready 文档已通过该路径读取。A9e4c10 已把请求/结果接入现有
+   Risk Agent 修复循环：配置 mount 后首次调用只选择最多 2 个已声明来源，读取后下一次调用才提交 portfolio，
+   单次 Risk 读取最多 80 行且受 24 KiB 片段上限约束。结果只是不可信规划上下文，不参与执行或 verdict；
+   查询消耗原 model-call/token 预算并写入原 journal，没有新建 Discovery Agent 或第二账本。未配置 mount 时保持
+   portfolio-only 协议。fixture 已跑通“读取已声明 Manifest → 下一次调用提交候选”。A9e4c11 的真实校准
+   暴露“provider 已计费，本地超时后 usage 未知”和自动重发风险；当前所有新 OpenRouter POST 已收紧为单次尝试，
+   并用 `provider_usage_status=observed|unknown` 显式区分计费是否可观测。首次读取选择使用独立轻量 schema。
+   获得明确授权后的真实 etcd/raft 校准中，知识查询用 4,632 tokens 选择两个来源，可信层实际发送两个
+   50 行片段；portfolio 调用单次 POST 在 120 秒读取正文时到期，usage 未观察到，未进入 Scenario。
+   正文读取超时的分类已由 response rejected 修正为 transport ambiguous。该结果证明外发约束和两阶段调用
+   生效，但尚未证明完整 Agentic Episode 成功；
+6. A9e4d：将当前 Investigation coordinator 收敛为真正的 Adaptive Investigation。不新建 Session Runtime
+   或第二套 Plan DSL；继续使用现有 episode 目录、provider journal、ScenarioPlan、Bundle 和 Memory。
+   总 wall time/model work/Runtime work 是硬边界，单轮固定三次 Scenario call 只保留为旧 calibration
+   配置。Agent 可在预算内修订 hypothesis、替换调查分支、请求对照/消融，但仍不能越过 enabled
+   Action 或产生 verdict。
+7. A9e4e：Agora-derived deterministic reconstruction calibration。选择两个已有具体反例，不追求复制
+   Agora 的白盒 helper：
+   - 持久化顺序/crash-recovery 场景，检查 Agent 能否构造数十到上百 Action 的跨阶段轨迹；
+   - 长选举循环场景，检查数百 Action 下 PSS 合并、transition 和 temporal-depth 统计。
+   两者都从初始 root 建立前置状态，候选产生后无 LLM fresh Replay。使用内部 hook 的实验可作为
+   assumption-boundary 证据，不自动分类为核心实现缺陷。
+8. A9e5：长时公开效果校准。在 etcd/raft 与 OmniPaxos 上分别运行至少一个配置时间 Investigation，
+   先回答“Agent 是否能持续形成、修复并稳定重放复杂场景”。报告实际 Action 数、轨迹长度、
+   protocol/control/joint PSS、`PSS-Action-PSS` 转换、无进展循环深度、Risk/义务、Replay 成功率、
+   Oracle 结果和模型/执行成本。公开校准可证明方法能力，不代替 hidden defect effectiveness。
+9. A9e6：将 Risk+Scenario Investigation 接入 formal evaluator，在仓库外 private matching pairs 上完成同
+   exposure、同 wall time、同 Runtime work 且模型成本单列的重复比较。
 
 A9e2 将 Oracle recall 与 search recall 分开：先证明给定已知 trigger 时 evaluator 能稳定检出，再评价 Agent 是否
 找到 trigger。否则“Agent 未触发”和“Oracle 没看见”会被错误合并为同一个 no-finding。公开 calibration、
 synthetic plumbing 和 private holdout 始终分别报告；当前仓库没有可支持方法效果结论的 private dataset。
+
+现有 adequacy pilot 已对已校准的 Agreement、跨重启 progress 和 terminal outcome 给出可执行证据，因此可以进入
+长时调查。但未校准 Oracle 下的“无 finding”不能被解释为 Agent 没有发现能力。公开小型 calibration、
+长时公开调查和 private holdout 必须作为三层证据分开报告。
 
 第一阶段不新增 Investigation digest、冻结 contract 或另一套 admission gate。既有 Git/BuildID、ExecutionAdmission、Bundle 和
 provider journal 继续是可信身份与证据边界。

@@ -208,6 +208,36 @@ func (image applicationImage) advance(index uint64) (applicationImage, error) {
 	return sealApplicationImage(image)
 }
 
+// prefixes returns one commitment for every applied log position. Each
+// commitment is the digest of the application image at that exact frontier,
+// allowing a protocol-neutral Agreement monitor to compare the shared prefix
+// of nodes that currently have different applied frontiers.
+func (image applicationImage) prefixes() ([]ApplicationPrefixEvidence, error) {
+	if err := image.validate(); err != nil {
+		return nil, err
+	}
+	result := make([]ApplicationPrefixEvidence, 0, image.Applied)
+	commandEnd := 0
+	for position := uint64(1); position <= image.Applied; position++ {
+		for commandEnd < len(image.Commands) && image.Commands[commandEnd].Index <= position {
+			commandEnd++
+		}
+		prefix, err := sealApplicationImage(applicationImage{
+			SchemaVersion: applicationImageSchema,
+			Applied:       position,
+			Commands:      append([]appliedCommand(nil), image.Commands[:commandEnd]...),
+		})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, ApplicationPrefixEvidence{Position: position, Digest: prefix.Digest})
+	}
+	if len(result) > 0 && result[len(result)-1].Digest != image.Digest {
+		return nil, fmt.Errorf("ETCDRAFT_V2_APPLICATION_PREFIX_FINAL_MISMATCH")
+	}
+	return result, nil
+}
+
 type clientResult struct {
 	Index uint64 `json:"index"`
 	Term  uint64 `json:"term"`

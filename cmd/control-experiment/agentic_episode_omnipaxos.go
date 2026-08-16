@@ -59,7 +59,7 @@ func runOmnipaxosAgenticEpisode(
 		return omnipaxosAgenticEpisodeResult{Status: agenticEpisodeRiskStopped}, err
 	}
 	return runAgenticEpisode(
-		ctx, target, riskJournal, scenarioJournal, budget, activateRiskKey, activateScenarioKey,
+		ctx, target, riskJournal, scenarioJournal, budget, nil, nil, activateRiskKey, activateScenarioKey,
 	)
 }
 
@@ -88,8 +88,15 @@ func newOmnipaxosAgenticEpisodeTarget(
 		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_INPUT_INVALID")
 	}
 	observationProjector := omnipaxosv2.ObservationProjector{}
+	surface, err := controlexperiment.NewAgentTargetSurface(
+		"omnipaxos-v2", inputs.Qualification.Bundle.Manifest, inputs.Workload,
+		inputs.Experiment.Runtime, inputs.Experiment.FaultEnvelope,
+	)
+	if err != nil {
+		return agenticEpisodeTarget{}, err
+	}
 	target := agenticEpisodeTarget{
-		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge,
+		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge, Surface: surface,
 		Actions:              inputs.Qualification.Bundle.Manifest.Capabilities.Actions,
 		ObservationProjector: observationProjector,
 		ScenarioInputs: func(

@@ -603,8 +603,46 @@ func TestFailedPartitionActuationDoesNotCommitRuntimeState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.Select(ctx, partitionID); err == nil || !strings.Contains(err.Error(), "ADAPTER_RUNTIME_ACTION_FAILED") {
-		t.Fatalf("Select(partition) error = %v, want actuation failure", err)
+	_, selectErr := runtime.Select(ctx, partitionID)
+	if selectErr == nil || !strings.Contains(selectErr.Error(), "ADAPTER_RUNTIME_ACTION_FAILED") {
+		t.Fatalf("Select(partition) error = %v, want actuation failure", selectErr)
+	}
+	var terminalError *controlruntime.TerminalExecutionError
+	if !errors.As(selectErr, &terminalError) {
+		t.Fatalf("Select(partition) error has no terminal outcome: %v", selectErr)
+	}
+	outcome, ok := runtime.TerminalOutcome()
+	if !ok || outcome.Validate() != nil || outcome.Class != control.ExecutionFailureAdapter ||
+		outcome.Code != "ADAPTER_ACTION_FAILED" || outcome.Decision != 1 ||
+		outcome.AttemptedAction.ID != partitionID || outcome.PrefixTraceDigest == "" ||
+		outcome.Digest != terminalError.Terminal.Digest {
+		t.Fatalf("terminal outcome = %#v / %v", outcome, terminalError)
+	}
+	prefix, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prefix.Records) != 0 || prefix.Digest != outcome.PrefixTraceDigest {
+		t.Fatalf("failed action entered successful prefix: %#v", prefix)
+	}
+	replayAdapter := &failingRuntimeActionAdapter{Adapter: fixture.New()}
+	replayed, err := controlruntime.Replay(ctx, replayAdapter, runtimeConfig(), prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedPartition, err := replayed.OfferPartition([]control.NodeID{"n1"}, []control.NodeID{"n2"})
+	if err != nil || replayedPartition != partitionID {
+		t.Fatalf("terminal action preparation drifted: %s/%v", replayedPartition, err)
+	}
+	if _, err := replayed.Select(ctx, replayedPartition); err == nil {
+		t.Fatal("fresh terminal re-execution unexpectedly completed")
+	}
+	replayedOutcome, ok := replayed.TerminalOutcome()
+	if !ok || replayedOutcome.Validate() != nil || replayedOutcome.Digest != outcome.Digest {
+		t.Fatalf("fresh terminal outcome mismatch: %#v != %#v", replayedOutcome, outcome)
+	}
+	if err := replayed.Close(); err != nil {
+		t.Fatal(err)
 	}
 	if got := len(runtime.Snapshot().Partitions); got != 0 {
 		t.Fatalf("partitions after failed actuation = %d, want 0", got)

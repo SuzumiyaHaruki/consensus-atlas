@@ -1,0 +1,22 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "5d234616be943bf9df96bdba99fa636f2df813c4db5f9db872509307a9fac67e",
+  "status": "content-ready",
+  "content": "ewogICJpZCI6ICJwbGFuLTEiLAogICJzdGVwcyI6IFsKICAgIHsKICAgICAgImFmdGVyX21pbGVzdG9uZSI6ICJtMSIsCiAgICAgICJpZCI6ICJzdGVwLTEiLAogICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgImFjdGlvbl9pZCI6ICJhY3Rpb24tNTQ5NzBhY2EzMWRjYjIzNDRlMTU4Zjc5ZWZlMjJkN2I5ZDBhZDgwNDhlNjZiYjY0NWI1MGNmMzM0ZDk0N2IwNSIKICAgICAgfQogICAgfSwKICAgIHsKICAgICAgImFmdGVyX21pbGVzdG9uZSI6ICJtMiIsCiAgICAgICJpZCI6ICJzdGVwLTIiLAogICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgImtpbmQiOiAiZmlyZS10ZW1wb3JhbC1ldmVudCIsCiAgICAgICAgIm5vZGUiOiAibjIiLAogICAgICAgICJ0ZW1wb3JhbF9raW5kIjogInBlcmlvZGljLXB1bHNlIgogICAgICB9CiAgICB9CiAgXQp9",
+  "content_digest": "9d279fb515a2b9f9290d4f8a2f010ef0c0970a5664ba77c7b452fb497cef22e7",
+  "response_digest": "bde3a74974877e1b397d7a4f9df93856dee28693055036b802331ced2850275f",
+  "response": {
+    "id": "gen-1786849384-yinwvChGicpNMlmOFhSe",
+    "model": "deepseek/deepseek-v4-flash",
+    "finish_reason": "stop"
+  },
+  "duration_millis": 169983,
+  "work": {
+    "calls": 1,
+    "input_tokens": 6197,
+    "output_tokens": 3022,
+    "total_tokens": 9219
+  },
+  "transport_attempts": 2,
+  "digest": "89c65407d14f8cbbf525f5d6b5fe5fdcb502ad9a9aec8d789856aada2ba17dd1"
+}

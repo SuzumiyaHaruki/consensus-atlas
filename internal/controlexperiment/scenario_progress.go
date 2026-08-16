@@ -11,15 +11,9 @@ import (
 )
 
 const (
-	ScenarioProgressPlanningCheckpoint = "planning-checkpoint"
-	ScenarioProgressClientTerminal     = "client-terminal"
-	ScenarioProgressQuiescent          = "natural-progress-quiescent"
-	ScenarioProgressBudget             = "natural-progress-budget-exhausted"
-
-	// ScenarioNaturalProgressCheckpointActions bounds one trusted closure
-	// quantum. Agent-authored risk milestones cannot shorten this interval and
-	// therefore cannot buy extra planning calls by fragmenting a Risk.
-	ScenarioNaturalProgressCheckpointActions = 24
+	ScenarioProgressClientTerminal = "client-terminal"
+	ScenarioProgressQuiescent      = "natural-progress-quiescent"
+	ScenarioProgressBudget         = "natural-progress-budget-exhausted"
 )
 
 var scenarioNaturalProgressPriority = []control.ActionKind{
@@ -40,7 +34,8 @@ type ScenarioProgressResult struct {
 }
 
 // ExecuteScenarioNaturalProgress advances only host effects, ordinary message
-// delivery and naturally due temporal events. Every choice still comes from a
+// delivery and naturally due temporal events until a mechanical terminal or
+// the supplied remaining decision budget. Every choice still comes from a
 // freshly reconstructed admissible frontier and is fresh-replay verified.
 func ExecuteScenarioNaturalProgress(
 	ctx context.Context,
@@ -64,9 +59,6 @@ func ExecuteScenarioNaturalProgress(
 		PlanID: id, Status: ScenarioStatusCompleted, FinalTrace: root, FinalRisk: rootRisk,
 	}}
 	closureLimit := maxDecisions
-	if closureLimit > ScenarioNaturalProgressCheckpointActions {
-		closureLimit = ScenarioNaturalProgressCheckpointActions
-	}
 	for decision := 0; decision < closureLimit; decision++ {
 		view, snapshot, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
 			ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+1), spec,
@@ -108,7 +100,11 @@ func ExecuteScenarioNaturalProgress(
 		addDFSPhase(&result.Execution.Work.ChildMaterialization, materialization)
 		addDFSPhase(&result.Execution.Work.ChildVerification, verification)
 		if err != nil {
-			return ScenarioProgressResult{}, err
+			result.Execution.Work.TotalWorkUnits =
+				result.Execution.Work.FrontierReconstruction.WorkUnits +
+					result.Execution.Work.ChildMaterialization.WorkUnits +
+					result.Execution.Work.ChildVerification.WorkUnits
+			return result, &StatelessDFSExecutionError{Work: result.Execution.Work, cause: err}
 		}
 		risk, err := projector.Project(
 			fmt.Sprintf("%s-risk-%02d", id, decision+1), spec, child,
@@ -129,11 +125,7 @@ func ExecuteScenarioNaturalProgress(
 		result.Execution.FinalTrace, result.Execution.FinalRisk = child, risk
 	}
 	if result.StopReason == "" {
-		if closureLimit == ScenarioNaturalProgressCheckpointActions {
-			result.StopReason = ScenarioProgressPlanningCheckpoint
-		} else {
-			result.StopReason = ScenarioProgressBudget
-		}
+		result.StopReason = ScenarioProgressBudget
 	}
 	result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
 		result.Execution.Work.ChildMaterialization.WorkUnits +

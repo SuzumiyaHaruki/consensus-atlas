@@ -96,6 +96,7 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 		t.Fatal(err)
 	}
 	if call.FailureCode != "" || call.Response == nil || call.Response.ID != "mock-response" ||
+		call.UsageStatus != agentProviderUsageObserved ||
 		call.Response.Model != "fixture/model-20260813" ||
 		call.Response.FinishReason != "stop" || call.Work != (controlexperiment.ModelWork{
 		Calls: 1, InputTokens: 100, OutputTokens: 50, TotalTokens: 150,
@@ -104,7 +105,7 @@ func TestOpenRouterProviderFreezesExactRequestAndChargesAcceptedResponse(t *test
 	}
 }
 
-func TestOpenRouterProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T) {
+func TestOpenRouterProviderRecordsSingleFailureWithoutDiagnostics(t *testing.T) {
 	client := openRouterIntentClient{
 		Endpoint: openRouterChatEndpoint, Model: openRouterFixtureModel,
 		ReasoningEffort: openRouterDefaultReasoningEffort, ExcludeReasoning: true,
@@ -133,60 +134,42 @@ func TestOpenRouterProviderRecordsBoundedFailuresWithoutDiagnostics(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if call.FailureCode != agentFailureResponse || call.ResponseDigest != "" || call.Response != nil {
+	if call.FailureCode != agentFailureTransport || call.ResponseDigest != "" || call.Response != nil ||
+		call.UsageStatus != agentProviderUsageUnknown {
 		t.Fatalf("unexpected unreadable response: %#v", call)
 	}
 }
 
-func TestOpenRouterProviderRetriesOnlyTransientFailuresAndRecordsAttempts(t *testing.T) {
-	responseJSON := []byte(`{
-  "id":"retry-response",
-  "model":"fixture/model",
-  "system_fingerprint":"retry-fingerprint",
-  "choices":[{"index":0,"message":{"role":"assistant","content":"{\"id\":\"plan\",\"steps\":[{\"id\":\"step\",\"selector\":{\"kind\":\"crash\",\"node\":\"n1\"}}]}"},"finish_reason":"stop"}],
-  "usage":{"prompt_tokens":80,"completion_tokens":20,"total_tokens":100}
-}`)
+func TestOpenRouterProviderNeverRetriesAmbiguousPOST(t *testing.T) {
 	attempts := 0
 	client := newOpenRouterIntentClient(openRouterFixtureModel)
-	client.MaxRetries = 2
 	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		attempts++
-		switch attempts {
-		case 1:
-			return nil, errors.New("temporary connection reset")
-		case 2:
-			return &http.Response{
-				StatusCode: http.StatusServiceUnavailable,
-				Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":"temporary"}`))),
-			}, nil
-		default:
-			return &http.Response{
-				StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(responseJSON)),
-			}, nil
-		}
+		return nil, errors.New("completion and provider billing are ambiguous")
 	})
 	prepared, err := client.prepare("public-system", "public-user", fixtureOpenRouterStructuredOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
 	call, err := client.invokePrepared(context.Background(), "test-secret", prepared)
-	if err != nil || call.FailureCode != "" || call.Response == nil ||
-		call.TransportAttempts != 3 || attempts != 3 || call.Work.Calls != 1 ||
-		call.Work.TotalTokens != 100 || openRouterTransportFreeze(client).MaxRetries != 2 {
-		t.Fatalf("transient retry did not preserve accounting: %#v attempts=%d err=%v", call, attempts, err)
+	if err != nil || call.FailureCode != agentFailureTransport || call.TransportAttempts != 1 ||
+		attempts != 1 || call.Work != (controlexperiment.ModelWork{Calls: 1}) ||
+		call.UsageStatus != agentProviderUsageUnknown ||
+		openRouterTransportFreeze(client).MaxRetries != 0 {
+		t.Fatalf("ambiguous POST was retried or mis-accounted: %#v attempts=%d err=%v", call, attempts, err)
 	}
 
 	attempts = 0
 	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 		attempts++
 		return &http.Response{
-			StatusCode: http.StatusUnauthorized,
-			Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":"unauthorized"}`))),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":"unavailable"}`))),
 		}, nil
 	})
 	call, err = client.invokePrepared(context.Background(), "test-secret", prepared)
 	if err != nil || call.FailureCode != agentFailureHTTP || call.TransportAttempts != 1 || attempts != 1 {
-		t.Fatalf("non-transient status was retried: %#v attempts=%d err=%v", call, attempts, err)
+		t.Fatalf("HTTP failure was retried: %#v attempts=%d err=%v", call, attempts, err)
 	}
 }
 

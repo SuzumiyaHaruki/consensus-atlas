@@ -56,7 +56,7 @@ func TestEtcdraftSemanticExplorerInputsAreValidAndSourceBound(t *testing.T) {
 	) != nil || inputs.spec.RootID != "invoked" || inputs.spec.RootDecisions != 28 ||
 		inputs.spec.RootFrontierActions < 2 || inputs.spec.ExplorerBudget.MaxCalls != 2 ||
 		inputs.spec.Transport.Provider != openRouterProvider ||
-		inputs.spec.Transport.Model != openRouterFixtureModel || inputs.spec.Transport.MaxRetries != 2 ||
+		inputs.spec.Transport.Model != openRouterFixtureModel || inputs.spec.Transport.MaxRetries != 0 ||
 		inputs.spec.ScenarioPromptVersion != scenarioAgentPromptVersion ||
 		inputs.spec.ScenarioMaxCalls != inputs.experiment.ScenarioMaxCalls ||
 		inputs.spec.ScenarioMaxPlanSteps != inputs.experiment.ScenarioMaxSteps ||
@@ -147,7 +147,7 @@ func TestEtcdraftSemanticExplorerInputsAreValidAndSourceBound(t *testing.T) {
 				Kind: control.ActionRestart, Node: crash.Node.Node,
 			}},
 		}},
-		2, inputs.riskSpec, rootRisk, inputs.root, inputs.experiment.Runtime,
+		2, 2, inputs.riskSpec, rootRisk, inputs.root, inputs.experiment.Runtime,
 		inputs.experiment.faultEnvelope(), factory, projector,
 	)
 	if err != nil || scenario.Status != controlexperiment.ScenarioStatusCompleted ||
@@ -288,8 +288,9 @@ func TestEtcdraftSemanticExplorerCreatesResumesAndSealsTerminalArtifacts(t *test
 	if !errors.As(failureErr, &explorerFailure) || failed.Status != etcdraftSemanticCalibrationFailed ||
 		failed.Failure == nil || failed.Failure.ReasonCode != controlexperiment.SemanticExplorerFailurePlanner ||
 		len(failed.ProviderCalls) != 1 || failed.ProviderCalls[0].Status != controlexperiment.StatelessAgentCallFailed ||
-		failed.ModelWork != (controlexperiment.ModelWork{Calls: 1}) || failureCalls != 3 ||
-		failed.ProviderCalls[0].TransportAttempts != 3 {
+		failed.ModelWork != (controlexperiment.ModelWork{Calls: 1}) || failureCalls != 1 ||
+		failed.ProviderCalls[0].TransportAttempts != 1 ||
+		failed.ProviderCalls[0].ProviderUsageStatus != agentProviderUsageUnknown {
 		t.Fatalf("terminal provider failure was not sealed: %#v calls=%d err=%v", failed, failureCalls, failureErr)
 	}
 	if _, err := os.Lstat(filepath.Join(failureOptions.Directory, "artifact.json")); err != nil {

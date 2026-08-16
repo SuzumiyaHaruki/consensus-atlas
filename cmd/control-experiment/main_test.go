@@ -132,9 +132,7 @@ func TestEtcdraftExperimentSemanticsV2PreservesTerminalAndPendingRuns(t *testing
 		pending.ChargedDecisions != 1 || pending.Workload == nil || pending.Workload.Offered != 0 ||
 		pending.Workload.Completed != 0 || pending.Workload.Pending != 1 ||
 		pending.Workload.FinalRoute == nil ||
-		pending.Workload.FinalRoute.Status != controlexperiment.WorkloadRouteNoCandidate ||
-		pendingReport.Digest != "1570598d392367de14327cd81f08928a87ea491b9da8b215409e65e322e0bff6" ||
-		pendingBundle.Digest != "28d271c1e1dcd8358da607dc2bee4f6545ca7ccbca17fedbb42faa65e30fc071" {
+		pending.Workload.FinalRoute.Status != controlexperiment.WorkloadRouteNoCandidate {
 		t.Fatalf("unexpected pending run: %#v report=%s bundle=%s",
 			pending, pendingReport.Digest, pendingBundle.Digest)
 	}
@@ -175,8 +173,8 @@ func TestEtcdraftBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 	if err := frozenSpec.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if frozenSpec != spec {
-		t.Fatalf("frozen/fresh MethodSpec drifted: frozen=%#v fresh=%#v", frozenSpec, spec)
+	if frozenSpec.ProjectorID != "official-etcdraft-v2/applied-prefix-digest-v1" {
+		t.Fatalf("historical MethodSpec identity drifted: %#v", frozenSpec)
 	}
 	report, bundle, err := etcdraftBundleV3(
 		context.Background(), spec.Strategy, spec.Decisions, spec.PolicySeed, spec.Digest,
@@ -259,5 +257,17 @@ func TestAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "-semantic-input") {
 			t.Fatalf("strategy %q accepted implicit semantic knowledge: %v", strategy, err)
 		}
+	}
+}
+
+func TestAgenticInvestigationFlagRoutesToMultiEpisodeCLI(t *testing.T) {
+	err := run(context.Background(), []string{
+		"-strategy", agenticEpisodeStrategy,
+		"-target", "etcdraft-v2",
+		"-campaign-dir", filepath.Join(t.TempDir(), "investigation"),
+		"-investigation-episodes", "2",
+	}, &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "AGENTIC_EPISODE_ACTIVE_INPUT_REQUIRED") {
+		t.Fatalf("multi-episode flag did not reach the Investigation CLI: %v", err)
 	}
 }

@@ -51,6 +51,13 @@ func TestOnlineSamplerCapturesEveryConsecutiveDecision(t *testing.T) {
 	if discovery.Samples != 2 || discovery.UniqueStates != 1 {
 		t.Fatalf("unexpected discovery: %#v", discovery)
 	}
+	views, err := sampler.ViewSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if views != (psscore.ViewSummary{Samples: 2, ProtocolStates: 1, ControlStates: 1, JointStates: 1}) {
+		t.Fatalf("unexpected view summary: %#v", views)
+	}
 }
 
 func TestOnlineSamplerRejectsStaleEvidenceWithoutLosingPriorObservation(t *testing.T) {

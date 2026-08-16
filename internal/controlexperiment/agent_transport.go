@@ -31,7 +31,7 @@ func (transport AgentTransportFreeze) valid() bool {
 	return validMethodToken(transport.Provider) && transport.Endpoint != "" &&
 		validAgentModelID(transport.Model) && validAgentReasoningEffort(transport.Thinking) &&
 		transport.Temperature == 0 && transport.MaxOutputTokens > 0 &&
-		transport.MaxOutputTokens <= 4096 && transport.MaxCallsPerArm == 1 &&
+		transport.MaxOutputTokens <= 32000 && transport.MaxCallsPerArm == 1 &&
 		transport.MaxRetries >= 0 && transport.MaxRetries <= 2
 }
 

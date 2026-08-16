@@ -5,8 +5,8 @@ import "github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 const (
 	adapterID      = "omnipaxos-v2alpha1"
 	implementation = "crates.io/omnipaxos@0.2.2"
-	workerSchema   = "consensus-atlas/omnipaxos-worker/v1"
-	evidenceSchema = "consensus-atlas/omnipaxos-v2-evidence/v1"
+	workerSchema   = "consensus-atlas/omnipaxos-worker/v2"
+	evidenceSchema = "consensus-atlas/omnipaxos-v2-evidence/v2"
 	messageSchema  = "consensus-atlas/omnipaxos-v2-message/v1"
 	callbackSchema = "consensus-atlas/omnipaxos-v2-callback/v1"
 	inputSchema    = "consensus-atlas/omnipaxos-v2-input/v1"
@@ -37,13 +37,19 @@ type workerResponse struct {
 }
 
 type workerNode struct {
-	ID                  uint64 `json:"id"`
-	Leader              uint64 `json:"leader"`
-	DecidedIndex        uint64 `json:"decided_index"`
-	DecidedPrefixDigest string `json:"decided_prefix_digest"`
-	PromiseNumber       uint32 `json:"promise_number"`
-	PromisePriority     uint32 `json:"promise_priority"`
-	PromisePID          uint64 `json:"promise_pid"`
+	ID                  uint64                 `json:"id"`
+	Leader              uint64                 `json:"leader"`
+	DecidedIndex        uint64                 `json:"decided_index"`
+	DecidedPrefixDigest string                 `json:"decided_prefix_digest"`
+	DecidedPrefixes     []workerDecisionPrefix `json:"decided_prefixes"`
+	PromiseNumber       uint32                 `json:"promise_number"`
+	PromisePriority     uint32                 `json:"promise_priority"`
+	PromisePID          uint64                 `json:"promise_pid"`
+}
+
+type workerDecisionPrefix struct {
+	Index  uint64 `json:"index"`
+	Digest string `json:"digest"`
 }
 
 type workerMessage struct {

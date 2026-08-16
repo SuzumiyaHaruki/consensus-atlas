@@ -1,6 +1,6 @@
 # ConsensusAtlas 架构
 
-日期：2026-08-15
+日期：2026-08-16
 
 本文件描述当前代码和已经确定的演进边界，而不是历史阶段。系统只保留一条权威主线：
 
@@ -52,6 +52,29 @@ topology/ticks、Runtime、FaultEnvelope 和预算外移到 `plans/agent/*.json`
 两条路径加载后都转成原有可信类型，不引入第二套语义或 workload 契约。Agentic loader 只校验该入口实际消费的
 Scenario/Runtime/model 预算，不再要求 legacy Semantic Explorer 的 depth、work-item 或 explorer budget。
 
+A9e4c6 在同一个 ProtocolKnowledgePack 中增加可选 Target Dossier、Property evidence level 和 Issue Pattern
+applicability/boundary。Dossier 只补充目标范围、实现组件、公共契约、控制语义、当前实验和盲区；真实能力仍来自
+Manifest/qualification，真实事实仍来自 Trace/Observation，结论仍来自独立 Oracle。A9e4c7 新增协议无关的
+`AgentTargetSurface`，从 Manifest、WorkloadPlan、RuntimeConfig 和 FaultEnvelope 机械派生活动 topology、输入、
+时间/clone 参数及 temporal/crash/effect 能力，并传入 Risk 与 Scenario 两个 Agent。Dossier 不再重复 workload 和
+fault allowance，只保留不能从公共输入自动得到的实现配置、契约和盲区。
+
+A9e4c8 在 `internal/controlexperiment` 增加受限只读 Knowledge Discovery。它从 Dossier 的 `evidence_refs`
+机械派生来源目录，且只读取调用方显式给定仓库根内的普通 UTF-8 文件；精确 reference allowlist、路径边界、
+符号链接边界、单文件大小和单次行数共同限制返回材料。locator 用于自动寻找相关片段。读取结果属于不可信
+规划上下文，不进入 Trace、Replay、PSS 或 Oracle。
+
+A9e4c9 将读取根从单仓库扩展为显式虚拟前缀 mounts。空前缀表示主仓库，较长前缀可指向调用方提供的 SUT
+或依赖源码目录；匹配采用最长前缀，剩余相对路径继续经过同一目录与符号链接边界检查。CLI 使用可重复的
+`-knowledge-source-mount` 参数构造 mounts，并随 Agentic composition 保留。绝对本机目录不进入 Protocol Pack、
+prompt 或 verdict，也不从 Go module cache 隐式推断，因此同一知识 reference 可在不同机器上显式重新绑定。
+
+A9e4c10 在既有 Risk Agent 请求/修复循环中增加两阶段响应：配置 mount 时，首次调用只选择最多
+2 个精确 source reference，读取完成后下一次调用才允许 portfolio。每次读取最多 80 行，还受通用
+24 KiB 片段上限限制。精确重复请求、超限和不可读来源都以稳定机械结果返回；读取本身也消耗原有
+Risk model-call/token 预算。request/result 记录在原 `RiskAgentAttempt` 和 provider journal 中，不增加新 Agent、
+journal 或证据账本。当 composition 没有 source mount 时，Risk provider schema 仍只允许 portfolio。
+
 Authoring JSON 只提供人工输入字段和外部运行上限。它不能提供 schema version、digest、执行 backend、
 Oracle 或 verdict；Agent 也不能修改这些预算。加载器严格拒绝未知字段和作者伪造的派生身份。
 拓扑、时间参数或 workload 与显式 root corpus 不一致时，现有 Adapter manifest、bundle 和 Replay 校验会拒绝组合。
@@ -87,8 +110,9 @@ Agent 可以：
 - 形成 property-referenced Risk candidate 和不可信的机制解释；
 - 选择语义目标；
 - 对当前可信候选排序；
-- 后续以短时域 `ScenarioPlan` 表达若干语义选择器与期望观察点；
-- 根据不可达、near-miss、PSS/Risk 变化修正后续提议。
+- 以完整但有界的 `ScenarioPlan` 表达若干语义选择器与期望观察点；
+- 根据不可达、near-miss、PSS/Risk 变化修正 hypothesis 或场景；
+- 在 Investigation 总预算内改换分支、重建新鲜 root，并请求对照或消融实验。
 
 Agent 不可以：
 
@@ -99,9 +123,15 @@ Agent 不可以：
 
 因此 Agent 可以犯规划错误，但不能把错误解释写成执行事实。
 
-当前 A4a 已实现最小 `ScenarioPlan`，最多 8 步，只允许当前 ActionID 或 ActionKind、节点、消息端点、时间种类、
-effect 等有限公共字段。每个 selector 都由可信层在当下 admissible frontier 中解析：唯一匹配才执行，零匹配、
-歧义和外部预算耗尽都返回机械 reason。它不是通用 DSL，也不允许计划携带 fault budget、assertion 或 verdict。
+当前单个 `ScenarioPlan` 表达完整但有界的测试意图，最多 8 个战略步骤。第一步可引用当前 ActionID；
+未来步骤使用 ActionKind、节点、消息端点、时间种类或 effect 等有限公共字段，并可选引用已有
+Risk milestone 作为 `after_milestone`。可信层在当下 admissible frontier 中解析 selector：唯一匹配才执行，
+零匹配、歧义、未知/不可达 milestone 和预算耗尽都返回机械 reason。计划不能携带新的观察表达式、
+fault budget、assertion 或 verdict，因此这仍是现有 Risk contract 的有限引用，不是新的 stop DSL。
+
+单个 Plan 有界不等于整个 Agent 调查只能调用固定三次模型。Adaptive Investigation 重用现有
+episode/provider journal/Bundle/Memory，允许 Agent 在总 wall time、model work 和 Runtime work 内多轮修正。
+当前最多三次 Scenario call 是公开小型 calibration 的单轮配置，不是方法上的永久权限边界。
 
 Agent 在概念上分为三种认知角色：Hypothesis、Explorer、Analysis。它们可以先由一次模型调用或一个进程承担；
 只有同预算消融证明角色分离有收益时，才物理拆成多个 Agent 服务。
@@ -113,16 +143,14 @@ A6e 的协议语义不进入 `FrontierActionRef`：Scenario view 另带一个与
 运行时可在 A6 session 入口覆盖暴露模式；覆盖值重建现有 session spec，因此不同模式不会误恢复同一
 Campaign，也不需要另一套配对运行协议。
 
-A6eR 现在把活动路径限制为单步当前 Action，避免模型预测 future ActionID。干预成功后，可信 closure 按固定
-优先级执行普通 effect、message 和自然 timer；它在客户端返回、自然推进静止、累计 decision 预算耗尽时停止，
-否则固定执行至最多 24 个普通动作的 planning checkpoint。Risk 里程碑变化会被逐步记录，但不会缩短该窗口或
-额外购买模型调用。随后 Runtime 重建 frontier/snapshot，target-local projector 只对该状态重新分类。stopped 多步计划的 leading
-applied prefix 会保留，rejected step 只进入反馈。整个 episode 仍受 call、decision、work、token 和 wall-clock
-上限约束。
-
-固定 closure 防止 Agent 通过碎片化 Risk 增加规划调用，但也可能跨过短暂干预窗口：若一个缺陷要求在第一项
-战略动作后、24 个普通动作内再次 drop/crash/partition，当前 Agent 可能来不及获得第二次规划点。该可达性风险
-必须在 defect capability pilot 中实测，再决定最小 checkpoint 修正。
+A9e4a 已取消完整计划内 milestone 等待的固定 24-action planning checkpoint。对有 `after_milestone` 的后续步骤，可信执行器只从
+`complete-effect -> deliver-message -> fire-temporal-event` 优先级中选择一个动作，然后重建 Runtime、
+fresh Replay 子轨迹并重算 Risk，直到前置 milestone 满足。每个自动动作保存于
+`automatic_progress`，与 Agent 选择的战略步骤一起占用同一 decision/work 预算，并在 exact policy 编译时逐条核对。
+自然推进仅在 client terminal、quiescence 或 episode 总决策预算耗尽时停止；Agent 不能用碎片 milestone
+购买更多调用。A9e4b 已将 etcd/raft 和 OmniPaxos 的活动 Agentic JSON 迁移到最多 4 步的 complete mode。
+计划成功后至机械终点就结束测试；最多 3 次 Scenario calls 中的后两次只用于机械拒绝后修复。
+旧 A6/A8 单步 session 仍保留 24 步兼容窗口，避免修改历史实验语义；它不再是 A9 Agentic 主线。
 
 attempt 提交前的 provider failure 现在由 session 从 durable call audit 汇总已发生 ModelWork；Coordinator 只在
 WorkLedger 结构合法时将它写入已有 Campaign failure marker，终端 summary 将 failure work 与已提交 totals
@@ -231,6 +259,9 @@ OmniPaxos 额外绑定 root、Risk spec 与 qualification bundle。终止策略�
   多次 trial 和同预算比较管理，而不是假装 Agent 本身确定。
 
 因此，系统不要求 Agent 每次给出相同计划，但要求每个被接受的计划都能被机械解释、执行和复核。
+探索阶段可以是在线自适应的：Agent 在看到第 `t` 步机械反馈后再选择后续方向。Runtime 记录实际具体化的
+Action 序列和所有执行结果；候选晋升后从相同 root 启动 fresh SUT，不调用 LLM 重放该序列。因而不确定的
+规划与确定的复现并不冲突。
 
 ## 7. Qualified testing 组合边界
 
@@ -262,7 +293,8 @@ Oracle。A3 完成后再评估短 `ScenarioPlan`，避免在单 episode 尚未�
 现行数据流的一部分。A2 与 A4 的 proposal/feedback 不合并成一个宽泛 DSL：两者共享 hypothesis 和可信执行
 边界，但分别解决“当前候选排序”和“跨数步场景构造”。
 
-Agent 的单位不是“每一步自由选一个 Action”，而是有界 semantic episode：
+Agent 的原子执行单位不是“每一步自由选一个 Action”，而是有界 semantic episode；一个长时
+Investigation 可由多个 fresh-root episode 组成：
 
 1. 可信层给出当前 hypothesis、prefix、语义候选和剩余预算；
 2. Explorer 返回候选完整排列；
@@ -270,6 +302,9 @@ Agent 的单位不是“每一步自由选一个 Action”，而是有界 semant
 4. search kernel 物化一个或多个真实 prefix；
 5. 可信层返回机械反馈；
 6. Explorer 可以在预算内再次修正。
+
+轮内 feedback 修正当前场景；跨轮 Memory 用于更换 hypothesis、分支或对照。每轮完成后只从已保存的
+summary/Bundle 重算反馈，不把 Agent 内存当成执行事实。
 
 当前 A3 已把首个可信选择送回完整 qualified execution、PSS、Risk、Replay 与 Oracle。A4a 完成短计划逐步
 concretization；A4b 复用 durable provider journal，允许一次机械反馈修正，并把成功多步 Trace 编译为 exact
@@ -285,27 +320,50 @@ Policy 后送入同一 qualified Bundle。真实 provider 的效果仍需单独�
 这层统一的是模型传输，不统一模型能力。不同模型是否能生成有效 ScenarioPlan，仍需在相同输入、预算和机械
 反馈下分别测量。
 
-活动请求使用 strict JSON Schema，并要求 OpenRouter 只路由到支持所需参数的 endpoint。reasoning effort 是
-可编辑实验输入；当前主配置为 `high`、`exclude=true`、4096 output tokens，`none` 仍可用于消融。模型输出
+活动请求使用 strict JSON Schema，并要求 OpenRouter 只路由到支持所需参数的 endpoint。reasoning effort 和
+output-token 上限是可编辑实验输入；当前 etcd/raft Agentic calibration 使用 `low`、`exclude=true`、
+32,000 output tokens，`none` 仍可用于消融。模型输出
 仍必须通过本地类型与 frontier 具体化，结构化输出不会增加事实或执行权限。
 
-瞬时可用性与计划失败分开：无响应的传输错误、HTTP 408/429/5xx 可在同一请求上最多重试 2 次；
-鉴权失败、可读但非法的模型响应、非法 ScenarioPlan 和预算终止不进入传输重试。逻辑请求仍消耗一次
-`ModelWork.Calls`，实际 HTTP 尝试用 `transport_attempts` 审计，避免将重试伪装成免费模型决策。
-无响应尝试没有 provider usage 可供本地计费，因此 token 成本是已收到响应的精确值，不是网络模糊期间的 provider 账单上限。
+真实 A9e4c11 计费反例证明：已发送 POST 的超时不能安全解释为“provider 没有执行”，自动重试可能重复计费。
+因此当前 client 对每个已发送的模型 POST 最多执行一次；连接中断、响应正文读取失败或超时记为
+`agent-transport-ambiguous`，
+不在传输层重发。`transport_attempts` 记录实际 HTTP 尝试，`provider_usage_status=observed|unknown`
+区分“已收到 usage”与“本地无法知道 provider 账单”。unknown 时本地 token 值不得作为零费用结论。
 
 A4c 的 target-local 运行器只组合现有组件：创建或恢复 model-call journal，执行一个 bounded Scenario episode，
 再派生紧凑 `summary.json`。summary 不替代 journal、Trace 或 Bundle；成功时报告 Replay/PSS/Risk/Oracle 摘要，
-provider 终止失败时报告已消费调用和零 token，并确保恢复不会重新 dispatch。
+provider 终止失败时报告已消费调用、本地 token 观测和 usage status，并确保恢复不会重新 dispatch。
 
 A6a 继续把 Scenario episode 作为 Campaign attempt，而不是引入 Session Runtime。Campaign 负责外部
 episode/work/model/time 预算、checkpoint 和恢复。`ScenarioAgentFeedback` 只在同一 episode 的真实 continuation
 中使用；它携带上一计划、失败步骤、执行反馈和 natural-progress 摘要。跨 episode 时 root 重置，因此当前不传
-上一 episode feedback；Oracle、PSS、testing outcome 和候选身份始终不进入 Agent 反馈。
+上一 episode 的 Scenario feedback。
 
-活动路径每次只允许模型选择一个当前 Action。可信 natural-progress closure 随后只执行 effect completion、
-普通消息投递和自然到期 timer；目标客户端返回、自然推进静止或 decision budget 耗尽会提前停止，否则到固定
-24-action planning checkpoint 才返回。Risk 里程碑变化只更新反馈，不会提前停止 closure。Scenario 直接在产生当前 admissible frontier 的短生命 Runtime 上执行所选 closure Action；执行前重新核对
+A9e4c1 将 Risk provider 契约扩展为最多 3 项的有序 portfolio，但没有增加评分器或第二套状态账本。
+Agent 只决定候选内容和优先顺序；可信层逐项复用同一个 compiler/qualification 路径，并选择首个合格项。
+所有候选的稳定 reason code 与 qualification issue 会随本轮 feedback 保存，供下一次机械修复；旧单候选
+响应仍可解析，以便读取既有工件。跨 episode 的压缩记忆由 A9e4c2 从已保存证据派生。
+
+A9e4c2 已完成该只读派生：每次从恢复后的 episode summary/Bundle 重算候选重复、Risk near-miss、protocol
+PSS 增量、机械拒绝、Oracle finding 数和成本，只保留最近 8 轮给 Risk Agent。完整 Trace、PSS state 和 Oracle
+证据不复制进 Memory；Memory 不参与 Action binding、Replay、PSS 或 verdict。它随 Risk 请求进入既有 provider
+journal，因此不形成第二套事实账本。
+
+A9e4c3 的内部 Investigation coordinator 只组合现有单 episode 目录入口。每轮结束后重新从该轮磁盘工件恢复，
+而不是直接信任内存返回值；随后从全部已恢复轮次重算 Memory。它没有 session ledger，目录顺序就是执行顺序。
+模型调用和 token 使用 provider audit 的实际值累计；runtime decision 先按每轮声明上限保守预留。
+A9e4c4 已把该入口接到 `-investigation-episodes N`。恢复时只接受连续的 `episode-NNNN`；完整轮次从
+summary/Bundle 恢复，最后一个 partial 轮次复用已有 journal 的精确请求恢复。根目录不增加 manifest 或 session
+ledger。真实模型是否会依据 Memory 修订 hypothesis 仍需单独校准。
+
+A9e4c5 将 Risk Agent 的机制解释绑定到可执行 witness。活动 portfolio 不再携带独立的自由文本机制，
+而是让每个 predicate 对应一个同序、同 milestone ID、同 Observation kind 的 `mechanism_step`；可信代码
+机械校验映射并生成保存的 `suspected_mechanism`。错配只形成可修复 feedback，不授予 Agent 执行或 verdict 权力。
+
+新的完整计划路径允许模型在一次调用中表达多个有序战略步骤。仅第一步可安全使用当前
+ActionID；后续步骤使用语义 selector，并可在已有 Risk milestone 满足后再具体化。期间自然推进只执行
+effect completion、普通消息投递和自然到期 timer；完整计划内不以 24-action 作为边界。Scenario 直接在产生当前 admissible frontier 的短生命 Runtime 上执行所选 closure Action；执行前重新核对
 prefix digest/长度、snapshot digest 和 Action 成员关系，随后立即关闭 Runtime。这样不再为 materialization 重放
 同一 prefix，但 child 仍由 fresh Adapter 独立 Replay 验证，并继续生成 Trace 和完整 work 统计。Stateless DFS 与
 Semantic Explorer 仍保留原来的独立 materialization 路径。该闭包已抽为协议无关执行组件，但尚未完成所有
@@ -342,12 +400,13 @@ A6c 用真实 OpenRouter/DeepSeek 验证了这条路径：第一 episode 经 3 �
 正式结果分开报告，不合成含义不明的总分：
 
 - defect effectiveness：隐藏 candidate 根因检出、正确 control 误报、复现率；
-- semantic coverage：固定义务覆盖和 PSS/Risk 发现；
+- semantic coverage：固定义务覆盖、PSS/Risk 发现、`PSS-Action-PSS` 转换和重复循环深度；
 - efficiency：decisions、primary/replay work、模型调用和 token；
 - portability：新 Adapter 的目标专用代码量与获得的控制能力。
 
 PSS 状态数是无固定分母的搜索反馈；义务覆盖率是在 Profile 边界内的成果指标。两者都不能证明协议正确，
-也不能单独证明 Agent 优势。
+也不能单独证明 Agent 优势。长选举循环可能执行数百 Action 但只重复少数 protocol PSS；因此
+状态广度和时间深度必须并列报告，不为了计数增长把绝对 term 或循环计数加入 Core PSS。
 
 ## 10. 工件与代码保留规则
 

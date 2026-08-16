@@ -16,13 +16,18 @@ func runAgenticEpisodeCLI(
 ) error {
 	withoutTarget := options
 	withoutTarget.Target = ""
+	withoutTarget.InvestigationEpisodes = 1
+	withoutTarget.KnowledgeSourceMounts = nil
 	if options.CampaignDirectory == "" || options.Target == "" || options.ScenarioSemanticExposure != "" ||
-		withoutTarget.hasNonSessionFlags() {
-		return errors.New("Agentic Episode requires -campaign-dir, -target, target inputs, Agent inputs, and optional -campaign-resume")
+		options.InvestigationEpisodes <= 0 || withoutTarget.hasNonSessionFlags() {
+		return errors.New("Agentic Episode requires -campaign-dir, -target, target inputs, Agent inputs, optional -investigation-episodes, and optional -campaign-resume")
 	}
 	recovery, ok := agenticEpisodeRecoveryForTarget(options.Target)
 	if !ok {
 		return errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")
+	}
+	if options.InvestigationEpisodes > 1 {
+		return runAgenticInvestigationCLI(ctx, options, recovery, stdout)
 	}
 	result, err := runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
 		Directory: options.CampaignDirectory, Resume: options.CampaignResume,
@@ -33,16 +38,66 @@ func runAgenticEpisodeCLI(
 	})
 	if result.Summary.TargetID != "" {
 		fmt.Fprintf(stdout,
-			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d accepted=%t reached=%t pss=%d/%d oracle=%d\n",
+			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d accepted=%t reached=%t pss_protocol=%d pss_control=%d pss_joint=%d pss_samples=%d oracle=%d\n",
 			options.CampaignDirectory, result.Summary.TargetID, result.Summary.Status,
 			result.Summary.RiskAttempts, result.Summary.ScenarioAttempts,
 			result.Summary.Work.Model.Calls, result.Summary.Work.Model.TotalTokens,
 			result.Summary.Metrics.CandidateAccepted, result.Summary.Metrics.RiskReached,
+			result.Summary.Metrics.ProtocolPSSStates, result.Summary.Metrics.ControlPSSStates,
 			result.Summary.Metrics.UniquePSSStates, result.Summary.Metrics.CorePSSSamples,
 			result.Summary.Metrics.OracleFindings,
 		)
 	}
 	return err
+}
+
+func runAgenticInvestigationCLI(
+	ctx context.Context,
+	options controlExperimentOptions,
+	recovery agenticEpisodeRecoveryBinding,
+	stdout io.Writer,
+) error {
+	composition, err := prepareAgenticEpisodeComposition(ctx, options)
+	if err != nil {
+		return err
+	}
+	budget, err := agenticInvestigationBudgetFromEpisode(
+		options.InvestigationEpisodes, composition.Budget,
+	)
+	if err != nil {
+		return err
+	}
+	result, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
+		Directory: options.CampaignDirectory, Resume: options.CampaignResume,
+		AgentKeyFile: options.AgentKeyFile, ReadKey: readAgentKey, Recovery: recovery,
+		Budget: budget,
+		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+			return composition, nil
+		},
+	})
+	fmt.Fprintf(stdout,
+		"investigation=%s target=%s episodes=%d stop=%s model_calls=%d model_tokens=%d runtime_decision_allowance=%d\n",
+		options.CampaignDirectory, options.Target, len(result.Episodes), result.StopReason,
+		result.ModelWork.Calls, result.ModelWork.TotalTokens, result.RuntimeDecisionAllowance,
+	)
+	return err
+}
+
+func agenticInvestigationBudgetFromEpisode(
+	episodes int,
+	episode agenticEpisodeBudget,
+) (agenticInvestigationBudget, error) {
+	maxInt := int(^uint(0) >> 1)
+	if episodes <= 1 || episode.validate() != nil ||
+		episodes > maxInt/episode.MaxTotalCalls || episodes > maxInt/episode.MaxObservedTokens ||
+		episodes > maxInt/episode.MaxRuntimeDecisions {
+		return agenticInvestigationBudget{}, errors.New("AGENTIC_INVESTIGATION_BUDGET_OVERFLOW")
+	}
+	return agenticInvestigationBudget{
+		MaxEpisodes: episodes, MaxModelCalls: episodes * episode.MaxTotalCalls,
+		MaxModelTokens:              episodes * episode.MaxObservedTokens,
+		MaxRuntimeDecisionAllowance: episodes * episode.MaxRuntimeDecisions,
+	}, nil
 }
 
 func agenticEpisodeRecoveryForTarget(
@@ -65,6 +120,10 @@ func prepareAgenticEpisodeComposition(
 	if options.AgentModel == "" || options.AgentKeyFile == "" || options.SemanticInput == "" {
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_ACTIVE_INPUT_REQUIRED")
 	}
+	knowledgeSourceMounts, err := prepareKnowledgeSourceMounts(options.KnowledgeSourceMounts)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
 	client := newOpenRouterIntentClient(options.AgentModel)
 	switch options.Target {
 	case "etcdraft-v2":
@@ -86,7 +145,8 @@ func prepareAgenticEpisodeComposition(
 			inputs.experiment.ScenarioMaxDecisions, inputs.experiment.SessionBudget,
 		)
 		return agenticEpisodeComposition{
-			Target: target, Budget: budget, Client: inputs.client,
+			Target: target, Budget: budget, KnowledgeSourceMounts: knowledgeSourceMounts,
+			Client: inputs.client,
 		}, err
 	case "omnipaxos-v2":
 		if options.WorkerPath == "" || options.StatelessCorpus != "" {
@@ -104,7 +164,9 @@ func prepareAgenticEpisodeComposition(
 			inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
 			inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,
 		)
-		return agenticEpisodeComposition{Target: target, Budget: budget, Client: client}, err
+		return agenticEpisodeComposition{
+			Target: target, Budget: budget, KnowledgeSourceMounts: knowledgeSourceMounts, Client: client,
+		}, err
 	default:
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")
 	}

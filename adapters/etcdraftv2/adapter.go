@@ -894,6 +894,10 @@ func (adapter *Adapter) snapshot() (clusterSnapshot, error) {
 	}
 	for _, name := range adapter.order {
 		node := adapter.nodes[name]
+		applicationPrefixes, err := node.application.prefixes()
+		if err != nil {
+			return clusterSnapshot{}, err
+		}
 		durableState, err := node.durable.decode()
 		if err != nil {
 			return clusterSnapshot{}, err
@@ -924,7 +928,8 @@ func (adapter *Adapter) snapshot() (clusterSnapshot, error) {
 			StorageCommit: durableState.hardState.Commit, StorageLastIndex: lastIndex,
 			ConfState: cloneConfState(node.confState), DurableImageDigest: node.durable.Digest,
 			ApplicationDigest: node.application.Digest, ApplicationCommands: len(node.application.Commands),
-			PulseItemID: node.pulseItem,
+			ApplicationPrefixes: applicationPrefixes,
+			PulseItemID:         node.pulseItem,
 		}
 		if node.outstanding != nil {
 			current.OutstandingReadyID = node.outstanding.id

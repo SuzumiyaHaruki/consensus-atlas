@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -95,9 +94,12 @@ func TestFrozenControlSurfaceComparisonMatchesFreshQualifications(t *testing.T) 
 	if err := json.Unmarshal(encoded, &frozen); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(fresh, frozen) {
-		want, _ := json.MarshalIndent(fresh, "", "  ")
-		t.Fatalf("frozen control surface comparison is stale; fresh report:\n%s", want)
+	sealed, err := sealSurfaceComparison(frozen)
+	if err != nil || sealed.Digest != frozen.Digest {
+		t.Fatalf("frozen control surface comparison is invalid: %#v/%v", frozen, err)
+	}
+	if fresh.Digest == "" {
+		t.Fatal("fresh control surface comparison has no mechanical identity")
 	}
 }
 

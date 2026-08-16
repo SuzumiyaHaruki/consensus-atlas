@@ -1,6 +1,8 @@
 package etcdraftv2
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +13,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const DecisionProjectionID = "official-etcdraft-v2/applied-prefix-digest-v1"
+const DecisionProjectionID = "official-etcdraft-v2/applied-prefix-chain-v2"
 
 const ReadyAdvancedObservationKind = "ready-advanced"
 
@@ -19,27 +21,26 @@ type DecisionProjector struct{}
 
 func (DecisionProjector) ID() string { return DecisionProjectionID }
 
-// Project maps a node's exact applied log frontier and cumulative application
-// digest into the generic Agreement input. The generic monitor never imports
-// Raft types or decodes this Adapter's Evidence schema.
+// Project maps every exact applied-log prefix commitment into the generic
+// Agreement input. The generic monitor never imports Raft types or decodes
+// this Adapter's Evidence schema.
 func (DecisionProjector) Project(envelope control.EvidenceEnvelope) ([]semantic.DecisionObservation, error) {
 	evidence, err := ProjectEvidence(envelope)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]semantic.DecisionObservation, 0, len(evidence.Nodes))
+	result := make([]semantic.DecisionObservation, 0)
 	for _, node := range evidence.Nodes {
-		if node.Applied == 0 {
-			continue
+		for _, prefix := range node.ApplicationPrefixes {
+			observation := semantic.DecisionObservation{
+				Participant: node.Node, Position: strconv.FormatUint(prefix.Position, 10),
+				ValueDigest: prefix.Digest,
+			}
+			if err := observation.Validate(); err != nil {
+				return nil, err
+			}
+			result = append(result, observation)
 		}
-		observation := semantic.DecisionObservation{
-			Participant: node.Node, Position: strconv.FormatUint(node.Applied, 10),
-			ValueDigest: node.ApplicationDigest,
-		}
-		if err := observation.Validate(); err != nil {
-			return nil, err
-		}
-		result = append(result, observation)
 	}
 	return result, nil
 }
@@ -52,15 +53,16 @@ type Evidence struct {
 }
 
 type NodeEvidence struct {
-	Node                control.NodeID `json:"node"`
-	Incarnation         uint64         `json:"incarnation"`
-	Running             bool           `json:"running"`
-	Role                string         `json:"role"`
-	Term                uint64         `json:"term"`
-	Commit              uint64         `json:"commit"`
-	Applied             uint64         `json:"applied"`
-	ApplicationDigest   string         `json:"application_digest"`
-	ApplicationCommands int            `json:"application_commands"`
+	Node                control.NodeID              `json:"node"`
+	Incarnation         uint64                      `json:"incarnation"`
+	Running             bool                        `json:"running"`
+	Role                string                      `json:"role"`
+	Term                uint64                      `json:"term"`
+	Commit              uint64                      `json:"commit"`
+	Applied             uint64                      `json:"applied"`
+	ApplicationDigest   string                      `json:"application_digest"`
+	ApplicationCommands int                         `json:"application_commands"`
+	ApplicationPrefixes []ApplicationPrefixEvidence `json:"application_prefixes,omitempty"`
 }
 
 // ProjectEvidence validates the opaque envelope and returns only the public
@@ -83,13 +85,23 @@ func ProjectEvidence(envelope control.EvidenceEnvelope) (Evidence, error) {
 	result := Evidence{LogicalTime: snapshot.LogicalTime}
 	for _, node := range snapshot.Nodes {
 		if node.Node == "" || node.Incarnation == 0 || node.ApplicationDigest == "" ||
-			node.ApplicationCommands < 0 {
+			node.ApplicationCommands < 0 || len(node.ApplicationPrefixes) != int(node.Applied) {
 			return Evidence{}, errors.New("ETCDRAFT_V2_EVIDENCE_NODE_INVALID")
+		}
+		for index, prefix := range node.ApplicationPrefixes {
+			if prefix.Position != uint64(index+1) || !validProjectionDigest(prefix.Digest) {
+				return Evidence{}, errors.New("ETCDRAFT_V2_EVIDENCE_PREFIX_INVALID")
+			}
+		}
+		if len(node.ApplicationPrefixes) > 0 &&
+			node.ApplicationPrefixes[len(node.ApplicationPrefixes)-1].Digest != node.ApplicationDigest {
+			return Evidence{}, errors.New("ETCDRAFT_V2_EVIDENCE_PREFIX_FINAL_MISMATCH")
 		}
 		result.Nodes = append(result.Nodes, NodeEvidence{
 			Node: node.Node, Incarnation: node.Incarnation, Running: node.Running,
 			Role: node.Role, Term: node.Term, Commit: node.Commit, Applied: node.Applied,
 			ApplicationDigest: node.ApplicationDigest, ApplicationCommands: node.ApplicationCommands,
+			ApplicationPrefixes: append([]ApplicationPrefixEvidence(nil), node.ApplicationPrefixes...),
 		})
 	}
 	sort.Slice(result.Nodes, func(i, j int) bool { return result.Nodes[i].Node < result.Nodes[j].Node })
@@ -99,6 +111,11 @@ func ProjectEvidence(envelope control.EvidenceEnvelope) (Evidence, error) {
 		}
 	}
 	return result, nil
+}
+
+func validProjectionDigest(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == value
 }
 
 type ClientResult struct {

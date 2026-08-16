@@ -17,7 +17,13 @@ const (
 	ScenarioAgentCompleted = "completed"
 	ScenarioAgentStopped   = "stopped"
 
-	ScenarioAgentPlanInvalid = "plan-invalid"
+	ScenarioAgentPlanInvalid     = "plan-invalid"
+	ScenarioAgentExecutionFailed = "execution-failed"
+
+	// scenarioLegacyPlanningActions keeps the active one-step authoring inputs
+	// usable until A9e4b migrates them to complete multi-step intents.
+	scenarioLegacyPlanningActions      = 24
+	ScenarioProgressPlanningCheckpoint = "planning-checkpoint"
 )
 
 type ScenarioAgentFeedback struct {
@@ -32,12 +38,14 @@ type ScenarioAgentFeedback struct {
 }
 
 type ScenarioAgentView struct {
-	Knowledge  ProtocolKnowledgePack    `json:"knowledge"`
-	Hypothesis TestHypothesis           `json:"hypothesis"`
-	Frontier   RiskFrontierView         `json:"root_frontier"`
-	Semantics  ScenarioSemanticExposure `json:"action_semantics"`
-	MaxSteps   int                      `json:"max_steps"`
-	Prior      *ScenarioAgentFeedback   `json:"prior_feedback,omitempty"`
+	Knowledge         ProtocolKnowledgePack    `json:"knowledge"`
+	TargetSurface     *AgentTargetSurface      `json:"target_surface,omitempty"`
+	Hypothesis        TestHypothesis           `json:"hypothesis"`
+	OrderedMilestones []string                 `json:"ordered_milestones"`
+	Frontier          RiskFrontierView         `json:"root_frontier"`
+	Semantics         ScenarioSemanticExposure `json:"action_semantics"`
+	MaxSteps          int                      `json:"max_steps"`
+	Prior             *ScenarioAgentFeedback   `json:"prior_feedback,omitempty"`
 }
 
 type ScenarioAgentAttempt struct {
@@ -82,6 +90,7 @@ func ExploreScenarioWithPlanner(
 	root controlruntime.Trace,
 	runtimeConfig RuntimeConfig,
 	faultEnvelope *FaultEnvelope,
+	targetSurface *AgentTargetSurface,
 	newAdapter AdapterFactory,
 	projector SemanticPrefixProjector,
 	semanticProjector ScenarioSemanticProjector,
@@ -93,11 +102,13 @@ func ExploreScenarioWithPlanner(
 		hypothesis.Validate(knowledge, spec, ScenarioPlanningBackendID) != nil ||
 		rootFrontier.Validate(spec) != nil || rootSemantics.Validate(rootFrontier) != nil ||
 		rootRisk.Validate(spec) != nil || root.Validate() != nil ||
+		targetSurface != nil && targetSurface.Validate() != nil ||
 		rootFrontier.PrefixTraceDigest != root.Digest || rootRisk.ExecutionDigest != root.Digest ||
 		rootFrontier.Progress.ValidateSource(spec, rootRisk) != nil {
 		return ScenarioAgentResult{}, errors.New("EXPERIMENT_SCENARIO_AGENT_INPUT_INVALID")
 	}
 	result := ScenarioAgentResult{Status: ScenarioAgentStopped}
+	completeIntent := maxPlanSteps > 1
 	currentFrontier := cloneScenarioFrontier(rootFrontier)
 	currentSemantics := cloneScenarioSemantics(rootSemantics)
 	currentRisk := rootRisk
@@ -106,7 +117,7 @@ func ExploreScenarioWithPlanner(
 	for ordinal := 1; ordinal <= maxCalls; ordinal++ {
 		remaining := maxDecisions
 		if result.Execution != nil {
-			remaining -= len(result.Execution.Steps)
+			remaining -= len(result.Execution.FinalTrace.Records) - len(root.Records)
 		}
 		if remaining <= 0 {
 			break
@@ -116,11 +127,14 @@ func ExploreScenarioWithPlanner(
 			viewMaxSteps = remaining
 		}
 		view := ScenarioAgentView{
-			Knowledge: cloneProtocolKnowledge(knowledge), Hypothesis: hypothesis,
-			Frontier:  cloneScenarioFrontier(currentFrontier),
-			Semantics: cloneScenarioSemantics(currentSemantics),
-			MaxSteps:  viewMaxSteps,
-			Prior:     cloneScenarioFeedback(prior),
+			Knowledge:         cloneProtocolKnowledge(knowledge),
+			TargetSurface:     cloneAgentTargetSurface(targetSurface),
+			Hypothesis:        hypothesis,
+			OrderedMilestones: scenarioMilestoneIDs(spec),
+			Frontier:          cloneScenarioFrontier(currentFrontier),
+			Semantics:         cloneScenarioSemantics(currentSemantics),
+			MaxSteps:          viewMaxSteps,
+			Prior:             cloneScenarioFeedback(prior),
 		}
 		response, work, err := planner(ctx, view)
 		if err != nil {
@@ -144,17 +158,25 @@ func ExploreScenarioWithPlanner(
 		}
 		attempt.Plan = &plan
 		execution, err := ExecuteBoundedScenarioPlan(
-			ctx, plan.ID, plan, viewMaxSteps, spec, currentRisk, currentTrace,
+			ctx, plan.ID, plan, viewMaxSteps, remaining, spec, currentRisk, currentTrace,
 			runtimeConfig, faultEnvelope, newAdapter, projector,
 		)
+		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		if err != nil {
+			attempt.Execution = &execution
+			attempt.Feedback = ScenarioAgentFeedback{
+				Attempt: ordinal, Outcome: ScenarioAgentStopped,
+				ReasonCode: ScenarioAgentExecutionFailed, PreviousPlan: cloneScenarioPlan(&plan),
+				Steps: cloneScenarioStepFeedback(execution.Steps),
+			}
+			result.Attempts = append(result.Attempts, attempt)
 			return result, err
 		}
-		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		attempt.Execution = &execution
 		attempt.Feedback = ScenarioAgentFeedback{
 			Attempt: ordinal, Outcome: execution.Status, PreviousPlan: cloneScenarioPlan(&plan),
-			Steps: cloneScenarioStepFeedback(execution.Steps),
+			Steps:           cloneScenarioStepFeedback(execution.Steps),
+			NaturalProgress: cloneScenarioStepFeedback(execution.AutomaticProgress),
 		}
 		if execution.Status == ScenarioStatusStopped && len(execution.Steps) > 0 {
 			failed := execution.Steps[len(execution.Steps)-1]
@@ -167,33 +189,47 @@ func ExploreScenarioWithPlanner(
 			mergeScenarioExecution(&result, committed)
 			currentTrace, currentRisk = execution.FinalTrace, execution.FinalRisk
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
-			if currentRisk.Status == semantic.RiskWitnessReached ||
-				len(result.Execution.Steps) >= maxDecisions {
+			if len(result.Execution.FinalTrace.Records)-len(root.Records) >= maxDecisions {
 				result.Status = ScenarioAgentCompleted
 				return result, nil
 			}
 			if execution.Status == ScenarioStatusCompleted {
-				remaining = maxDecisions - len(result.Execution.Steps)
+				remaining = maxDecisions - (len(result.Execution.FinalTrace.Records) - len(root.Records))
 				if remaining > 0 {
+					progressLimit := remaining
+					legacyCheckpoint := false
+					if !completeIntent && progressLimit > scenarioLegacyPlanningActions {
+						progressLimit = scenarioLegacyPlanningActions
+						legacyCheckpoint = true
+					}
 					progress, err := ExecuteScenarioNaturalProgress(
-						ctx, fmt.Sprintf("scenario-natural-progress-%02d", ordinal), remaining,
+						ctx, fmt.Sprintf("scenario-natural-progress-%02d", ordinal), progressLimit,
 						spec, currentRisk, currentTrace, runtimeConfig, faultEnvelope, newAdapter, projector,
 					)
+					addScenarioExecutionWork(&result.ExecutionWork, progress.Execution.Work)
 					if err != nil {
 						return result, err
 					}
-					addScenarioExecutionWork(&result.ExecutionWork, progress.Execution.Work)
 					stored := &result.Attempts[len(result.Attempts)-1].Feedback
-					stored.NaturalProgress = cloneScenarioStepFeedback(progress.Execution.Steps)
+					stored.NaturalProgress = append(
+						stored.NaturalProgress,
+						cloneScenarioStepFeedback(progress.Execution.Steps)...,
+					)
 					stored.NaturalProgressStop = progress.StopReason
+					if legacyCheckpoint && progress.StopReason == ScenarioProgressBudget {
+						stored.NaturalProgressStop = ScenarioProgressPlanningCheckpoint
+					}
 					prior = stored
 					if len(progress.Execution.Steps) > 0 {
-						mergeScenarioExecution(&result, progress.Execution)
+						mergeScenarioAutomaticProgress(&result, progress.Execution)
 						currentTrace, currentRisk = progress.Execution.FinalTrace, progress.Execution.FinalRisk
 					}
 					if currentRisk.Status == semantic.RiskWitnessReached ||
-						progress.StopReason == ScenarioProgressClientTerminal ||
-						len(result.Execution.Steps) >= maxDecisions {
+						len(result.Execution.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+						result.Status = ScenarioAgentCompleted
+						return result, nil
+					}
+					if completeIntent {
 						result.Status = ScenarioAgentCompleted
 						return result, nil
 					}
@@ -225,6 +261,14 @@ func ExploreScenarioWithPlanner(
 	return result, nil
 }
 
+func scenarioMilestoneIDs(spec semantic.RiskWitnessSpec) []string {
+	result := make([]string, len(spec.Milestones))
+	for index, milestone := range spec.Milestones {
+		result[index] = milestone.ID
+	}
+	return result
+}
+
 // committedScenarioPrefix retains only the mechanically applied leading
 // steps. A rejected step remains in the attempt feedback, while the verified
 // prefix becomes the continuation root and stays eligible for exact policy
@@ -234,12 +278,13 @@ func committedScenarioPrefix(execution ScenarioExecution) (ScenarioExecution, bo
 	for applied < len(execution.Steps) && execution.Steps[applied].Outcome == ScenarioStepApplied {
 		applied++
 	}
-	if applied == 0 {
+	if applied == 0 && len(execution.AutomaticProgress) == 0 {
 		return ScenarioExecution{}, false
 	}
 	committed := execution
 	committed.Status = ScenarioStatusCompleted
 	committed.Steps = cloneScenarioStepFeedback(execution.Steps[:applied])
+	committed.AutomaticProgress = cloneScenarioStepFeedback(execution.AutomaticProgress)
 	return committed, true
 }
 
@@ -263,6 +308,28 @@ func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecu
 	result.Execution.Status = execution.Status
 	result.Execution.Steps = append(
 		result.Execution.Steps, cloneScenarioStepFeedback(execution.Steps)...,
+	)
+	result.Execution.AutomaticProgress = append(
+		result.Execution.AutomaticProgress,
+		cloneScenarioStepFeedback(execution.AutomaticProgress)...,
+	)
+	result.Execution.FinalTrace = execution.FinalTrace
+	result.Execution.FinalRisk = execution.FinalRisk
+	addScenarioExecutionWork(&result.Execution.Work, execution.Work)
+}
+
+func mergeScenarioAutomaticProgress(result *ScenarioAgentResult, execution ScenarioExecution) {
+	if result.Execution == nil {
+		value := execution
+		value.AutomaticProgress = cloneScenarioStepFeedback(execution.Steps)
+		value.Steps = nil
+		result.Execution = &value
+		return
+	}
+	result.Execution.Status = execution.Status
+	result.Execution.AutomaticProgress = append(
+		result.Execution.AutomaticProgress,
+		cloneScenarioStepFeedback(execution.Steps)...,
 	)
 	result.Execution.FinalTrace = execution.FinalTrace
 	result.Execution.FinalRisk = execution.FinalRisk

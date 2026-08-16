@@ -22,6 +22,8 @@ func TestEtcdraftAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 	)
 	if err != nil || knowledge.ValidateAgentMaterials() != nil || len(knowledge.Risks) != 0 ||
 		knowledge.Protocol != "etcdraft" || knowledge.Family != "raft" ||
+		knowledge.TargetDossier == nil || len(knowledge.Properties) < 6 ||
+		len(knowledge.IssuePatterns) < 6 || len(knowledge.TargetDossier.BlindSpots) < 3 ||
 		experiment.validateAgentic() != nil || experiment.SearchMaxDepth != 0 ||
 		experiment.SearchMaxWorkItems != 0 || experiment.SearchMaxWorkUnits != 0 ||
 		experiment.ExplorerBudget != (controlexperiment.SemanticExplorerBudget{}) ||
@@ -56,6 +58,8 @@ func TestOmnipaxosAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 	)
 	if err != nil || knowledge.ValidateAgentMaterials() != nil || len(knowledge.Risks) != 0 ||
 		knowledge.Protocol != "omnipaxos" || knowledge.Family != "paxos" ||
+		knowledge.TargetDossier == nil || len(knowledge.Properties) < 6 ||
+		len(knowledge.IssuePatterns) < 6 || len(knowledge.TargetDossier.BlindSpots) < 3 ||
 		experiment.validate() != nil || workload.Validate() != nil {
 		t.Fatalf("OmniPaxos A9e1 materials did not load: %#v/%#v/%#v/%v",
 			knowledge, experiment, workload, err)
@@ -78,6 +82,48 @@ func TestOmnipaxosAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 	if _, _, _, err := loadOmnipaxosAgenticAuthoringSource(withRisk); err == nil ||
 		!strings.Contains(err.Error(), "INPUT_MATERIALS_INVALID") {
 		t.Fatalf("pre-seeded OmniPaxos Risk was accepted: %v", err)
+	}
+}
+
+func TestActiveAgenticDossiersExposeReadableDeclaredSources(t *testing.T) {
+	etcdKnowledge, _, _, err := loadEtcdraftAgenticAuthoringSource(etcdraftAgenticTestInputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	omniKnowledge, _, _, err := loadOmnipaxosAgenticAuthoringSource(omnipaxosAgenticTestInputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name      string
+		knowledge controlexperiment.ProtocolKnowledgePack
+		reference string
+		contains  string
+	}{
+		{
+			name: "etcdraft", knowledge: etcdKnowledge,
+			reference: "adapters/etcdraftv2/adapter.go:Check", contains: "Check",
+		},
+		{
+			name: "omnipaxos", knowledge: omniKnowledge,
+			reference: "adapters/omnipaxosv2/adapter.go:Manifest", contains: "Manifest",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			catalog, err := controlexperiment.KnowledgeSourceCatalog(test.knowledge)
+			if err != nil || len(catalog) < 10 {
+				t.Fatalf("active Dossier did not produce a useful source catalog: %d/%v", len(catalog), err)
+			}
+			result, err := controlexperiment.ReadDeclaredKnowledgeSource(
+				"../..", test.knowledge,
+				controlexperiment.KnowledgeReadRequest{Reference: test.reference, MaxLines: 40},
+			)
+			if err != nil || result.Validate() != nil ||
+				result.Status != controlexperiment.KnowledgeDiscoveryCompleted ||
+				!strings.Contains(result.Text, test.contains) {
+				t.Fatalf("active declared source was not readable: %#v/%v", result, err)
+			}
+		})
 	}
 }
 

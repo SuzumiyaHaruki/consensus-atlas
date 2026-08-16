@@ -156,7 +156,8 @@ func (record CampaignAttemptRecord) Validate() error {
 		}
 	case CampaignAttemptRejected, CampaignAttemptFailed, CampaignAttemptInvalid:
 		if record.Failure == nil || record.Failure.Phase == "" || record.Failure.Code == "" ||
-			record.Failure.Decision < 0 {
+			record.Failure.Decision < 0 ||
+			(record.Failure.Terminal != nil && record.Failure.Terminal.Validate() != nil) {
 			return errors.New("EXPERIMENT_CAMPAIGN_ATTEMPT_OUTCOME_INVALID")
 		}
 	default:
@@ -170,10 +171,7 @@ func (record CampaignAttemptRecord) Validate() error {
 }
 
 func (record CampaignAttemptRecord) seal() (CampaignAttemptRecord, error) {
-	if record.Failure != nil {
-		failure := *record.Failure
-		record.Failure = &failure
-	}
+	record.Failure = cloneMethodFailure(record.Failure)
 	record.Digest = ""
 	digest, err := portableJSONDigest(record)
 	if err != nil {

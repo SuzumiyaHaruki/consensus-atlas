@@ -83,6 +83,10 @@ func (sampler *OnlineSampler) Discovery() (protocolstate.DiscoverySummary, error
 	return protocolstate.Discover(sampler.mappingID, sampler.samples)
 }
 
+func (sampler *OnlineSampler) ViewSummary() (ViewSummary, error) {
+	return Summarize(sampler.samples)
+}
+
 func (sampler *OnlineSampler) project(snapshot controlruntime.Snapshot, evidence control.EvidenceEnvelope) (protocolstate.Sample, error) {
 	step := int(snapshot.Step)
 	if step < 0 || uint64(step) != snapshot.Step {

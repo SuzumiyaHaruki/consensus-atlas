@@ -646,10 +646,10 @@ func executeDFSChildOnRuntime(
 			errors.New("EXPERIMENT_STATELESS_DFS_ACTION_NOT_ADMISSIBLE"), runtime.Close(),
 		)
 	}
+	chargeDecisions(&work, 1)
 	if _, err := runtime.Select(ctx, action.ActionID); err != nil {
 		return controlruntime.Trace{}, work, errors.Join(err, runtime.Close())
 	}
-	chargeDecisions(&work, 1)
 	child, err := runtime.Trace()
 	if err != nil {
 		return controlruntime.Trace{}, work, errors.Join(err, runtime.Close())

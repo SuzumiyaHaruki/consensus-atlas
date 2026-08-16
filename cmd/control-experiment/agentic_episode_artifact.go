@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/psscore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
@@ -31,6 +32,7 @@ type agenticEpisodeArtifact struct {
 	ScenarioAttempts      int                                         `json:"scenario_attempts"`
 	RiskProviderCalls     []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
 	ScenarioProviderCalls []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
+	Failure               *controlexperiment.MethodFailure            `json:"failure,omitempty"`
 	PlanID                string                                      `json:"plan_id,omitempty"`
 	RiskResultID          string                                      `json:"risk_result_id,omitempty"`
 	Metrics               agenticEpisodeMetrics                       `json:"metrics"`
@@ -66,7 +68,7 @@ func newAgenticEpisodeArtifact(
 			result.RiskProviderCalls...),
 		ScenarioProviderCalls: append([]controlexperiment.StatelessAgentCallAudit(nil),
 			result.ScenarioProviderCalls...),
-		Metrics: result.Metrics, Work: result.Work,
+		Failure: cloneAgenticEpisodeFailure(result.Failure), Metrics: result.Metrics, Work: result.Work,
 	}
 	if result.RiskAgent.Accepted != nil {
 		accepted := *result.RiskAgent.Accepted
@@ -88,9 +90,14 @@ func newAgenticEpisodeArtifact(
 		return agenticEpisodeArtifact{}, err
 	}
 	if result.Status == agenticEpisodeCompleted {
+		var metrics agenticEpisodeMetrics
+		var metricsErr error
+		if result.Testing != nil {
+			metrics, metricsErr = testingAgenticEpisodeMetrics(*result.Testing)
+		}
 		if result.Testing == nil || artifact.Accepted == nil ||
 			result.Testing.validateExecutionStructure() != nil ||
-			artifact.Metrics != testingAgenticEpisodeMetrics(*result.Testing) ||
+			metricsErr != nil || artifact.Metrics != metrics ||
 			!reflect.DeepEqual(artifact.Work.QualifiedExecution, result.Testing.Bundle.Work) {
 			return agenticEpisodeArtifact{}, errors.New("AGENTIC_EPISODE_ARTIFACT_TESTING_INVALID")
 		}
@@ -166,7 +173,8 @@ func recoverAgenticEpisodeArtifacts(
 		return recoveredAgenticEpisode{}, false, err
 	}
 	testing, err := binding.Testing(artifact.PlanID, bundle, risk, assessment.Spec, projector)
-	if err != nil || testingAgenticEpisodeMetrics(testing) != artifact.Metrics ||
+	metrics, metricsErr := testingAgenticEpisodeMetrics(testing)
+	if err != nil || metricsErr != nil || metrics != artifact.Metrics ||
 		!reflect.DeepEqual(artifact.Work.QualifiedExecution, bundle.Work) {
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_EVIDENCE_DRIFT")
 	}
@@ -198,17 +206,24 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	}
 	switch artifact.Status {
 	case agenticEpisodeRiskStopped:
-		if artifact.Accepted != nil || artifact.Metrics.CandidateAccepted ||
+		if artifact.Failure != nil || artifact.Accepted != nil || artifact.Metrics.CandidateAccepted ||
 			artifact.ScenarioStatus != "" || artifact.PlanID != "" || artifact.RiskResultID != "" {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_RISK_STOP_INVALID")
 		}
 	case agenticEpisodeScenarioStopped, agenticEpisodeTokenStopped:
-		if artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
+		if artifact.Failure != nil || artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
 			artifact.PlanID != "" || artifact.RiskResultID != "" {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_STOP_INVALID")
 		}
+	case agenticEpisodeExecutionFailed:
+		if artifact.Accepted == nil || !artifact.Metrics.CandidateAccepted || artifact.Failure == nil ||
+			artifact.Failure.Phase == "" || artifact.Failure.Code == "" || artifact.Failure.Decision <= 0 ||
+			artifact.Failure.Terminal == nil || artifact.Failure.Terminal.Validate() != nil ||
+			artifact.PlanID != "" || artifact.RiskResultID != "" {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_EXECUTION_FAILURE_INVALID")
+		}
 	case agenticEpisodeCompleted:
-		if artifact.Accepted == nil || !artifact.Metrics.CandidateAccepted ||
+		if artifact.Failure != nil || artifact.Accepted == nil || !artifact.Metrics.CandidateAccepted ||
 			artifact.ScenarioStatus != controlexperiment.ScenarioAgentCompleted ||
 			artifact.PlanID == "" || artifact.RiskResultID == "" {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_COMPLETED_INVALID")
@@ -295,12 +310,121 @@ func jsonEquivalent(left any, right any) bool {
 	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
-func testingAgenticEpisodeMetrics(testing scenarioTestingResult) agenticEpisodeMetrics {
-	return agenticEpisodeMetrics{
+func testingAgenticEpisodeMetrics(testing scenarioTestingResult) (agenticEpisodeMetrics, error) {
+	metrics := agenticEpisodeMetrics{
 		CandidateAccepted: true,
 		RiskReached:       testing.Risk.Status == semantic.RiskWitnessReached,
 		CorePSSSamples:    testing.CorePSSSamples,
 		UniquePSSStates:   testing.UniqueCorePSSStates,
 		OracleFindings:    len(testing.Oracle.Violations),
 	}
+	states := make([]psscore.State, len(testing.Bundle.CorePSS))
+	for index, sample := range testing.Bundle.CorePSS {
+		states[index] = sample.State
+	}
+	views, err := psscore.SummarizeStates(states)
+	if err != nil || views.Validate() != nil || views.Samples != testing.CorePSSSamples ||
+		views.JointStates != testing.UniqueCorePSSStates {
+		return agenticEpisodeMetrics{}, errors.New("AGENTIC_EPISODE_PSS_VIEWS_INVALID")
+	}
+	metrics.ProtocolPSSStates = views.ProtocolStates
+	metrics.ControlPSSStates = views.ControlStates
+	return metrics, nil
+}
+
+// deriveAgenticExplorationMemory rebuilds Agent context from recovered
+// episode artifacts. It creates no additional durable state: the summaries
+// and Bundles remain the source of truth.
+func deriveAgenticExplorationMemory(
+	episodes []recoveredAgenticEpisode,
+) ([]controlexperiment.RiskExplorationMemoryEntry, error) {
+	memory := make([]controlexperiment.RiskExplorationMemoryEntry, 0, len(episodes))
+	seenCandidates := make(map[string]bool)
+	seenProtocolStates := make(map[string]bool)
+	for index, episode := range episodes {
+		if episode.Summary.validateCompact() != nil ||
+			(episode.Summary.Status == agenticEpisodeCompleted) != (episode.Testing != nil) {
+			return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EPISODE_INVALID")
+		}
+		entry := controlexperiment.RiskExplorationMemoryEntry{
+			Episode: index + 1, EpisodeOutcome: episode.Summary.Status,
+			ModelCalls:  episode.Summary.Work.Model.Calls,
+			ModelTokens: episode.Summary.Work.Model.TotalTokens,
+			SearchWorkUnits: episode.Summary.Work.ScenarioFrontier.WorkUnits +
+				episode.Summary.Work.ScenarioSearch.TotalWorkUnits,
+			ExecutionWorkUnits: episode.Summary.Work.QualifiedExecution.Primary.WorkUnits +
+				episode.Summary.Work.QualifiedExecution.Replay.WorkUnits,
+			MechanicalReasonCodes: agenticExplorationReasonCodes(episode.Summary.RiskFeedback),
+		}
+		if episode.Summary.Accepted != nil {
+			candidate := episode.Summary.Accepted.Candidate
+			entry.CandidateID = candidate.ID
+			entry.Summary = candidate.Summary
+			entry.SuspectedMechanism = candidate.SuspectedMechanism
+			entry.RepeatedCandidate = seenCandidates[candidate.ID]
+			seenCandidates[candidate.ID] = true
+		} else if episode.Summary.RiskFeedback != nil {
+			entry.CandidateID = episode.Summary.RiskFeedback.CandidateID
+			entry.RepeatedCandidate = entry.CandidateID != "" && seenCandidates[entry.CandidateID]
+			if entry.CandidateID != "" {
+				seenCandidates[entry.CandidateID] = true
+			}
+		}
+		if episode.Testing != nil {
+			metrics, err := testingAgenticEpisodeMetrics(*episode.Testing)
+			if err != nil || metrics != episode.Summary.Metrics ||
+				episode.Testing.validateExecutionStructure() != nil {
+				return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EVIDENCE_INVALID")
+			}
+			entry.RiskStatus = episode.Testing.Risk.Status
+			entry.SatisfiedMilestones = append(
+				[]string(nil), episode.Testing.Risk.SatisfiedMilestones...,
+			)
+			if len(episode.Testing.Risk.MissingMilestones) > 0 {
+				entry.FirstMissingMilestone = episode.Testing.Risk.MissingMilestones[0]
+			}
+			entry.OracleFindings = len(episode.Testing.Oracle.Violations)
+			localProtocolStates := make(map[string]bool, len(episode.Testing.Bundle.CorePSS))
+			for _, sample := range episode.Testing.Bundle.CorePSS {
+				keys, err := psscore.Keys(sample.State)
+				if err != nil {
+					return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_PSS_INVALID")
+				}
+				localProtocolStates[keys.Protocol] = true
+			}
+			entry.ProtocolPSSStates = len(localProtocolStates)
+			for key := range localProtocolStates {
+				if !seenProtocolStates[key] {
+					entry.NewProtocolPSSStates++
+					seenProtocolStates[key] = true
+				}
+			}
+		}
+		memory = append(memory, entry)
+	}
+	if len(memory) > controlexperiment.RiskExplorationMemoryMax {
+		memory = memory[len(memory)-controlexperiment.RiskExplorationMemoryMax:]
+	}
+	return memory, nil
+}
+
+func agenticExplorationReasonCodes(
+	feedback *controlexperiment.RiskAgentFeedback,
+) []string {
+	if feedback == nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(feedback.Reviews)+1)
+	appendReason := func(reason string) {
+		if reason != "" && !seen[reason] {
+			seen[reason] = true
+			result = append(result, reason)
+		}
+	}
+	appendReason(feedback.ReasonCode)
+	for _, review := range feedback.Reviews {
+		appendReason(review.ReasonCode)
+	}
+	return result
 }

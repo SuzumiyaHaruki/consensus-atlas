@@ -50,7 +50,7 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		{ID: "restart-node", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: crash.Node.Node}},
 	}}
 	result, err := ExecuteBoundedScenarioPlan(
-		ctx, "fixture-a4-execution", plan, 2, spec, rootRisk, root,
+		ctx, "fixture-a4-execution", plan, 2, 2, spec, rootRisk, root,
 		runtimeConfig, envelope, factory, projector,
 	)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		ID: "restart-running", Selector: FrontierActionSelector{Kind: control.ActionRestart},
 	}}}
 	noMatchResult, err := ExecuteBoundedScenarioPlan(
-		ctx, "fixture-a4-no-match-execution", noMatch, 1, spec, rootRisk, root,
+		ctx, "fixture-a4-no-match-execution", noMatch, 1, 1, spec, rootRisk, root,
 		runtimeConfig, envelope, factory, projector,
 	)
 	if err != nil || noMatchResult.Status != ScenarioStatusStopped || len(noMatchResult.Steps) != 1 ||
@@ -103,7 +103,7 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		ID: "any-crash", Selector: FrontierActionSelector{Kind: control.ActionCrash},
 	}}}
 	ambiguousResult, err := ExecuteBoundedScenarioPlan(
-		ctx, "fixture-a4-ambiguous-execution", ambiguous, 1, spec, rootRisk, root,
+		ctx, "fixture-a4-ambiguous-execution", ambiguous, 1, 1, spec, rootRisk, root,
 		runtimeConfig, envelope, factory, projector,
 	)
 	if err != nil || ambiguousResult.Status != ScenarioStatusStopped || len(ambiguousResult.Steps) != 1 ||
@@ -111,9 +111,22 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		ambiguousResult.Steps[0].MatchCount < 2 {
 		t.Fatalf("ambiguous feedback is not mechanical: %#v/%v", ambiguousResult, err)
 	}
+	unknownMilestone := ScenarioPlan{ID: "fixture-a9e4-unknown-milestone", Steps: []ScenarioStep{{
+		ID: "wait-unknown", AfterMilestone: "unknown-milestone",
+		Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"},
+	}}}
+	unknownResult, err := ExecuteBoundedScenarioPlan(
+		ctx, "fixture-a9e4-unknown-execution", unknownMilestone, 1, 1, spec, rootRisk, root,
+		runtimeConfig, envelope, factory, projector,
+	)
+	if err != nil || unknownResult.Status != ScenarioStatusStopped || len(unknownResult.Steps) != 1 ||
+		unknownResult.Steps[0].ReasonCode != ScenarioReasonMilestoneUnknown ||
+		len(unknownResult.FinalTrace.Records) != len(root.Records) {
+		t.Fatalf("unknown milestone feedback is not mechanical: %#v/%v", unknownResult, err)
+	}
 
 	budgetResult, err := ExecuteBoundedScenarioPlan(
-		ctx, "fixture-a4-budget-execution", plan, 1, spec, rootRisk, root,
+		ctx, "fixture-a4-budget-execution", plan, 1, 1, spec, rootRisk, root,
 		runtimeConfig, envelope, factory, projector,
 	)
 	if err != nil || budgetResult.Status != ScenarioStatusStopped || len(budgetResult.Steps) != 2 ||
@@ -173,7 +186,7 @@ func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
 	calls := 0
 	result, err := ExploreScenarioWithPlanner(
 		ctx, 2, 2, 2, knowledge, hypothesis, spec, frontier, semantics, rootRisk, root,
-		runtimeConfig, envelope, factory, projector,
+		runtimeConfig, envelope, nil, factory, projector,
 		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
 			return unknownScenarioSemantics(t, next), nil
 		},
@@ -247,8 +260,9 @@ func unknownScenarioSemantics(t *testing.T, frontier RiskFrontierView) ScenarioS
 }
 
 func TestScenarioPlanParsingRejectsUnknownAuthorityAndMixedSelector(t *testing.T) {
-	valid := []byte(`{"id":"fixture-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}`)
-	if plan, err := ParseScenarioPlan(valid); err != nil || plan.Steps[0].Selector.Node != "n1" {
+	valid := []byte(`{"id":"fixture-plan","steps":[{"id":"crash","after_milestone":"temporal-prefix","selector":{"kind":"crash","node":"n1"}}]}`)
+	if plan, err := ParseScenarioPlan(valid); err != nil || plan.Steps[0].Selector.Node != "n1" ||
+		plan.Steps[0].AfterMilestone != "temporal-prefix" {
 		t.Fatalf("valid scenario plan rejected: %#v/%v", plan, err)
 	}
 	unknown := []byte(`{"id":"fixture-plan","steps":[{"id":"crash","selector":{"kind":"crash"}}],"verdict":"safe"}`)

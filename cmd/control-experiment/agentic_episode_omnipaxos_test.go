@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -14,7 +15,30 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
+
+type failAfterInitialYieldAdapter struct {
+	control.Adapter
+	runCalls int
+}
+
+func (adapter *failAfterInitialYieldAdapter) RunUntilYield(
+	ctx context.Context,
+) (control.Yield, error) {
+	adapter.runCalls++
+	if adapter.runCalls > 1 {
+		return control.Yield{}, errors.New("fixture action execution failed")
+	}
+	return adapter.Adapter.RunUntilYield(ctx)
+}
+
+func (adapter *failAfterInitialYieldAdapter) Close() error {
+	if closer, ok := adapter.Adapter.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
 
 func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
@@ -31,14 +55,16 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,
 	)
 	if err != nil || configuredBudget.MaxRiskCalls != 3 ||
-		configuredBudget.MaxScenarioCalls != 1 || configuredBudget.MaxTotalCalls != 4 {
+		configuredBudget.MaxScenarioCalls != 3 || configuredBudget.MaxScenarioPlanSteps != 4 ||
+		configuredBudget.MaxTotalCalls != 6 {
 		t.Fatalf("OmniPaxos A9e1 budget does not permit Risk repair: %#v/%v", configuredBudget, err)
 	}
-	candidateBytes, err := json.Marshal(omnipaxosDiscoveredRiskCandidate())
+	candidateBytes, err := json.Marshal(omnipaxosDiscoveredRiskPortfolio())
 	if err != nil {
 		t.Fatal(err)
 	}
 	providerCalls := 0
+	memoryRiskRequests := 0
 	client := fixtureOpenRouterIntentClient()
 	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 		providerCalls++
@@ -48,10 +74,27 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		}
 		var content []byte
 		switch payload.ResponseFormat.JSONSchema.Name {
-		case "risk_candidate":
+		case "risk_candidate_portfolio":
+			view := riskAgentViewFromPayload(t, payload)
+			if view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
+				len(view.TargetSurface.Nodes) != 3 ||
+				view.TargetSurface.FaultAllowance.MaxMessageDrops != 1 {
+				t.Fatalf("Risk Agent did not receive the active target surface: %#v", view.TargetSurface)
+			}
+			if len(view.ExplorationMemory) > 0 {
+				memoryRiskRequests++
+				if view.ExplorationMemory[len(view.ExplorationMemory)-1].CandidateID !=
+					omnipaxosDiscoveredRiskCandidate().ID {
+					t.Fatalf("Risk Agent received unrelated memory: %#v", view.ExplorationMemory)
+				}
+			}
 			content = candidateBytes
 		case scenarioPlanStructuredOutputName:
 			view := a4bScenarioViewFromPayload(t, payload)
+			if view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
+				len(view.TargetSurface.Workload.Invocations) != 1 {
+				t.Fatalf("Scenario Agent did not retain the active target surface: %#v", view.TargetSurface)
+			}
 			for index, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDropMessage &&
 					view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
@@ -96,8 +139,8 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		return scenarioJournal.ActivateKey("fixture-key")
 	}
 	budget := agenticEpisodeBudget{
-		MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2,
-		MaxObservedTokens: 20, MaxScenarioPlanSteps: 1,
+		MaxRiskCalls: 1, MaxScenarioCalls: 3, MaxTotalCalls: 4,
+		MaxObservedTokens: 20, MaxScenarioPlanSteps: 4,
 		MaxRuntimeDecisions: inputs.Experiment.ScenarioMaxDecisions,
 	}
 	result, err := runOmnipaxosAgenticEpisode(
@@ -106,6 +149,8 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	if err != nil || result.Status != agenticEpisodeCompleted || result.Testing == nil ||
 		!result.Metrics.CandidateAccepted || !result.Metrics.RiskReached ||
 		result.Metrics.CorePSSSamples == 0 || result.Metrics.UniquePSSStates == 0 ||
+		result.Metrics.ProtocolPSSStates == 0 || result.Metrics.ControlPSSStates == 0 ||
+		result.Metrics.ProtocolPSSStates > result.Metrics.UniquePSSStates ||
 		result.Metrics.OracleFindings != 0 || !result.Testing.Replay.Stable ||
 		result.Work.Model != (controlexperiment.ModelWork{
 			Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14,
@@ -132,6 +177,20 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		!reflect.DeepEqual(recoveredArtifact.Testing.Oracle, result.Testing.Oracle) {
 		t.Fatalf("terminal artifact recovery drifted: %#v terminal=%t err=%v",
 			recoveredArtifact, terminal, err)
+	}
+	memory, err := deriveAgenticExplorationMemory([]recoveredAgenticEpisode{
+		recoveredArtifact, recoveredArtifact,
+	})
+	if err != nil || len(memory) != 2 || memory[0].CandidateID != result.RiskAgent.Accepted.Candidate.ID ||
+		memory[0].RepeatedCandidate || memory[0].RiskStatus != semantic.RiskWitnessReached ||
+		len(memory[0].SatisfiedMilestones) != len(result.Testing.Risk.SatisfiedMilestones) ||
+		memory[0].ProtocolPSSStates != result.Metrics.ProtocolPSSStates ||
+		memory[0].NewProtocolPSSStates != result.Metrics.ProtocolPSSStates ||
+		memory[0].ModelTokens != result.Work.Model.TotalTokens || memory[0].SearchWorkUnits == 0 ||
+		len(memory[0].MechanicalReasonCodes) != 1 ||
+		memory[0].MechanicalReasonCodes[0] != controlexperiment.RiskAgentReasonBinding ||
+		!memory[1].RepeatedCandidate || memory[1].NewProtocolPSSStates != 0 {
+		t.Fatalf("exploration memory did not derive prior evidence: %#v/%v", memory, err)
 	}
 	if _, terminal, err := recoverAgenticEpisodeArtifacts(
 		t.TempDir(), omnipaxosAgenticEpisodeRecoveryBinding(),
@@ -273,6 +332,186 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		t.Fatalf("terminal CLI recovery failed or accessed active inputs: %q err=%v",
 			terminalOutput.String(), err)
 	}
+	investigationPrepareCalls := 0
+	investigationDirectory := filepath.Join(t.TempDir(), "agentic-investigation")
+	investigation, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
+		Directory:    investigationDirectory,
+		AgentKeyFile: "fixture-key.txt",
+		ReadKey: func(string) (string, error) {
+			keyReads++
+			return "fixture-key", nil
+		},
+		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
+		Budget: agenticInvestigationBudget{
+			MaxEpisodes: 2, MaxModelCalls: 2*budget.MaxTotalCalls + 1,
+			MaxModelTokens:              2*budget.MaxObservedTokens + 1,
+			MaxRuntimeDecisionAllowance: 2*budget.MaxRuntimeDecisions + 1,
+		},
+		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+			investigationPrepareCalls++
+			return agenticEpisodeComposition{
+				Target: runnerTarget, Budget: budget, Client: client,
+			}, nil
+		},
+	})
+	if err != nil || investigation.StopReason != agenticInvestigationEpisodeLimit ||
+		len(investigation.Episodes) != 2 || len(investigation.ExplorationMemory) != 2 ||
+		investigation.ModelWork.Calls != 4 || investigation.ModelWork.TotalTokens != 28 ||
+		investigation.RuntimeDecisionAllowance != 2*budget.MaxRuntimeDecisions ||
+		!investigation.ExplorationMemory[1].RepeatedCandidate ||
+		investigation.ExplorationMemory[1].NewProtocolPSSStates != 0 ||
+		memoryRiskRequests != 1 || providerCalls != 10 || keyReads != 6 || investigationPrepareCalls != 2 {
+		t.Fatalf("two-round Investigation did not pass recovered Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
+			investigation, providerCalls, keyReads, memoryRiskRequests, investigationPrepareCalls, err)
+	}
+	resumePrepareCalls := 0
+	resumedInvestigation, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
+		Directory: investigationDirectory, Resume: true,
+		AgentKeyFile: "fixture-key.txt",
+		ReadKey: func(string) (string, error) {
+			keyReads++
+			return "fixture-key", nil
+		},
+		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
+		Budget: agenticInvestigationBudget{
+			MaxEpisodes: 3, MaxModelCalls: 3*budget.MaxTotalCalls + 1,
+			MaxModelTokens:              3*budget.MaxObservedTokens + 1,
+			MaxRuntimeDecisionAllowance: 3*budget.MaxRuntimeDecisions + 1,
+		},
+		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+			resumePrepareCalls++
+			return agenticEpisodeComposition{Target: runnerTarget, Budget: budget, Client: client}, nil
+		},
+	})
+	if err != nil || resumedInvestigation.StopReason != agenticInvestigationEpisodeLimit ||
+		len(resumedInvestigation.Episodes) != 3 || len(resumedInvestigation.ExplorationMemory) != 3 ||
+		resumedInvestigation.ModelWork.Calls != 6 || resumedInvestigation.ModelWork.TotalTokens != 42 ||
+		resumedInvestigation.RuntimeDecisionAllowance != 3*budget.MaxRuntimeDecisions ||
+		!resumedInvestigation.ExplorationMemory[2].RepeatedCandidate ||
+		resumedInvestigation.ExplorationMemory[2].NewProtocolPSSStates != 0 ||
+		memoryRiskRequests != 2 || providerCalls != 12 || keyReads != 8 || resumePrepareCalls != 1 {
+		t.Fatalf("Investigation resume repeated old episodes or lost Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
+			resumedInvestigation, providerCalls, keyReads, memoryRiskRequests, resumePrepareCalls, err)
+	}
+	budgetStopped, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
+		Directory:    filepath.Join(t.TempDir(), "budget-stopped-investigation"),
+		AgentKeyFile: "fixture-key.txt", ReadKey: func(string) (string, error) {
+			keyReads++
+			return "fixture-key", nil
+		},
+		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
+		Budget: agenticInvestigationBudget{
+			MaxEpisodes: 2, MaxModelCalls: budget.MaxTotalCalls - 1,
+			MaxModelTokens:              budget.MaxObservedTokens,
+			MaxRuntimeDecisionAllowance: budget.MaxRuntimeDecisions,
+		},
+		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+			return agenticEpisodeComposition{Target: runnerTarget, Budget: budget, Client: client}, nil
+		},
+	})
+	if err != nil || budgetStopped.StopReason != agenticInvestigationCallLimit ||
+		len(budgetStopped.Episodes) != 0 || providerCalls != 12 || keyReads != 8 {
+		t.Fatalf("Investigation started an episode without its declared call allowance: %#v err=%v",
+			budgetStopped, err)
+	}
+}
+
+func TestA9e3aAgenticEpisodePersistsTerminalExecutionOutcome(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
+	defer cancel()
+	workerPath := buildOmnipaxosScenarioWorker(t)
+	inputs, err := prepareOmnipaxosAgenticEpisode(
+		ctx, workerPath, "../../plans/agent/omnipaxos-agentic-calibration-v1.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := newOmnipaxosAgenticEpisodeTarget(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalScenarioInputs := target.ScenarioInputs
+	target.ScenarioInputs = func(
+		risk controlexperiment.ScenarioRiskHypothesis,
+		projector controlexperiment.SemanticPrefixProjector,
+	) (scenarioEpisodeCoreInputs, error) {
+		core, err := originalScenarioInputs(risk, projector)
+		if err != nil {
+			return scenarioEpisodeCoreInputs{}, err
+		}
+		baseFactory := core.NewAdapter
+		core.NewAdapter = func() (control.Adapter, error) {
+			base, err := baseFactory()
+			if err != nil {
+				return nil, err
+			}
+			return &failAfterInitialYieldAdapter{Adapter: base}, nil
+		}
+		return core, nil
+	}
+	candidateBytes, err := json.Marshal(omnipaxosDiscoveredRiskPortfolio())
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCalls := 0
+	client := fixtureOpenRouterIntentClient()
+	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls++
+		var payload openRouterChatRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio" {
+			t.Fatal("Scenario Agent was called after terminal reconstruction failure")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(bytes.NewReader(a2b2OpenRouterResponse(
+				t, providerCalls, candidateBytes,
+			))),
+		}, nil
+	})
+	directory := t.TempDir()
+	riskJournal, err := newStatelessAgentCallJournal(filepath.Join(directory, "risk"), client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarioJournal, err := newScenarioAgentCallJournal(filepath.Join(directory, "scenario"), client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := agenticEpisodeBudget{
+		MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2, MaxObservedTokens: 20,
+		MaxScenarioPlanSteps: 1, MaxRuntimeDecisions: inputs.Experiment.ScenarioMaxDecisions,
+	}
+	result, err := runAgenticEpisode(
+		ctx, target, riskJournal, scenarioJournal, budget, nil, nil,
+		func() error { return riskJournal.ActivateKey("fixture-key") },
+		func() error { return scenarioJournal.ActivateKey("fixture-key") },
+	)
+	if err != nil || result.Status != agenticEpisodeExecutionFailed || result.Failure == nil ||
+		result.Failure.Terminal == nil || result.Failure.Terminal.Validate() != nil ||
+		result.Failure.Code != "ADAPTER_ACTION_FAILED" || result.Failure.Decision <= 0 ||
+		result.Testing != nil || providerCalls != 1 || len(result.RiskProviderCalls) != 1 ||
+		len(result.ScenarioProviderCalls) != 0 || result.Work.ScenarioFrontier.WorkUnits == 0 {
+		t.Fatalf("terminal Agent episode was not preserved: %#v calls=%d err=%v", result, providerCalls, err)
+	}
+	artifactDirectory := t.TempDir()
+	artifact, err := persistAgenticEpisodeArtifacts(
+		artifactDirectory, target.ID, budget, result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, terminal, err := recoverAgenticEpisodeArtifacts(
+		artifactDirectory, omnipaxosAgenticEpisodeRecoveryBinding(),
+	)
+	if err != nil || !terminal || recovered.Testing != nil || artifact.Failure == nil ||
+		recovered.Summary.Failure == nil ||
+		recovered.Summary.Failure.Terminal.Digest != result.Failure.Terminal.Digest {
+		t.Fatalf("terminal Agent artifact did not recover: %#v terminal=%t err=%v",
+			recovered, terminal, err)
+	}
 }
 
 func a4bScenarioViewFromPayload(
@@ -295,4 +534,25 @@ func a4bScenarioViewFromPayload(
 		t.Fatal(err)
 	}
 	return prompt.AgentView
+}
+
+func riskAgentViewFromPayload(
+	t *testing.T,
+	payload openRouterChatRequest,
+) controlexperiment.RiskAgentView {
+	t.Helper()
+	if len(payload.Messages) != 2 {
+		t.Fatal("Risk prompt has unexpected message count")
+	}
+	marker := []byte("Input JSON:\n")
+	content := []byte(payload.Messages[1].Content)
+	index := bytes.Index(content, marker)
+	if index < 0 {
+		t.Fatal("Risk prompt has no input marker")
+	}
+	var view controlexperiment.RiskAgentView
+	if err := json.Unmarshal(content[index+len(marker):], &view); err != nil {
+		t.Fatal(err)
+	}
+	return view
 }

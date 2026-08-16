@@ -98,7 +98,7 @@ func (adapter *Adapter) Reset(ctx context.Context, seed []byte) error {
 	if err != nil {
 		return err
 	}
-	response, err := worker.call(workerRequest{Op: "reset"})
+	response, err := worker.call(ctx, workerRequest{Op: "reset"})
 	if err != nil {
 		_ = worker.close()
 		return err
@@ -183,7 +183,7 @@ func (*Adapter) ApplyRuntimeAction(_ context.Context, action control.Action) err
 	return fmt.Errorf("OMNIPAXOS_RUNTIME_ACTION_UNSUPPORTED: %s", action.Kind)
 }
 
-func (adapter *Adapter) RunUntilYield(_ context.Context) (control.Yield, error) {
+func (adapter *Adapter) RunUntilYield(ctx context.Context) (control.Yield, error) {
 	if adapter.yieldSeq == 0 {
 		items, err := adapter.capture(adapter.last, "")
 		if err != nil {
@@ -218,18 +218,18 @@ func (adapter *Adapter) RunUntilYield(_ context.Context) (control.Yield, error) 
 		if encodeErr != nil {
 			return control.Yield{}, encodeErr
 		}
-		response, err = adapter.worker.call(workerRequest{Op: "append", Node: id, Payload: data})
+		response, err = adapter.worker.call(ctx, workerRequest{Op: "append", Node: id, Payload: data})
 	case control.ActionDropMessage:
 	case control.ActionDeliverMessage:
 		id, _ := protocolID(command.Node.Node)
-		response, err = adapter.worker.call(workerRequest{
+		response, err = adapter.worker.call(ctx, workerRequest{
 			Op: "step", Node: id, Payload: envelope.Item.Message.Payload.Bytes,
 		})
 		dependency = command.Item
 	case control.ActionFireTemporal:
 		id, _ := protocolID(command.Node.Node)
 		delete(adapter.pulses, command.Node.Node)
-		response, err = adapter.worker.call(workerRequest{Op: "tick", Node: id})
+		response, err = adapter.worker.call(ctx, workerRequest{Op: "tick", Node: id})
 		dependency = command.Item
 	default:
 		err = fmt.Errorf("OMNIPAXOS_COMMAND_UNSUPPORTED: %s", command.Kind)
@@ -426,9 +426,14 @@ func (adapter *Adapter) finishYield(cause string, items []control.ProducedItem) 
 }
 
 func (adapter *Adapter) snapshot() adapterSnapshot {
+	nodes := make([]workerNode, len(adapter.last.Nodes))
+	for index, node := range adapter.last.Nodes {
+		node.DecidedPrefixes = append([]workerDecisionPrefix(nil), node.DecidedPrefixes...)
+		nodes[index] = node
+	}
 	return adapterSnapshot{
 		LogicalTime: adapter.logicalTime, YieldSeq: adapter.yieldSeq, ItemSeq: adapter.itemSeq,
-		Nodes: append([]workerNode(nil), adapter.last.Nodes...), Pulses: adapter.pulses,
+		Nodes: nodes, Pulses: adapter.pulses,
 	}
 }
 
@@ -453,6 +458,18 @@ func (adapter *Adapter) validateResponse(response workerResponse) error {
 		}
 		if !validDigest(node.DecidedPrefixDigest) {
 			return errors.New("OMNIPAXOS_WORKER_DECIDED_PREFIX_DIGEST_INVALID")
+		}
+		if len(node.DecidedPrefixes) != int(node.DecidedIndex) {
+			return errors.New("OMNIPAXOS_WORKER_DECIDED_PREFIX_COUNT_INVALID")
+		}
+		for prefixIndex, prefix := range node.DecidedPrefixes {
+			if prefix.Index != uint64(prefixIndex+1) || !validDigest(prefix.Digest) {
+				return errors.New("OMNIPAXOS_WORKER_DECIDED_PREFIX_INVALID")
+			}
+		}
+		if len(node.DecidedPrefixes) > 0 &&
+			node.DecidedPrefixes[len(node.DecidedPrefixes)-1].Digest != node.DecidedPrefixDigest {
+			return errors.New("OMNIPAXOS_WORKER_DECIDED_PREFIX_FINAL_MISMATCH")
 		}
 	}
 	for _, message := range response.Messages {

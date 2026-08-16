@@ -13,6 +13,7 @@ type scenarioAgentEpisodeResult struct {
 	Agent         controlexperiment.ScenarioAgentResult       `json:"agent"`
 	ProviderCalls []controlexperiment.StatelessAgentCallAudit `json:"provider_calls"`
 	FrontierWork  controlexperiment.PhaseWork                 `json:"frontier_work"`
+	Failure       *controlexperiment.MethodFailure            `json:"failure,omitempty"`
 	Testing       *scenarioTestingResult                      `json:"testing,omitempty"`
 }
 
@@ -24,6 +25,7 @@ type scenarioEpisodeCoreInputs struct {
 	Root              controlruntime.Trace
 	Runtime           controlexperiment.RuntimeConfig
 	FaultEnvelope     *controlexperiment.FaultEnvelope
+	TargetSurface     *controlexperiment.AgentTargetSurface
 	SemanticExposure  controlexperiment.ScenarioSemanticExposureMode
 	NewAdapter        controlexperiment.AdapterFactory
 	RiskProjector     controlexperiment.SemanticPrefixProjector
@@ -108,7 +110,9 @@ func runScenarioEpisodeCore(
 		inputs.FaultEnvelope, inputs.NewAdapter,
 	)
 	if err != nil {
-		return scenarioAgentEpisodeResult{}, err
+		return scenarioAgentEpisodeResult{
+			FrontierWork: frontierWork, Failure: scenarioTerminalFailure(err),
+		}, err
 	}
 	semantics, err := inputs.SemanticProjector(inputs.Root, frontier, snapshot)
 	if err != nil {
@@ -117,14 +121,31 @@ func runScenarioEpisodeCore(
 	agent, err := controlexperiment.ExploreScenarioWithPlanner(
 		ctx, maxCalls, maxPlanSteps, maxDecisions,
 		inputs.Knowledge, inputs.Hypothesis, inputs.RiskSpec, frontier, semantics,
-		rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.NewAdapter,
+		rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.TargetSurface,
+		inputs.NewAdapter,
 		inputs.RiskProjector, inputs.SemanticProjector, planner,
 	)
 	result := scenarioAgentEpisodeResult{
 		Agent: agent, FrontierWork: frontierWork,
 	}
 	if err != nil {
+		result.Failure = scenarioTerminalFailure(err)
 		return result, err
 	}
 	return result, nil
+}
+
+func scenarioTerminalFailure(err error) *controlexperiment.MethodFailure {
+	var terminalError *controlruntime.TerminalExecutionError
+	if !errors.As(err, &terminalError) || terminalError.Terminal.Validate() != nil {
+		return nil
+	}
+	terminal := terminalError.Terminal
+	terminal.AttemptedAction.Parameters = append(
+		[]byte(nil), terminalError.Terminal.AttemptedAction.Parameters...,
+	)
+	return &controlexperiment.MethodFailure{
+		Phase: "scenario-action", Code: terminal.Code, Decision: int(terminal.Decision),
+		Terminal: &terminal,
+	}
 }

@@ -26,7 +26,7 @@ func TestEtcdraftAuthoringSourceBuildsTrustedInputs(t *testing.T) {
 		hypothesis.Validate(knowledge, riskSpec, controlexperiment.ScenarioPlanningBackendID) != nil ||
 		experiment.validate() != nil || len(experiment.AdapterConfig.Nodes) != 3 ||
 		experiment.SearchMaxWorkItems != 16 || experiment.ModelReasoningEffort != "high" ||
-		!experiment.ModelExcludeReasoning || experiment.ModelMaxOutputTokens != 4096 ||
+		!experiment.ModelExcludeReasoning || experiment.ModelMaxOutputTokens != 32000 ||
 		experiment.ScenarioMaxCalls != 8 || experiment.ScenarioMaxSteps != 1 ||
 		experiment.ScenarioMaxDecisions != 32 ||
 		experiment.ScenarioSemanticExposure != controlexperiment.ScenarioSemanticExposureFull ||

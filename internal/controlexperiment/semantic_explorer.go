@@ -736,6 +736,7 @@ func cloneProtocolKnowledge(value ProtocolKnowledgePack) ProtocolKnowledgePack {
 	value.Knowledge = append([]KnowledgeStatement(nil), value.Knowledge...)
 	value.Properties = append([]ProtocolProperty(nil), value.Properties...)
 	value.IssuePatterns = append([]HistoricalIssuePattern(nil), value.IssuePatterns...)
+	value.TargetDossier = cloneTargetDossier(value.TargetDossier)
 	value.Risks = cloneProtocolKnowledgeRisks(value.Risks)
 	return value
 }

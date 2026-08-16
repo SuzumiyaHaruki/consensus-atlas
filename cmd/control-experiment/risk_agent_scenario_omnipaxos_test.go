@@ -32,7 +32,7 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 	}
 	riskResult, err := controlexperiment.DiscoverRiskWithPlanner(
 		ctx, controlexperiment.RiskAgentBudget{MaxCalls: 1, MaxTokens: 20},
-		inputs.Knowledge, capabilities, actions,
+		inputs.Knowledge, capabilities, actions, nil, nil, nil,
 		func(context.Context, controlexperiment.RiskAgentView) ([]byte, controlexperiment.ModelWork, error) {
 			return content, controlexperiment.ModelWork{
 				Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7,
@@ -114,8 +114,11 @@ func omnipaxosDiscoveredRiskCandidate() controlexperiment.RiskCandidate {
 		PropertyRef:    "client-operation-continuity",
 		InspirationRef: "message-loss-progress-coupling",
 		Summary:        "Exercise an in-flight message loss and observe a later decision.",
-		SuspectedMechanism: "A lost replication message may leave stale per-peer progress state " +
-			"that affects how the in-flight operation reaches a later decision.",
+		MechanismSteps: []controlexperiment.RiskMechanismStep{
+			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start the client operation."},
+			{MilestoneID: omnipaxosMilestoneMessageDropped, Kind: semantic.ObservationMessageDropped, Rationale: "Drop one in-flight replication message."},
+			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe subsequent decision progress."},
+		},
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked,
 				Constraints: []semantic.ObservationConstraint{{
@@ -127,5 +130,19 @@ func omnipaxosDiscoveredRiskCandidate() controlexperiment.RiskCandidate {
 				}}},
 			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced},
 		},
+	}
+}
+
+func omnipaxosDiscoveredRiskPortfolio() controlexperiment.RiskCandidatePortfolio {
+	primary := omnipaxosDiscoveredRiskCandidate()
+	rejected := primary
+	rejected.ID += "-single-binding"
+	rejected.Summary += " Single-entity binding draft."
+	rejected.Predicates = append([]semantic.ObservationPredicate(nil), primary.Predicates...)
+	rejected.Predicates[0].Constraints = []semantic.ObservationConstraint{{
+		Field: semantic.ObservationFieldParticipantRole, BindAs: "coordinator",
+	}}
+	return controlexperiment.RiskCandidatePortfolio{
+		Candidates: []controlexperiment.RiskCandidate{rejected, primary},
 	}
 }

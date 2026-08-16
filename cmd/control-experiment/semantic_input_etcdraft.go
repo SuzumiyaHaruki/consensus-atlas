@@ -116,8 +116,8 @@ func (config etcdraftAgentExperimentConfig) validateAgentic() error {
 		config.ScenarioMaxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
 		config.ScenarioSemanticExposure.Validate() != nil ||
 		!validOpenRouterReasoningEffort(config.ModelReasoningEffort) ||
-		config.ModelMaxOutputTokens <= 0 || config.ModelMaxOutputTokens > 4096 ||
-		config.ModelMaxRetries < 0 || config.ModelMaxRetries > 2 ||
+		config.ModelMaxOutputTokens <= 0 || config.ModelMaxOutputTokens > openRouterMaxOutputTokens ||
+		config.ModelMaxRetries != 0 ||
 		!validScenarioSessionBudget(config.SessionBudget, config.SessionWallClockMS) {
 		return errors.New("ETCDRAFT_AGENTIC_EXPERIMENT_CONFIG_INVALID")
 	}

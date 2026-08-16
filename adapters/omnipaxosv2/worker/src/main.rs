@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
 
-const SCHEMA: &str = "consensus-atlas/omnipaxos-worker/v1";
+const SCHEMA: &str = "consensus-atlas/omnipaxos-worker/v2";
 
 #[derive(Entry, Clone, Debug, Serialize, Deserialize)]
 struct WorkerEntry {
@@ -54,9 +54,16 @@ struct NodeView {
     leader: u64,
     decided_index: u64,
     decided_prefix_digest: String,
+    decided_prefixes: Vec<DecisionPrefixView>,
     promise_number: u32,
     promise_priority: u32,
     promise_pid: u64,
+}
+
+#[derive(Serialize)]
+struct DecisionPrefixView {
+    index: u64,
+    digest: String,
 }
 
 #[derive(Serialize)]
@@ -201,11 +208,17 @@ impl Cluster {
             .map(
                 |(id, node)| -> Result<NodeView, Box<dyn std::error::Error>> {
                     let promise = node.get_promise();
+                    let decided_prefixes = decided_prefixes(node)?;
+                    let decided_prefix_digest = decided_prefixes
+                        .last()
+                        .map(|prefix| prefix.digest.clone())
+                        .unwrap_or_else(empty_decided_prefix_digest);
                     Ok(NodeView {
                         id: *id,
                         leader: node.get_current_leader().unwrap_or(0),
                         decided_index: node.get_decided_idx(),
-                        decided_prefix_digest: decided_prefix_digest(node)?,
+                        decided_prefix_digest,
+                        decided_prefixes,
                         promise_number: promise.n,
                         promise_priority: promise.priority,
                         promise_pid: promise.pid,
@@ -259,28 +272,42 @@ impl Cluster {
     }
 }
 
-fn decided_prefix_digest(node: &Node) -> Result<String, Box<dyn std::error::Error>> {
+fn decided_prefixes(node: &Node) -> Result<Vec<DecisionPrefixView>, Box<dyn std::error::Error>> {
     let decided = node.get_decided_idx();
-    let mut digest = Sha256::new();
-    digest.update(b"consensus-atlas/omnipaxos-decided-prefix/v1\0");
-    digest.update(decided.to_be_bytes());
-    if decided > 0 {
-        let entries = node
-            .read_decided_suffix(0)
-            .ok_or("OMNIPAXOS_WORKER_DECIDED_PREFIX_MISSING")?;
-        if entries.len() as u64 != decided {
-            return Err("OMNIPAXOS_WORKER_DECIDED_PREFIX_LENGTH_MISMATCH".into());
-        }
-        for entry in entries {
-            let LogEntry::Decided(value) = entry else {
-                return Err("OMNIPAXOS_WORKER_DECIDED_PREFIX_NOT_EXACT".into());
-            };
-            digest_field(&mut digest, value.request_id.as_bytes());
-            digest.update(value.origin.to_be_bytes());
-            digest_field(&mut digest, value.value.as_bytes());
-        }
+    if decided == 0 {
+        return Ok(Vec::new());
     }
-    Ok(format!("{:x}", digest.finalize()))
+    let mut digest = Sha256::new();
+    digest.update(b"consensus-atlas/omnipaxos-decided-prefix/v2\0");
+    let entries = node
+        .read_decided_suffix(0)
+        .ok_or("OMNIPAXOS_WORKER_DECIDED_PREFIX_MISSING")?;
+    if entries.len() as u64 != decided {
+        return Err("OMNIPAXOS_WORKER_DECIDED_PREFIX_LENGTH_MISMATCH".into());
+    }
+    let mut result = Vec::with_capacity(entries.len());
+    for (offset, entry) in entries.into_iter().enumerate() {
+        let LogEntry::Decided(value) = entry else {
+            return Err("OMNIPAXOS_WORKER_DECIDED_PREFIX_NOT_EXACT".into());
+        };
+        digest_field(&mut digest, value.request_id.as_bytes());
+        digest.update(value.origin.to_be_bytes());
+        digest_field(&mut digest, value.value.as_bytes());
+        let index = offset as u64 + 1;
+        let mut prefix = digest.clone();
+        prefix.update(index.to_be_bytes());
+        result.push(DecisionPrefixView {
+            index,
+            digest: format!("{:x}", prefix.finalize()),
+        });
+    }
+    Ok(result)
+}
+
+fn empty_decided_prefix_digest() -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"consensus-atlas/omnipaxos-decided-prefix/v2\0");
+    format!("{:x}", digest.finalize())
 }
 
 fn digest_field(digest: &mut Sha256, value: &[u8]) {

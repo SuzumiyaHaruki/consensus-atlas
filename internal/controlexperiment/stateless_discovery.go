@@ -15,6 +15,8 @@ const (
 	StatelessDiscoveryItemSchemaVersion = "consensus-atlas/stateless-traversal-discovery-item/v1"
 	StatelessCorpusDiscoveryVersion     = "consensus-atlas/stateless-corpus-discovery/v1"
 	StatelessCorpusRootResultVersion    = "consensus-atlas/stateless-corpus-root-result/v1"
+	StatelessPSSViewJoint               = "joint"
+	StatelessPSSViewProtocol            = "protocol"
 )
 
 type StatelessCorpusRootEvidence struct {
@@ -43,6 +45,7 @@ type StatelessCorpusDiscovery struct {
 	ID                           string                      `json:"id"`
 	CorpusDigest                 string                      `json:"corpus_digest"`
 	MethodDigest                 string                      `json:"method_digest"`
+	PSSView                      string                      `json:"pss_view,omitempty"`
 	Roots                        []StatelessCorpusRootResult `json:"roots"`
 	CorpusBaselinePSSStates      int                         `json:"corpus_baseline_pss_states"`
 	CorpusBaselinePSSKeys        []string                    `json:"corpus_baseline_pss_keys"`
@@ -61,8 +64,9 @@ type StatelessCorpusDiscovery struct {
 }
 
 // StatelessDiscoveryItem binds one trusted WorkItem to a separately executed
-// qualified bundle. It reports identities, bounded counts, and the final child
-// PSS key without retaining the full trace or protocol state.
+// qualified bundle. Since A9e3b, its PSS novelty fields use the independently
+// canonicalized protocol view; control and joint diversity remain derivable
+// from each bundle's Core PSS and do not count as protocol discovery.
 type StatelessDiscoveryItem struct {
 	SchemaVersion                   string `json:"schema_version"`
 	Ordinal                         int    `json:"ordinal"`
@@ -93,6 +97,7 @@ type StatelessTraversalDiscovery struct {
 	RootPrefixDigest           string                   `json:"root_prefix_digest"`
 	ManifestDigest             string                   `json:"manifest_digest"`
 	PSSID                      string                   `json:"pss_id"`
+	PSSView                    string                   `json:"pss_view,omitempty"`
 	Items                      []StatelessDiscoveryItem `json:"items"`
 	UniqueTracePrefixes        int                      `json:"unique_trace_prefixes"`
 	UniqueFinalChildPSSStates  int                      `json:"unique_final_child_pss_states"`
@@ -128,6 +133,7 @@ func NewStatelessTraversalDiscovery(
 		SchemaVersion: StatelessDiscoverySchemaVersion,
 		ID:            id, MethodDigest: result.Method.Digest, SearchDigest: result.Search.Digest,
 		RootPrefixDigest: root.Digest, ManifestDigest: root.ManifestDigest,
+		PSSView:                StatelessPSSViewProtocol,
 		QualifiedExecutionWork: emptyWork(),
 	}
 	traceSet := make(map[string]bool, len(bundles))
@@ -145,6 +151,19 @@ func NewStatelessTraversalDiscovery(
 			len(projectedPSS) <= result.Search.Spec.RootDecisions {
 			return StatelessTraversalDiscovery{}, errors.New("EXPERIMENT_STATELESS_DISCOVERY_BUNDLE_MISMATCH")
 		}
+		viewKeys := make([]psscore.ViewKeys, len(projectedPSS))
+		states := make([]psscore.State, len(projectedPSS))
+		for sampleIndex, sample := range projectedPSS {
+			viewKeys[sampleIndex], err = psscore.Keys(sample.State)
+			if err != nil {
+				return StatelessTraversalDiscovery{}, err
+			}
+			states[sampleIndex] = sample.State
+		}
+		viewSummary, err := psscore.SummarizeStates(states)
+		if err != nil || viewSummary.Validate() != nil {
+			return StatelessTraversalDiscovery{}, errors.New("EXPERIMENT_STATELESS_DISCOVERY_PSS_VIEW_INVALID")
+		}
 		if discovery.PSSID == "" {
 			discovery.PSSID = bundle.Identity.PSSID
 		} else if discovery.PSSID != bundle.Identity.PSSID {
@@ -152,7 +171,7 @@ func NewStatelessTraversalDiscovery(
 		}
 		newTrace := !traceSet[bundle.Trace.Digest]
 		traceSet[bundle.Trace.Digest] = true
-		finalKey := projectedPSS[len(projectedPSS)-1].Key
+		finalKey := viewKeys[len(viewKeys)-1].Protocol
 		newChild := !childSet[finalKey]
 		childSet[finalKey] = true
 		rootSamples := projectedPSS[:result.Search.Spec.RootDecisions+1]
@@ -162,19 +181,19 @@ func NewStatelessTraversalDiscovery(
 		}
 		if discovery.RootPSSSamplesDigest == "" {
 			discovery.RootPSSSamplesDigest = rootSamplesDigest
-			for _, sample := range rootSamples {
-				rootSet[sample.Key] = true
+			for _, keys := range viewKeys[:result.Search.Spec.RootDecisions+1] {
+				rootSet[keys.Protocol] = true
 			}
 		} else if discovery.RootPSSSamplesDigest != rootSamplesDigest {
 			return StatelessTraversalDiscovery{}, errors.New("EXPERIMENT_STATELESS_DISCOVERY_ROOT_PSS_DRIFT")
 		}
-		for _, sample := range projectedPSS {
-			observedSet[sample.Key] = true
+		for _, keys := range viewKeys {
+			observedSet[keys.Protocol] = true
 		}
 		newIncremental := 0
-		for _, sample := range projectedPSS[result.Search.Spec.RootDecisions+1:] {
-			if !rootSet[sample.Key] && !incrementalSet[sample.Key] {
-				incrementalSet[sample.Key] = true
+		for _, keys := range viewKeys[result.Search.Spec.RootDecisions+1:] {
+			if !rootSet[keys.Protocol] && !incrementalSet[keys.Protocol] {
+				incrementalSet[keys.Protocol] = true
 				newIncremental++
 			}
 		}
@@ -183,7 +202,7 @@ func NewStatelessTraversalDiscovery(
 			Ordinal:       index + 1, WorkItemDigest: item.Digest,
 			BundleDigest: bundle.Digest, TraceDigest: bundle.Trace.Digest,
 			PSSSamplesDigest: bundle.Run.CorePSSSamplesDigest,
-			PSSSamples:       len(projectedPSS), UniqueBundlePSSStates: bundle.Run.UniqueCoreStates,
+			PSSSamples:       len(projectedPSS), UniqueBundlePSSStates: viewSummary.ProtocolStates,
 			FinalChildPSSKey: finalKey, NewTracePrefix: newTrace,
 			NewFinalChildPSSState:           newChild,
 			NewIncrementalPSSStates:         newIncremental,
@@ -256,7 +275,7 @@ func NewStatelessCorpusDiscovery(
 	}
 	result := StatelessCorpusDiscovery{
 		SchemaVersion: StatelessCorpusDiscoveryVersion, ID: id, CorpusDigest: corpus.Digest,
-		QualifiedExecutionWork: emptyWork(),
+		PSSView: StatelessPSSViewProtocol, QualifiedExecutionWork: emptyWork(),
 	}
 	baseline := make(map[string]bool)
 	localIncremental := make(map[string]bool)
@@ -279,6 +298,9 @@ func NewStatelessCorpusDiscovery(
 		)
 		if err != nil {
 			return StatelessCorpusDiscovery{}, err
+		}
+		if discovery.PSSView != result.PSSView {
+			return StatelessCorpusDiscovery{}, errors.New("EXPERIMENT_STATELESS_CORPUS_PSS_VIEW_MISMATCH")
 		}
 		incremental := make(map[string]bool, len(discovery.IncrementalPSSKeys))
 		for _, key := range discovery.IncrementalPSSKeys {
@@ -357,6 +379,7 @@ func (discovery StatelessCorpusDiscovery) Validate(
 func (discovery StatelessCorpusDiscovery) ValidateStructure() error {
 	if discovery.SchemaVersion != StatelessCorpusDiscoveryVersion || !validMethodToken(discovery.ID) ||
 		!validSHA256(discovery.CorpusDigest) || !validSHA256(discovery.MethodDigest) ||
+		!validStatelessPSSView(discovery.PSSView) ||
 		len(discovery.Roots) == 0 || discovery.CorpusBaselinePSSStates < 0 ||
 		discovery.LocalIncrementalPSSStates < 0 || discovery.CorpusNovelPSSStates < 0 ||
 		discovery.CorpusBaselinePSSStates != len(discovery.CorpusBaselinePSSKeys) ||
@@ -417,6 +440,17 @@ func (discovery StatelessCorpusDiscovery) ValidateStructure() error {
 		return errors.New("EXPERIMENT_STATELESS_CORPUS_DISCOVERY_DIGEST_MISMATCH")
 	}
 	return nil
+}
+
+func validStatelessPSSView(view string) bool {
+	return view == "" || view == StatelessPSSViewJoint || view == StatelessPSSViewProtocol
+}
+
+func normalizedStatelessPSSView(view string) string {
+	if view == "" {
+		return StatelessPSSViewJoint
+	}
+	return view
 }
 
 func addStatelessDFSWork(total *StatelessDFSWork, delta StatelessDFSWork) {

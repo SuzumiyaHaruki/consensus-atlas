@@ -37,6 +37,7 @@ type StatelessAgentCallAudit struct {
 	Status              string    `json:"status"`
 	Work                ModelWork `json:"work"`
 	TransportAttempts   int       `json:"transport_attempts,omitempty"`
+	ProviderUsageStatus string    `json:"provider_usage_status,omitempty"`
 	Digest              string    `json:"digest"`
 }
 
@@ -69,6 +70,7 @@ func NewStatelessAgentCallAudit(
 		audit.Status = result.Status
 		audit.Work = result.Work
 		audit.TransportAttempts = result.TransportAttempts
+		audit.ProviderUsageStatus = result.ProviderUsageStatus
 	}
 	sealed, err := audit.seal()
 	if err != nil || sealed.Validate() != nil {
@@ -83,7 +85,8 @@ func (audit StatelessAgentCallAudit) Validate() error {
 		!validSHA256(audit.IntentDigest) || audit.Work.Calls < 0 || audit.Work.Calls > 1 ||
 		audit.TransportAttempts < 0 || audit.TransportAttempts > 3 ||
 		audit.Work.InputTokens < 0 || audit.Work.OutputTokens < 0 ||
-		audit.Work.TotalTokens != audit.Work.InputTokens+audit.Work.OutputTokens {
+		audit.Work.TotalTokens != audit.Work.InputTokens+audit.Work.OutputTokens ||
+		!validProviderUsageStatus(audit.ProviderUsageStatus) {
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_AUDIT_INVALID")
 	}
 	switch audit.Status {
@@ -243,19 +246,20 @@ func (dispatch StatelessAgentCallDispatch) ValidateIntent(intent StatelessAgentC
 // acceptance. Rejected keeps exact negative evidence; failed records transport
 // or pre-transport failure without authorizing a retry.
 type StatelessAgentCallResult struct {
-	SchemaVersion     string                 `json:"schema_version"`
-	DispatchDigest    string                 `json:"dispatch_digest"`
-	Status            string                 `json:"status"`
-	FailureCode       string                 `json:"failure_code,omitempty"`
-	Content           []byte                 `json:"content,omitempty"`
-	ContentDigest     string                 `json:"content_digest,omitempty"`
-	ProposalDigest    string                 `json:"proposal_digest,omitempty"`
-	ResponseDigest    string                 `json:"response_digest,omitempty"`
-	Response          *AgentResponseIdentity `json:"response,omitempty"`
-	DurationMillis    int64                  `json:"duration_millis"`
-	Work              ModelWork              `json:"work"`
-	TransportAttempts int                    `json:"transport_attempts,omitempty"`
-	Digest            string                 `json:"digest"`
+	SchemaVersion       string                 `json:"schema_version"`
+	DispatchDigest      string                 `json:"dispatch_digest"`
+	Status              string                 `json:"status"`
+	FailureCode         string                 `json:"failure_code,omitempty"`
+	Content             []byte                 `json:"content,omitempty"`
+	ContentDigest       string                 `json:"content_digest,omitempty"`
+	ProposalDigest      string                 `json:"proposal_digest,omitempty"`
+	ResponseDigest      string                 `json:"response_digest,omitempty"`
+	Response            *AgentResponseIdentity `json:"response,omitempty"`
+	DurationMillis      int64                  `json:"duration_millis"`
+	Work                ModelWork              `json:"work"`
+	TransportAttempts   int                    `json:"transport_attempts,omitempty"`
+	ProviderUsageStatus string                 `json:"provider_usage_status,omitempty"`
+	Digest              string                 `json:"digest"`
 }
 
 func NewStatelessAgentCallResult(
@@ -284,7 +288,8 @@ func (result StatelessAgentCallResult) ValidateInputs(
 		result.DispatchDigest != dispatch.Digest || result.DurationMillis < 0 ||
 		result.Work.Calls < 0 || result.Work.Calls > 1 || result.Work.InputTokens < 0 ||
 		result.Work.OutputTokens < 0 || result.Work.TotalTokens != result.Work.InputTokens+result.Work.OutputTokens ||
-		result.TransportAttempts < 0 || result.TransportAttempts > intent.Transport.MaxRetries+1 {
+		result.TransportAttempts < 0 || result.TransportAttempts > intent.Transport.MaxRetries+1 ||
+		!validProviderUsageStatus(result.ProviderUsageStatus) {
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_RESULT_INVALID")
 	}
 	switch result.Status {
@@ -321,6 +326,10 @@ func (result StatelessAgentCallResult) ValidateInputs(
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_RESULT_DIGEST_MISMATCH")
 	}
 	return nil
+}
+
+func validProviderUsageStatus(status string) bool {
+	return status == "" || status == "unknown" || status == "observed"
 }
 
 func (result StatelessAgentCallResult) seal() (StatelessAgentCallResult, error) {

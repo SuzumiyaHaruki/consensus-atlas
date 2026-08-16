@@ -274,7 +274,8 @@ func (artifact StatelessCampaignAttemptArtifact) ValidateInputs(request Campaign
 	} else if artifact.Outcome == CampaignAttemptFailed {
 		if artifact.Discovery != nil || artifact.Failure == nil ||
 			artifact.Failure.Phase == "" || artifact.Failure.Code == "" ||
-			artifact.Failure.Decision < 0 {
+			artifact.Failure.Decision < 0 ||
+			(artifact.Failure.Terminal != nil && artifact.Failure.Terminal.Validate() != nil) {
 			return errors.New("EXPERIMENT_STATELESS_CAMPAIGN_FAILED_INVALID")
 		}
 	} else {
@@ -400,6 +401,13 @@ func cloneMethodFailure(failure *MethodFailure) *MethodFailure {
 		return nil
 	}
 	copy := *failure
+	if failure.Terminal != nil {
+		terminal := *failure.Terminal
+		terminal.AttemptedAction.Parameters = append(
+			[]byte(nil), failure.Terminal.AttemptedAction.Parameters...,
+		)
+		copy.Terminal = &terminal
+	}
 	return &copy
 }
 

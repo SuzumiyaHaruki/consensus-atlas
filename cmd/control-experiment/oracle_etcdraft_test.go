@@ -174,8 +174,8 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 		Records: []controlruntime.ActionRecord{
 			{Step: 1, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 1, 2, 1, 1)},
 			{Step: 2, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 2, 3, 3, 1)},
-			// A new incarnation starts a new volatile monotonicity interval.
-			{Step: 3, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 3, 0, 0, 2)},
+			// Restart restores the target's durable application image.
+			{Step: 3, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 3, 3, 3, 2)},
 		},
 	}}
 	result := oracle.CheckBundle(monotonic, etcdraftLogProgressMonitor{})
@@ -185,24 +185,27 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 	}
 
 	tests := []struct {
-		name    string
-		commit  uint64
-		applied uint64
-		want    string
+		name        string
+		commit      uint64
+		applied     uint64
+		incarnation uint64
+		step        int
+		want        string
 	}{
-		{name: "commit-regression", commit: 1, applied: 1, want: "commit frontier regressed"},
-		{name: "applied-exceeds-commit", commit: 2, applied: 3, want: "exceeds commit frontier"},
+		{name: "commit-regression", commit: 1, applied: 1, incarnation: 1, step: 2, want: "commit frontier regressed"},
+		{name: "applied-exceeds-commit", commit: 2, applied: 3, incarnation: 1, step: 2, want: "exceeds commit frontier"},
+		{name: "restart-loses-durable-application", commit: 0, applied: 0, incarnation: 2, step: 3, want: "across incarnation"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mutated := monotonic
-			mutated.Trace.Records = append([]controlruntime.ActionRecord(nil), monotonic.Trace.Records[:2]...)
-			mutated.Trace.Records[1].Evidence = etcdraftLogProgressFixtureEvidencePointer(
-				t, 2, test.commit, test.applied, 1,
+			mutated.Trace.Records = append([]controlruntime.ActionRecord(nil), monotonic.Trace.Records[:test.step]...)
+			mutated.Trace.Records[test.step-1].Evidence = etcdraftLogProgressFixtureEvidencePointer(
+				t, uint64(test.step), test.commit, test.applied, test.incarnation,
 			)
 			violations := oracle.CheckBundle(mutated, etcdraftLogProgressMonitor{}).Violations
 			if len(violations) != 1 || violations[0].Monitor != etcdraftLogProgressMonitorID ||
-				violations[0].Step != 2 || !strings.Contains(violations[0].Message, test.want) {
+				violations[0].Step != test.step || !strings.Contains(violations[0].Message, test.want) {
 				t.Fatalf("mutation was not detected: %#v", violations)
 			}
 		})
@@ -210,15 +213,21 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 }
 
 type etcdraftLogProgressFixtureNode struct {
-	Node                string `json:"node"`
-	Incarnation         uint64 `json:"incarnation"`
-	Running             bool   `json:"running"`
-	Role                string `json:"role"`
-	Term                uint64 `json:"term"`
-	Commit              uint64 `json:"commit"`
-	Applied             uint64 `json:"applied"`
-	ApplicationDigest   string `json:"application_digest"`
-	ApplicationCommands int    `json:"application_commands"`
+	Node                string                             `json:"node"`
+	Incarnation         uint64                             `json:"incarnation"`
+	Running             bool                               `json:"running"`
+	Role                string                             `json:"role"`
+	Term                uint64                             `json:"term"`
+	Commit              uint64                             `json:"commit"`
+	Applied             uint64                             `json:"applied"`
+	ApplicationDigest   string                             `json:"application_digest"`
+	ApplicationCommands int                                `json:"application_commands"`
+	ApplicationPrefixes []etcdraftLogProgressFixturePrefix `json:"application_prefixes,omitempty"`
+}
+
+type etcdraftLogProgressFixturePrefix struct {
+	Position uint64 `json:"position"`
+	Digest   string `json:"digest"`
 }
 
 type etcdraftLogProgressFixture struct {
@@ -234,13 +243,33 @@ func etcdraftLogProgressFixtureEvidence(
 	incarnation uint64,
 ) control.EvidenceEnvelope {
 	t.Helper()
+	prefixes := make([]etcdraftLogProgressFixturePrefix, 0, applied)
+	for position := uint64(1); position <= applied; position++ {
+		digest, err := control.CanonicalDigest(struct {
+			Position uint64 `json:"position"`
+		}{Position: position})
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefixes = append(prefixes, etcdraftLogProgressFixturePrefix{Position: position, Digest: digest})
+	}
+	applicationDigest, err := control.CanonicalDigest(struct {
+		Position uint64 `json:"position"`
+	}{Position: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prefixes) > 0 {
+		applicationDigest = prefixes[len(prefixes)-1].Digest
+	}
 	payload, err := control.NewJSONPayload(
-		"consensus-atlas/etcdraft-v2-evidence/v1", etcdraftLogProgressFixture{
+		"consensus-atlas/etcdraft-v2-evidence/v2", etcdraftLogProgressFixture{
 			LogicalTime: logicalTime,
 			Nodes: []etcdraftLogProgressFixtureNode{{
 				Node: "n1", Incarnation: incarnation, Running: true, Role: "StateFollower",
 				Term: 2, Commit: commit, Applied: applied,
-				ApplicationDigest: "fixture-application", ApplicationCommands: int(applied),
+				ApplicationDigest: applicationDigest, ApplicationCommands: int(applied),
+				ApplicationPrefixes: prefixes,
 			}},
 		})
 	if err != nil {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -12,12 +13,19 @@ import (
 const (
 	agenticEpisodeRiskJournal     = "risk-agent"
 	agenticEpisodeScenarioJournal = "scenario-agent"
+
+	agenticInvestigationEpisodeLimit  = "episode-limit-reached"
+	agenticInvestigationCallLimit     = "model-call-limit-reached"
+	agenticInvestigationTokenLimit    = "model-token-threshold-reached"
+	agenticInvestigationDecisionLimit = "runtime-decision-allowance-reached"
 )
 
 type agenticEpisodeComposition struct {
-	Target agenticEpisodeTarget
-	Budget agenticEpisodeBudget
-	Client openRouterIntentClient
+	Target                agenticEpisodeTarget
+	Budget                agenticEpisodeBudget
+	Memory                []controlexperiment.RiskExplorationMemoryEntry
+	KnowledgeSourceMounts []controlexperiment.KnowledgeSourceMount
+	Client                openRouterIntentClient
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -27,6 +35,177 @@ type agenticEpisodeDirectoryOptions struct {
 	ReadKey      agentKeyReader
 	Recovery     agenticEpisodeRecoveryBinding
 	Prepare      func(context.Context) (agenticEpisodeComposition, error)
+}
+
+type agenticInvestigationBudget struct {
+	MaxEpisodes                 int
+	MaxModelCalls               int
+	MaxModelTokens              int
+	MaxRuntimeDecisionAllowance int
+}
+
+type agenticInvestigationOptions struct {
+	Directory    string
+	Resume       bool
+	AgentKeyFile string
+	ReadKey      agentKeyReader
+	Recovery     agenticEpisodeRecoveryBinding
+	Budget       agenticInvestigationBudget
+	Prepare      func(context.Context) (agenticEpisodeComposition, error)
+}
+
+type agenticInvestigationResult struct {
+	StopReason               string
+	Episodes                 []recoveredAgenticEpisode
+	ExplorationMemory        []controlexperiment.RiskExplorationMemoryEntry
+	ModelWork                controlexperiment.ModelWork
+	RuntimeDecisionAllowance int
+}
+
+func (budget agenticInvestigationBudget) validate() error {
+	if budget.MaxEpisodes <= 0 || budget.MaxModelCalls <= 0 || budget.MaxModelTokens <= 0 ||
+		budget.MaxRuntimeDecisionAllowance <= 0 {
+		return errors.New("AGENTIC_INVESTIGATION_BUDGET_INVALID")
+	}
+	return nil
+}
+
+// runAgenticInvestigation composes existing durable episode directories. It
+// deliberately writes no session ledger; Memory is rebuilt after every round
+// from the episode artifacts that were just recovered from disk.
+func runAgenticInvestigation(
+	ctx context.Context,
+	options agenticInvestigationOptions,
+) (agenticInvestigationResult, error) {
+	var result agenticInvestigationResult
+	clean := filepath.Clean(options.Directory)
+	if options.Directory == "" || clean == "." || clean == string(filepath.Separator) ||
+		options.Budget.validate() != nil || options.Recovery.validate() != nil ||
+		!validateAgentKeyFileName(options.AgentKeyFile) || options.ReadKey == nil || options.Prepare == nil {
+		return result, errors.New("AGENTIC_INVESTIGATION_OPTIONS_INVALID")
+	}
+	existing, partial, err := recoverAgenticInvestigationEpisodes(
+		clean, options.Resume, options.Recovery, options.Budget.MaxEpisodes,
+	)
+	if err != nil {
+		return result, err
+	}
+	result.Episodes = existing
+	for _, episode := range existing {
+		addAgentModelWork(&result.ModelWork, episode.Summary.Work.Model)
+		result.RuntimeDecisionAllowance += episode.Summary.Budget.MaxRuntimeDecisions
+	}
+	startOrdinal := len(existing) + 1
+	if startOrdinal > options.Budget.MaxEpisodes {
+		result.StopReason = agenticInvestigationEpisodeLimit
+	}
+	for ordinal := startOrdinal; ordinal <= options.Budget.MaxEpisodes; ordinal++ {
+		memory, err := deriveAgenticExplorationMemory(result.Episodes)
+		if err != nil {
+			return result, err
+		}
+		composition, err := options.Prepare(ctx)
+		if err != nil || composition.Target.validate() != nil || composition.Budget.validate() != nil ||
+			composition.Target.ID != options.Recovery.TargetID {
+			return result, errors.New("AGENTIC_INVESTIGATION_COMPOSITION_INVALID")
+		}
+		remainingCalls := options.Budget.MaxModelCalls - result.ModelWork.Calls
+		remainingTokens := options.Budget.MaxModelTokens - result.ModelWork.TotalTokens
+		remainingDecisions := options.Budget.MaxRuntimeDecisionAllowance - result.RuntimeDecisionAllowance
+		if remainingCalls < composition.Budget.MaxTotalCalls {
+			result.StopReason = agenticInvestigationCallLimit
+			break
+		}
+		if remainingTokens < composition.Budget.MaxObservedTokens {
+			result.StopReason = agenticInvestigationTokenLimit
+			break
+		}
+		if remainingDecisions < composition.Budget.MaxRuntimeDecisions {
+			result.StopReason = agenticInvestigationDecisionLimit
+			break
+		}
+		composition.Memory = memory
+		directory := filepath.Join(clean, fmt.Sprintf("episode-%04d", ordinal))
+		resumeEpisode := partial && ordinal == startOrdinal
+		_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
+			Directory: directory, Resume: resumeEpisode,
+			AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
+			Recovery: options.Recovery,
+			Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+				return composition, nil
+			},
+		})
+		if err != nil {
+			return result, err
+		}
+		recovered, terminal, err := recoverAgenticEpisodeArtifacts(directory, options.Recovery)
+		if err != nil || !terminal {
+			return result, errors.New("AGENTIC_INVESTIGATION_EPISODE_RECOVERY_FAILED")
+		}
+		result.Episodes = append(result.Episodes, recovered)
+		partial = false
+		addAgentModelWork(&result.ModelWork, recovered.Summary.Work.Model)
+		result.RuntimeDecisionAllowance += composition.Budget.MaxRuntimeDecisions
+		if result.ModelWork.Calls >= options.Budget.MaxModelCalls {
+			result.StopReason = agenticInvestigationCallLimit
+			break
+		}
+		if result.ModelWork.TotalTokens >= options.Budget.MaxModelTokens {
+			result.StopReason = agenticInvestigationTokenLimit
+			break
+		}
+		if result.RuntimeDecisionAllowance >= options.Budget.MaxRuntimeDecisionAllowance {
+			result.StopReason = agenticInvestigationDecisionLimit
+			break
+		}
+	}
+	if result.StopReason == "" {
+		result.StopReason = agenticInvestigationEpisodeLimit
+	}
+	result.ExplorationMemory, err = deriveAgenticExplorationMemory(result.Episodes)
+	return result, err
+}
+
+func recoverAgenticInvestigationEpisodes(
+	directory string,
+	resume bool,
+	recovery agenticEpisodeRecoveryBinding,
+	maxEpisodes int,
+) ([]recoveredAgenticEpisode, bool, error) {
+	info, err := os.Lstat(directory)
+	if !resume {
+		if !os.IsNotExist(err) {
+			return nil, false, errors.New("AGENTIC_INVESTIGATION_NEW_DIRECTORY_REQUIRED")
+		}
+		return nil, false, nil
+	}
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, false, errors.New("AGENTIC_INVESTIGATION_RESUME_DIRECTORY_INVALID")
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) > maxEpisodes {
+		return nil, false, errors.New("AGENTIC_INVESTIGATION_RESUME_LAYOUT_INVALID")
+	}
+	episodes := make([]recoveredAgenticEpisode, 0, len(entries))
+	partial := false
+	for index, entry := range entries {
+		name := fmt.Sprintf("episode-%04d", index+1)
+		if entry.Name() != name || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || partial {
+			return nil, false, errors.New("AGENTIC_INVESTIGATION_RESUME_SEQUENCE_INVALID")
+		}
+		recovered, terminal, err := recoverAgenticEpisodeArtifacts(
+			filepath.Join(directory, name), recovery,
+		)
+		if err != nil {
+			return nil, false, err
+		}
+		if !terminal {
+			partial = true
+			continue
+		}
+		episodes = append(episodes, recovered)
+	}
+	return episodes, partial, nil
 }
 
 func runAgenticEpisodeDirectory(
@@ -55,6 +234,8 @@ func runAgenticEpisodeDirectory(
 	}
 	composition, err := options.Prepare(ctx)
 	if err != nil || composition.Target.validate() != nil || composition.Budget.validate() != nil ||
+		len(composition.KnowledgeSourceMounts) > 0 &&
+			controlexperiment.ValidateKnowledgeSourceMounts(composition.KnowledgeSourceMounts) != nil ||
 		composition.Client.HTTP == nil || openRouterTransportFreeze(composition.Client).Validate() != nil ||
 		composition.Target.ID != options.Recovery.TargetID {
 		return recoveredAgenticEpisode{}, errors.New("AGENTIC_EPISODE_COMPOSITION_INVALID")
@@ -89,8 +270,19 @@ func runAgenticEpisodeDirectory(
 		key = ""
 		return err
 	}
+	var knowledgeReader controlexperiment.RiskKnowledgeReader
+	if len(composition.KnowledgeSourceMounts) > 0 {
+		knowledgeReader = func(request controlexperiment.KnowledgeReadRequest) (
+			controlexperiment.KnowledgeReadResult, error,
+		) {
+			return controlexperiment.ReadDeclaredKnowledgeSourceFromMounts(
+				composition.KnowledgeSourceMounts, composition.Target.Knowledge, request,
+			)
+		}
+	}
 	result, err := runAgenticEpisode(
 		ctx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
+		composition.Memory, knowledgeReader,
 		activateRiskKey, activateScenarioKey,
 	)
 	if err != nil {

@@ -65,8 +65,15 @@ func newEtcdraftAgenticEpisodeTarget(
 		return agenticEpisodeTarget{}, errors.New("ETCDRAFT_AGENTIC_EPISODE_INPUT_INVALID")
 	}
 	observationProjector := etcdraftv2.ObservationProjector{}
+	surface, err := controlexperiment.NewAgentTargetSurface(
+		"etcdraft-v2", inputs.campaign.qualification.Manifest, inputs.campaign.workload,
+		inputs.experiment.Runtime, inputs.experiment.FaultEnvelope,
+	)
+	if err != nil {
+		return agenticEpisodeTarget{}, err
+	}
 	target := agenticEpisodeTarget{
-		ID: "etcdraft-v2", Knowledge: inputs.knowledge,
+		ID: "etcdraft-v2", Knowledge: inputs.knowledge, Surface: surface,
 		Actions:              inputs.campaign.qualification.Manifest.Capabilities.Actions,
 		ObservationProjector: observationProjector,
 		ScenarioInputs: func(

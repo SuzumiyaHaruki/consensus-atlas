@@ -145,10 +145,116 @@ func TestDeterministicScenarioUsesAgentExecutionSubstrateWithoutModelWork(t *tes
 		len(result.Agent.Attempts[1].Feedback.Steps) != 1 ||
 		result.Agent.Attempts[1].Feedback.Steps[0].Choice == nil ||
 		result.Agent.Attempts[1].Feedback.Steps[0].Choice.Action.Kind != control.ActionRestart ||
+		result.Agent.Attempts[1].Feedback.NaturalProgressStop == "" ||
 		result.Testing.Risk.Status != semantic.RiskWitnessReached || !result.Testing.Replay.Stable ||
 		len(result.Testing.Oracle.Violations) != 0 ||
 		result.Testing.Bundle.Trace.Digest != result.Agent.Execution.FinalTrace.Digest {
 		t.Fatalf("deterministic Scenario did not produce comparable qualified evidence: %#v", result)
+	}
+}
+
+func TestScenarioClientTerminalReturnsControlToPlanner(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
+	defer cancel()
+	inputs, err := prepareEtcdraftSemanticCalibration(
+		ctx, etcdraftTestRootCorpusPath, etcdraftScenarioTestSemanticInput(t, 2, 32),
+		fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	result, err := runScenarioEpisodeCore(
+		ctx, etcdraftScenarioCoreInputs(inputs), 2, 1, 32,
+		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
+			[]byte, controlexperiment.ModelWork, error,
+		) {
+			calls++
+			wanted := control.ActionDeliverMessage
+			if calls == 2 {
+				if view.Prior == nil ||
+					view.Prior.NaturalProgressStop != controlexperiment.ScenarioProgressClientTerminal {
+					t.Fatalf("client terminal was not exposed as a planning checkpoint: %#v", view.Prior)
+				}
+				wanted = control.ActionCrash
+			}
+			var selected controlexperiment.FrontierActionRef
+			for _, action := range view.Frontier.Actions {
+				if action.Kind == wanted {
+					selected = action
+					break
+				}
+			}
+			if selected.ActionID == "" {
+				t.Fatalf("A9e2 checkpoint action %s unavailable: %#v", wanted, view.Frontier.Actions)
+			}
+			encoded, marshalErr := json.Marshal(controlexperiment.ScenarioPlan{
+				ID: "a9e2-client-terminal-plan",
+				Steps: []controlexperiment.ScenarioStep{{
+					ID: "a9e2-intervention",
+					Selector: controlexperiment.FrontierActionSelector{
+						ActionID: selected.ActionID,
+					},
+				}},
+			})
+			return encoded, controlexperiment.ModelWork{}, marshalErr
+		},
+	)
+	if err != nil || calls != 2 || result.Agent.Execution == nil || len(result.Agent.Attempts) != 2 ||
+		result.Agent.Attempts[0].Feedback.NaturalProgressStop !=
+			controlexperiment.ScenarioProgressClientTerminal ||
+		len(result.Agent.Attempts[1].Feedback.Steps) != 1 ||
+		result.Agent.Attempts[1].Feedback.Steps[0].Choice == nil ||
+		result.Agent.Attempts[1].Feedback.Steps[0].Choice.Action.Kind != control.ActionCrash {
+		t.Fatalf("client terminal ended the investigation instead of returning control: %#v calls=%d err=%v",
+			result, calls, err)
+	}
+}
+
+func TestCompleteScenarioIntentEndsAtClientTerminalWithoutReplanning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
+	defer cancel()
+	inputs, err := prepareEtcdraftSemanticCalibration(
+		ctx, etcdraftTestRootCorpusPath, etcdraftScenarioTestSemanticInput(t, 2, 32),
+		fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	result, err := runScenarioEpisodeCore(
+		ctx, etcdraftScenarioCoreInputs(inputs), 2, 2, 32,
+		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
+			[]byte, controlexperiment.ModelWork, error,
+		) {
+			calls++
+			var selected controlexperiment.FrontierActionRef
+			for _, action := range view.Frontier.Actions {
+				if action.Kind == control.ActionDeliverMessage {
+					selected = action
+					break
+				}
+			}
+			if selected.ActionID == "" {
+				t.Fatalf("complete intent root has no deliver action: %#v", view.Frontier.Actions)
+			}
+			encoded, marshalErr := json.Marshal(controlexperiment.ScenarioPlan{
+				ID: "a9e4-complete-intent",
+				Steps: []controlexperiment.ScenarioStep{{
+					ID: "deliver-current", Selector: controlexperiment.FrontierActionSelector{
+						ActionID: selected.ActionID,
+					},
+				}},
+			})
+			return encoded, controlexperiment.ModelWork{}, marshalErr
+		},
+	)
+	if err != nil || calls != 1 || result.Agent.Status != controlexperiment.ScenarioAgentCompleted ||
+		len(result.Agent.Attempts) != 1 || result.Agent.Execution == nil ||
+		result.Agent.Attempts[0].Feedback.NaturalProgressStop !=
+			controlexperiment.ScenarioProgressClientTerminal {
+		t.Fatalf("complete intent replanned after terminal: status=%s attempts=%d calls=%d err=%v",
+			result.Agent.Status, len(result.Agent.Attempts), calls, err)
 	}
 }
 

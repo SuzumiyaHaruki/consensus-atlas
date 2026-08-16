@@ -55,6 +55,53 @@ func TestProjectSeparatesFundamentalControlState(t *testing.T) {
 	if baseline.Digest == changed.Digest {
 		t.Fatal("an additional pending message did not change Core PSS")
 	}
+	baselineViews, err := Keys(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedViews, err := Keys(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baselineViews.Protocol != changedViews.Protocol ||
+		baselineViews.Control == changedViews.Control || baselineViews.Joint == changedViews.Joint {
+		t.Fatalf("pending message was not isolated to control/joint views: %#v/%#v",
+			baselineViews, changedViews)
+	}
+}
+
+func TestViewKeysSeparateSemanticProgressFromStableControl(t *testing.T) {
+	snapshot, graph := equivalentFixture("alpha", "beta", 3, 5, 100, "value")
+	baseline, err := Project(snapshot, "fixture/core-v1", SemanticObservation{
+		LogicalTime: snapshot.LogicalTime, Graph: graph,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range graph.Entities {
+		if graph.Entities[index].Kind == EntityDecision {
+			graph.Entities[index].Stage = StageDecided
+		}
+	}
+	changed, err := Project(snapshot, "fixture/core-v1", SemanticObservation{
+		LogicalTime: snapshot.LogicalTime, Graph: graph,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselineViews, err := Keys(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedViews, err := Keys(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baselineViews.Protocol == changedViews.Protocol ||
+		baselineViews.Control != changedViews.Control || baselineViews.Joint == changedViews.Joint {
+		t.Fatalf("semantic change was not isolated to protocol/joint views: %#v/%#v",
+			baselineViews, changedViews)
+	}
 }
 
 func TestProjectSeparatesMessageFromPriorIncarnation(t *testing.T) {

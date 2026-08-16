@@ -16,6 +16,7 @@ const (
 	agenticEpisodeRiskStopped     = "risk-agent-stopped"
 	agenticEpisodeScenarioStopped = "scenario-agent-stopped"
 	agenticEpisodeTokenStopped    = "model-token-threshold-reached"
+	agenticEpisodeExecutionFailed = "execution-failed"
 )
 
 var errAgenticEpisodeTokenThreshold = errors.New("AGENTIC_EPISODE_MODEL_TOKEN_THRESHOLD_REACHED")
@@ -46,6 +47,8 @@ type agenticEpisodeMetrics struct {
 	RiskReached       bool `json:"risk_reached"`
 	CorePSSSamples    int  `json:"core_pss_samples"`
 	UniquePSSStates   int  `json:"unique_pss_states"`
+	ProtocolPSSStates int  `json:"protocol_pss_states,omitempty"`
+	ControlPSSStates  int  `json:"control_pss_states,omitempty"`
 	OracleFindings    int  `json:"oracle_findings"`
 }
 
@@ -62,6 +65,7 @@ type agenticEpisodeResult struct {
 	RiskProviderCalls     []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
 	Scenario              *scenarioAgentEpisodeResult                 `json:"scenario,omitempty"`
 	ScenarioProviderCalls []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
+	Failure               *controlexperiment.MethodFailure            `json:"failure,omitempty"`
 	Testing               *scenarioTestingResult                      `json:"testing,omitempty"`
 	Metrics               agenticEpisodeMetrics                       `json:"metrics"`
 	Work                  agenticEpisodeWork                          `json:"work"`
@@ -81,6 +85,7 @@ type agenticEpisodeObservationProjector interface {
 type agenticEpisodeTarget struct {
 	ID                   string
 	Knowledge            controlexperiment.ProtocolKnowledgePack
+	Surface              controlexperiment.AgentTargetSurface
 	Actions              []control.ActionKind
 	ObservationProjector agenticEpisodeObservationProjector
 	ScenarioInputs       func(
@@ -98,6 +103,7 @@ type agenticEpisodeTarget struct {
 func (target agenticEpisodeTarget) validate() error {
 	if strings.TrimSpace(target.ID) == "" || strings.ContainsAny(target.ID, " /\\") ||
 		target.Knowledge.ValidateAgentMaterials() != nil || target.ObservationProjector == nil ||
+		target.Surface.Validate() != nil || target.Surface.TargetID != target.ID ||
 		reflect.ValueOf(target.ObservationProjector).Kind() == reflect.Pointer &&
 			reflect.ValueOf(target.ObservationProjector).IsNil() ||
 		semantic.ValidateObservationCapabilities(target.ObservationProjector.Capabilities()) != nil ||
@@ -120,6 +126,8 @@ func runAgenticEpisode(
 	riskJournal *statelessAgentCallJournal,
 	scenarioJournal *scenarioAgentCallJournal,
 	budget agenticEpisodeBudget,
+	memory []controlexperiment.RiskExplorationMemoryEntry,
+	knowledgeReader controlexperiment.RiskKnowledgeReader,
 	activateRiskKey func() error,
 	activateScenarioKey func() error,
 ) (agenticEpisodeResult, error) {
@@ -134,7 +142,7 @@ func runAgenticEpisode(
 	risk, runErr := controlexperiment.DiscoverRiskWithPlanner(
 		ctx, controlexperiment.RiskAgentBudget{
 			MaxCalls: budget.MaxRiskCalls, MaxTokens: budget.MaxObservedTokens,
-		}, target.Knowledge, capabilities, target.Actions,
+		}, target.Knowledge, capabilities, target.Actions, memory, &target.Surface, knowledgeReader,
 		func(ctx context.Context, view controlexperiment.RiskAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
@@ -185,6 +193,7 @@ func runAgenticEpisode(
 		coreInputs.RiskProjector.ID() != projector.ID() {
 		return result, errors.New("AGENTIC_EPISODE_TARGET_SCENARIO_INVALID")
 	}
+	coreInputs.TargetSurface = &target.Surface
 	rootID := target.ID + "-agentic-" + risk.Accepted.Candidate.ID
 	coreInputs.RootID = rootID
 	if scenarioJournal.SetRoot(rootID) != nil {
@@ -227,6 +236,11 @@ func runAgenticEpisode(
 		return result, nil
 	}
 	if scenarioErr != nil {
+		if scenario.Failure != nil {
+			result.Status = agenticEpisodeExecutionFailed
+			result.Failure = cloneAgenticEpisodeFailure(scenario.Failure)
+			return result, nil
+		}
 		return result, scenarioErr
 	}
 	if scenario.Agent.Execution == nil {
@@ -239,12 +253,27 @@ func runAgenticEpisode(
 	}
 	result.Testing = &testing
 	result.Status = agenticEpisodeCompleted
-	result.Metrics.RiskReached = testing.Risk.Status == semantic.RiskWitnessReached
-	result.Metrics.CorePSSSamples = testing.CorePSSSamples
-	result.Metrics.UniquePSSStates = testing.UniqueCorePSSStates
-	result.Metrics.OracleFindings = len(testing.Oracle.Violations)
+	result.Metrics, err = testingAgenticEpisodeMetrics(testing)
+	if err != nil {
+		return result, err
+	}
 	result.Work.QualifiedExecution = testing.Bundle.Work
 	return result, nil
+}
+
+func cloneAgenticEpisodeFailure(failure *controlexperiment.MethodFailure) *controlexperiment.MethodFailure {
+	if failure == nil {
+		return nil
+	}
+	cloned := *failure
+	if failure.Terminal != nil {
+		terminal := *failure.Terminal
+		terminal.AttemptedAction.Parameters = append(
+			[]byte(nil), failure.Terminal.AttemptedAction.Parameters...,
+		)
+		cloned.Terminal = &terminal
+	}
+	return &cloned
 }
 
 func modelWorkFromAgentAudits(audits []controlexperiment.StatelessAgentCallAudit) controlexperiment.ModelWork {

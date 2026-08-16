@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -13,21 +15,35 @@ import (
 )
 
 const (
-	RiskAgentMaxCalls     = 4
-	RiskCandidateMaxBytes = 64 << 10
-	RiskCandidateMaxSteps = 6
+	RiskAgentMaxCalls            = 4
+	RiskCandidateMaxBytes        = 64 << 10
+	RiskCandidateMaxSteps        = 6
+	RiskCandidatePortfolioMax    = 3
+	RiskExplorationMemoryMax     = 8
+	RiskMechanismStepMaxBytes    = 160
+	RiskKnowledgeRequestsPerCall = 2
+	RiskKnowledgeRequestsTotal   = 2
+	RiskKnowledgeRequestMaxLines = 80
 
 	RiskAgentAccepted = "accepted"
 	RiskAgentStopped  = "stopped"
 
-	RiskAgentReasonJSON        = "risk-candidate-json-invalid"
-	RiskAgentReasonCandidate   = "risk-candidate-invalid"
-	RiskAgentReasonBinding     = "risk-candidate-single-use-binding"
-	RiskAgentReasonProperty    = "risk-candidate-property-unknown"
-	RiskAgentReasonInspiration = "risk-candidate-inspiration-unknown"
-	RiskAgentReasonDuplicate   = "risk-candidate-existing-risk"
-	RiskAgentReasonUnqualified = "risk-candidate-unqualified"
-	RiskAgentReasonTokenBudget = "risk-agent-token-budget-exceeded"
+	RiskAgentReasonJSON                 = "risk-candidate-json-invalid"
+	RiskAgentReasonCandidate            = "risk-candidate-invalid"
+	RiskAgentReasonBinding              = "risk-candidate-single-use-binding"
+	RiskAgentReasonProperty             = "risk-candidate-property-unknown"
+	RiskAgentReasonInspiration          = "risk-candidate-inspiration-unknown"
+	RiskAgentReasonAlignment            = "risk-candidate-mechanism-unaligned"
+	RiskAgentReasonDuplicate            = "risk-candidate-existing-risk"
+	RiskAgentReasonUnqualified          = "risk-candidate-unqualified"
+	RiskAgentReasonTokenBudget          = "risk-agent-token-budget-exceeded"
+	RiskAgentReasonPortfolio            = "risk-portfolio-no-qualified-candidate"
+	RiskAgentReasonKnowledgeRead        = "risk-knowledge-read-completed"
+	RiskAgentReasonKnowledgeInvalid     = "risk-knowledge-request-invalid"
+	RiskAgentReasonKnowledgeUnavailable = "risk-knowledge-reader-unavailable"
+	RiskAgentReasonKnowledgeBudget      = "risk-knowledge-request-budget-exceeded"
+
+	RiskCandidateQualified = "qualified"
 )
 
 var (
@@ -36,8 +52,18 @@ var (
 	errRiskCandidateBinding   = errors.New("EXPERIMENT_RISK_CANDIDATE_BINDING_INVALID")
 	errRiskCandidateProperty  = errors.New("EXPERIMENT_RISK_CANDIDATE_PROPERTY_UNKNOWN")
 	errRiskCandidatePattern   = errors.New("EXPERIMENT_RISK_CANDIDATE_INSPIRATION_UNKNOWN")
+	errRiskCandidateAlignment = errors.New("EXPERIMENT_RISK_CANDIDATE_MECHANISM_UNALIGNED")
 	errRiskCandidateBridge    = errors.New("EXPERIMENT_RISK_CANDIDATE_SCENARIO_BRIDGE_INVALID")
 )
+
+// RiskMechanismStep binds one causal explanation to the exact Observation
+// milestone that makes it testable. Provider prose is never accepted as a
+// second, independent description of the trigger sequence.
+type RiskMechanismStep struct {
+	MilestoneID string                   `json:"milestone_id"`
+	Kind        semantic.ObservationKind `json:"kind"`
+	Rationale   string                   `json:"rationale"`
+}
 
 // RiskCandidate is deliberately only a semantic hypothesis. Family, order
 // edges, capabilities, execution controls and verdicts remain trusted inputs.
@@ -47,7 +73,20 @@ type RiskCandidate struct {
 	InspirationRef     string                          `json:"inspiration_ref,omitempty"`
 	Summary            string                          `json:"summary"`
 	SuspectedMechanism string                          `json:"suspected_mechanism,omitempty"`
+	MechanismSteps     []RiskMechanismStep             `json:"mechanism_steps,omitempty"`
 	Predicates         []semantic.ObservationPredicate `json:"predicates"`
+}
+
+// RiskCandidatePortfolio is one untrusted model proposal. Candidate order is
+// the Agent's priority; trusted code assesses every entry and selects the
+// first mechanically qualified candidate.
+type RiskCandidatePortfolio struct {
+	Candidates                  []RiskCandidate `json:"candidates"`
+	requiresBoundMechanismSteps bool
+}
+
+type RiskKnowledgeRequestBatch struct {
+	KnowledgeRequests []KnowledgeReadRequest `json:"knowledge_requests"`
 }
 
 type RiskAgentBudget struct {
@@ -60,13 +99,51 @@ type RiskAgentFeedback struct {
 	ReasonCode  string                            `json:"reason_code,omitempty"`
 	CandidateID string                            `json:"candidate_id,omitempty"`
 	Issues      []semantic.RiskQualificationIssue `json:"issues,omitempty"`
+	Reviews     []RiskCandidateReview             `json:"candidate_reviews,omitempty"`
+}
+
+type RiskCandidateReview struct {
+	Ordinal     int                               `json:"ordinal"`
+	CandidateID string                            `json:"candidate_id,omitempty"`
+	Outcome     string                            `json:"outcome"`
+	ReasonCode  string                            `json:"reason_code,omitempty"`
+	Issues      []semantic.RiskQualificationIssue `json:"issues,omitempty"`
+}
+
+// RiskExplorationMemoryEntry is a compact, trusted summary of one earlier
+// episode. Exact execution and verdict evidence stay in the original
+// artifacts; this view only helps the Agent avoid repeating an investigation.
+type RiskExplorationMemoryEntry struct {
+	Episode               int      `json:"episode"`
+	CandidateID           string   `json:"candidate_id,omitempty"`
+	Summary               string   `json:"summary,omitempty"`
+	SuspectedMechanism    string   `json:"suspected_mechanism,omitempty"`
+	EpisodeOutcome        string   `json:"episode_outcome"`
+	RepeatedCandidate     bool     `json:"repeated_candidate,omitempty"`
+	RiskStatus            string   `json:"risk_status,omitempty"`
+	SatisfiedMilestones   []string `json:"satisfied_milestones,omitempty"`
+	FirstMissingMilestone string   `json:"first_missing_milestone,omitempty"`
+	ProtocolPSSStates     int      `json:"protocol_pss_states,omitempty"`
+	NewProtocolPSSStates  int      `json:"new_protocol_pss_states,omitempty"`
+	OracleFindings        int      `json:"oracle_findings,omitempty"`
+	MechanicalReasonCodes []string `json:"mechanical_reason_codes,omitempty"`
+	ModelCalls            int      `json:"model_calls"`
+	ModelTokens           int      `json:"model_tokens"`
+	SearchWorkUnits       int      `json:"search_work_units"`
+	ExecutionWorkUnits    int      `json:"execution_work_units"`
 }
 
 type RiskAgentView struct {
 	Knowledge               ProtocolKnowledgePack            `json:"knowledge"`
+	TargetSurface           *AgentTargetSurface              `json:"target_surface,omitempty"`
 	ObservationCapabilities []semantic.ObservationCapability `json:"observation_capabilities"`
 	Actions                 []control.ActionKind             `json:"actions"`
 	MaxMilestones           int                              `json:"max_milestones"`
+	MaxCandidates           int                              `json:"max_candidates"`
+	ExplorationMemory       []RiskExplorationMemoryEntry     `json:"exploration_memory,omitempty"`
+	KnowledgeSources        []KnowledgeSource                `json:"knowledge_sources,omitempty"`
+	KnowledgeResults        []KnowledgeReadResult            `json:"knowledge_results,omitempty"`
+	MaxKnowledgeRequests    int                              `json:"max_knowledge_requests,omitempty"`
 	Prior                   *RiskAgentFeedback               `json:"prior_feedback,omitempty"`
 }
 
@@ -77,11 +154,13 @@ type RiskCandidateAssessment struct {
 }
 
 type RiskAgentAttempt struct {
-	Ordinal       int                      `json:"ordinal"`
-	ResponseBytes []byte                   `json:"response_bytes"`
-	Assessment    *RiskCandidateAssessment `json:"assessment,omitempty"`
-	Feedback      RiskAgentFeedback        `json:"feedback"`
-	ModelWork     ModelWork                `json:"model_work"`
+	Ordinal           int                      `json:"ordinal"`
+	ResponseBytes     []byte                   `json:"response_bytes"`
+	Assessment        *RiskCandidateAssessment `json:"assessment,omitempty"`
+	Feedback          RiskAgentFeedback        `json:"feedback"`
+	ModelWork         ModelWork                `json:"model_work"`
+	KnowledgeRequests []KnowledgeReadRequest   `json:"knowledge_requests,omitempty"`
+	KnowledgeResults  []KnowledgeReadResult    `json:"knowledge_results,omitempty"`
 }
 
 type RiskAgentResult struct {
@@ -92,6 +171,7 @@ type RiskAgentResult struct {
 }
 
 type RiskPlanner func(context.Context, RiskAgentView) ([]byte, ModelWork, error)
+type RiskKnowledgeReader func(KnowledgeReadRequest) (KnowledgeReadResult, error)
 
 func (budget RiskAgentBudget) Validate() error {
 	if budget.MaxCalls <= 0 || budget.MaxCalls > RiskAgentMaxCalls || budget.MaxTokens <= 0 {
@@ -102,8 +182,12 @@ func (budget RiskAgentBudget) Validate() error {
 
 func (view RiskAgentView) Validate() error {
 	if view.Knowledge.ValidateAgentMaterials() != nil ||
+		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
 		semantic.ValidateObservationCapabilities(view.ObservationCapabilities) != nil ||
-		!validRiskAgentActions(view.Actions) || view.MaxMilestones != RiskCandidateMaxSteps {
+		!validRiskAgentActions(view.Actions) || view.MaxMilestones != RiskCandidateMaxSteps ||
+		view.MaxCandidates != RiskCandidatePortfolioMax ||
+		!validRiskExplorationMemory(view.ExplorationMemory) ||
+		!validRiskKnowledgeView(view) {
 		return errors.New("EXPERIMENT_RISK_AGENT_VIEW_INVALID")
 	}
 	if view.Prior != nil && (view.Prior.Outcome != RiskAgentStopped || view.Prior.ReasonCode == "") {
@@ -118,20 +202,44 @@ func DiscoverRiskWithPlanner(
 	knowledge ProtocolKnowledgePack,
 	capabilities []semantic.ObservationCapability,
 	actions []control.ActionKind,
+	memory []RiskExplorationMemoryEntry,
+	targetSurface *AgentTargetSurface,
+	knowledgeReader RiskKnowledgeReader,
 	planner RiskPlanner,
 ) (RiskAgentResult, error) {
 	if budget.Validate() != nil ||
 		knowledge.ValidateAgentMaterials() != nil || semantic.ValidateObservationCapabilities(capabilities) != nil ||
-		!validRiskAgentActions(actions) || planner == nil {
+		!validRiskAgentActions(actions) || !validRiskExplorationMemory(memory) ||
+		targetSurface != nil && targetSurface.Validate() != nil || planner == nil {
 		return RiskAgentResult{}, errors.New("EXPERIMENT_RISK_AGENT_INPUT_INVALID")
+	}
+	var knowledgeSources []KnowledgeSource
+	if knowledgeReader != nil {
+		var err error
+		knowledgeSources, err = KnowledgeSourceCatalog(knowledge)
+		if err != nil || len(knowledgeSources) == 0 {
+			return RiskAgentResult{}, errors.New("EXPERIMENT_RISK_AGENT_KNOWLEDGE_INPUT_INVALID")
+		}
 	}
 	result := RiskAgentResult{Status: RiskAgentStopped}
 	var prior *RiskAgentFeedback
+	var knowledgeResults []KnowledgeReadResult
+	knowledgeRequests := 0
+	seenKnowledgeRequests := make(map[string]bool)
 	for ordinal := 1; ordinal <= budget.MaxCalls; ordinal++ {
 		view := RiskAgentView{
-			Knowledge: knowledge, ObservationCapabilities: cloneObservationCapabilities(capabilities),
-			Actions: append([]control.ActionKind(nil), actions...), MaxMilestones: RiskCandidateMaxSteps,
-			Prior: cloneRiskAgentFeedback(prior),
+			Knowledge:               cloneProtocolKnowledge(knowledge),
+			TargetSurface:           cloneAgentTargetSurface(targetSurface),
+			ObservationCapabilities: cloneObservationCapabilities(capabilities),
+			Actions:                 append([]control.ActionKind(nil), actions...), MaxMilestones: RiskCandidateMaxSteps,
+			MaxCandidates:     RiskCandidatePortfolioMax,
+			ExplorationMemory: cloneRiskExplorationMemory(memory),
+			KnowledgeSources:  cloneKnowledgeSources(knowledgeSources),
+			KnowledgeResults:  cloneKnowledgeReadResults(knowledgeResults),
+			Prior:             cloneRiskAgentFeedback(prior),
+		}
+		if knowledgeReader != nil && len(knowledgeResults) == 0 {
+			view.MaxKnowledgeRequests = RiskKnowledgeRequestsPerCall
 		}
 		response, work, err := planner(ctx, view)
 		if err != nil {
@@ -149,7 +257,7 @@ func DiscoverRiskWithPlanner(
 			result.Attempts = append(result.Attempts, attempt)
 			return result, nil
 		}
-		candidate, err := ParseRiskCandidate(response)
+		portfolio, requests, isKnowledgeRequest, err := parseRiskAgentResponse(response)
 		if err != nil {
 			reason := RiskAgentReasonCandidate
 			if errors.Is(err, errRiskCandidateJSON) {
@@ -162,43 +270,197 @@ func DiscoverRiskWithPlanner(
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
 		}
-		assessment, err := AssessRiskCandidate(knowledge, candidate, capabilities, actions)
-		if err != nil {
-			reason := RiskAgentReasonCandidate
-			switch {
-			case errors.Is(err, errRiskCandidateDuplicate):
-				reason = RiskAgentReasonDuplicate
-			case errors.Is(err, errRiskCandidateProperty):
-				reason = RiskAgentReasonProperty
-			case errors.Is(err, errRiskCandidatePattern):
-				reason = RiskAgentReasonInspiration
+		if isKnowledgeRequest {
+			attempt.KnowledgeRequests = append([]KnowledgeReadRequest(nil), requests...)
+			reason := RiskAgentReasonKnowledgeRead
+			if knowledgeReader == nil {
+				reason = RiskAgentReasonKnowledgeUnavailable
+			} else if len(knowledgeResults) > 0 {
+				reason = RiskAgentReasonKnowledgeInvalid
+			} else if knowledgeRequests+len(requests) > RiskKnowledgeRequestsTotal ||
+				!validRiskKnowledgeRequests(requests, knowledgeSources, seenKnowledgeRequests) {
+				reason = RiskAgentReasonKnowledgeBudget
+				if knowledgeRequests+len(requests) <= RiskKnowledgeRequestsTotal {
+					reason = RiskAgentReasonKnowledgeInvalid
+				}
+			} else {
+				for _, request := range requests {
+					read, readErr := knowledgeReader(request)
+					if readErr != nil || read.Validate() != nil || read.Source.Reference != request.Reference {
+						return result, errors.New("EXPERIMENT_RISK_AGENT_KNOWLEDGE_READ_INVALID")
+					}
+					knowledgeResults = append(knowledgeResults, read)
+					attempt.KnowledgeResults = append(attempt.KnowledgeResults, cloneKnowledgeReadResult(read))
+					knowledgeRequests++
+					seenKnowledgeRequests[riskKnowledgeRequestKey(request)] = true
+				}
 			}
-			attempt.Feedback = RiskAgentFeedback{
-				Outcome: RiskAgentStopped, ReasonCode: reason, CandidateID: candidate.ID,
-			}
+			attempt.Feedback = RiskAgentFeedback{Outcome: RiskAgentStopped, ReasonCode: reason}
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
 		}
-		attempt.Assessment = &assessment
+		reviews := make([]RiskCandidateReview, 0, len(portfolio.Candidates))
+		seen := make(map[string]bool, len(portfolio.Candidates))
+		var firstAssessment *RiskCandidateAssessment
+		var selected *RiskCandidateAssessment
+		for index, candidate := range portfolio.Candidates {
+			review := RiskCandidateReview{Ordinal: index + 1, CandidateID: candidate.ID, Outcome: RiskAgentStopped}
+			if seen[candidate.ID] {
+				review.ReasonCode = RiskAgentReasonDuplicate
+				reviews = append(reviews, review)
+				continue
+			}
+			seen[candidate.ID] = true
+			candidate, draftErr := normalizeRiskCandidateDraft(
+				candidate, portfolio.requiresBoundMechanismSteps,
+			)
+			if draftErr != nil {
+				review.ReasonCode = riskCandidateReason(draftErr)
+				reviews = append(reviews, review)
+				continue
+			}
+			if draftErr := candidate.ValidateAgentDraft(); draftErr != nil {
+				review.ReasonCode = riskCandidateReason(draftErr)
+				reviews = append(reviews, review)
+				continue
+			}
+			assessment, assessErr := AssessRiskCandidate(knowledge, candidate, capabilities, actions)
+			if assessErr != nil {
+				review.ReasonCode = riskCandidateReason(assessErr)
+				reviews = append(reviews, review)
+				continue
+			}
+			if firstAssessment == nil {
+				value := assessment
+				firstAssessment = &value
+			}
+			review.Issues = append([]semantic.RiskQualificationIssue(nil), assessment.Qualification.Issues...)
+			if !assessment.Qualification.Qualified {
+				review.ReasonCode = RiskAgentReasonUnqualified
+				reviews = append(reviews, review)
+				continue
+			}
+			review.Outcome = RiskCandidateQualified
+			reviews = append(reviews, review)
+			if selected == nil {
+				value := assessment
+				selected = &value
+			}
+		}
 		attempt.Feedback = RiskAgentFeedback{
-			Outcome: RiskAgentAccepted, CandidateID: candidate.ID,
-			Issues: append([]semantic.RiskQualificationIssue(nil), assessment.Qualification.Issues...),
+			Outcome: RiskAgentStopped, ReasonCode: RiskAgentReasonPortfolio,
+			Reviews: cloneRiskCandidateReviews(reviews),
 		}
-		if !assessment.Qualification.Qualified {
-			attempt.Feedback.Outcome = RiskAgentStopped
-			attempt.Feedback.ReasonCode = RiskAgentReasonUnqualified
+		attempt.Assessment = firstAssessment
+		if selected == nil {
+			if len(reviews) == 1 {
+				attempt.Feedback.CandidateID = reviews[0].CandidateID
+				attempt.Feedback.ReasonCode = reviews[0].ReasonCode
+				attempt.Feedback.Issues = append(
+					[]semantic.RiskQualificationIssue(nil), reviews[0].Issues...,
+				)
+			}
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
 		}
+		attempt.Assessment = selected
+		attempt.Feedback.Outcome = RiskAgentAccepted
+		attempt.Feedback.ReasonCode = ""
+		attempt.Feedback.CandidateID = selected.Candidate.ID
+		attempt.Feedback.Issues = append(
+			[]semantic.RiskQualificationIssue(nil), selected.Qualification.Issues...,
+		)
 		result.Attempts = append(result.Attempts, attempt)
-		accepted := assessment
+		accepted := *selected
 		result.Accepted = &accepted
 		result.Status = RiskAgentAccepted
 		return result, nil
 	}
 	return result, nil
+}
+
+func riskCandidateReason(err error) string {
+	switch {
+	case errors.Is(err, errRiskCandidateJSON):
+		return RiskAgentReasonJSON
+	case errors.Is(err, errRiskCandidateBinding):
+		return RiskAgentReasonBinding
+	case errors.Is(err, errRiskCandidateDuplicate):
+		return RiskAgentReasonDuplicate
+	case errors.Is(err, errRiskCandidateProperty):
+		return RiskAgentReasonProperty
+	case errors.Is(err, errRiskCandidatePattern):
+		return RiskAgentReasonInspiration
+	case errors.Is(err, errRiskCandidateAlignment):
+		return RiskAgentReasonAlignment
+	default:
+		return RiskAgentReasonCandidate
+	}
+}
+
+func parseRiskAgentResponse(data []byte) (
+	RiskCandidatePortfolio,
+	[]KnowledgeReadRequest,
+	bool,
+	error,
+) {
+	if len(data) == 0 || len(data) > RiskCandidateMaxBytes {
+		return RiskCandidatePortfolio{}, nil, false, errRiskCandidateJSON
+	}
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(data, &probe) != nil {
+		return RiskCandidatePortfolio{}, nil, false, errRiskCandidateJSON
+	}
+	if _, ok := probe["knowledge_requests"]; !ok {
+		portfolio, err := ParseRiskCandidatePortfolio(data)
+		return portfolio, nil, false, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var batch RiskKnowledgeRequestBatch
+	if decoder.Decode(&batch) != nil || len(batch.KnowledgeRequests) == 0 ||
+		len(batch.KnowledgeRequests) > RiskKnowledgeRequestsPerCall {
+		return RiskCandidatePortfolio{}, nil, false, errRiskCandidateJSON
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return RiskCandidatePortfolio{}, nil, false, errRiskCandidateJSON
+	}
+	return RiskCandidatePortfolio{}, append([]KnowledgeReadRequest(nil), batch.KnowledgeRequests...), true, nil
+}
+
+func ParseRiskCandidatePortfolio(data []byte) (RiskCandidatePortfolio, error) {
+	if len(data) == 0 || len(data) > RiskCandidateMaxBytes {
+		return RiskCandidatePortfolio{}, errRiskCandidateJSON
+	}
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(data, &probe) != nil {
+		return RiskCandidatePortfolio{}, errRiskCandidateJSON
+	}
+	if _, ok := probe["candidates"]; !ok {
+		candidate, err := ParseRiskCandidate(data)
+		if err != nil {
+			return RiskCandidatePortfolio{}, err
+		}
+		return RiskCandidatePortfolio{
+			Candidates: []RiskCandidate{candidate}, requiresBoundMechanismSteps: true,
+		}, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var portfolio RiskCandidatePortfolio
+	if decoder.Decode(&portfolio) != nil || len(portfolio.Candidates) == 0 ||
+		len(portfolio.Candidates) > RiskCandidatePortfolioMax {
+		return RiskCandidatePortfolio{}, errRiskCandidateJSON
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return RiskCandidatePortfolio{}, errRiskCandidateJSON
+	}
+	portfolio.requiresBoundMechanismSteps = true
+	return portfolio, nil
 }
 
 func ParseRiskCandidate(data []byte) (RiskCandidate, error) {
@@ -215,7 +477,9 @@ func ParseRiskCandidate(data []byte) (RiskCandidate, error) {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return RiskCandidate{}, errRiskCandidateJSON
 	}
-	if err := candidate.ValidateAgentDraft(); err != nil {
+	var err error
+	candidate, err = normalizeRiskCandidateDraft(candidate, false)
+	if err != nil {
 		return RiskCandidate{}, err
 	}
 	return candidate, nil
@@ -246,6 +510,12 @@ func (candidate RiskCandidate) Validate() error {
 			return errRiskCandidateBinding
 		}
 	}
+	if len(candidate.MechanismSteps) > 0 {
+		derived, err := deriveRiskMechanism(candidate.Predicates, candidate.MechanismSteps)
+		if err != nil || candidate.SuspectedMechanism != derived {
+			return errRiskCandidateAlignment
+		}
+	}
 	requirements, err := semantic.CompileRiskRequirements(candidate.Predicates)
 	if err != nil || len(requirements.Actions) == 0 {
 		return errors.New("EXPERIMENT_RISK_CANDIDATE_PREDICATE_INVALID")
@@ -270,6 +540,49 @@ func (candidate RiskCandidate) ValidateAgentDraft() error {
 		return err
 	}
 	return nil
+}
+
+func normalizeRiskCandidateDraft(candidate RiskCandidate, requireBoundSteps bool) (RiskCandidate, error) {
+	if len(candidate.MechanismSteps) == 0 {
+		if requireBoundSteps {
+			return RiskCandidate{}, errRiskCandidateAlignment
+		}
+		return candidate, candidate.ValidateAgentDraft()
+	}
+	derived, err := deriveRiskMechanism(candidate.Predicates, candidate.MechanismSteps)
+	if err != nil || (candidate.SuspectedMechanism != "" && candidate.SuspectedMechanism != derived) {
+		return RiskCandidate{}, errRiskCandidateAlignment
+	}
+	candidate.MechanismSteps = append([]RiskMechanismStep(nil), candidate.MechanismSteps...)
+	candidate.SuspectedMechanism = derived
+	if err := candidate.ValidateAgentDraft(); err != nil {
+		return RiskCandidate{}, err
+	}
+	return candidate, nil
+}
+
+func deriveRiskMechanism(
+	predicates []semantic.ObservationPredicate,
+	steps []RiskMechanismStep,
+) (string, error) {
+	if len(steps) != len(predicates) || len(steps) < 2 || len(steps) > RiskCandidateMaxSteps {
+		return "", errRiskCandidateAlignment
+	}
+	parts := make([]string, len(steps))
+	for index, step := range steps {
+		predicate := predicates[index]
+		if step.MilestoneID != predicate.MilestoneID || step.Kind != predicate.Kind ||
+			step.Rationale == "" || len(step.Rationale) > RiskMechanismStepMaxBytes ||
+			strings.TrimSpace(step.Rationale) != step.Rationale {
+			return "", errRiskCandidateAlignment
+		}
+		parts[index] = step.MilestoneID + " [" + string(step.Kind) + "]: " + step.Rationale
+	}
+	mechanism := strings.Join(parts, " -> ")
+	if len(mechanism) > 2048 {
+		return "", errRiskCandidateAlignment
+	}
+	return mechanism, nil
 }
 
 func AssessRiskCandidate(
@@ -342,6 +655,100 @@ func validRiskAgentActions(actions []control.ActionKind) bool {
 	return len(actions) > 0
 }
 
+func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
+	if len(values) > RiskExplorationMemoryMax {
+		return false
+	}
+	previousEpisode := 0
+	for _, value := range values {
+		if value.Episode <= previousEpisode || value.EpisodeOutcome == "" ||
+			len(value.EpisodeOutcome) > 128 || value.ModelCalls < 0 || value.ModelTokens < 0 ||
+			value.SearchWorkUnits < 0 || value.ExecutionWorkUnits < 0 ||
+			value.ProtocolPSSStates < 0 || value.NewProtocolPSSStates < 0 ||
+			value.NewProtocolPSSStates > value.ProtocolPSSStates || value.OracleFindings < 0 ||
+			(value.RepeatedCandidate && value.CandidateID == "") {
+			return false
+		}
+		if value.CandidateID != "" && (!validMethodToken(value.CandidateID) ||
+			len(value.Summary) > 2048 || len(value.SuspectedMechanism) > 2048) {
+			return false
+		}
+		if value.RiskStatus != "" && value.RiskStatus != semantic.RiskWitnessReached &&
+			value.RiskStatus != semantic.RiskWitnessNotReached {
+			return false
+		}
+		if value.FirstMissingMilestone != "" && !validMethodToken(value.FirstMissingMilestone) {
+			return false
+		}
+		for _, milestone := range value.SatisfiedMilestones {
+			if !validMethodToken(milestone) {
+				return false
+			}
+		}
+		for _, reason := range value.MechanicalReasonCodes {
+			if !validMethodToken(reason) {
+				return false
+			}
+		}
+		previousEpisode = value.Episode
+	}
+	return true
+}
+
+func validRiskKnowledgeView(view RiskAgentView) bool {
+	if len(view.KnowledgeSources) == 0 {
+		return view.MaxKnowledgeRequests == 0 && len(view.KnowledgeResults) == 0
+	}
+	if (view.MaxKnowledgeRequests != 0 && view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall) ||
+		(view.MaxKnowledgeRequests == RiskKnowledgeRequestsPerCall && len(view.KnowledgeResults) != 0) ||
+		(view.MaxKnowledgeRequests == 0 && len(view.KnowledgeResults) == 0) ||
+		len(view.KnowledgeResults) > RiskKnowledgeRequestsTotal {
+		return false
+	}
+	want, err := KnowledgeSourceCatalog(view.Knowledge)
+	if err != nil || !reflect.DeepEqual(view.KnowledgeSources, want) {
+		return false
+	}
+	declared := make(map[string]bool, len(want))
+	for _, source := range want {
+		declared[source.Reference] = true
+	}
+	for _, result := range view.KnowledgeResults {
+		if result.Validate() != nil || !declared[result.Source.Reference] {
+			return false
+		}
+	}
+	return true
+}
+
+func validRiskKnowledgeRequests(
+	requests []KnowledgeReadRequest,
+	sources []KnowledgeSource,
+	seen map[string]bool,
+) bool {
+	if len(requests) == 0 || len(requests) > RiskKnowledgeRequestsPerCall {
+		return false
+	}
+	declared := make(map[string]bool, len(sources))
+	for _, source := range sources {
+		declared[source.Reference] = true
+	}
+	current := make(map[string]bool, len(requests))
+	for _, request := range requests {
+		key := riskKnowledgeRequestKey(request)
+		if !declared[request.Reference] || request.StartLine < 0 || request.MaxLines <= 0 ||
+			request.MaxLines > RiskKnowledgeRequestMaxLines || current[key] || seen[key] {
+			return false
+		}
+		current[key] = true
+	}
+	return true
+}
+
+func riskKnowledgeRequestKey(request KnowledgeReadRequest) string {
+	return request.Reference + "\x00" + fmt.Sprintf("%d:%d", request.StartLine, request.MaxLines)
+}
+
 func cloneObservationCapabilities(
 	values []semantic.ObservationCapability,
 ) []semantic.ObservationCapability {
@@ -358,11 +765,57 @@ func cloneObservationCapabilities(
 	return result
 }
 
+func cloneKnowledgeSources(values []KnowledgeSource) []KnowledgeSource {
+	result := append([]KnowledgeSource(nil), values...)
+	for index := range result {
+		result[index].MaterialIDs = append([]string(nil), values[index].MaterialIDs...)
+	}
+	return result
+}
+
+func cloneKnowledgeReadResult(value KnowledgeReadResult) KnowledgeReadResult {
+	result := value
+	result.Source.MaterialIDs = append([]string(nil), value.Source.MaterialIDs...)
+	return result
+}
+
+func cloneKnowledgeReadResults(values []KnowledgeReadResult) []KnowledgeReadResult {
+	result := make([]KnowledgeReadResult, len(values))
+	for index, value := range values {
+		result[index] = cloneKnowledgeReadResult(value)
+	}
+	return result
+}
+
+func cloneRiskExplorationMemory(values []RiskExplorationMemoryEntry) []RiskExplorationMemoryEntry {
+	result := append([]RiskExplorationMemoryEntry(nil), values...)
+	for index := range result {
+		result[index].SatisfiedMilestones = append(
+			[]string(nil), values[index].SatisfiedMilestones...,
+		)
+		result[index].MechanicalReasonCodes = append(
+			[]string(nil), values[index].MechanicalReasonCodes...,
+		)
+	}
+	return result
+}
+
 func cloneRiskAgentFeedback(value *RiskAgentFeedback) *RiskAgentFeedback {
 	if value == nil {
 		return nil
 	}
 	result := *value
 	result.Issues = append([]semantic.RiskQualificationIssue(nil), value.Issues...)
+	result.Reviews = cloneRiskCandidateReviews(value.Reviews)
 	return &result
+}
+
+func cloneRiskCandidateReviews(values []RiskCandidateReview) []RiskCandidateReview {
+	result := append([]RiskCandidateReview(nil), values...)
+	for index := range result {
+		result[index].Issues = append(
+			[]semantic.RiskQualificationIssue(nil), values[index].Issues...,
+		)
+	}
+	return result
 }

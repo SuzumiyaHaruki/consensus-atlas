@@ -244,10 +244,10 @@ func TestWorkerRejectsUnsupportedOperation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.call(workerRequest{Op: "reset"}); err != nil {
+	if _, err := client.call(ctx, workerRequest{Op: "reset"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.call(workerRequest{Op: "not-a-worker-operation"})
+	_, err = client.call(ctx, workerRequest{Op: "not-a-worker-operation"})
 	if err == nil || !strings.Contains(err.Error(), "OMNIPAXOS_WORKER_OPERATION_UNSUPPORTED") {
 		t.Fatalf("unexpected rejection: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestWorkerAbnormalExitIsReported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.call(workerRequest{Op: "reset"}); err != nil {
+	if _, err := client.call(ctx, workerRequest{Op: "reset"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.cmd.Process.Kill(); err != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -84,6 +85,7 @@ func TestRealDecidedPrefixPassesAgreementAndCalibrationDiverges(t *testing.T) {
 	for index := range calibration.Nodes {
 		if calibration.Nodes[index].DecidedIndex == 1 {
 			calibration.Nodes[index].DecidedPrefixDigest = hex.EncodeToString(divergent[:])
+			calibration.Nodes[index].DecidedPrefixes[0].Digest = hex.EncodeToString(divergent[:])
 			break
 		}
 	}
@@ -139,7 +141,7 @@ func TestRealDecidedPrefixPassesAgreementAndCalibrationDiverges(t *testing.T) {
 
 func TestDecisionProjectorRejectsMalformedPrefixDigest(t *testing.T) {
 	snapshot := adapterSnapshot{Nodes: []workerNode{
-		{ID: 1, DecidedIndex: 1, DecidedPrefixDigest: "not-a-digest"},
+		{ID: 1, DecidedIndex: 1, DecidedPrefixDigest: "not-a-digest", DecidedPrefixes: []workerDecisionPrefix{{Index: 1, Digest: "not-a-digest"}}},
 		{ID: 2, DecidedPrefixDigest: zeroDigest()},
 		{ID: 3, DecidedPrefixDigest: zeroDigest()},
 	}}
@@ -152,11 +154,52 @@ func TestDecisionProjectorRejectsMalformedPrefixDigest(t *testing.T) {
 	}
 }
 
+func TestA9e2UnequalFrontierAgreementDetectsSharedPrefixConflict(t *testing.T) {
+	left := testDecisionPrefixes(2, "left")
+	conflict := testDecisionPrefixes(1, "conflict")
+	snapshot := adapterSnapshot{Nodes: []workerNode{
+		{ID: 1, DecidedIndex: 2, DecidedPrefixDigest: left[1].Digest, DecidedPrefixes: left},
+		{ID: 2, DecidedIndex: 1, DecidedPrefixDigest: conflict[0].Digest, DecidedPrefixes: conflict},
+		{ID: 3, DecidedPrefixDigest: zeroDigest()},
+	}}
+	payload, err := control.NewJSONPayload(evidenceSchema, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations, err := (DecisionProjector{}).Project(control.EvidenceEnvelope{Payload: payload})
+	if err != nil || len(observations) != 3 {
+		t.Fatalf("unequal-frontier calibration projection invalid: %#v err=%v", observations, err)
+	}
+	result := oracle.CheckBundle(bundleWithDecisions(observations), oracle.BundleAgreement{})
+	if len(result.Violations) != 1 || result.Violations[0].Monitor != "agreement" {
+		t.Fatalf("shared-prefix conflict was not detected: %#v", result)
+	}
+
+	consistent := []workerDecisionPrefix{{Index: 1, Digest: left[0].Digest}}
+	snapshot.Nodes[1].DecidedPrefixDigest = consistent[0].Digest
+	snapshot.Nodes[1].DecidedPrefixes = consistent
+	payload, err = control.NewJSONPayload(evidenceSchema, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations, err = (DecisionProjector{}).Project(control.EvidenceEnvelope{Payload: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result = oracle.CheckBundle(bundleWithDecisions(observations), oracle.BundleAgreement{})
+	if len(result.Violations) != 0 {
+		t.Fatalf("consistent shared prefix produced a false positive: %#v", result)
+	}
+}
+
 func TestProjectEvidenceExposesOnlySemanticWorkerState(t *testing.T) {
+	first := testDecisionPrefixes(3, "first")
+	second := testDecisionPrefixes(3, "second")
+	third := testDecisionPrefixes(2, "third")
 	snapshot := adapterSnapshot{LogicalTime: 7, Nodes: []workerNode{
-		{ID: 1, Leader: 2, DecidedIndex: 3, DecidedPrefixDigest: zeroDigest(), PromiseNumber: 4, PromisePriority: 3, PromisePID: 2},
-		{ID: 2, Leader: 2, DecidedIndex: 3, DecidedPrefixDigest: zeroDigest(), PromiseNumber: 4, PromisePriority: 2, PromisePID: 2},
-		{ID: 3, Leader: 2, DecidedIndex: 2, DecidedPrefixDigest: zeroDigest(), PromiseNumber: 3, PromisePriority: 1, PromisePID: 3},
+		{ID: 1, Leader: 2, DecidedIndex: 3, DecidedPrefixDigest: first[2].Digest, DecidedPrefixes: first, PromiseNumber: 4, PromisePriority: 3, PromisePID: 2},
+		{ID: 2, Leader: 2, DecidedIndex: 3, DecidedPrefixDigest: second[2].Digest, DecidedPrefixes: second, PromiseNumber: 4, PromisePriority: 2, PromisePID: 2},
+		{ID: 3, Leader: 2, DecidedIndex: 2, DecidedPrefixDigest: third[1].Digest, DecidedPrefixes: third, PromiseNumber: 3, PromisePriority: 1, PromisePID: 3},
 	}}
 	payload, err := control.NewJSONPayload(evidenceSchema, snapshot)
 	if err != nil {
@@ -192,4 +235,13 @@ func bundleWithDecisions(observations []semantic.DecisionObservation) controlexp
 func zeroDigest() string {
 	value := sha256.Sum256(nil)
 	return hex.EncodeToString(value[:])
+}
+
+func testDecisionPrefixes(count int, label string) []workerDecisionPrefix {
+	prefixes := make([]workerDecisionPrefix, 0, count)
+	for index := 1; index <= count; index++ {
+		value := sha256.Sum256([]byte(label + ":" + strconv.Itoa(index)))
+		prefixes = append(prefixes, workerDecisionPrefix{Index: uint64(index), Digest: hex.EncodeToString(value[:])})
+	}
+	return prefixes
 }

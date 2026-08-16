@@ -24,21 +24,25 @@ const (
 	ScenarioStepApplied  = "applied"
 	ScenarioStepRejected = "rejected"
 
-	ScenarioReasonNoMatch         = "no-match"
-	ScenarioReasonAmbiguous       = "ambiguous"
-	ScenarioReasonBudgetExhausted = "budget-exhausted"
+	ScenarioReasonNoMatch              = "no-match"
+	ScenarioReasonAmbiguous            = "ambiguous"
+	ScenarioReasonBudgetExhausted      = "budget-exhausted"
+	ScenarioReasonMilestoneUnknown     = "milestone-unknown"
+	ScenarioReasonMilestoneUnreachable = "milestone-unreachable"
 )
 
-// ScenarioPlan is an untrusted short-horizon intent. It deliberately carries
-// no execution budget, fault policy, assertion, verdict, or trusted digest.
+// ScenarioPlan is an untrusted complete but bounded test intent. Later steps
+// may wait for an existing trusted Risk milestone; the plan still carries no
+// execution budget, fault policy, assertion, verdict, or trusted digest.
 type ScenarioPlan struct {
 	ID    string         `json:"id"`
 	Steps []ScenarioStep `json:"steps"`
 }
 
 type ScenarioStep struct {
-	ID       string                 `json:"id"`
-	Selector FrontierActionSelector `json:"selector"`
+	ID             string                 `json:"id"`
+	AfterMilestone string                 `json:"after_milestone,omitempty"`
+	Selector       FrontierActionSelector `json:"selector"`
 }
 
 type ScenarioStepFeedback struct {
@@ -57,12 +61,13 @@ type ScenarioStepFeedback struct {
 // final Trace remains the sole exact execution record and every applied choice
 // was materialized and fresh-replayed by the existing stateless substrate.
 type ScenarioExecution struct {
-	PlanID     string                     `json:"plan_id"`
-	Status     string                     `json:"status"`
-	Steps      []ScenarioStepFeedback     `json:"steps"`
-	FinalTrace controlruntime.Trace       `json:"final_trace"`
-	FinalRisk  semantic.RiskWitnessResult `json:"final_risk"`
-	Work       StatelessDFSWork           `json:"work"`
+	PlanID            string                     `json:"plan_id"`
+	Status            string                     `json:"status"`
+	Steps             []ScenarioStepFeedback     `json:"steps"`
+	AutomaticProgress []ScenarioStepFeedback     `json:"automatic_progress,omitempty"`
+	FinalTrace        controlruntime.Trace       `json:"final_trace"`
+	FinalRisk         semantic.RiskWitnessResult `json:"final_risk"`
+	Work              StatelessDFSWork           `json:"work"`
 }
 
 func ParseScenarioPlan(data []byte) (ScenarioPlan, error) {
@@ -91,7 +96,9 @@ func (plan ScenarioPlan) Validate() error {
 	}
 	seen := make(map[string]bool, len(plan.Steps))
 	for _, step := range plan.Steps {
-		if !validMethodToken(step.ID) || seen[step.ID] || step.Selector.validate() != nil {
+		if !validMethodToken(step.ID) || seen[step.ID] ||
+			(step.AfterMilestone != "" && !validMethodToken(step.AfterMilestone)) ||
+			step.Selector.validate() != nil {
 			return errors.New("EXPERIMENT_SCENARIO_STEP_INVALID")
 		}
 		seen[step.ID] = true
@@ -108,6 +115,7 @@ func ExecuteBoundedScenarioPlan(
 	executionID string,
 	plan ScenarioPlan,
 	maxSteps int,
+	maxDecisions int,
 	spec semantic.RiskWitnessSpec,
 	rootRisk semantic.RiskWitnessResult,
 	root controlruntime.Trace,
@@ -118,6 +126,7 @@ func ExecuteBoundedScenarioPlan(
 ) (ScenarioExecution, error) {
 	if !validMethodToken(executionID) || plan.Validate() != nil || maxSteps <= 0 ||
 		maxSteps > ScenarioPlanMaxSteps || spec.Validate() != nil || root.Validate() != nil ||
+		maxDecisions <= 0 || maxDecisions > ScenarioAgentMaxDecisions ||
 		rootRisk.Validate(spec) != nil || rootRisk.ExecutionDigest != root.Digest ||
 		rootRisk.TargetIdentityDigest != root.ManifestDigest || newAdapter == nil ||
 		isNilSemanticComponent(projector) || projector.ID() != rootRisk.ProjectorID {
@@ -136,6 +145,67 @@ func ExecuteBoundedScenarioPlan(
 			result.Steps = append(result.Steps, ScenarioStepFeedback{
 				StepID: step.ID, Outcome: ScenarioStepRejected, ReasonCode: ScenarioReasonBudgetExhausted,
 				Decision: len(result.FinalTrace.Records) + 1, RiskProgress: progress,
+			})
+			break
+		}
+		if step.AfterMilestone != "" {
+			if !scenarioSpecHasMilestone(spec, step.AfterMilestone) {
+				result.Status = ScenarioStatusStopped
+				result.Steps = append(result.Steps, ScenarioStepFeedback{
+					StepID: step.ID, Outcome: ScenarioStepRejected,
+					ReasonCode: ScenarioReasonMilestoneUnknown,
+					Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
+				})
+				break
+			}
+			for !scenarioRiskHasMilestone(result.FinalRisk, step.AfterMilestone) {
+				if len(result.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+					result.Status = ScenarioStatusStopped
+					result.Steps = append(result.Steps, ScenarioStepFeedback{
+						StepID: step.ID, Outcome: ScenarioStepRejected,
+						ReasonCode: ScenarioReasonBudgetExhausted,
+						Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
+					})
+					break
+				}
+				automatic, err := ExecuteScenarioNaturalProgress(
+					ctx, fmt.Sprintf("%s-step-%02d-wait-%02d", executionID, index+1,
+						len(result.AutomaticProgress)+1), 1, spec, result.FinalRisk,
+					result.FinalTrace, runtimeConfig, faultEnvelope, newAdapter, projector,
+				)
+				addScenarioExecutionWork(&result.Work, automatic.Execution.Work)
+				if err != nil {
+					return result, err
+				}
+				if len(automatic.Execution.Steps) == 0 {
+					result.Status = ScenarioStatusStopped
+					result.Steps = append(result.Steps, ScenarioStepFeedback{
+						StepID: step.ID, Outcome: ScenarioStepRejected,
+						ReasonCode: ScenarioReasonMilestoneUnreachable,
+						Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
+					})
+					break
+				}
+				for _, value := range automatic.Execution.Steps {
+					value.StepID = fmt.Sprintf("%s-wait-%02d", step.ID, len(result.AutomaticProgress)+1)
+					result.AutomaticProgress = append(result.AutomaticProgress, value)
+				}
+				result.FinalTrace, result.FinalRisk = automatic.Execution.FinalTrace, automatic.Execution.FinalRisk
+				progress, err = semantic.NewRiskWitnessProgress(spec, result.FinalRisk)
+				if err != nil {
+					return ScenarioExecution{}, err
+				}
+			}
+			if result.Status == ScenarioStatusStopped {
+				break
+			}
+		}
+		if len(result.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+			result.Status = ScenarioStatusStopped
+			result.Steps = append(result.Steps, ScenarioStepFeedback{
+				StepID: step.ID, Outcome: ScenarioStepRejected,
+				ReasonCode: ScenarioReasonBudgetExhausted,
+				Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
 			})
 			break
 		}
@@ -181,7 +251,9 @@ func ExecuteBoundedScenarioPlan(
 		addDFSPhase(&result.Work.ChildMaterialization, materialization)
 		addDFSPhase(&result.Work.ChildVerification, verification)
 		if err != nil {
-			return ScenarioExecution{}, err
+			result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
+				result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
+			return result, &StatelessDFSExecutionError{Work: result.Work, cause: err}
 		}
 		risk, err := projector.Project(
 			fmt.Sprintf("%s-risk-%02d", executionID, index+1), spec, child,
@@ -206,6 +278,24 @@ func ExecuteBoundedScenarioPlan(
 	return result, nil
 }
 
+func scenarioSpecHasMilestone(spec semantic.RiskWitnessSpec, id string) bool {
+	for _, milestone := range spec.Milestones {
+		if milestone.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func scenarioRiskHasMilestone(result semantic.RiskWitnessResult, id string) bool {
+	for _, milestone := range result.SatisfiedMilestones {
+		if milestone == id {
+			return true
+		}
+	}
+	return false
+}
+
 // CompileScenarioPolicy converts one successful, already replay-verified
 // execution into exact rules for the existing qualified executor.
 func CompileScenarioPolicy(
@@ -216,24 +306,28 @@ func CompileScenarioPolicy(
 ) (Policy, error) {
 	if !validMethodToken(id) || root.Validate() != nil || execution.Status != ScenarioStatusCompleted ||
 		execution.FinalTrace.Validate() != nil || len(execution.Steps) == 0 ||
-		len(execution.FinalTrace.Records) != len(root.Records)+len(execution.Steps) ||
+		len(execution.FinalTrace.Records) != len(root.Records)+len(execution.Steps)+
+			len(execution.AutomaticProgress) ||
 		execution.FinalTrace.ManifestDigest != root.ManifestDigest ||
 		!scenarioTraceHasPrefix(execution.FinalTrace, root) {
 		return Policy{}, errors.New("EXPERIMENT_SCENARIO_POLICY_INPUT_INVALID")
 	}
-	for index, feedback := range execution.Steps {
-		record := execution.FinalTrace.Records[len(root.Records)+index]
-		if feedback.Outcome != ScenarioStepApplied || feedback.ReasonCode != "" ||
-			feedback.MatchCount != 1 || feedback.Choice == nil || feedback.Decision != int(record.Step) ||
-			feedback.Choice.Decision != int(record.Step) || feedback.Choice.Action.ActionID != record.Action.ID ||
-			feedback.Choice.Action.Kind != record.Action.Kind || feedback.Choice.Action.Node != record.Action.Node ||
-			feedback.Choice.Action.ItemID != record.Action.Item {
+	covered := make(map[int]bool, len(execution.Steps)+len(execution.AutomaticProgress))
+	all := append(cloneScenarioStepFeedback(execution.Steps),
+		cloneScenarioStepFeedback(execution.AutomaticProgress)...)
+	for _, feedback := range all {
+		index := feedback.Decision - 1
+		if index < len(root.Records) || index >= len(execution.FinalTrace.Records) || covered[index] {
 			return Policy{}, errors.New("EXPERIMENT_SCENARIO_POLICY_STEP_INVALID")
 		}
-		digest, err := control.CanonicalDigest(record.Action)
-		if err != nil || digest != feedback.Choice.Action.ActionDigest {
+		covered[index] = true
+		record := execution.FinalTrace.Records[index]
+		if !scenarioFeedbackMatchesRecord(feedback, record) {
 			return Policy{}, errors.New("EXPERIMENT_SCENARIO_POLICY_ACTION_MISMATCH")
 		}
+	}
+	if len(covered) != len(execution.FinalTrace.Records)-len(root.Records) {
+		return Policy{}, errors.New("EXPERIMENT_SCENARIO_POLICY_STEP_INVALID")
 	}
 	rules := make([]DecisionRule, len(execution.FinalTrace.Records))
 	for index, record := range execution.FinalTrace.Records {
@@ -250,6 +344,18 @@ func CompileScenarioPolicy(
 		return Policy{}, err
 	}
 	return policy, nil
+}
+
+func scenarioFeedbackMatchesRecord(feedback ScenarioStepFeedback, record controlruntime.ActionRecord) bool {
+	if feedback.Outcome != ScenarioStepApplied || feedback.ReasonCode != "" ||
+		feedback.MatchCount != 1 || feedback.Choice == nil || feedback.Decision != int(record.Step) ||
+		feedback.Choice.Decision != int(record.Step) || feedback.Choice.Action.ActionID != record.Action.ID ||
+		feedback.Choice.Action.Kind != record.Action.Kind || feedback.Choice.Action.Node != record.Action.Node ||
+		feedback.Choice.Action.ItemID != record.Action.Item {
+		return false
+	}
+	digest, err := control.CanonicalDigest(record.Action)
+	return err == nil && digest == feedback.Choice.Action.ActionDigest
 }
 
 func scenarioTraceHasPrefix(trace controlruntime.Trace, prefix controlruntime.Trace) bool {

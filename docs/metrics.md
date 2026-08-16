@@ -1,6 +1,7 @@
 # Metrics: state discovery and fixed-profile coverage
 
-ConsensusAtlas deliberately reports two different coverage views. They answer different research questions and must not be collapsed into one score.
+ConsensusAtlas deliberately separates state breadth, temporal/transition depth, fixed-profile coverage and external defect
+effectiveness. They answer different research questions and must not be collapsed into one score.
 
 ## 1. Protocol-state discovery (PSD)
 
@@ -65,21 +66,47 @@ Native participant names are canonicalized by permutation; native item IDs, payl
 Exact participant-permutation canonicalization is bounded to eight participants. The online sampler records the initial
 root and then one sample after every successfully applied Runtime action.
 
-This definition has an important construct-validity limitation: `control.pending` makes the current unique-state count a
-mixture of protocol-semantic state and scheduler/control-frontier state. In a diagnostic re-projection of the A9d6
-OmniPaxos artifact, the reported 31 samples / 29 unique states become 5 unique states when only
-`control.pending` is removed. This is not a new effectiveness experiment; it demonstrates that the published 29 count
-must not be described as 29 distinct protocol states.
+The original joint digest mixes protocol semantics with scheduler/control-frontier churn. A9e3b therefore derives three
+independent views from the same saved Core PSS State:
 
-Before formal search comparisons, derive and report two views from the same Trace:
+- `protocol`: mapping identity plus the target-owned SemanticGraph;
+- `control`: lifecycle/incarnation, partition and pending Runtime frontier;
+- `joint`: the original full State digest, retained for compatibility and diagnosis.
 
-- protocol-semantic state discovery, excluding queue churn from the primary semantic key;
-- scheduler/control-frontier discovery, preserving pending-item and ordering diversity.
+Protocol and control views each perform participant-symmetry normalization rather than inheriting node aliases chosen by
+the joint state. Re-projecting the A9d6 OmniPaxos artifact gives 31 samples, 4 protocol states, 28 control states and 29
+joint states. The earlier diagnostic that merely removed `control.pending` produced 5 states because it did not independently
+canonicalize participant aliases; it is not the active protocol count.
 
-Do not create a second Ledger or combine the two views into one score. Until these views and their invariance/separation
-tests are implemented, label existing Core PSS numbers as mixed control-state diagnostics.
+Do not create a second Ledger or combine the three views into one score. Stateless novelty uses the protocol view; all
+three counts remain denominator-free explanatory measurements and cannot produce a verdict.
 
-## 3. Fixed-profile semantic coverage
+## 3. Transition breadth and temporal depth
+
+Unique PSS states measure breadth, not how long or in which order a method exercised a mechanism. The Agora synchronized
+PreVote experiment is the concrete counterexample: 50 election cycles correspond to at least about 500 timer/message
+Actions and can approach 700--900 Actions when persistence effects and messages to the isolated node are explicit. Because
+absolute terms are normalized to relative epochs, those cycles may still occupy only roughly 3--6 protocol PSS states.
+
+Long-running experiments must therefore report, from the same Trace and without changing the Core PSS identity:
+
+- executed Action count and longest accepted/replayed trace;
+- unique `protocol-PSS -> ActionKind -> protocol-PSS` transitions;
+- maximum consecutive repetition of a semantic transition/cycle without property progress;
+- Risk/obligation milestone progress over Action and primary-work prefixes;
+- fresh-Replay result for every promoted candidate.
+
+Transition keys remain explanatory search measurements. Repeating a cycle 50 times is temporal stress evidence, not 50 new
+states and not a defect verdict. Conversely, a high state count reached through shallow queue churn is not evidence of a
+deep consensus test.
+
+Current Core PSS intentionally does not encode every target-local fact. For example, an in-memory vote that has not been
+persisted, a gated response waiting for a durability effect, or equality of two native timer draws may be visible only in
+control items or target Evidence, and some may not be visible in the protocol view at all. Risk milestones, obligations and
+Oracle projectors should expose a concrete missing distinction only after a calibration demonstrates that Core PSS alone
+merges a relevant mechanism. Do not add absolute term values or per-cycle counters merely to increase PSS counts.
+
+## 4. Fixed-profile semantic coverage
 
 The existing Profile score answers a different question:
 
@@ -94,7 +121,7 @@ misreported as comprehensive protocol testing.
 
 Use PSD to explain state-discovery behavior. Use fixed Profile/SCS coverage to assess the resulting test suite against declared obligations. Evaluate method effectiveness primarily on hidden historical defects/semantic mutants and correct controls. Always report trusted Oracle results separately.
 
-## 4. External defect effectiveness
+## 5. External defect effectiveness
 
 The primary method-level result is evaluated by `internal/defectbench` under a private, versioned Manifest:
 
@@ -105,10 +132,11 @@ The primary method-level result is evaluated by `internal/defectbench` under a p
 
 The evaluator recomputes registered Oracle monitors from stored traces and requires identity, budget, replay and conformance evidence. Coverage score and PSS discoveries are copied only as explanatory covariates; they cannot create kill credit. Multiple variants representing one root cause count once in the primary percentage. See `docs/defect-benchmark.md`.
 
-## 5. Known limitations and safeguards
+## 6. Known limitations and safeguards
 
 - A state key can over-merge if the PSS omits a safety-relevant relation, or over-split if it retains an irrelevant one. Invariance and separation tests are therefore part of the Family Pack.
-- State coverage cannot distinguish two paths reaching the same state. Transition, ordering and causal-graph coverage remain necessary.
+- State coverage cannot distinguish two paths reaching the same state. Transition and temporal-depth reporting are required;
+  causal-graph coverage should be added only when a concrete evaluation miss requires it.
 - A growing discovery curve does not establish completeness in an open or unbounded state space.
 - Campaign v2 now records deterministic primary/replay work, but the harness does not yet report wall-clock/CPU/RSS cost or repeated-seed confidence intervals.
 - PSS changes require a new ID. Results from different PSS IDs must not be combined on the same curve.

@@ -3,6 +3,7 @@ package controlexperiment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/fixture"
@@ -29,6 +30,19 @@ func (adapter *quiescentAdapter) Manifest(ctx context.Context) (control.AdapterM
 }
 
 type quiescentMapper struct{}
+
+type terminalActionAdapter struct {
+	*fixture.Adapter
+	initialized bool
+}
+
+func (adapter *terminalActionAdapter) RunUntilYield(ctx context.Context) (control.Yield, error) {
+	if adapter.initialized {
+		return control.Yield{}, errors.New("TEST_TARGET_ACTION_FAILED")
+	}
+	adapter.initialized = true
+	return adapter.Adapter.RunUntilYield(ctx)
+}
 
 func (quiescentMapper) ID() string { return "fixture/quiescent-core-pss-v1" }
 
@@ -101,5 +115,43 @@ func TestExperimentV2DistinguishesPolicySurfaceExhaustionFromQuiescence(t *testi
 	if run.Termination != RunTerminationPolicySurface || run.ChargedDecisions != 0 ||
 		run.BudgetReached || run.Replay.Decisions != 0 || len(run.Selections) != 0 {
 		t.Fatalf("unexpected policy-surface run: %#v", run)
+	}
+}
+
+func TestExperimentChargesFailedActionAndPreservesTerminalOutcome(t *testing.T) {
+	config := Config{
+		SchemaVersion: SchemaVersionV2, ID: "terminal-action-accounting",
+		PSSID: quiescentMapper{}.ID(), Runtime: RuntimeConfig{SeedHex: "01"},
+		DecisionsPerRun: 1, RequireReplay: true,
+		Runs: []RunPlan{{Run: 1, Policy: Policy{
+			Version: PolicyVersion, ID: "select-terminal-temporal",
+			Priority: []control.ActionKind{control.ActionFireTemporal},
+		}}},
+	}
+	_, err := execute(t.Context(), config, func() (control.Adapter, error) {
+		return &terminalActionAdapter{Adapter: fixture.New()}, nil
+	}, quiescentMapper{}, nil, nil)
+	var failure *ExecutionFailure
+	if !errors.As(err, &failure) || failure.Phase != "primary-select" ||
+		failure.Decision != 1 || failure.Work.Primary.SchedulerDecisions != 1 ||
+		failure.Work.Primary.WorkUnits != 2 || failure.Terminal == nil ||
+		failure.Terminal.Validate() != nil || failure.Terminal.Decision != 1 ||
+		failure.Terminal.Class != control.ExecutionFailureAdapter ||
+		failure.Terminal.Code != "ADAPTER_ACTION_FAILED" {
+		t.Fatalf("terminal execution failure = %#v / %v", failure, err)
+	}
+	methodFailure := failure.MethodFailure()
+	encoded, err := json.Marshal(methodFailure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored MethodFailure
+	if err := json.Unmarshal(encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Terminal == nil || restored.Terminal.Validate() != nil ||
+		restored.Terminal.Digest != failure.Terminal.Digest ||
+		restored.Phase != failure.Phase || restored.Decision != failure.Decision {
+		t.Fatalf("persisted terminal failure drifted: %#v", restored)
 	}
 }

@@ -180,7 +180,7 @@ func finishEtcdraftStatelessCampaign(
 	}
 	fmt.Fprintf(
 		stdout,
-		"wrote %s\nwrote %s\nstatus=%s attempts=%d primary=%d replay=%d model_calls=%d corpus_novel_pss=%d summary=%s observation=%s\n",
+		"wrote %s\nwrote %s\nstatus=%s attempts=%d primary=%d replay=%d model_calls=%d corpus_novel_protocol_pss=%d summary=%s observation=%s\n",
 		summaryOut, observationOut, summary.Status, summary.Sequence,
 		summary.Totals.Primary.WorkUnits, summary.Totals.Replay.WorkUnits,
 		summary.Totals.Model.Calls, observation.UnionCorpusNovelPSSStates,
@@ -481,10 +481,14 @@ func executeEtcdraftStatelessCampaignAttempt(
 					decision = executionFailure.Decision
 					addEtcdraftStatelessWork(&qualifiedWork, executionFailure.Work)
 				}
-				return failedEtcdraftStatelessCampaignExecution(
+				failed := failedEtcdraftStatelessCampaignExecution(
 					"qualified-execution", "ETCDRAFT_STATELESS_QUALIFIED_EXECUTION_FAILED",
 					decision, searchWork, qualifiedWork,
 				)
+				if executionFailure != nil && executionFailure.Terminal != nil {
+					failed.Failure.Terminal = executionFailure.MethodFailure().Terminal
+				}
+				return failed
 			}
 			bundles = append(bundles, bundle)
 			addEtcdraftStatelessWork(&qualifiedWork, bundle.Work)

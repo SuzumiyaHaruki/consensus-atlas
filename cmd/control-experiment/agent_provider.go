@@ -18,11 +18,15 @@ const (
 	openRouterProvider               = "openrouter"
 	openRouterChatEndpoint           = "https://openrouter.ai/api/v1/chat/completions"
 	openRouterMaxResponse            = 2 << 20
-	openRouterDefaultTokens          = 4096
+	openRouterDefaultTokens          = 32000
+	openRouterMaxOutputTokens        = 32000
 	openRouterDefaultReasoningEffort = "high"
+	openRouterDefaultTimeout         = 120 * time.Second
 	agentFailureTransport            = "AGENT_TRANSPORT_FAILED"
 	agentFailureHTTP                 = "AGENT_HTTP_STATUS_REJECTED"
 	agentFailureResponse             = "AGENT_RESPONSE_REJECTED"
+	agentProviderUsageUnknown        = "unknown"
+	agentProviderUsageObserved       = "observed"
 )
 
 type agentHTTPDoer interface {
@@ -106,6 +110,7 @@ type agentCall struct {
 	Work              controlexperiment.ModelWork
 	DurationMillis    int64
 	TransportAttempts int
+	UsageStatus       string
 	FailureCode       string
 }
 
@@ -122,7 +127,8 @@ func newOpenRouterIntentClient(model string) openRouterIntentClient {
 	return openRouterIntentClient{
 		Endpoint: openRouterChatEndpoint, Model: strings.TrimSpace(model),
 		ReasoningEffort: openRouterDefaultReasoningEffort, ExcludeReasoning: true,
-		MaxOutputTokens: openRouterDefaultTokens, HTTP: &http.Client{Timeout: 60 * time.Second},
+		MaxOutputTokens: openRouterDefaultTokens, MaxRetries: 0,
+		HTTP: &http.Client{Timeout: openRouterDefaultTimeout},
 	}
 }
 
@@ -133,8 +139,8 @@ func (client openRouterIntentClient) prepare(
 ) (agentPreparedRequest, error) {
 	if client.Endpoint != openRouterChatEndpoint || !validOpenRouterModelID(client.Model) ||
 		!validOpenRouterReasoningEffort(client.ReasoningEffort) ||
-		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > 4096 ||
-		client.MaxRetries < 0 || client.MaxRetries > 2 ||
+		client.MaxOutputTokens <= 0 || client.MaxOutputTokens > openRouterMaxOutputTokens ||
+		client.MaxRetries != 0 ||
 		strings.TrimSpace(systemPrompt) == "" || strings.TrimSpace(userPrompt) == "" ||
 		!validOpenRouterStructuredOutput(output.Name, output.Schema) {
 		return agentPreparedRequest{}, errors.New("AGENT_CLIENT_CONFIG_INVALID")
@@ -207,8 +213,8 @@ func (client openRouterIntentClient) invokePrepared(
 ) (agentCall, error) {
 	if client.Endpoint != openRouterChatEndpoint || !validOpenRouterModelID(client.Model) ||
 		!validOpenRouterReasoningEffort(client.ReasoningEffort) || client.MaxOutputTokens <= 0 ||
-		client.MaxOutputTokens > 4096 || client.HTTP == nil ||
-		client.MaxRetries < 0 || client.MaxRetries > 2 ||
+		client.MaxOutputTokens > openRouterMaxOutputTokens || client.HTTP == nil ||
+		client.MaxRetries != 0 ||
 		strings.TrimSpace(key) == "" {
 		return agentCall{}, errors.New("AGENT_CLIENT_CONFIG_INVALID")
 	}
@@ -217,51 +223,44 @@ func (client openRouterIntentClient) invokePrepared(
 	}
 	call := agentCall{
 		PromptDigest: prepared.PromptDigest, RequestDigest: prepared.RequestDigest,
-		Work: controlexperiment.ModelWork{Calls: 1},
+		Work: controlexperiment.ModelWork{Calls: 1}, UsageStatus: agentProviderUsageUnknown,
 	}
 	now := client.Now
 	if now == nil {
 		now = time.Now
 	}
 	started := now()
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, client.Endpoint, bytes.NewReader(prepared.RequestBytes),
+	)
+	if err != nil {
+		return agentCall{}, errors.New("AGENT_REQUEST_CONSTRUCTION_FAILED")
+	}
+	request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(key))
+	request.Header.Set("Content-Type", "application/json")
+	call.TransportAttempts = 1
 	var responseBody []byte
-	for attempt := 0; attempt <= client.MaxRetries; attempt++ {
-		request, err := http.NewRequestWithContext(
-			ctx, http.MethodPost, client.Endpoint, bytes.NewReader(prepared.RequestBytes),
-		)
-		if err != nil {
-			return agentCall{}, errors.New("AGENT_REQUEST_CONSTRUCTION_FAILED")
-		}
-		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(key))
-		request.Header.Set("Content-Type", "application/json")
-		call.TransportAttempts++
-		response, transportErr := client.HTTP.Do(request)
-		if transportErr != nil || response == nil {
-			if attempt < client.MaxRetries {
-				continue
-			}
-			call.FailureCode = agentFailureTransport
-			break
-		}
+	response, transportErr := client.HTTP.Do(request)
+	if transportErr != nil || response == nil {
+		// Once a POST has reached Do, completion and provider billing are
+		// ambiguous. Never replay it inside the transport.
+		call.FailureCode = agentFailureTransport
+	} else {
 		responseBody, err = io.ReadAll(io.LimitReader(response.Body, openRouterMaxResponse+1))
 		closeErr := response.Body.Close()
-		if err != nil || closeErr != nil || len(responseBody) > openRouterMaxResponse {
-			if attempt < client.MaxRetries {
-				continue
-			}
+		if err != nil || closeErr != nil {
+			// Headers can arrive before the response body is complete. A body
+			// read/close failure therefore has the same unknown-completion and
+			// unknown-billing semantics as a failed Do call.
+			call.FailureCode = agentFailureTransport
+		} else if len(responseBody) > openRouterMaxResponse {
 			call.FailureCode = agentFailureResponse
-			break
-		}
-		if response.StatusCode != http.StatusOK {
-			if retryableOpenRouterStatus(response.StatusCode) && attempt < client.MaxRetries {
-				continue
-			}
+		} else if response.StatusCode != http.StatusOK {
 			call.ResponseDigest = controlexperiment.AgentInvocationDigest(responseBody)
 			call.FailureCode = agentFailureHTTP
-			break
+		} else {
+			call.ResponseDigest = controlexperiment.AgentInvocationDigest(responseBody)
 		}
-		call.ResponseDigest = controlexperiment.AgentInvocationDigest(responseBody)
-		break
 	}
 	call.DurationMillis = now().Sub(started).Milliseconds()
 	if call.DurationMillis < 0 {
@@ -297,6 +296,7 @@ func (client openRouterIntentClient) invokePrepared(
 		Calls: 1, InputTokens: parsed.Usage.PromptTokens,
 		OutputTokens: parsed.Usage.CompletionTokens, TotalTokens: parsed.Usage.TotalTokens,
 	}
+	call.UsageStatus = agentProviderUsageObserved
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 	if parsed.Choices[0].FinishReason != "stop" || content == "" {
 		call.FailureCode = agentFailureResponse
@@ -327,11 +327,6 @@ func validOpenRouterStructuredOutput(name string, schema json.RawMessage) bool {
 		return false
 	}
 	return true
-}
-
-func retryableOpenRouterStatus(status int) bool {
-	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests ||
-		status >= http.StatusInternalServerError && status <= 599
 }
 
 func validOpenRouterModelID(model string) bool {

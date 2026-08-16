@@ -1,38 +1,38 @@
 {
   "schema_version": "consensus-atlas/stateless-root-corpus/v1",
-  "id": "etcdraft-m5-23e-roots",
-  "selection_rule_id": "fixed-source-milestone-anchors-v1",
-  "source_bundle_digest": "3f9d635e0f93c1e204e4d9dddbcd1c557e2ba4c90c529d82e5eca86e514e0593",
-  "source_trace_digest": "7919ee8b4063480a498dcca06b29613a33ec9699201f3519c99369463f882849",
-  "manifest_digest": "ec3d50387c1f17486c2723c75c9ee961a87370ebfadaf3ec30bdcba68579ab3d",
+  "id": "etcdraft-a8-fresh-roots",
+  "selection_rule_id": "first-invoke-crash-restart-actions-v1",
+  "source_bundle_digest": "9c7d16070279fe02b7b4aefdeaafb119dd736a2a30345d66517902b23bba36b0",
+  "source_trace_digest": "7b566dd733e7895fa7bfe36bf3588c0fb3468f58dcaffd6cc603005a1ff2e1bd",
+  "manifest_digest": "f3abcf1515a39ed0865fb1a02e21dbf0eee9c0551e5f2ef160e50a487096aee2",
   "roots": [
     {
       "schema_version": "consensus-atlas/stateless-root-entry/v1",
       "id": "initial",
       "phase_id": "source-initial-state",
       "decisions": 0,
-      "prefix_digest": "8b0dfb1afa5fc436188fbdcc612a31c1eb1f35b2ef7fe1cece66bd3515d9d456",
+      "prefix_digest": "49865bca8d55e571483a66e132cacf3d24c8dbf9cf978a52f9118a5255c4c5ec",
       "final_state_digest": "f6ee742e089244695bd1b16fbdb1359d3c4e05e28e95f6e535e5e85e15f40812",
-      "digest": "206308419bad0e8522628a1a60994d1b38c6f4097b85f9a497bc3ea0d488fa9e"
+      "digest": "a601f8177421d6640bfbb4acfba825a013b886f6c950dda3c26594160b092046"
     },
     {
       "schema_version": "consensus-atlas/stateless-root-entry/v1",
       "id": "invoked",
       "phase_id": "workload-invoked-milestone",
       "decisions": 28,
-      "prefix_digest": "a14a307da2291f90c2a41e2616d622fbfead9849d1868e1299e401e7a606de26",
-      "final_state_digest": "33e9cc66e59ea1e86dd0e93e584039d2106eb48348f866b0f8151f2d951e8408",
-      "digest": "c6f22b1a9fb2739fa88bca7c0aa0302efdaf6603a9b428217c0bc4dc3537f9c8"
+      "prefix_digest": "9fcf72f4e6e6ed40697d82e43f5c8313b779b7e78d3b09497113e88b58d8d6aa",
+      "final_state_digest": "2ae79f4c5eb107eaae2db1059c438f468e31ea8fe7ac7480b8fe603212de8932",
+      "digest": "b3aa845037991923931d5ef93543ff3c68903f48c8a7f23020196e9d804ae039"
     },
     {
       "schema_version": "consensus-atlas/stateless-root-entry/v1",
       "id": "restarted",
-      "phase_id": "old-coordinator-restarted-milestone",
+      "phase_id": "crashed-node-restarted-milestone",
       "decisions": 54,
-      "prefix_digest": "798234dbe96fe3a1333e73838de549af0cbcccbeeacfc650b47a841785045b07",
-      "final_state_digest": "5126b243d266227b701326f3d9741aa19922e9c78049631a34e3ad34c53cfd67",
-      "digest": "3dfc3bf92a9bbf613c09c294416c05baec72f310fafcab97e23eb75b02fae8f7"
+      "prefix_digest": "d4c6f12c13295894fcb5364d78bad3ea9c9e5fb5fe2db7bccd12af30162c186f",
+      "final_state_digest": "6313fab9d541a49a0a732eb9fdd5c3c3993346fef60a9da2938d60b0e61afb18",
+      "digest": "44fc7b7d94ff99742f6dfdf14652236a2d489179ff0f86200d10da704e3a0fef"
     }
   ],
-  "digest": "e8c7393804463bb52c3313c0885ffcacb8ed19da335b05e8067d971b89ca9ed8"
+  "digest": "832de2d6d5634c41c31587f6ecf4c0af4d9074848d6d2970a9d8fe4f10762422"
 }

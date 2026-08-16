@@ -42,6 +42,7 @@ func BuildScenarioRiskHypothesis(
 		Knowledge:     knowledgeStatements,
 		Properties:    append([]ProtocolProperty(nil), base.Properties...),
 		IssuePatterns: append([]HistoricalIssuePattern(nil), base.IssuePatterns...),
+		TargetDossier: cloneTargetDossier(base.TargetDossier),
 		Risks: append(cloneProtocolKnowledgeRisks(base.Risks), ProtocolRisk{
 			ID: assessment.Candidate.ID, Summary: assessment.Candidate.Summary,
 			RequiredCapabilities: scenarioRiskObservationRequirements(assessment.Qualification.Requirements),

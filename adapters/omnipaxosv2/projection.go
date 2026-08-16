@@ -10,37 +10,46 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const DecisionProjectionID = "omnipaxos-v2/decided-prefix-digest-v1"
+const DecisionProjectionID = "omnipaxos-v2/decided-prefix-chain-v2"
 
 type DecisionProjector struct{}
 
 func (DecisionProjector) ID() string { return DecisionProjectionID }
 
-// Project exposes only the exact decided frontier and cumulative prefix
-// digest owned by this Binding. The generic Agreement monitor remains unaware
-// of OmniPaxos ballots, log entries, and storage types.
+// Project exposes one cumulative commitment for every decided position. This
+// lets the generic Agreement monitor compare a shared position even when two
+// participants currently have different decided frontiers.
 func (DecisionProjector) Project(envelope control.EvidenceEnvelope) ([]semantic.DecisionObservation, error) {
 	snapshot, err := decodeEvidence(envelope)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]semantic.DecisionObservation, 0, len(snapshot.Nodes))
+	result := make([]semantic.DecisionObservation, 0)
 	for _, node := range snapshot.Nodes {
 		if !validDigest(node.DecidedPrefixDigest) {
 			return nil, errors.New("OMNIPAXOS_DECIDED_PREFIX_DIGEST_INVALID")
 		}
-		if node.DecidedIndex == 0 {
-			continue
+		if len(node.DecidedPrefixes) != int(node.DecidedIndex) {
+			return nil, errors.New("OMNIPAXOS_DECIDED_PREFIX_COUNT_INVALID")
 		}
-		observation := semantic.DecisionObservation{
-			Participant: nodeNames[node.ID],
-			Position:    strconv.FormatUint(node.DecidedIndex, 10),
-			ValueDigest: node.DecidedPrefixDigest,
+		for index, prefix := range node.DecidedPrefixes {
+			if prefix.Index != uint64(index+1) || !validDigest(prefix.Digest) {
+				return nil, errors.New("OMNIPAXOS_DECIDED_PREFIX_INVALID")
+			}
+			observation := semantic.DecisionObservation{
+				Participant: nodeNames[node.ID],
+				Position:    strconv.FormatUint(prefix.Index, 10),
+				ValueDigest: prefix.Digest,
+			}
+			if err := observation.Validate(); err != nil {
+				return nil, err
+			}
+			result = append(result, observation)
 		}
-		if err := observation.Validate(); err != nil {
-			return nil, err
+		if len(node.DecidedPrefixes) > 0 &&
+			node.DecidedPrefixes[len(node.DecidedPrefixes)-1].Digest != node.DecidedPrefixDigest {
+			return nil, errors.New("OMNIPAXOS_DECIDED_PREFIX_FINAL_MISMATCH")
 		}
-		result = append(result, observation)
 	}
 	return result, nil
 }

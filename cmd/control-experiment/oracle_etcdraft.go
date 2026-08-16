@@ -25,10 +25,12 @@ func (etcdraftLogProgressMonitor) CheckBundle(
 	bundle controlexperiment.ExecutionBundle,
 ) []oracle.Violation {
 	type frontier struct {
-		commit  uint64
-		applied uint64
+		incarnation uint64
+		commit      uint64
+		applied     uint64
+		prefixes    []etcdraftv2.ApplicationPrefixEvidence
 	}
-	previous := make(map[control.NodeRef]frontier)
+	previous := make(map[control.NodeID]frontier)
 	points := []struct {
 		step     int
 		evidence control.EvidenceEnvelope
@@ -47,28 +49,41 @@ func (etcdraftLogProgressMonitor) CheckBundle(
 			return etcdraftLogProgressViolation(point.step, "evidence projection failed")
 		}
 		for _, node := range evidence.Nodes {
-			ref := control.NodeRef{Node: node.Node, Incarnation: node.Incarnation}
 			if node.Applied > node.Commit {
 				return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
 					"node %s/%d applied frontier %d exceeds commit frontier %d",
 					node.Node, node.Incarnation, node.Applied, node.Commit,
 				))
 			}
-			if before, ok := previous[ref]; ok {
+			if before, ok := previous[node.Node]; ok {
 				if node.Commit < before.commit {
 					return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
-						"node %s/%d commit frontier regressed from %d to %d",
-						node.Node, node.Incarnation, before.commit, node.Commit,
+						"node %s commit frontier regressed across incarnation %d -> %d from %d to %d",
+						node.Node, before.incarnation, node.Incarnation, before.commit, node.Commit,
 					))
 				}
 				if node.Applied < before.applied {
 					return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
-						"node %s/%d applied frontier regressed from %d to %d",
-						node.Node, node.Incarnation, before.applied, node.Applied,
+						"node %s applied frontier regressed across incarnation %d -> %d from %d to %d",
+						node.Node, before.incarnation, node.Incarnation, before.applied, node.Applied,
 					))
 				}
+				for index, prefix := range before.prefixes {
+					if index >= len(node.ApplicationPrefixes) {
+						break
+					}
+					if prefix.Digest != node.ApplicationPrefixes[index].Digest {
+						return etcdraftLogProgressViolation(point.step, fmt.Sprintf(
+							"node %s changed applied prefix %d across incarnation %d -> %d",
+							node.Node, prefix.Position, before.incarnation, node.Incarnation,
+						))
+					}
+				}
 			}
-			previous[ref] = frontier{commit: node.Commit, applied: node.Applied}
+			previous[node.Node] = frontier{
+				incarnation: node.Incarnation, commit: node.Commit, applied: node.Applied,
+				prefixes: append([]etcdraftv2.ApplicationPrefixEvidence(nil), node.ApplicationPrefixes...),
+			}
 		}
 	}
 	return nil

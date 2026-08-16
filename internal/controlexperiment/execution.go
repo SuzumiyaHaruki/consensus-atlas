@@ -35,6 +35,7 @@ type ExecutionFailure struct {
 	Run      int
 	Decision int
 	Work     WorkLedger
+	Terminal *controlruntime.TerminalOutcome
 	cause    error
 }
 
@@ -45,6 +46,23 @@ func (failure *ExecutionFailure) Error() string {
 
 func (failure *ExecutionFailure) Unwrap() error {
 	return failure.cause
+}
+
+func (failure *ExecutionFailure) MethodFailure() *MethodFailure {
+	if failure == nil {
+		return nil
+	}
+	result := &MethodFailure{
+		Phase: failure.Phase, Code: failure.Code, Decision: failure.Decision,
+	}
+	if failure.Terminal != nil {
+		terminal := *failure.Terminal
+		terminal.AttemptedAction.Parameters = append(
+			[]byte(nil), failure.Terminal.AttemptedAction.Parameters...,
+		)
+		result.Terminal = &terminal
+	}
+	return result
 }
 
 func executionFailure(
@@ -58,9 +76,18 @@ func executionFailure(
 	if coded, ok := cause.(interface{ failureCode() string }); ok {
 		code = coded.failureCode()
 	}
-	return &ExecutionFailure{
+	failure := &ExecutionFailure{
 		Phase: phase, Code: code, Run: run, Decision: decision, Work: work, cause: cause,
 	}
+	var terminalError *controlruntime.TerminalExecutionError
+	if errors.As(cause, &terminalError) {
+		terminal := terminalError.Terminal
+		terminal.AttemptedAction.Parameters = append(
+			[]byte(nil), terminal.AttemptedAction.Parameters...,
+		)
+		failure.Terminal = &terminal
+	}
+	return failure
 }
 
 func ExecuteQualified(
@@ -278,6 +305,7 @@ func executeRun(
 				)
 			}
 		}
+		chargeDecisions(&work.Primary, 1)
 		record, err := runtime.Select(ctx, action.ID)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
@@ -293,7 +321,6 @@ func executeRun(
 		if offered {
 			offeredWorkload++
 		}
-		chargeDecisions(&work.Primary, 1)
 		faultUsage.record(action)
 		if record.Evidence != nil {
 			currentEvidence = *record.Evidence

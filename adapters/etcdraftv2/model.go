@@ -15,7 +15,7 @@ const (
 	implementationV = "v3.6.0"
 	defaultBuildID  = "go.etcd.io/raft/v3@v3.6.0"
 
-	evidenceSchema = "consensus-atlas/etcdraft-v2-evidence/v1"
+	evidenceSchema = "consensus-atlas/etcdraft-v2-evidence/v2"
 	readySchema    = "consensus-atlas/etcdraft-v2-ready-effect/v1"
 	messageSchema  = "consensus-atlas/etcdraft-v2-message/v1"
 	callbackSchema = "consensus-atlas/etcdraft-v2-callback/v1"
@@ -138,29 +138,35 @@ type clusterSnapshot struct {
 }
 
 type nodeSnapshot struct {
-	Node                control.NodeID `json:"node"`
-	RaftID              uint64         `json:"raft_id"`
-	Incarnation         uint64         `json:"incarnation"`
-	Running             bool           `json:"running"`
-	TickCount           uint64         `json:"tick_count"`
-	AdvanceCount        uint64         `json:"advance_count"`
-	Applied             uint64         `json:"applied"`
-	Role                string         `json:"role"`
-	Term                uint64         `json:"term"`
-	Vote                uint64         `json:"vote"`
-	Commit              uint64         `json:"commit"`
-	Lead                uint64         `json:"lead"`
-	StorageTerm         uint64         `json:"storage_term"`
-	StorageVote         uint64         `json:"storage_vote"`
-	StorageCommit       uint64         `json:"storage_commit"`
-	StorageLastIndex    uint64         `json:"storage_last_index"`
-	ConfState           pb.ConfState   `json:"conf_state"`
-	DurableImageDigest  string         `json:"durable_image_digest"`
-	ApplicationDigest   string         `json:"application_digest"`
-	ApplicationCommands int            `json:"application_commands"`
-	OutstandingReadyID  string         `json:"outstanding_ready_id,omitempty"`
-	OutstandingDigest   string         `json:"outstanding_digest,omitempty"`
-	PulseItemID         control.ItemID `json:"pulse_item_id,omitempty"`
+	Node                control.NodeID              `json:"node"`
+	RaftID              uint64                      `json:"raft_id"`
+	Incarnation         uint64                      `json:"incarnation"`
+	Running             bool                        `json:"running"`
+	TickCount           uint64                      `json:"tick_count"`
+	AdvanceCount        uint64                      `json:"advance_count"`
+	Applied             uint64                      `json:"applied"`
+	Role                string                      `json:"role"`
+	Term                uint64                      `json:"term"`
+	Vote                uint64                      `json:"vote"`
+	Commit              uint64                      `json:"commit"`
+	Lead                uint64                      `json:"lead"`
+	StorageTerm         uint64                      `json:"storage_term"`
+	StorageVote         uint64                      `json:"storage_vote"`
+	StorageCommit       uint64                      `json:"storage_commit"`
+	StorageLastIndex    uint64                      `json:"storage_last_index"`
+	ConfState           pb.ConfState                `json:"conf_state"`
+	DurableImageDigest  string                      `json:"durable_image_digest"`
+	ApplicationDigest   string                      `json:"application_digest"`
+	ApplicationCommands int                         `json:"application_commands"`
+	ApplicationPrefixes []ApplicationPrefixEvidence `json:"application_prefixes,omitempty"`
+	OutstandingReadyID  string                      `json:"outstanding_ready_id,omitempty"`
+	OutstandingDigest   string                      `json:"outstanding_digest,omitempty"`
+	PulseItemID         control.ItemID              `json:"pulse_item_id,omitempty"`
+}
+
+type ApplicationPrefixEvidence struct {
+	Position uint64 `json:"position"`
+	Digest   string `json:"digest"`
 }
 
 type readyRecord struct {

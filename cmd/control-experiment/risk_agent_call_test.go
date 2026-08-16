@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
@@ -22,11 +24,24 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		}},
 		Properties: []controlexperiment.ProtocolProperty{{
 			ID: "decision-continuity", Summary: "An operation remains related to its decision.",
+			EvidenceLevel: controlexperiment.PropertyEvidenceObservable,
 		}},
 		IssuePatterns: []controlexperiment.HistoricalIssuePattern{{
 			ID: "message-loss-progress", Summary: "Message loss changes progress state.",
-			Mechanism: "Stale peer state survives a lost message.",
+			Mechanism:     "Stale peer state survives a lost message.",
+			Applicability: "A produced message can be selected.",
+			Boundary:      "A delay alone is not a finding.",
 		}},
+		TargetDossier: &controlexperiment.TargetDossier{
+			Scope: "Fixture implementation with a controlled message path.",
+			Components: []controlexperiment.TargetMaterial{{
+				ID: "fixture-core", Summary: "The fixture exposes decision progress.",
+				EvidenceRefs: []string{"fixture.go:1"},
+			}},
+			BlindSpots: []controlexperiment.TargetMaterial{{
+				ID: "no-restart", Summary: "The fixture cannot restart participants.",
+			}},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -37,17 +52,34 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		{Kind: semantic.ObservationDecisionAdvanced},
 	}
 	actions := []control.ActionKind{control.ActionInvoke, control.ActionDropMessage}
+	memory := []controlexperiment.RiskExplorationMemoryEntry{{
+		Episode: 1, CandidateID: "earlier-risk", Summary: "Earlier candidate.",
+		SuspectedMechanism: "An earlier ordering was already investigated.",
+		EpisodeOutcome:     "completed", RiskStatus: semantic.RiskWitnessNotReached,
+		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
+		ProtocolPSSStates: 2, NewProtocolPSSStates: 1,
+		ModelCalls: 2, ModelTokens: 12, SearchWorkUnits: 5, ExecutionWorkUnits: 4,
+	}}
 	candidate := controlexperiment.RiskCandidate{
 		ID: "decision-after-message-loss", PropertyRef: "decision-continuity",
 		InspirationRef: "message-loss-progress", Summary: "Observe a decision after one message is dropped.",
-		SuspectedMechanism: "Stale peer progress after a dropped message may affect a later decision.",
+		MechanismSteps: []controlexperiment.RiskMechanismStep{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start the client operation."},
+			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped, Rationale: "Remove one protocol message while progress is active."},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe the later decision frontier."},
+		},
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
 			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
 			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
 		},
 	}
-	content, err := json.Marshal(candidate)
+	alternative := candidate
+	alternative.ID = "decision-after-alternative-message-loss"
+	alternative.Summary = "Observe a decision after an alternative message-loss hypothesis."
+	content, err := json.Marshal(controlexperiment.RiskCandidatePortfolio{
+		Candidates: []controlexperiment.RiskCandidate{candidate, alternative},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,11 +92,16 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		}
 		var payload openRouterChatRequest
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil ||
-			payload.ResponseFormat.JSONSchema.Name != "risk_candidate" ||
+			payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio" ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observation_capabilities")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("issue_patterns")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("target_dossier")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observable-only")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("exploration_memory")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("property_ref")) ||
-			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("suspected_mechanism")) ||
+			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("mechanism_steps")) ||
+			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("candidates")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("Every claimed causal trigger")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("Every bind_as token must occur")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("^[a-z0-9]")) {
 			t.Fatalf("unexpected risk request: %#v/%v", payload, err)
@@ -89,7 +126,7 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	}
 	result, err := controlexperiment.DiscoverRiskWithPlanner(
 		context.Background(), controlexperiment.RiskAgentBudget{MaxCalls: 1, MaxTokens: 20},
-		knowledge, capabilities, actions, planner,
+		knowledge, capabilities, actions, memory, nil, nil, planner,
 	)
 	if err != nil || result.Status != controlexperiment.RiskAgentAccepted || result.Accepted == nil ||
 		result.ModelWork != (controlexperiment.ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7}) ||
@@ -107,5 +144,155 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	replayed, work, err := planRiskCandidate(context.Background(), recovered, calledView)
 	if err != nil || !bytes.Equal(replayed, content) || work != result.ModelWork || transportCalls != 1 {
 		t.Fatalf("risk recovery changed evidence: %q/%#v/%v calls=%d", replayed, work, err, transportCalls)
+	}
+}
+
+func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
+	knowledge, _, _, err := loadEtcdraftAgenticAuthoringSource(etcdraftAgenticTestInputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := controlexperiment.KnowledgeSourceCatalog(knowledge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected controlexperiment.KnowledgeSource
+	for _, source := range sources {
+		if source.Reference == "adapters/etcdraftv2/adapter.go:Check" {
+			selected = source
+			break
+		}
+	}
+	if selected.Reference == "" {
+		t.Fatal("active etcd/raft Dossier lost its declared Check source")
+	}
+	view := controlexperiment.RiskAgentView{
+		Knowledge: knowledge,
+		ObservationCapabilities: []semantic.ObservationCapability{
+			{Kind: semantic.ObservationWorkloadInvoked},
+			{Kind: semantic.ObservationMessageDropped},
+			{Kind: semantic.ObservationDecisionAdvanced},
+		},
+		Actions:              []control.ActionKind{control.ActionInvoke, control.ActionDropMessage},
+		MaxMilestones:        controlexperiment.RiskCandidateMaxSteps,
+		MaxCandidates:        controlexperiment.RiskCandidatePortfolioMax,
+		KnowledgeSources:     sources,
+		MaxKnowledgeRequests: controlexperiment.RiskKnowledgeRequestsPerCall,
+	}
+	system, user, err := riskAgentPrompt(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := riskAgentStructuredOutput(view)
+	if err != nil || !strings.Contains(system, "RiskKnowledgeRequestBatch") ||
+		!strings.Contains(user, "candidate generation occurs in the next call") ||
+		!bytes.Contains([]byte(user), []byte("adapter.go:Check")) ||
+		output.Name != "risk_knowledge_requests" ||
+		len(output.Schema) > 16<<10 ||
+		!bytes.Contains(output.Schema, []byte("knowledge_requests")) ||
+		!bytes.Contains(output.Schema, []byte("adapters/etcdraftv2/adapter.go:Check")) ||
+		bytes.Contains(output.Schema, []byte("candidates")) {
+		t.Fatalf("knowledge-assisted Risk contract incomplete: %s\n%s\n%s\n%v", system, user, output.Schema, err)
+	}
+	view.MaxKnowledgeRequests = 0
+	view.KnowledgeResults = []controlexperiment.KnowledgeReadResult{{
+		Status: controlexperiment.KnowledgeDiscoveryCompleted, Source: selected,
+		StartLine: 10, EndLine: 12, TotalLines: 100,
+		Text: "func (adapter *Adapter) Check(action control.Action) error {\n  return nil\n}", Truncated: true,
+	}}
+	system, user, err = riskAgentPrompt(view)
+	output, outputErr := riskAgentStructuredOutput(view)
+	if err != nil || outputErr != nil || !strings.Contains(system, "RiskCandidatePortfolio") ||
+		!strings.Contains(user, "bounded knowledge_results") ||
+		!bytes.Contains([]byte(user), []byte("func (adapter *Adapter) Check")) ||
+		output.Name != "risk_candidate_portfolio" ||
+		!bytes.Contains(output.Schema, []byte("candidates")) ||
+		bytes.Contains(output.Schema, []byte("knowledge_requests")) {
+		t.Fatalf("knowledge result did not transition to portfolio: %s\n%s\n%s\n%v/%v",
+			system, user, output.Schema, err, outputErr)
+	}
+}
+
+func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
+	knowledge, _, _, err := loadOmnipaxosAgenticAuthoringSource(omnipaxosAgenticTestInputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := "adapters/omnipaxosv2/adapter.go:Manifest"
+	requestBytes, err := json.Marshal(controlexperiment.RiskKnowledgeRequestBatch{
+		KnowledgeRequests: []controlexperiment.KnowledgeReadRequest{{
+			Reference: reference, MaxLines: 40,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolioBytes, err := json.Marshal(omnipaxosDiscoveredRiskPortfolio())
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCalls := 0
+	client := fixtureOpenRouterIntentClient()
+	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls++
+		var payload openRouterChatRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		var content []byte
+		switch providerCalls {
+		case 1:
+			if payload.ResponseFormat.JSONSchema.Name != "risk_knowledge_requests" ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("knowledge_requests")) ||
+				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("candidates")) ||
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte(reference)) {
+				t.Fatalf("first Risk call did not expose declared sources: %#v", payload)
+			}
+			content = requestBytes
+		case 2:
+			if payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio" ||
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("knowledge_results")) ||
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("func (adapter *Adapter) Manifest")) {
+				t.Fatalf("second Risk call did not receive the source excerpt: %#v", payload.Messages)
+			}
+			content = portfolioBytes
+		default:
+			t.Fatalf("unexpected provider call %d", providerCalls)
+		}
+		response := a2b2OpenRouterResponse(t, providerCalls, content)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
+	})
+	journal, err := newStatelessAgentCallJournal(filepath.Join(t.TempDir(), "knowledge-risk"), client, "fixture-key")
+	if err != nil || journal.SetRoot("knowledge-risk-root") != nil {
+		t.Fatalf("journal setup failed: %#v/%v", journal, err)
+	}
+	planner := func(ctx context.Context, view controlexperiment.RiskAgentView) (
+		[]byte, controlexperiment.ModelWork, error,
+	) {
+		if err := journal.ActivateKey("fixture-key"); err != nil {
+			return nil, controlexperiment.ModelWork{}, err
+		}
+		return planRiskCandidate(ctx, journal, view)
+	}
+	reader := func(request controlexperiment.KnowledgeReadRequest) (
+		controlexperiment.KnowledgeReadResult, error,
+	) {
+		return controlexperiment.ReadDeclaredKnowledgeSource("../..", knowledge, request)
+	}
+	result, err := controlexperiment.DiscoverRiskWithPlanner(
+		context.Background(), controlexperiment.RiskAgentBudget{MaxCalls: 2, MaxTokens: 20},
+		knowledge, (omnipaxosv2.ObservationProjector{}).Capabilities(),
+		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage}, nil, nil, reader, planner,
+	)
+	audits, auditErr := journal.Audits()
+	if err != nil || auditErr != nil || result.Status != controlexperiment.RiskAgentAccepted ||
+		result.Accepted == nil || len(result.Attempts) != 2 || len(audits) != 2 || providerCalls != 2 ||
+		result.Attempts[0].Feedback.ReasonCode != controlexperiment.RiskAgentReasonKnowledgeRead ||
+		len(result.Attempts[0].KnowledgeResults) != 1 ||
+		audits[0].ProviderUsageStatus != agentProviderUsageObserved ||
+		audits[1].ProviderUsageStatus != agentProviderUsageObserved ||
+		result.ModelWork != (controlexperiment.ModelWork{Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14}) {
+		t.Fatalf("provider-backed knowledge loop failed: %#v audits=%#v calls=%d err=%v/%v",
+			result, audits, providerCalls, err, auditErr)
 	}
 }

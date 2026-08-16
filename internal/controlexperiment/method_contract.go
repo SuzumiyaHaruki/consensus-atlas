@@ -1,13 +1,18 @@
 package controlexperiment
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+)
 
 // MethodFailure is the shared terminal failure projection used by Campaign
 // and semantic episode artifacts. It is not an Oracle verdict.
 type MethodFailure struct {
-	Phase    string `json:"phase"`
-	Code     string `json:"code"`
-	Decision int    `json:"decision,omitempty"`
+	Phase    string                          `json:"phase"`
+	Code     string                          `json:"code"`
+	Decision int                             `json:"decision,omitempty"`
+	Terminal *controlruntime.TerminalOutcome `json:"terminal_outcome,omitempty"`
 }
 
 // MethodBudget binds an evaluator-owned execution to common work ceilings.

@@ -149,6 +149,10 @@ root/workload -> controllable Action -> observable evidence -> trusted Oracle ->
 只有 ground-truth trigger 被稳定检出后，该根因才可进入 search-recall 实验。已知优先缺口包括不同 frontier 的
 前缀冲突、跨 incarnation 持久性回退，以及 panic/worker-exit/timeout 的证据保留和完整计费。
 
+A9e2 已闭合前两个受控反例。第三个负校准使用真实 OmniPaxos worker：Action deadline 到期没有中止 worker
+call，worker 异常退出后 sealed Trace 仍只是原成功前缀，fresh Replay 也只验证该前缀。下一步所需的是独立于
+成功 Trace 的最小 terminal outcome，而不是把失败动作写成 `applied` record 或直接当成 Agreement finding。
+
 这一阶段不新增 Manifest、hash、冻结 contract、Ledger 或 admission gate。Git、版本、类型和普通测试能验证
 既有规则的实现一致性，却不能证明 projector/monitor 对目标缺陷类别有足够 recall；pilot 使用现有 evidence
 路径直接暴露缺失能力，之后只做由具体失败驱动的最小扩展。
