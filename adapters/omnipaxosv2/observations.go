@@ -2,13 +2,20 @@ package omnipaxosv2
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const ObservationProjectionID = "omnipaxos-v2/common-observations-v1"
+const (
+	ObservationProjectionID                                  = "omnipaxos-v2/observations-v2"
+	ObservationPromiseRaised       semantic.ObservationKind  = "omnipaxos/promise-raised"
+	ObservationFieldBallotNode     semantic.ObservationField = "omnipaxos/ballot-node"
+	ObservationFieldBallotNumber   semantic.ObservationField = "omnipaxos/ballot-number"
+	ObservationFieldBallotPriority semantic.ObservationField = "omnipaxos/ballot-priority"
+)
 
 type ObservationProjector struct{}
 
@@ -39,6 +46,14 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 		}},
 		{Kind: semantic.ObservationEpochAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationDecisionAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
+		{Kind: ObservationPromiseRaised, Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
+			ObservationFieldBallotNode, ObservationFieldBallotNumber, ObservationFieldBallotPriority,
+		}, FieldTypes: map[semantic.ObservationField]semantic.ObservationValueType{
+			ObservationFieldBallotNode:     semantic.ObservationValueNodeID,
+			ObservationFieldBallotNumber:   semantic.ObservationValueUint,
+			ObservationFieldBallotPriority: semantic.ObservationValueUint,
+		}},
 	}
 }
 
@@ -109,6 +124,28 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 				Kind: semantic.ObservationEpochAdvanced, Step: record.Step, SourceDigest: digest,
 				Participant: omnipaxosOptionalNode(currentCoordinator, hasCoordinator),
 			})
+			attributes := make([]semantic.ObservationAttribute, 0, 3)
+			if currentPromise.node != "" {
+				attributes = append(attributes, semantic.ObservationAttribute{
+					Field: ObservationFieldBallotNode, Type: semantic.ObservationValueNodeID,
+					Value: string(currentPromise.node),
+				})
+			}
+			attributes = append(attributes,
+				semantic.ObservationAttribute{
+					Field: ObservationFieldBallotNumber, Type: semantic.ObservationValueUint,
+					Value: strconv.FormatUint(uint64(currentPromise.number), 10),
+				},
+				semantic.ObservationAttribute{
+					Field: ObservationFieldBallotPriority, Type: semantic.ObservationValueUint,
+					Value: strconv.FormatUint(uint64(currentPromise.priority), 10),
+				},
+			)
+			events = append(events, semantic.Observation{
+				Kind: ObservationPromiseRaised, Step: record.Step, SourceDigest: digest,
+				Participant: omnipaxosOptionalNode(currentCoordinator, hasCoordinator),
+				Attributes:  attributes,
+			})
 			previousPromise = currentPromise
 		}
 		if hasCoordinator && previousCoordinator.Node != "" && currentCoordinator != previousCoordinator {
@@ -133,7 +170,9 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 			activeWorkload = false
 		}
 	}
-	return semantic.NewObservationHistory(ObservationProjectionID, trace, events)
+	return semantic.NewObservationHistoryWithCapabilities(
+		ObservationProjectionID, trace, events, (ObservationProjector{}).Capabilities(),
+	)
 }
 
 func omnipaxosObservationInput(parameters json.RawMessage) (Input, error) {

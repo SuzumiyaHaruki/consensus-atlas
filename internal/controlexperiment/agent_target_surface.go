@@ -3,9 +3,12 @@ package controlexperiment
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 const agentWorkloadInputJSONMaxBytes = 16 * 1024
@@ -42,6 +45,60 @@ type AgentRuntimeSurface struct {
 	EntropyStrictReplay bool   `json:"entropy_strict_replay"`
 }
 
+const (
+	AgentOracleScopeGeneric = "generic"
+	AgentOracleScopeTarget  = "target"
+)
+
+// AgentOracleCapability describes a registered deterministic monitor. Empty
+// PropertyIDs mean the monitor validates execution evidence rather than one
+// protocol property (for example, trace integrity).
+type AgentOracleCapability struct {
+	ID          string   `json:"id"`
+	Scope       string   `json:"scope"`
+	PropertyIDs []string `json:"property_ids,omitempty"`
+}
+
+// AgentFidelityBoundary is a Target-Pack-authored disclosure of behavior the
+// active composition cannot faithfully exercise. It is planning context, not
+// an execution gate or a claim that every linked hypothesis requires it.
+type AgentFidelityBoundary struct {
+	ID                  string   `json:"id"`
+	Summary             string   `json:"summary"`
+	AffectedPropertyIDs []string `json:"affected_property_ids,omitempty"`
+}
+
+const (
+	AgentCapabilityGapTargetFidelity        = "target-fidelity-gap"
+	AgentCapabilityNoticeFidelityUnassessed = "fidelity-unassessed"
+	AgentFidelityNotApplicable              = "not-applicable"
+	AgentFidelityUnassessed                 = "fidelity-unassessed"
+)
+
+type AgentCapabilityGap struct {
+	Code      string `json:"code"`
+	Reference string `json:"reference"`
+	Summary   string `json:"summary"`
+}
+
+// AgentTargetExtensions are supplied by the Target Pack. The constructor
+// checks them against the actual Manifest and the semantic declarations before
+// exposing them to an Agent.
+type AgentTargetExtensions struct {
+	ComposableActions       []control.ActionKind             `json:"composable_actions"`
+	ObservationCapabilities []semantic.ObservationCapability `json:"observation_capabilities"`
+	OracleCapabilities      []AgentOracleCapability          `json:"oracle_capabilities"`
+	FidelityBoundaries      []AgentFidelityBoundary          `json:"fidelity_boundaries,omitempty"`
+}
+
+type AgentCapabilitySurface struct {
+	DeclaredActions         []control.ActionKind             `json:"declared_actions"`
+	ComposableActions       []control.ActionKind             `json:"composable_actions"`
+	ObservationCapabilities []semantic.ObservationCapability `json:"observation_capabilities"`
+	OracleCapabilities      []AgentOracleCapability          `json:"oracle_capabilities"`
+	FidelityBoundaries      []AgentFidelityBoundary          `json:"fidelity_boundaries,omitempty"`
+}
+
 // AgentTargetSurface is mechanically projected from the active target's
 // validated Manifest, workload and execution configuration. It describes what
 // this episode can actually exercise; it grants no Action or verdict authority.
@@ -57,6 +114,7 @@ type AgentTargetSurface struct {
 	CrashModes         []string               `json:"crash_modes,omitempty"`
 	EffectKinds        []string               `json:"effect_kinds,omitempty"`
 	DurableCheckpoints bool                   `json:"durable_checkpoints"`
+	Capabilities       AgentCapabilitySurface `json:"capabilities"`
 }
 
 func NewAgentTargetSurface(
@@ -65,9 +123,11 @@ func NewAgentTargetSurface(
 	workload WorkloadPlan,
 	runtime RuntimeConfig,
 	faultAllowance FaultEnvelope,
+	extensions AgentTargetExtensions,
 ) (AgentTargetSurface, error) {
 	if !validMethodToken(targetID) || manifest.Validate() != nil || workload.Validate() != nil ||
-		faultAllowance.Validate() != nil {
+		faultAllowance.Validate() != nil ||
+		validateAgentTargetExtensions(extensions, manifest, faultAllowance) != nil {
 		return AgentTargetSurface{}, errors.New("EXPERIMENT_AGENT_TARGET_SURFACE_INPUT_INVALID")
 	}
 	if _, err := runtime.runtimeConfig(); err != nil {
@@ -88,6 +148,8 @@ func NewAgentTargetSurface(
 		}
 		invocations = append(invocations, projected)
 	}
+	declaredActions := append([]control.ActionKind(nil), manifest.Capabilities.Actions...)
+	sort.Slice(declaredActions, func(i, j int) bool { return declaredActions[i] < declaredActions[j] })
 	surface := AgentTargetSurface{
 		TargetID: targetID, AdapterID: manifest.AdapterID,
 		ImplementationID: manifest.ImplementationID,
@@ -109,7 +171,15 @@ func NewAgentTargetSurface(
 		CrashModes:         append([]string(nil), manifest.Capabilities.CrashModes...),
 		EffectKinds:        append([]string(nil), manifest.Capabilities.EffectKinds...),
 		DurableCheckpoints: manifest.Capabilities.DurableCheckpoints,
+		Capabilities: AgentCapabilitySurface{
+			DeclaredActions:         declaredActions,
+			ComposableActions:       append([]control.ActionKind(nil), extensions.ComposableActions...),
+			ObservationCapabilities: cloneObservationCapabilities(extensions.ObservationCapabilities),
+			OracleCapabilities:      cloneAgentOracleCapabilities(extensions.OracleCapabilities),
+			FidelityBoundaries:      cloneAgentFidelityBoundaries(extensions.FidelityBoundaries),
+		},
 	}
+	sortAgentCapabilitySurface(&surface.Capabilities)
 	if surface.Validate() != nil {
 		return AgentTargetSurface{}, errors.New("EXPERIMENT_AGENT_TARGET_SURFACE_INVALID")
 	}
@@ -146,7 +216,141 @@ func (surface AgentTargetSurface) Validate() error {
 			return errors.New("EXPERIMENT_AGENT_TARGET_SURFACE_INVALID")
 		}
 	}
+	if validateAgentCapabilitySurface(surface.Capabilities) != nil ||
+		validateComposableFaultAllowance(
+			surface.Capabilities.ComposableActions, surface.FaultAllowance,
+		) != nil {
+		return errors.New("EXPERIMENT_AGENT_TARGET_SURFACE_INVALID")
+	}
 	return nil
+}
+
+// ValidateAgainstKnowledge keeps Oracle and fidelity references honest without
+// teaching common orchestration what any protocol property means.
+func (surface AgentTargetSurface) ValidateAgainstKnowledge(knowledge ProtocolKnowledgePack) error {
+	if surface.Validate() != nil || knowledge.ValidateAgentMaterials() != nil {
+		return errors.New("EXPERIMENT_AGENT_TARGET_KNOWLEDGE_INVALID")
+	}
+	properties := make(map[string]ProtocolProperty, len(knowledge.Properties))
+	oracleBacked := make(map[string]bool)
+	for _, property := range knowledge.Properties {
+		properties[property.ID] = property
+		if property.EvidenceLevel == PropertyEvidenceOracleBacked {
+			oracleBacked[property.ID] = false
+		}
+	}
+	for _, oracle := range surface.Capabilities.OracleCapabilities {
+		for _, propertyID := range oracle.PropertyIDs {
+			property, ok := properties[propertyID]
+			if !ok || property.EvidenceLevel != PropertyEvidenceOracleBacked {
+				return errors.New("EXPERIMENT_AGENT_TARGET_ORACLE_PROPERTY_INVALID")
+			}
+			oracleBacked[propertyID] = true
+		}
+	}
+	for _, supported := range oracleBacked {
+		if !supported {
+			return errors.New("EXPERIMENT_AGENT_TARGET_ORACLE_PROPERTY_UNMAPPED")
+		}
+	}
+	for _, boundary := range surface.Capabilities.FidelityBoundaries {
+		for _, propertyID := range boundary.AffectedPropertyIDs {
+			if _, ok := properties[propertyID]; !ok {
+				return errors.New("EXPERIMENT_AGENT_TARGET_FIDELITY_PROPERTY_INVALID")
+			}
+		}
+	}
+	return nil
+}
+
+func (surface AgentTargetSurface) OracleIDsForProperty(propertyID string) []string {
+	var result []string
+	for _, capability := range surface.Capabilities.OracleCapabilities {
+		for _, supported := range capability.PropertyIDs {
+			if supported == propertyID {
+				result = append(result, capability.ID)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (surface AgentTargetSurface) FidelityGaps(required []string) ([]AgentCapabilityGap, error) {
+	if !canonicalStrings(required, false) {
+		return nil, errors.New("EXPERIMENT_AGENT_TARGET_FIDELITY_REQUIREMENTS_INVALID")
+	}
+	if len(required) == 0 {
+		return nil, nil
+	}
+	boundaries := make(map[string]AgentFidelityBoundary, len(surface.Capabilities.FidelityBoundaries))
+	for _, boundary := range surface.Capabilities.FidelityBoundaries {
+		boundaries[boundary.ID] = boundary
+	}
+	result := make([]AgentCapabilityGap, 0, len(required))
+	for _, reference := range required {
+		boundary, ok := boundaries[reference]
+		if !ok {
+			return nil, errors.New("EXPERIMENT_AGENT_TARGET_FIDELITY_REQUIREMENT_UNKNOWN")
+		}
+		result = append(result, AgentCapabilityGap{
+			Code: AgentCapabilityGapTargetFidelity, Reference: reference, Summary: boundary.Summary,
+		})
+	}
+	return result, nil
+}
+
+// FidelityAssessmentForProperty reports relevant disclosed boundaries when an
+// Agent did not claim that its mechanism requires one. This is an honest
+// planning/evidence notice, not a qualification gate: an affected property can
+// still have hypotheses that do not depend on the disclosed boundary.
+func (surface AgentTargetSurface) FidelityAssessmentForProperty(
+	propertyID string,
+	required []string,
+) (string, []AgentCapabilityGap, error) {
+	if !validMethodToken(propertyID) || !canonicalStrings(required, false) {
+		return "", nil, errors.New("EXPERIMENT_AGENT_TARGET_FIDELITY_ASSESSMENT_INVALID")
+	}
+	if len(required) > 0 {
+		if _, err := surface.FidelityGaps(required); err != nil {
+			return "", nil, err
+		}
+		return AgentFidelityNotApplicable, nil, nil
+	}
+	var notices []AgentCapabilityGap
+	for _, boundary := range surface.Capabilities.FidelityBoundaries {
+		for _, affected := range boundary.AffectedPropertyIDs {
+			if affected == propertyID {
+				notices = append(notices, AgentCapabilityGap{
+					Code:      AgentCapabilityNoticeFidelityUnassessed,
+					Reference: boundary.ID, Summary: boundary.Summary,
+				})
+				break
+			}
+		}
+	}
+	if len(notices) > 0 {
+		return AgentFidelityUnassessed, notices, nil
+	}
+	return AgentFidelityNotApplicable, nil, nil
+}
+
+// MatchesPlanningInputs confirms that the independently passed Risk-Agent
+// inputs are exactly the canonical capabilities disclosed by this surface.
+func (surface AgentTargetSurface) MatchesPlanningInputs(
+	actions []control.ActionKind,
+	observations []semantic.ObservationCapability,
+) bool {
+	candidate := AgentCapabilitySurface{
+		ComposableActions:       append([]control.ActionKind(nil), actions...),
+		ObservationCapabilities: cloneObservationCapabilities(observations),
+	}
+	sortAgentCapabilitySurface(&candidate)
+	return reflect.DeepEqual(surface.Capabilities.ComposableActions, candidate.ComposableActions) &&
+		reflect.DeepEqual(
+			surface.Capabilities.ObservationCapabilities,
+			candidate.ObservationCapabilities,
+		)
 }
 
 func cloneAgentTargetSurface(surface *AgentTargetSurface) *AgentTargetSurface {
@@ -158,6 +362,21 @@ func cloneAgentTargetSurface(surface *AgentTargetSurface) *AgentTargetSurface {
 	cloned.TemporalKinds = append([]control.TemporalKind(nil), surface.TemporalKinds...)
 	cloned.CrashModes = append([]string(nil), surface.CrashModes...)
 	cloned.EffectKinds = append([]string(nil), surface.EffectKinds...)
+	cloned.Capabilities.DeclaredActions = append(
+		[]control.ActionKind(nil), surface.Capabilities.DeclaredActions...,
+	)
+	cloned.Capabilities.ComposableActions = append(
+		[]control.ActionKind(nil), surface.Capabilities.ComposableActions...,
+	)
+	cloned.Capabilities.ObservationCapabilities = cloneObservationCapabilities(
+		surface.Capabilities.ObservationCapabilities,
+	)
+	cloned.Capabilities.OracleCapabilities = cloneAgentOracleCapabilities(
+		surface.Capabilities.OracleCapabilities,
+	)
+	cloned.Capabilities.FidelityBoundaries = cloneAgentFidelityBoundaries(
+		surface.Capabilities.FidelityBoundaries,
+	)
 	cloned.Workload.Invocations = append([]AgentWorkloadInvocation(nil), surface.Workload.Invocations...)
 	for index := range cloned.Workload.Invocations {
 		cloned.Workload.Invocations[index].InputJSON = append(
@@ -165,4 +384,139 @@ func cloneAgentTargetSurface(surface *AgentTargetSurface) *AgentTargetSurface {
 		)
 	}
 	return &cloned
+}
+
+func validateAgentTargetExtensions(
+	extensions AgentTargetExtensions,
+	manifest control.AdapterManifest,
+	faultAllowance FaultEnvelope,
+) error {
+	if !canonicalActionKinds(extensions.ComposableActions, true) ||
+		semantic.ValidateObservationCapabilities(extensions.ObservationCapabilities) != nil ||
+		len(extensions.ObservationCapabilities) == 0 || len(extensions.OracleCapabilities) == 0 {
+		return errors.New("EXPERIMENT_AGENT_TARGET_EXTENSIONS_INVALID")
+	}
+	declared := actionKindSet(manifest.Capabilities.Actions)
+	for _, action := range extensions.ComposableActions {
+		if !declared[action] {
+			return errors.New("EXPERIMENT_AGENT_TARGET_ACTION_NOT_DECLARED")
+		}
+	}
+	if validateComposableFaultAllowance(extensions.ComposableActions, faultAllowance) != nil {
+		return errors.New("EXPERIMENT_AGENT_TARGET_ACTION_NOT_COMPOSABLE")
+	}
+	capabilities := AgentCapabilitySurface{
+		DeclaredActions: append([]control.ActionKind(nil), manifest.Capabilities.Actions...),
+		ComposableActions: append(
+			[]control.ActionKind(nil), extensions.ComposableActions...,
+		),
+		ObservationCapabilities: cloneObservationCapabilities(extensions.ObservationCapabilities),
+		OracleCapabilities:      cloneAgentOracleCapabilities(extensions.OracleCapabilities),
+		FidelityBoundaries:      cloneAgentFidelityBoundaries(extensions.FidelityBoundaries),
+	}
+	sortAgentCapabilitySurface(&capabilities)
+	return validateAgentCapabilitySurface(capabilities)
+}
+
+func validateComposableFaultAllowance(
+	actions []control.ActionKind,
+	allowance FaultEnvelope,
+) error {
+	for _, action := range actions {
+		unsupported := false
+		switch action {
+		case control.ActionCrash, control.ActionRestart:
+			unsupported = allowance.MaxCrashes == 0
+		case control.ActionDropMessage:
+			unsupported = allowance.MaxMessageDrops == 0
+		case control.ActionDuplicateMessage:
+			unsupported = allowance.MaxMessageDuplicates == 0
+		case control.ActionPartition, control.ActionHeal:
+			unsupported = allowance.MaxPartitions == 0
+		}
+		if unsupported {
+			return errors.New("EXPERIMENT_AGENT_TARGET_ACTION_FAULT_ALLOWANCE_ZERO")
+		}
+	}
+	return nil
+}
+
+func validateAgentCapabilitySurface(surface AgentCapabilitySurface) error {
+	if !canonicalActionKinds(surface.DeclaredActions, true) ||
+		!canonicalActionKinds(surface.ComposableActions, true) ||
+		semantic.ValidateObservationCapabilities(surface.ObservationCapabilities) != nil ||
+		len(surface.ObservationCapabilities) == 0 || len(surface.OracleCapabilities) == 0 {
+		return errors.New("EXPERIMENT_AGENT_TARGET_CAPABILITIES_INVALID")
+	}
+	declared := actionKindSet(surface.DeclaredActions)
+	for _, action := range surface.ComposableActions {
+		if !declared[action] {
+			return errors.New("EXPERIMENT_AGENT_TARGET_CAPABILITIES_INVALID")
+		}
+	}
+	for index, oracle := range surface.OracleCapabilities {
+		if !validMethodToken(oracle.ID) ||
+			(oracle.Scope != AgentOracleScopeGeneric && oracle.Scope != AgentOracleScopeTarget) ||
+			!canonicalStrings(oracle.PropertyIDs, false) ||
+			(index > 0 && surface.OracleCapabilities[index-1].ID >= oracle.ID) {
+			return errors.New("EXPERIMENT_AGENT_TARGET_ORACLE_INVALID")
+		}
+	}
+	for index, boundary := range surface.FidelityBoundaries {
+		if !validMethodToken(boundary.ID) || strings.TrimSpace(boundary.Summary) != boundary.Summary ||
+			boundary.Summary == "" || len(boundary.Summary) > protocolKnowledgeTextMaxBytes ||
+			!canonicalStrings(boundary.AffectedPropertyIDs, false) ||
+			(index > 0 && surface.FidelityBoundaries[index-1].ID >= boundary.ID) {
+			return errors.New("EXPERIMENT_AGENT_TARGET_FIDELITY_INVALID")
+		}
+	}
+	return nil
+}
+
+func sortAgentCapabilitySurface(surface *AgentCapabilitySurface) {
+	sort.Slice(surface.DeclaredActions, func(i, j int) bool {
+		return surface.DeclaredActions[i] < surface.DeclaredActions[j]
+	})
+	sort.Slice(surface.ComposableActions, func(i, j int) bool {
+		return surface.ComposableActions[i] < surface.ComposableActions[j]
+	})
+	sort.Slice(surface.ObservationCapabilities, func(i, j int) bool {
+		return surface.ObservationCapabilities[i].Kind < surface.ObservationCapabilities[j].Kind
+	})
+	for index := range surface.ObservationCapabilities {
+		sort.Slice(surface.ObservationCapabilities[index].Fields, func(i, j int) bool {
+			return surface.ObservationCapabilities[index].Fields[i] <
+				surface.ObservationCapabilities[index].Fields[j]
+		})
+	}
+	sort.Slice(surface.OracleCapabilities, func(i, j int) bool {
+		return surface.OracleCapabilities[i].ID < surface.OracleCapabilities[j].ID
+	})
+	for index := range surface.OracleCapabilities {
+		sort.Strings(surface.OracleCapabilities[index].PropertyIDs)
+	}
+	sort.Slice(surface.FidelityBoundaries, func(i, j int) bool {
+		return surface.FidelityBoundaries[i].ID < surface.FidelityBoundaries[j].ID
+	})
+	for index := range surface.FidelityBoundaries {
+		sort.Strings(surface.FidelityBoundaries[index].AffectedPropertyIDs)
+	}
+}
+
+func cloneAgentOracleCapabilities(values []AgentOracleCapability) []AgentOracleCapability {
+	result := append([]AgentOracleCapability(nil), values...)
+	for index := range result {
+		result[index].PropertyIDs = append([]string(nil), values[index].PropertyIDs...)
+	}
+	return result
+}
+
+func cloneAgentFidelityBoundaries(values []AgentFidelityBoundary) []AgentFidelityBoundary {
+	result := append([]AgentFidelityBoundary(nil), values...)
+	for index := range result {
+		result[index].AffectedPropertyIDs = append(
+			[]string(nil), values[index].AffectedPropertyIDs...,
+		)
+	}
+	return result
 }

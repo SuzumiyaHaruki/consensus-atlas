@@ -564,17 +564,24 @@ func TestThreeNodeProposalsSurviveLeaderChangeAndRecovery(t *testing.T) {
 	observed := make(map[semantic.ObservationKind]int)
 	requests := make(map[string]bool)
 	inflightChanges := 0
+	raftTermObserved := false
 	for _, event := range history.Events {
 		observed[event.Kind]++
 		requests[event.RequestID] = event.RequestID != ""
 		if event.Kind == semantic.ObservationCoordinatorChange && event.OperationStage == "inflight" {
 			inflightChanges++
 		}
+		if event.Kind == etcdraftv2.ObservationRaftTermAdvanced && len(event.Attributes) == 1 &&
+			event.Attributes[0].Field == etcdraftv2.ObservationFieldRaftTerm &&
+			event.Attributes[0].Type == semantic.ObservationValueUint {
+			raftTermObserved = true
+		}
 	}
 	if observed[semantic.ObservationCoordinatorChange] == 0 ||
 		observed[semantic.ObservationNodeRestarted] == 0 ||
 		observed[semantic.ObservationDecisionAdvanced] == 0 ||
-		!requests["cluster-request-1"] || !requests["cluster-request-2"] || inflightChanges != 0 {
+		!requests["cluster-request-1"] || !requests["cluster-request-2"] || inflightChanges != 0 ||
+		!raftTermObserved {
 		t.Fatalf("common observation projection incomplete: observed=%v requests=%v", observed, requests)
 	}
 	if _, err := controlruntime.Replay(

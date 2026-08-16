@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,7 +79,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			view := riskAgentViewFromPayload(t, payload)
 			if view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
 				len(view.TargetSurface.Nodes) != 3 ||
-				view.TargetSurface.FaultAllowance.MaxMessageDrops != 1 {
+				view.TargetSurface.FaultAllowance.MaxMessageDrops != 1 ||
+				len(view.TargetSurface.Capabilities.ComposableActions) != 4 ||
+				len(view.TargetSurface.Capabilities.ObservationCapabilities) == 0 ||
+				len(view.TargetSurface.Capabilities.OracleCapabilities) != 2 ||
+				len(view.TargetSurface.Capabilities.FidelityBoundaries) != 1 {
 				t.Fatalf("Risk Agent did not receive the active target surface: %#v", view.TargetSurface)
 			}
 			if len(view.ExplorationMemory) > 0 {
@@ -91,9 +96,15 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			content = candidateBytes
 		case scenarioPlanStructuredOutputName:
 			view := a4bScenarioViewFromPayload(t, payload)
-			if view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
+			if view.AcceptedHypothesis == nil ||
+				view.AcceptedHypothesis.Candidate.ID != omnipaxosDiscoveredRiskCandidate().ID ||
+				view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
 				len(view.TargetSurface.Workload.Invocations) != 1 {
-				t.Fatalf("Scenario Agent did not retain the active target surface: %#v", view.TargetSurface)
+				t.Fatalf("Scenario Agent did not receive compact accepted context: %#v", view)
+			}
+			if strings.Contains(payload.Messages[1].Content, `"knowledge":`) ||
+				strings.Contains(payload.Messages[1].Content, `"hypothesis":`) {
+				t.Fatal("Scenario provider prompt retained the full knowledge/hypothesis contracts")
 			}
 			for index, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDropMessage &&
@@ -117,7 +128,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		response := a2b2OpenRouterResponse(t, providerCalls, content)
+		response := fixtureOpenRouterResponse(t, providerCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
 	directory := t.TempDir()
@@ -156,7 +167,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14,
 		}) || result.Work.ScenarioSearch.TotalWorkUnits == 0 ||
 		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 1 ||
-		providerCalls != 2 || keyActivations != 2 {
+		providerCalls != 2 || keyActivations != 2 ||
+		result.Assessment.Status != agenticEvidenceRiskUnverified ||
+		result.Assessment.ReasonCode != "missing-property-oracle" ||
+		result.Assessment.PropertyID != "client-operation-continuity" ||
+		result.Assessment.EvidenceLevel != controlexperiment.PropertyEvidenceObservable {
 		t.Fatalf("bounded agentic episode incomplete: %#v calls=%d keys=%d err=%v",
 			result, providerCalls, keyActivations, err)
 	}
@@ -281,7 +296,8 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	)
 	if err != nil || limited.Status != agenticEpisodeTokenStopped || limited.Testing != nil ||
 		!limited.Metrics.CandidateAccepted || limited.Metrics.RiskReached ||
-		limited.Work.Model.TotalTokens != 14 || providerCalls != 4 || keyActivations != 4 {
+		limited.Work.Model.TotalTokens != 14 || providerCalls != 4 || keyActivations != 4 ||
+		limited.Assessment.Status != agenticEvidenceBudgetExhausted {
 		t.Fatalf("token threshold did not stop before execution: %#v calls=%d keys=%d err=%v",
 			limited, providerCalls, keyActivations, err)
 	}
@@ -466,7 +482,7 @@ func TestA9e3aAgenticEpisodePersistsTerminalExecutionOutcome(t *testing.T) {
 		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body: io.NopCloser(bytes.NewReader(a2b2OpenRouterResponse(
+			Body: io.NopCloser(bytes.NewReader(fixtureOpenRouterResponse(
 				t, providerCalls, candidateBytes,
 			))),
 		}, nil

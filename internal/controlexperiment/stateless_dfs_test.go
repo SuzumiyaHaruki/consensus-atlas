@@ -239,66 +239,6 @@ func TestBoundedStatelessDFSStopsBeforeExceedingWorkBudgetAndRejectsTamper(t *te
 	}
 }
 
-func TestStatelessTraversalMethodsShareExecutorBoundsAndBindOrder(t *testing.T) {
-	ctx := context.Background()
-	runtimeConfig := RuntimeConfig{SeedHex: "73746174656c6573732d6d6574686f64", MaxClones: 1}
-	root := fixtureInitialTrace(t, ctx, runtimeConfig)
-	spec, err := NewStatelessDFSSpec(
-		"fixture-traversal-method", root, runtimeConfig,
-		&FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1}, 2, 5, 400,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canonical, err := NewStatelessTraversalMethod(
-		"fixture-canonical", StatelessTraversalCanonical, "",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	uniform, err := NewStatelessTraversalMethod(
-		"fixture-seeded-uniform", StatelessTraversalSeededUniform, "01",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	factory := func() (control.Adapter, error) { return fixture.New(), nil }
-	legacy, err := ExploreBoundedStatelessDFS(ctx, spec, root, factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ordered, err := ExploreBoundedStatelessDFSWithMethod(ctx, canonical, spec, root, factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	randomized, err := ExploreBoundedStatelessDFSWithMethod(ctx, uniform, spec, root, factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	repeated, err := ExploreBoundedStatelessDFSWithMethod(ctx, uniform, spec, root, factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(legacy, ordered.Search) || !reflect.DeepEqual(randomized, repeated) ||
-		ordered.Search.Work != randomized.Search.Work ||
-		ordered.Search.StatesExpanded != randomized.Search.StatesExpanded ||
-		len(ordered.Search.Items) != len(randomized.Search.Items) ||
-		ordered.Digest == randomized.Digest {
-		t.Fatalf("traversal methods were not deterministic and matched: ordered=%#v randomized=%#v", ordered, randomized)
-	}
-	if reflect.DeepEqual(ordered.Search.Items, randomized.Search.Items) {
-		t.Fatal("seeded uniform did not change the bounded traversal order")
-	}
-	if ordered.Validate(root) != nil || randomized.Validate(root) != nil {
-		t.Fatal("valid traversal result was rejected")
-	}
-	tampered := randomized
-	tampered.Method.SeedHex = "02"
-	if err := tampered.Validate(root); err == nil {
-		t.Fatal("tampered traversal method identity was accepted")
-	}
-}
-
 func fixtureInitialTrace(t *testing.T, ctx context.Context, config RuntimeConfig) controlruntime.Trace {
 	t.Helper()
 	runtimeConfig, err := config.runtimeConfig()

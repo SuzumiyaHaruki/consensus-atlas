@@ -59,7 +59,8 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 	}
 	scenario, err := runScenarioEpisodeCore(ctx, scenarioEpisodeCoreInputs{
 		RootID: "omnipaxos-discovered-risk", Knowledge: scenarioRisk.Knowledge,
-		Hypothesis: scenarioRisk.Hypothesis, RiskSpec: scenarioRisk.Spec, Root: inputs.Root,
+		Hypothesis: scenarioRisk.Hypothesis, AcceptedHypothesis: &scenarioRisk.AcceptedHypothesis,
+		RiskSpec: scenarioRisk.Spec, Root: inputs.Root,
 		Runtime: inputs.Experiment.Runtime, FaultEnvelope: inputs.Experiment.faultEnvelope(),
 		SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
 		NewAdapter:       factory, RiskProjector: projector,
@@ -71,8 +72,9 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 		},
 	}, 1, 1, inputs.Experiment.ScenarioMaxDecisions,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) ([]byte, controlexperiment.ModelWork, error) {
-			if view.Hypothesis.RiskID != candidate.ID || view.Knowledge.Digest != scenarioRisk.Knowledge.Digest {
-				t.Fatalf("Scenario Agent did not receive derived Risk knowledge: %#v", view.Hypothesis)
+			if view.Hypothesis.RiskID != candidate.ID || view.Knowledge.Digest != scenarioRisk.Knowledge.Digest ||
+				view.AcceptedHypothesis == nil || view.AcceptedHypothesis.Candidate.ID != candidate.ID {
+				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
 			for index, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDropMessage &&
@@ -115,9 +117,9 @@ func omnipaxosDiscoveredRiskCandidate() controlexperiment.RiskCandidate {
 		InspirationRef: "message-loss-progress-coupling",
 		Summary:        "Exercise an in-flight message loss and observe a later decision.",
 		MechanismSteps: []controlexperiment.RiskMechanismStep{
-			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start the client operation."},
-			{MilestoneID: omnipaxosMilestoneMessageDropped, Kind: semantic.ObservationMessageDropped, Rationale: "Drop one in-flight replication message."},
-			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe subsequent decision progress."},
+			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start the client operation.", SupportRefs: []string{"primer/ballot-and-log-progress"}},
+			{MilestoneID: omnipaxosMilestoneMessageDropped, Kind: semantic.ObservationMessageDropped, Rationale: "Drop one in-flight replication message.", SupportRefs: []string{"primer/ballot-and-log-progress"}},
+			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe subsequent decision progress.", SupportRefs: []string{"primer/ballot-and-log-progress"}},
 		},
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked,

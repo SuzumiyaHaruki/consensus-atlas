@@ -597,8 +597,11 @@ func materializeDFSChildFromRuntime(
 	runtime *controlruntime.Runtime,
 	runtimeConfig RuntimeConfig,
 	newAdapter AdapterFactory,
+	preparedPrefixes ...controlruntime.Trace,
 ) (controlruntime.Trace, PhaseWork, PhaseWork, error) {
-	child, materialization, err := executeDFSChildOnRuntime(ctx, wantView, action, runtime)
+	child, materialization, err := executeDFSChildOnRuntime(
+		ctx, wantView, action, runtime, preparedPrefixes...,
+	)
 	if err != nil {
 		return controlruntime.Trace{}, materialization, PhaseWork{}, err
 	}
@@ -611,9 +614,10 @@ func executeDFSChildOnRuntime(
 	wantView ActionFrontierView,
 	action FrontierActionRef,
 	runtime *controlruntime.Runtime,
+	preparedPrefixes ...controlruntime.Trace,
 ) (controlruntime.Trace, PhaseWork, error) {
 	var work PhaseWork
-	if runtime == nil {
+	if runtime == nil || len(preparedPrefixes) > 1 {
 		return controlruntime.Trace{}, work, errors.New("EXPERIMENT_STATELESS_DFS_PREPARED_RUNTIME_INVALID")
 	}
 	if wantView.Validate() != nil {
@@ -622,8 +626,14 @@ func executeDFSChildOnRuntime(
 		)
 	}
 	prefix, err := runtime.Trace()
-	if err != nil || prefix.Digest != wantView.PrefixTraceDigest ||
-		len(prefix.Records) != wantView.PrefixDecisions {
+	prefixMatches := err == nil && prefix.Digest == wantView.PrefixTraceDigest &&
+		len(prefix.Records) == wantView.PrefixDecisions
+	if len(preparedPrefixes) == 1 {
+		prefixMatches = preparedRuntimeHasExactTracePrefix(
+			prefix, preparedPrefixes[0], wantView,
+		)
+	}
+	if !prefixMatches {
 		return controlruntime.Trace{}, work, errors.Join(
 			errors.New("EXPERIMENT_STATELESS_DFS_PREPARED_RUNTIME_DRIFT"), err, runtime.Close(),
 		)
@@ -658,6 +668,80 @@ func executeDFSChildOnRuntime(
 		return controlruntime.Trace{}, work, err
 	}
 	return child, work, nil
+}
+
+// executeDFSChildOnLiveRuntime advances a Scenario-owned branch without
+// closing it. The caller keeps exclusive ownership and must eventually close
+// the Runtime and fresh-replay the promoted final Trace.
+func executeDFSChildOnLiveRuntime(
+	ctx context.Context,
+	wantView ActionFrontierView,
+	action FrontierActionRef,
+	runtime *controlruntime.Runtime,
+	preparedPrefixes ...controlruntime.Trace,
+) (controlruntime.Trace, PhaseWork, error) {
+	var work PhaseWork
+	if runtime == nil || wantView.Validate() != nil || len(preparedPrefixes) > 1 {
+		return controlruntime.Trace{}, work, errors.New("EXPERIMENT_SCENARIO_LIVE_RUNTIME_INVALID")
+	}
+	prefix, err := runtime.Trace()
+	prefixMatches := err == nil && prefix.Digest == wantView.PrefixTraceDigest &&
+		len(prefix.Records) == wantView.PrefixDecisions
+	if len(preparedPrefixes) == 1 {
+		prefixMatches = preparedRuntimeHasExactTracePrefix(prefix, preparedPrefixes[0], wantView)
+	}
+	if !prefixMatches {
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_SCENARIO_LIVE_RUNTIME_DRIFT"), err,
+		)
+	}
+	snapshotDigest, err := runtime.Snapshot().Digest()
+	if err != nil || snapshotDigest != wantView.SnapshotDigest {
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_SCENARIO_LIVE_RUNTIME_DRIFT"), err,
+		)
+	}
+	found := false
+	for _, candidate := range wantView.Actions {
+		if reflect.DeepEqual(candidate, action) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return controlruntime.Trace{}, work, errors.New("EXPERIMENT_SCENARIO_LIVE_ACTION_NOT_ADMISSIBLE")
+	}
+	chargeDecisions(&work, 1)
+	if _, err := runtime.Select(ctx, action.ActionID); err != nil {
+		return controlruntime.Trace{}, work, err
+	}
+	child, err := runtime.Trace()
+	if err != nil || child.Validate() != nil || len(child.Records) != len(prefix.Records)+1 ||
+		!scenarioTraceHasPrefix(child, prefix) {
+		return controlruntime.Trace{}, work, errors.Join(
+			errors.New("EXPERIMENT_SCENARIO_LIVE_CHILD_INVALID"), err,
+		)
+	}
+	return child, work, nil
+}
+
+func preparedRuntimeHasExactTracePrefix(
+	current controlruntime.Trace,
+	trusted controlruntime.Trace,
+	view ActionFrontierView,
+) bool {
+	if trusted.Validate() != nil || trusted.Digest != view.PrefixTraceDigest ||
+		len(trusted.Records) != view.PrefixDecisions ||
+		len(current.Records) != len(trusted.Records) {
+		return false
+	}
+	// An Offer changes only the current state and therefore Trace's derived
+	// final-state/digest fields. Every executed record and all source identity
+	// fields must remain byte-for-byte equal to the trusted prefix.
+	normalized := current
+	normalized.FinalStateDigest = trusted.FinalStateDigest
+	normalized.Digest = trusted.Digest
+	return reflect.DeepEqual(normalized, trusted)
 }
 
 func verifyDFSChild(

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -29,6 +30,42 @@ func fixtureOpenRouterStructuredOutput() openRouterStructuredOutput {
 		Name:   "fixture_output_v1",
 		Schema: json.RawMessage(`{"type":"object","additionalProperties":true}`),
 	}
+}
+
+func fixtureOpenRouterResponse(t *testing.T, ordinal int, content []byte) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(map[string]any{
+		"id": "fixture-response-" + string(rune('0'+ordinal)), "model": openRouterFixtureModel,
+		"system_fingerprint": "fixture-provider", "choices": []any{map[string]any{
+			"index": 0, "message": map[string]any{"role": "assistant", "content": string(content)},
+			"finish_reason": "stop",
+		}},
+		"usage": map[string]int{"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func buildOmnipaxosScenarioWorker(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("cargo"); err != nil {
+		t.Skip("cargo is required for the OmniPaxos Scenario test")
+	}
+	manifest := filepath.Join("..", "..", "adapters", "omnipaxosv2", "worker", "Cargo.toml")
+	command := exec.Command("cargo", "build", "--locked", "--quiet", "--manifest-path", manifest)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build OmniPaxos worker: %v\n%s", err, output)
+	}
+	path, err := filepath.Abs(filepath.Join(
+		"..", "..", "adapters", "omnipaxosv2", "worker", "target", "debug",
+		"consensus-atlas-omnipaxos-worker",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func (function agentHTTPDoerFunc) Do(request *http.Request) (*http.Response, error) {

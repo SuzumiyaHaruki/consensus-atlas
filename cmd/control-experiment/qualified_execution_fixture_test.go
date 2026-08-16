@@ -9,8 +9,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
-const etcdraftTestRootCorpusPath = "../../benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json"
-
 func executeEtcdraftFrontierPolicy(
 	t *testing.T,
 	ctx context.Context,

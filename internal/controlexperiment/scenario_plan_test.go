@@ -11,6 +11,145 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
+type fixtureSemanticPrefixProjector struct {
+	preferred control.ActionID
+}
+
+func (fixtureSemanticPrefixProjector) ID() string { return "fixture-semantic-prefix-projector-v1" }
+
+func (projector fixtureSemanticPrefixProjector) Project(
+	id string,
+	spec semantic.RiskWitnessSpec,
+	trace controlruntime.Trace,
+) (semantic.RiskWitnessResult, error) {
+	milestones := make([]semantic.RiskWitnessMilestoneEvidence, 0, 1)
+	for _, record := range trace.Records {
+		if record.Action.ID != projector.preferred {
+			continue
+		}
+		digest, err := control.CanonicalDigest(record)
+		if err != nil {
+			return semantic.RiskWitnessResult{}, err
+		}
+		milestones = append(milestones, semantic.RiskWitnessMilestoneEvidence{
+			MilestoneID: "preferred-prefix", Step: record.Step,
+			Kind: "trace-action", EvidenceDigest: digest,
+		})
+		break
+	}
+	return semantic.NewRiskWitnessResult(
+		id, spec, trace.ManifestDigest, trace.Digest, projector.ID(), milestones,
+	)
+}
+
+type actionKindSemanticProjector struct{}
+
+func (actionKindSemanticProjector) ID() string { return "fixture-action-kind-projector-v1" }
+
+func (actionKindSemanticProjector) Project(
+	id string,
+	spec semantic.RiskWitnessSpec,
+	trace controlruntime.Trace,
+) (semantic.RiskWitnessResult, error) {
+	seen := make(map[string]bool)
+	milestones := make([]semantic.RiskWitnessMilestoneEvidence, 0, 2)
+	for _, record := range trace.Records {
+		milestoneID := ""
+		switch record.Action.Kind {
+		case control.ActionFireTemporal:
+			milestoneID = "temporal-prefix"
+		case control.ActionCrash:
+			milestoneID = "crash-prefix"
+		}
+		if milestoneID == "" || seen[milestoneID] {
+			continue
+		}
+		digest, err := control.CanonicalDigest(record)
+		if err != nil {
+			return semantic.RiskWitnessResult{}, err
+		}
+		seen[milestoneID] = true
+		milestones = append(milestones, semantic.RiskWitnessMilestoneEvidence{
+			MilestoneID: milestoneID, Step: record.Step,
+			Kind: "trace-action", EvidenceDigest: digest,
+		})
+	}
+	return semantic.NewRiskWitnessResult(
+		id, spec, trace.ManifestDigest, trace.Digest, actionKindSemanticProjector{}.ID(), milestones,
+	)
+}
+
+// clientTerminalFixtureAdapter adds one deterministic client result to an
+// otherwise ordinary fixture Invoke. It keeps this regression focused on the
+// coordinator's terminal semantics without changing the production fixture.
+type clientTerminalFixtureAdapter struct {
+	*fixture.Adapter
+	pendingInvoke *control.AdapterCommand
+	responses     map[control.YieldID]control.ProducedItem
+}
+
+func newClientTerminalFixtureAdapter() *clientTerminalFixtureAdapter {
+	return &clientTerminalFixtureAdapter{
+		Adapter: fixture.New(), responses: make(map[control.YieldID]control.ProducedItem),
+	}
+}
+
+func (adapter *clientTerminalFixtureAdapter) Reset(ctx context.Context, seed []byte) error {
+	adapter.pendingInvoke = nil
+	adapter.responses = make(map[control.YieldID]control.ProducedItem)
+	return adapter.Adapter.Reset(ctx, seed)
+}
+
+func (adapter *clientTerminalFixtureAdapter) Submit(ctx context.Context, command control.AdapterCommand) error {
+	if command.Kind == control.ActionInvoke {
+		copyCommand := command
+		adapter.pendingInvoke = &copyCommand
+	}
+	return adapter.Adapter.Submit(ctx, command)
+}
+
+func (adapter *clientTerminalFixtureAdapter) RunUntilYield(ctx context.Context) (control.Yield, error) {
+	yield, err := adapter.Adapter.RunUntilYield(ctx)
+	command := adapter.pendingInvoke
+	adapter.pendingInvoke = nil
+	if err != nil || command == nil {
+		return yield, err
+	}
+	payload, err := control.NewPayload(
+		"consensus-atlas/fixture-client-result/v1", "json", []byte(`{"ok":true}`),
+	)
+	if err != nil {
+		return control.Yield{}, err
+	}
+	itemID, err := control.StableID("fixture-client-result", string(command.ID))
+	if err != nil {
+		return control.Yield{}, err
+	}
+	adapter.responses[yield.ID] = control.ProducedItem{
+		ID: control.ItemID(itemID), Kind: control.ItemClientResult, Owner: command.Node,
+		Response: &control.ClientResponse{
+			RequestID: string(command.ID), Owner: command.Node, Status: "ok", Payload: payload,
+		},
+	}
+	return yield, nil
+}
+
+func (adapter *clientTerminalFixtureAdapter) Collect(
+	ctx context.Context,
+	yieldID control.YieldID,
+) (control.Emission, error) {
+	emission, err := adapter.Adapter.Collect(ctx, yieldID)
+	if err != nil {
+		return control.Emission{}, err
+	}
+	response, ok := adapter.responses[yieldID]
+	if !ok {
+		return emission, nil
+	}
+	emission.Items = append(emission.Items, response)
+	return emission.Seal()
+}
+
 func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t *testing.T) {
 	ctx := context.Background()
 	runtimeConfig := RuntimeConfig{SeedHex: "61342d7363656e6172696f2d706c616e", MaxClones: 1}
@@ -62,13 +201,14 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		len(result.FinalTrace.Records) != len(root.Records)+2 || result.Work.ChildVerification.WorkUnits == 0 {
 		t.Fatalf("two-step scenario did not execute through trusted frontiers: %#v", result)
 	}
-	if result.Work.FrontierReconstruction.SetupAttempts != 2 ||
+	if result.Work.FrontierReconstruction.SetupAttempts != 1 ||
 		result.Work.ChildMaterialization.SetupAttempts != 0 ||
 		result.Work.ChildMaterialization.PrepareActions != 0 ||
 		result.Work.ChildMaterialization.SchedulerDecisions != 2 ||
 		result.Work.ChildMaterialization.WorkUnits != 2 ||
-		result.Work.ChildVerification.SetupAttempts != 2 {
-		t.Fatalf("scenario repeated a reconstructed prefix before materialization: %#v", result.Work)
+		result.Work.ChildVerification.SetupAttempts != 1 ||
+		result.Work.ChildVerification.SchedulerDecisions != len(result.FinalTrace.Records) {
+		t.Fatalf("scenario did not retain one live branch and one promotion replay: %#v", result.Work)
 	}
 	policy, err := CompileScenarioPolicy(
 		"fixture-a4-qualified-policy", root, result,
@@ -137,6 +277,87 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 	}
 }
 
+func TestScenarioNaturalProgressUsesOneLiveBranchAndOnePromotionReplay(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "61342d6c6976652d6272616e6368", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	factory := func() (control.Adapter, error) { return fixture.New(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-live-branch-risk", "fixture-cft", "natural-progress",
+		[]string{"temporal-prefix"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := actionKindSemanticProjector{}
+	rootRisk, err := projector.Project("fixture-live-branch-root-risk", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ExecuteScenarioNaturalProgress(
+		ctx, "fixture-live-branch", 8, spec, rootRisk, root,
+		runtimeConfig, nil, factory, projector,
+	)
+	if err != nil || result.StopReason != ScenarioProgressBudget ||
+		len(result.Execution.Steps) != 8 ||
+		len(result.Execution.FinalTrace.Records) != len(root.Records)+8 ||
+		result.Execution.Work.FrontierReconstruction.SetupAttempts != 1 ||
+		result.Execution.Work.FrontierReconstruction.RuntimeInitializations != 1 ||
+		result.Execution.Work.ChildMaterialization.SchedulerDecisions != 8 ||
+		result.Execution.Work.ChildVerification.SetupAttempts != 1 ||
+		result.Execution.Work.ChildVerification.RuntimeInitializations != 1 ||
+		result.Execution.Work.ChildVerification.SchedulerDecisions != len(result.Execution.FinalTrace.Records) {
+		t.Fatalf("natural progress did not retain one live branch and one promotion replay: %#v/%v",
+			result, err)
+	}
+	delta, err := NewScenarioProgressDelta(
+		spec, rootRisk, root, result.Execution.FinalRisk, result.Execution.FinalTrace,
+	)
+	if err != nil || delta.Decisions != 8 || len(delta.RecentActions) != 8 ||
+		len(delta.NewMilestones) != 1 || delta.UniqueStateTransitions == 0 ||
+		repeatedScenarioPatternDepth([]string{"a", "b", "a", "b", "a", "b"}) != 2 {
+		t.Fatalf("live branch did not produce compact progress feedback: %#v/%v", delta, err)
+	}
+}
+
+func TestScenarioAfterMilestoneSharesStrategicLiveBranchAndPromotionReplay(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "61342d61667465722d6d696c6573746f6e65", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	factory := func() (control.Adapter, error) { return fixture.New(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-after-milestone-risk", "fixture-cft", "wait-then-crash",
+		[]string{"temporal-prefix", "crash-prefix"},
+		[]semantic.RiskWitnessOrder{{Before: "temporal-prefix", After: "crash-prefix"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := actionKindSemanticProjector{}
+	rootRisk, err := projector.Project("fixture-after-milestone-root", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := ScenarioPlan{ID: "wait-then-crash", Steps: []ScenarioStep{{
+		ID: "crash-after-timer", AfterMilestone: "temporal-prefix",
+		Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"},
+	}}}
+	result, err := ExecuteBoundedScenarioPlan(
+		ctx, "wait-then-crash", plan, 1, 4, spec, rootRisk, root,
+		runtimeConfig, &FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1},
+		factory, projector,
+	)
+	if err != nil || result.Status != ScenarioStatusCompleted ||
+		len(result.AutomaticProgress) != 1 || len(result.Steps) != 1 ||
+		result.FinalRisk.Status != semantic.RiskWitnessReached ||
+		result.Work.FrontierReconstruction.SetupAttempts != 1 ||
+		result.Work.ChildMaterialization.SchedulerDecisions != 2 ||
+		result.Work.ChildVerification.SetupAttempts != 1 ||
+		result.Work.ChildVerification.SchedulerDecisions != len(result.FinalTrace.Records) {
+		t.Fatalf("after_milestone and strategic step did not share one live branch: %#v/%v", result, err)
+	}
+}
+
 func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
 	ctx := context.Background()
 	runtimeConfig := RuntimeConfig{SeedHex: "61342d7363656e6172696f2d707265666978", MaxClones: 1}
@@ -186,7 +407,7 @@ func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
 	calls := 0
 	result, err := ExploreScenarioWithPlanner(
 		ctx, 2, 2, 2, knowledge, hypothesis, spec, frontier, semantics, rootRisk, root,
-		runtimeConfig, envelope, nil, factory, projector,
+		runtimeConfig, envelope, nil, nil, factory, projector,
 		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
 			return unknownScenarioSemantics(t, next), nil
 		},
@@ -211,6 +432,8 @@ func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
 			case 2:
 				if view.Prior == nil || view.Prior.PreviousPlan == nil || view.Prior.FailedStep == nil ||
 					view.Prior.FailedStep.ID != "missing-restart" ||
+					view.Prior.ProgressDelta == nil || view.Prior.ProgressDelta.Decisions != 1 ||
+					len(view.Prior.ProgressDelta.NewMilestones) != 1 ||
 					view.Frontier.PrefixDecisions != len(root.Records)+1 {
 					t.Fatalf("repair view did not retain the verified prefix: %#v", view)
 				}
@@ -239,6 +462,197 @@ func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
 		result.Attempts[0].Execution.Status != ScenarioStatusStopped ||
 		len(result.Attempts[0].Execution.Steps) != 2 {
 		t.Fatalf("verified prefix was not committed across repair: %#v calls=%d err=%v", result, calls, err)
+	}
+}
+
+func TestCompleteScenarioIntentContinuesWhenRiskAndBudgetsRemain(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "61342d636f6e74696e75652d696e74656e74", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	envelope := &FaultEnvelope{MaxCrashes: 2, MaxConcurrentCrashes: 2}
+	factory := func() (control.Adapter, error) { return fixture.New(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-continue-risk", "fixture-cft", "continue-after-complete-plan",
+		[]string{"preferred-prefix"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := fixtureSemanticPrefixProjector{preferred: "never-selected"}
+	rootRisk, err := projector.Project("fixture-continue-root-risk", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, _, _, err := ReconstructRiskFrontierState(
+		ctx, "fixture-continue-frontier", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, envelope, factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
+		ID: "fixture-continue-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
+		Knowledge: []KnowledgeStatement{{ID: "continue", Text: "A completed plan is not a reached hypothesis."}},
+		Risks: []ProtocolRisk{{
+			ID: spec.RiskID, Summary: "Continue while the witness and both budgets remain open.",
+			RequiredCapabilities: []string{"natural-time"},
+			RequiredActions:      []control.ActionKind{control.ActionCrash},
+			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hypothesis, err := NewTestHypothesis(
+		"fixture-continue-hypothesis", knowledge, spec,
+		"Continue after a valid plan when its witness remains missing.", ScenarioPlanningBackendID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	result, err := ExploreScenarioWithPlanner(
+		ctx, 2, 2, 4, knowledge, hypothesis, spec, frontier,
+		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
+		nil, nil, factory, projector,
+		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
+			return unknownScenarioSemantics(t, next), nil
+		},
+		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
+			calls++
+			if calls == 2 {
+				if view.Prior == nil || view.Prior.ProgressDelta == nil ||
+					view.Prior.ProgressDelta.Decisions != 2 ||
+					view.Prior.NaturalProgressStop != ScenarioProgressQuiescent ||
+					view.Frontier.Progress.FirstMissingMilestone != "preferred-prefix" {
+					t.Fatalf("second call did not receive the incomplete plan delta: %#v", view)
+				}
+				return []byte(`{"not":"a-plan"}`), ModelWork{}, nil
+			}
+			encoded, marshalErr := json.Marshal(ScenarioPlan{ID: "crash-both", Steps: []ScenarioStep{
+				{ID: "crash-n1", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"}},
+				{ID: "crash-n2", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n2"}},
+			}})
+			return encoded, ModelWork{}, marshalErr
+		},
+	)
+	if err != nil || calls != 2 || result.Execution == nil ||
+		len(result.Execution.Steps) != 2 || result.Execution.FinalRisk.Status == semantic.RiskWitnessReached {
+		t.Fatalf("complete plan ended the investigation before feedback repair: %#v calls=%d err=%v",
+			result, calls, err)
+	}
+}
+
+func TestClientTerminalContinuesToPlannerWhileRiskAndBudgetRemain(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "61342d636c69656e742d7465726d696e616c", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	envelope := &FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1}
+	factory := func() (control.Adapter, error) { return newClientTerminalFixtureAdapter(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-client-terminal-risk", "fixture-cft", "continue-after-client-terminal",
+		[]string{"preferred-prefix"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := fixtureSemanticPrefixProjector{preferred: "never-selected"}
+	rootRisk, err := projector.Project("fixture-client-terminal-root-risk", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, _, _, err := ReconstructRiskFrontierState(
+		ctx, "fixture-client-terminal-frontier", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, envelope, factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
+		ID: "fixture-client-terminal-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
+		Knowledge: []KnowledgeStatement{{
+			ID: "client-terminal", Text: "A returned client operation does not end an unfinished investigation.",
+		}},
+		Risks: []ProtocolRisk{{
+			ID: spec.RiskID, Summary: "Continue with strategic actions after the workload returns.",
+			RequiredCapabilities: []string{"natural-time"},
+			RequiredActions:      []control.ActionKind{control.ActionInvoke, control.ActionCrash},
+			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hypothesis, err := NewTestHypothesis(
+		"fixture-client-terminal-hypothesis", knowledge, spec,
+		"Continue after client-terminal while the witness remains missing.", ScenarioPlanningBackendID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpOneShot, Delay: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparer := func(
+		prepareCtx context.Context,
+		selector FrontierActionSelector,
+		_ controlruntime.Trace,
+		runtime *controlruntime.Runtime,
+	) (control.ActionID, bool, error) {
+		if selector.Kind != control.ActionInvoke || selector.ActionID != "" || selector.Node != "n1" {
+			return "", false, nil
+		}
+		id, offerErr := runtime.OfferInvoke(prepareCtx, "n1", payload)
+		return id, offerErr == nil, offerErr
+	}
+	calls := 0
+	result, err := ExploreScenarioWithPlanner(
+		ctx, 2, 1, 2, knowledge, hypothesis, spec, frontier,
+		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
+		nil, nil, factory, projector,
+		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
+			return unknownScenarioSemantics(t, next), nil
+		},
+		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
+			calls++
+			plan := ScenarioPlan{ID: "invoke-client", Steps: []ScenarioStep{{
+				ID: "invoke", Selector: FrontierActionSelector{Kind: control.ActionInvoke, Node: "n1"},
+			}}}
+			if calls == 2 {
+				if view.Prior == nil || view.Prior.ProgressDelta == nil ||
+					view.Prior.ProgressDelta.Decisions != 1 ||
+					view.Prior.NaturalProgressStop != ScenarioProgressClientTerminal ||
+					view.Frontier.Progress.FirstMissingMilestone != "preferred-prefix" {
+					t.Fatalf("client-terminal feedback did not reach the second planner call: %#v", view)
+				}
+				crashReachable := false
+				for _, action := range view.Frontier.Actions {
+					if action.Kind == control.ActionCrash {
+						crashReachable = true
+						break
+					}
+				}
+				if !crashReachable {
+					t.Fatalf("strategic crash action disappeared after client-terminal: %#v", view.Frontier.Actions)
+				}
+				plan = ScenarioPlan{ID: "crash-after-client", Steps: []ScenarioStep{{
+					ID: "crash", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"},
+				}}}
+			}
+			encoded, marshalErr := json.Marshal(plan)
+			return encoded, ModelWork{}, marshalErr
+		},
+		preparer,
+	)
+	if err != nil || calls != 2 || result.Execution == nil || len(result.Execution.Steps) != 2 ||
+		result.Execution.Steps[0].Choice == nil ||
+		result.Execution.Steps[0].Choice.Action.Kind != control.ActionInvoke ||
+		result.Execution.Steps[1].Choice == nil ||
+		result.Execution.Steps[1].Choice.Action.Kind != control.ActionCrash ||
+		result.Execution.FinalRisk.Status == semantic.RiskWitnessReached {
+		t.Fatalf("client-terminal ended investigation before strategic continuation: %#v calls=%d err=%v",
+			result, calls, err)
 	}
 }
 

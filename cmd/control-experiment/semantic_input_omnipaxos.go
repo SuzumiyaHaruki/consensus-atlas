@@ -6,21 +6,12 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 const omnipaxosSemanticInputLimit = 64 << 10
 
-type omnipaxosScenarioAuthoringSource struct {
-	Knowledge  controlexperiment.ProtocolKnowledgePack `json:"protocol_knowledge"`
-	Hypothesis controlexperiment.TestHypothesis        `json:"test_hypothesis"`
-	Workload   omnipaxosWorkloadAuthoringSource        `json:"workload"`
-	Experiment omnipaxosScenarioExperimentConfig       `json:"experiment"`
-}
-
-// omnipaxosAgenticAuthoringSource deliberately excludes TestHypothesis so
-// strict decoding rejects every pre-seeded hypothesis, including an empty
-// JSON object. Curated hypotheses remain available through the legacy source.
+// omnipaxosAgenticAuthoringSource excludes TestHypothesis so strict decoding
+// rejects every pre-seeded hypothesis. The Risk Agent owns authoring.
 type omnipaxosAgenticAuthoringSource struct {
 	Knowledge  controlexperiment.ProtocolKnowledgePack `json:"protocol_knowledge"`
 	Workload   omnipaxosWorkloadAuthoringSource        `json:"workload"`
@@ -64,9 +55,8 @@ func (source omnipaxosWorkloadAuthoringSource) build() (controlexperiment.Worklo
 	return workload, nil
 }
 
-// omnipaxosScenarioExperimentConfig contains only values consumed by the A7
-// Scenario path. Worker location and provider configuration remain runtime
-// inputs rather than protocol knowledge.
+// omnipaxosScenarioExperimentConfig contains target execution and Agent
+// budget inputs. Worker location remains a runtime input.
 type omnipaxosScenarioExperimentConfig struct {
 	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
 	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
@@ -74,7 +64,7 @@ type omnipaxosScenarioExperimentConfig struct {
 	ScenarioMaxSteps         int                                            `json:"scenario_max_steps"`
 	ScenarioMaxDecisions     int                                            `json:"scenario_max_decisions"`
 	ScenarioSemanticExposure controlexperiment.ScenarioSemanticExposureMode `json:"scenario_semantic_exposure"`
-	SessionBudget            controlexperiment.CampaignLogicalBudget        `json:"session_budget"`
+	SessionBudget            controlexperiment.AgenticLogicalBudget         `json:"session_budget"`
 	SessionWallClockMS       int64                                          `json:"session_wall_clock_ms"`
 }
 
@@ -90,7 +80,7 @@ func (config omnipaxosScenarioExperimentConfig) validate() error {
 		config.ScenarioMaxDecisions <= 0 ||
 		config.ScenarioMaxDecisions > controlexperiment.ScenarioAgentMaxDecisions ||
 		config.ScenarioSemanticExposure.Validate() != nil ||
-		!validScenarioSessionBudget(config.SessionBudget, config.SessionWallClockMS) {
+		!validAgenticBudget(config.SessionBudget, config.SessionWallClockMS) {
 		return errors.New("OMNIPAXOS_SCENARIO_EXPERIMENT_CONFIG_INVALID")
 	}
 	return nil
@@ -99,45 +89,6 @@ func (config omnipaxosScenarioExperimentConfig) validate() error {
 func (config omnipaxosScenarioExperimentConfig) faultEnvelope() *controlexperiment.FaultEnvelope {
 	envelope := config.FaultEnvelope
 	return &envelope
-}
-
-func loadOmnipaxosScenarioAuthoringSource(
-	path string,
-	riskSpec semantic.RiskWitnessSpec,
-) (
-	controlexperiment.ProtocolKnowledgePack,
-	controlexperiment.TestHypothesis,
-	omnipaxosScenarioExperimentConfig,
-	controlexperiment.WorkloadPlan,
-	error,
-) {
-	var source omnipaxosScenarioAuthoringSource
-	if path == "" || riskSpec.Validate() != nil ||
-		readStrictJSONFile(path, omnipaxosSemanticInputLimit, &source) != nil {
-		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
-			errors.New("OMNIPAXOS_SCENARIO_INPUT_FILE_INVALID")
-	}
-	if source.Experiment.validate() != nil {
-		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
-			errors.New("OMNIPAXOS_SCENARIO_INPUT_EXPERIMENT_INVALID")
-	}
-	workload, err := source.Workload.build()
-	if err != nil {
-		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{},
-			errors.New("OMNIPAXOS_SCENARIO_INPUT_WORKLOAD_INVALID")
-	}
-	knowledge, hypothesis, err := buildSemanticAuthoring(
-		source.Knowledge, source.Hypothesis, riskSpec, "omnipaxos",
-		controlexperiment.ScenarioPlanningBackendID, controlexperiment.ScenarioPlanningBackendID,
-	)
-	if err != nil {
-		return controlexperiment.ProtocolKnowledgePack{}, controlexperiment.TestHypothesis{},
-			omnipaxosScenarioExperimentConfig{}, controlexperiment.WorkloadPlan{}, err
-	}
-	return knowledge, hypothesis, source.Experiment, workload, nil
 }
 
 func loadOmnipaxosAgenticAuthoringSource(

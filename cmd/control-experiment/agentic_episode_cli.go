@@ -18,7 +18,7 @@ func runAgenticEpisodeCLI(
 	withoutTarget.Target = ""
 	withoutTarget.InvestigationEpisodes = 1
 	withoutTarget.KnowledgeSourceMounts = nil
-	if options.CampaignDirectory == "" || options.Target == "" || options.ScenarioSemanticExposure != "" ||
+	if options.CampaignDirectory == "" || options.Target == "" ||
 		options.InvestigationEpisodes <= 0 || withoutTarget.hasNonSessionFlags() {
 		return errors.New("Agentic Episode requires -campaign-dir, -target, target inputs, Agent inputs, optional -investigation-episodes, and optional -campaign-resume")
 	}
@@ -131,7 +131,7 @@ func prepareAgenticEpisodeComposition(
 			return agenticEpisodeComposition{}, errors.New("ETCDRAFT_AGENTIC_EPISODE_WORKER_UNEXPECTED")
 		}
 		inputs, err := prepareEtcdraftAgenticEpisode(
-			ctx, options.StatelessCorpus, options.SemanticInput, client,
+			ctx, "", options.SemanticInput, client,
 		)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
@@ -149,7 +149,7 @@ func prepareAgenticEpisodeComposition(
 			Client: inputs.client,
 		}, err
 	case "omnipaxos-v2":
-		if options.WorkerPath == "" || options.StatelessCorpus != "" {
+		if options.WorkerPath == "" {
 			return agenticEpisodeComposition{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_WORKER_REQUIRED")
 		}
 		inputs, err := prepareOmnipaxosAgenticEpisode(ctx, options.WorkerPath, options.SemanticInput)

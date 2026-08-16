@@ -13,11 +13,49 @@ import (
 // Agent contract. Agent-authored content stays limited to the candidate;
 // trusted code derives the backend and capability metadata below.
 type ScenarioRiskHypothesis struct {
-	Knowledge     ProtocolKnowledgePack
-	Hypothesis    TestHypothesis
-	Spec          semantic.RiskWitnessSpec
-	Predicates    []semantic.ObservationPredicate
-	Qualification semantic.RiskQualification
+	Knowledge          ProtocolKnowledgePack
+	Hypothesis         TestHypothesis
+	AcceptedHypothesis AcceptedHypothesisContext
+	Spec               semantic.RiskWitnessSpec
+	Predicates         []semantic.ObservationPredicate
+	Qualification      semantic.RiskQualification
+}
+
+// AcceptedHypothesisContext keeps Agent-authored investigation intent
+// separate from curated protocol and target knowledge. It is the compact
+// context exposed to the Scenario Agent; trusted validation still retains the
+// original ProtocolKnowledgePack internally.
+type AcceptedHypothesisContext struct {
+	Candidate RiskCandidate    `json:"candidate"`
+	Property  ProtocolProperty `json:"property"`
+}
+
+func (context AcceptedHypothesisContext) Validate(
+	knowledge ProtocolKnowledgePack,
+	hypothesis TestHypothesis,
+	spec semantic.RiskWitnessSpec,
+) error {
+	if context.Candidate.Validate() != nil || context.Property.ID == "" ||
+		context.Candidate.PropertyRef != context.Property.ID ||
+		hypothesis.RiskID != context.Candidate.ID || spec.RiskID != context.Candidate.ID ||
+		hypothesis.Rationale != context.Candidate.Summary {
+		return errors.New("EXPERIMENT_ACCEPTED_HYPOTHESIS_CONTEXT_INVALID")
+	}
+	found := false
+	for _, property := range knowledge.Properties {
+		if property.ID == context.Property.ID {
+			found = reflect.DeepEqual(property, context.Property)
+			break
+		}
+	}
+	if !found {
+		return errors.New("EXPERIMENT_ACCEPTED_HYPOTHESIS_CONTEXT_PROPERTY_INVALID")
+	}
+	wantSpec, err := riskCandidateWitnessSpec(knowledge.Family, context.Candidate)
+	if err != nil || !reflect.DeepEqual(wantSpec, spec) {
+		return errors.New("EXPERIMENT_ACCEPTED_HYPOTHESIS_CONTEXT_WITNESS_INVALID")
+	}
+	return nil
 }
 
 func BuildScenarioRiskHypothesis(
@@ -25,8 +63,20 @@ func BuildScenarioRiskHypothesis(
 	assessment RiskCandidateAssessment,
 	capabilities []semantic.ObservationCapability,
 	actions []control.ActionKind,
+	targetSurfaces ...*AgentTargetSurface,
 ) (ScenarioRiskHypothesis, error) {
-	recomputed, err := AssessRiskCandidate(base, assessment.Candidate, capabilities, actions)
+	if len(targetSurfaces) > 1 || len(targetSurfaces) == 1 && targetSurfaces[0] == nil {
+		return ScenarioRiskHypothesis{}, errors.New("EXPERIMENT_SCENARIO_RISK_TARGET_INVALID")
+	}
+	var recomputed RiskCandidateAssessment
+	var err error
+	if len(targetSurfaces) == 1 {
+		recomputed, err = AssessRiskCandidateForTarget(
+			base, assessment.Candidate, capabilities, actions, targetSurfaces[0],
+		)
+	} else {
+		recomputed, err = AssessRiskCandidate(base, assessment.Candidate, capabilities, actions)
+	}
 	if err != nil || !reflect.DeepEqual(recomputed, assessment) || !assessment.Qualification.Qualified {
 		return ScenarioRiskHypothesis{}, errors.New("EXPERIMENT_SCENARIO_RISK_ASSESSMENT_INVALID")
 	}
@@ -61,11 +111,51 @@ func BuildScenarioRiskHypothesis(
 	if err != nil {
 		return ScenarioRiskHypothesis{}, err
 	}
+	property, ok := protocolPropertyByID(base.Properties, assessment.Candidate.PropertyRef)
+	if !ok {
+		return ScenarioRiskHypothesis{}, errors.New("EXPERIMENT_SCENARIO_RISK_PROPERTY_INVALID")
+	}
+	accepted := AcceptedHypothesisContext{
+		Candidate: cloneAcceptedRiskCandidate(assessment.Candidate), Property: property,
+	}
+	if accepted.Validate(knowledge, hypothesis, assessment.Spec) != nil {
+		return ScenarioRiskHypothesis{}, errors.New("EXPERIMENT_SCENARIO_RISK_CONTEXT_INVALID")
+	}
 	return ScenarioRiskHypothesis{
-		Knowledge: knowledge, Hypothesis: hypothesis, Spec: assessment.Spec,
+		Knowledge: knowledge, Hypothesis: hypothesis, AcceptedHypothesis: accepted, Spec: assessment.Spec,
 		Predicates:    cloneObservationPredicates(assessment.Candidate.Predicates),
 		Qualification: assessment.Qualification,
 	}, nil
+}
+
+func protocolPropertyByID(properties []ProtocolProperty, id string) (ProtocolProperty, bool) {
+	for _, property := range properties {
+		if property.ID == id {
+			return property, true
+		}
+	}
+	return ProtocolProperty{}, false
+}
+
+func cloneAcceptedHypothesisContext(context *AcceptedHypothesisContext) *AcceptedHypothesisContext {
+	if context == nil {
+		return nil
+	}
+	cloned := *context
+	cloned.Candidate = cloneAcceptedRiskCandidate(context.Candidate)
+	return &cloned
+}
+
+func cloneAcceptedRiskCandidate(candidate RiskCandidate) RiskCandidate {
+	candidate.RequiredFidelity = append([]string(nil), candidate.RequiredFidelity...)
+	candidate.MechanismSteps = append([]RiskMechanismStep(nil), candidate.MechanismSteps...)
+	for index := range candidate.MechanismSteps {
+		candidate.MechanismSteps[index].SupportRefs = append(
+			[]string(nil), candidate.MechanismSteps[index].SupportRefs...,
+		)
+	}
+	candidate.Predicates = cloneObservationPredicates(candidate.Predicates)
+	return candidate
 }
 
 // scenarioRiskCandidateKnowledge is shared by candidate validation and the

@@ -35,8 +35,9 @@ type ScenarioProgressResult struct {
 
 // ExecuteScenarioNaturalProgress advances only host effects, ordinary message
 // delivery and naturally due temporal events until a mechanical terminal or
-// the supplied remaining decision budget. Every choice still comes from a
-// freshly reconstructed admissible frontier and is fresh-replay verified.
+// the supplied remaining decision budget. One exclusively owned live Runtime
+// carries the branch; the promoted final Trace is independently fresh-replayed
+// once before it is returned.
 func ExecuteScenarioNaturalProgress(
 	ctx context.Context,
 	id string,
@@ -58,29 +59,25 @@ func ExecuteScenarioNaturalProgress(
 	result := ScenarioProgressResult{Execution: ScenarioExecution{
 		PlanID: id, Status: ScenarioStatusCompleted, FinalTrace: root, FinalRisk: rootRisk,
 	}}
+	view, snapshot, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
+		ctx, id+"-frontier-01", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, faultEnvelope, newAdapter,
+	)
+	addDFSPhase(&result.Execution.Work.FrontierReconstruction, reconstruction)
+	if err != nil {
+		return ScenarioProgressResult{}, err
+	}
+	closeWith := func(cause error) error {
+		return errors.Join(cause, runtime.Close())
+	}
 	closureLimit := maxDecisions
 	for decision := 0; decision < closureLimit; decision++ {
-		view, snapshot, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
-			ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+1), spec,
-			result.Execution.FinalRisk, result.Execution.FinalTrace,
-			len(result.Execution.FinalTrace.Records), runtimeConfig, faultEnvelope, newAdapter,
-		)
-		addDFSPhase(&result.Execution.Work.FrontierReconstruction, reconstruction)
-		if err != nil {
-			return ScenarioProgressResult{}, err
-		}
 		if scenarioClientTerminal(snapshot) {
-			if err := runtime.Close(); err != nil {
-				return ScenarioProgressResult{}, err
-			}
 			result.StopReason = ScenarioProgressClientTerminal
 			break
 		}
 		action, ok := scenarioNaturalProgressAction(view.Actions)
 		if !ok {
-			if err := runtime.Close(); err != nil {
-				return ScenarioProgressResult{}, err
-			}
 			result.StopReason = ScenarioProgressQuiescent
 			break
 		}
@@ -88,34 +85,37 @@ func ExecuteScenarioNaturalProgress(
 			fmt.Sprintf("%s-choice-%02d", id, decision+1), view, spec, action.ActionID,
 		)
 		if err != nil {
-			return ScenarioProgressResult{}, errors.Join(err, runtime.Close())
+			return ScenarioProgressResult{}, closeWith(err)
 		}
 		frontier, err := scenarioActionFrontier(view)
 		if err != nil {
-			return ScenarioProgressResult{}, errors.Join(err, runtime.Close())
+			return ScenarioProgressResult{}, closeWith(err)
 		}
-		child, materialization, verification, err := materializeDFSChildFromRuntime(
-			ctx, frontier, choice.Action, runtime, runtimeConfig, newAdapter,
+		child, materialization, err := executeDFSChildOnLiveRuntime(
+			ctx, frontier, choice.Action, runtime,
 		)
 		addDFSPhase(&result.Execution.Work.ChildMaterialization, materialization)
-		addDFSPhase(&result.Execution.Work.ChildVerification, verification)
 		if err != nil {
 			result.Execution.Work.TotalWorkUnits =
 				result.Execution.Work.FrontierReconstruction.WorkUnits +
 					result.Execution.Work.ChildMaterialization.WorkUnits +
 					result.Execution.Work.ChildVerification.WorkUnits
-			return result, &StatelessDFSExecutionError{Work: result.Execution.Work, cause: err}
+			return result, &StatelessDFSExecutionError{
+				Work: result.Execution.Work, cause: closeWith(err),
+			}
 		}
 		risk, err := projector.Project(
 			fmt.Sprintf("%s-risk-%02d", id, decision+1), spec, child,
 		)
 		if err != nil || risk.Validate(spec) != nil || risk.ProjectorID != projector.ID() ||
 			risk.ExecutionDigest != child.Digest || risk.TargetIdentityDigest != child.ManifestDigest {
-			return ScenarioProgressResult{}, errors.New("EXPERIMENT_SCENARIO_PROGRESS_RISK_INVALID")
+			return ScenarioProgressResult{}, closeWith(
+				errors.New("EXPERIMENT_SCENARIO_PROGRESS_RISK_INVALID"),
+			)
 		}
 		progress, err := semantic.NewRiskWitnessProgress(spec, risk)
 		if err != nil {
-			return ScenarioProgressResult{}, err
+			return ScenarioProgressResult{}, closeWith(err)
 		}
 		result.Execution.Steps = append(result.Execution.Steps, ScenarioStepFeedback{
 			StepID: fmt.Sprintf("natural-progress-%02d", decision+1), Outcome: ScenarioStepApplied,
@@ -123,9 +123,30 @@ func ExecuteScenarioNaturalProgress(
 			Choice: &choice, RiskProgress: progress,
 		})
 		result.Execution.FinalTrace, result.Execution.FinalRisk = child, risk
+		if decision+1 < closureLimit {
+			view, snapshot, err = projectRiskFrontierFromLiveRuntime(
+				ctx, fmt.Sprintf("%s-frontier-%02d", id, decision+2), spec,
+				result.Execution.FinalRisk, result.Execution.FinalTrace, faultEnvelope, runtime,
+			)
+			if err != nil {
+				return ScenarioProgressResult{}, closeWith(err)
+			}
+		}
 	}
 	if result.StopReason == "" {
 		result.StopReason = ScenarioProgressBudget
+	}
+	if err := runtime.Close(); err != nil {
+		return ScenarioProgressResult{}, err
+	}
+	if len(result.Execution.Steps) > 0 {
+		verification, err := verifyDFSChild(
+			ctx, result.Execution.FinalTrace, runtimeConfig, newAdapter,
+		)
+		addDFSPhase(&result.Execution.Work.ChildVerification, verification)
+		if err != nil {
+			return result, &StatelessDFSExecutionError{Work: result.Execution.Work, cause: err}
+		}
 	}
 	result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
 		result.Execution.Work.ChildMaterialization.WorkUnits +

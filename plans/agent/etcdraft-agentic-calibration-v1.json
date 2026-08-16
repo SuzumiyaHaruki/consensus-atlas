@@ -26,7 +26,7 @@
       {
         "id": "client-operation-continuity",
         "summary": "A client operation must remain consistently related to its replicated and applied command across protocol transitions.",
-        "evidence_level": "observable-only"
+        "evidence_level": "oracle-backed"
       },
       {
         "id": "election-safety",

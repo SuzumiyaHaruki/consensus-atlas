@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -39,19 +40,37 @@ var observationKinds = map[ObservationKind]struct{}{
 // fields shared by the current leader/round consensus scope. Target-specific
 // state remains in Adapter Evidence.
 type Observation struct {
-	Kind               ObservationKind  `json:"kind"`
-	Step               uint64           `json:"step"`
-	SourceDigest       string           `json:"source_digest"`
-	Participant        *control.NodeRef `json:"participant,omitempty"`
-	RelatedParticipant *control.NodeRef `json:"related_participant,omitempty"`
-	RequestID          string           `json:"request_id,omitempty"`
-	ParticipantRole    string           `json:"participant_role,omitempty"`
-	MessageRole        string           `json:"message_role,omitempty"`
-	OperationStage     string           `json:"operation_stage,omitempty"`
+	Kind               ObservationKind        `json:"kind"`
+	Step               uint64                 `json:"step"`
+	SourceDigest       string                 `json:"source_digest"`
+	Participant        *control.NodeRef       `json:"participant,omitempty"`
+	RelatedParticipant *control.NodeRef       `json:"related_participant,omitempty"`
+	RequestID          string                 `json:"request_id,omitempty"`
+	ParticipantRole    string                 `json:"participant_role,omitempty"`
+	MessageRole        string                 `json:"message_role,omitempty"`
+	OperationStage     string                 `json:"operation_stage,omitempty"`
+	Attributes         []ObservationAttribute `json:"attributes,omitempty"`
+}
+
+type ObservationValueType string
+
+const (
+	ObservationValueString ObservationValueType = "string"
+	ObservationValueUint   ObservationValueType = "uint"
+	ObservationValueBool   ObservationValueType = "bool"
+	ObservationValueNodeID ObservationValueType = "node-id"
+)
+
+// ObservationAttribute carries one target-declared scalar. Core validates its
+// shape and declared type but never interprets protocol meaning.
+type ObservationAttribute struct {
+	Field ObservationField     `json:"field"`
+	Type  ObservationValueType `json:"type"`
+	Value string               `json:"value"`
 }
 
 func (observation Observation) Validate() error {
-	if _, ok := observationKinds[observation.Kind]; !ok || observation.Step == 0 ||
+	if !validObservationKind(observation.Kind) || observation.Step == 0 ||
 		!validRiskWitnessSHA256(observation.SourceDigest) {
 		return errors.New("OBSERVATION_IDENTITY_INVALID")
 	}
@@ -73,6 +92,13 @@ func (observation Observation) Validate() error {
 			return errors.New("OBSERVATION_VALUE_INVALID")
 		}
 	}
+	for index, attribute := range observation.Attributes {
+		if !validTargetObservationField(attribute.Field) ||
+			!validObservationScalar(attribute.Type, attribute.Value) ||
+			(index > 0 && observation.Attributes[index-1].Field >= attribute.Field) {
+			return errors.New("OBSERVATION_ATTRIBUTE_INVALID")
+		}
+	}
 	return nil
 }
 
@@ -90,8 +116,37 @@ func NewObservationHistory(
 	trace controlruntime.Trace,
 	events []Observation,
 ) (ObservationHistory, error) {
+	return newObservationHistory(projectorID, trace, events, nil, false)
+}
+
+// NewObservationHistoryWithCapabilities admits target-local facts only after
+// validating them against the projector's declared schemas.
+func NewObservationHistoryWithCapabilities(
+	projectorID string,
+	trace controlruntime.Trace,
+	events []Observation,
+	capabilities []ObservationCapability,
+) (ObservationHistory, error) {
+	return newObservationHistory(projectorID, trace, events, capabilities, true)
+}
+
+func newObservationHistory(
+	projectorID string,
+	trace controlruntime.Trace,
+	events []Observation,
+	capabilities []ObservationCapability,
+	validateCapabilities bool,
+) (ObservationHistory, error) {
 	if strings.TrimSpace(projectorID) != projectorID || projectorID == "" || trace.Validate() != nil {
 		return ObservationHistory{}, errors.New("OBSERVATION_HISTORY_IDENTITY_INVALID")
+	}
+	var declared map[ObservationKind]indexedObservationCapability
+	var err error
+	if validateCapabilities {
+		declared, err = indexObservationCapabilities(capabilities)
+		if err != nil {
+			return ObservationHistory{}, err
+		}
 	}
 	recordDigests := make(map[uint64]string, len(trace.Records))
 	for _, record := range trace.Records {
@@ -107,7 +162,9 @@ func NewObservationHistory(
 		Events:      cloneObservations(events),
 	}
 	for _, event := range result.Events {
-		if err := event.Validate(); err != nil || recordDigests[event.Step] != event.SourceDigest {
+		if err := event.Validate(); err != nil || recordDigests[event.Step] != event.SourceDigest ||
+			(!validateCapabilities && !isCoreObservationKind(event.Kind)) ||
+			(validateCapabilities && !observationMatchesCapability(event, declared[event.Kind])) {
 			return ObservationHistory{}, errors.New("OBSERVATION_HISTORY_SOURCE_INVALID")
 		}
 	}
@@ -268,11 +325,11 @@ func validateObservationPredicates(predicates []ObservationPredicate) error {
 		return errors.New("LINEAR_WITNESS_PREDICATES_REQUIRED")
 	}
 	for _, predicate := range predicates {
-		if _, ok := observationKinds[predicate.Kind]; !ok {
+		if !validObservationKind(predicate.Kind) {
 			return errors.New("LINEAR_WITNESS_KIND_INVALID")
 		}
 		for _, constraint := range predicate.Constraints {
-			_, fieldOK := observationFields[constraint.Field]
+			fieldOK := validObservationField(constraint.Field)
 			if !fieldOK || (constraint.Equals == "") == (constraint.BindAs == "") ||
 				(constraint.BindAs != "" && !validRiskWitnessToken(constraint.BindAs)) {
 				return errors.New("LINEAR_WITNESS_CONSTRAINT_INVALID")
@@ -343,9 +400,13 @@ func observationFieldValue(event Observation, field ObservationField) (string, b
 		return event.MessageRole, event.MessageRole != ""
 	case ObservationFieldOperationStage:
 		return event.OperationStage, event.OperationStage != ""
-	default:
-		return "", false
 	}
+	for _, attribute := range event.Attributes {
+		if attribute.Field == field {
+			return attribute.Value, true
+		}
+	}
+	return "", false
 }
 
 func observationLess(left, right Observation) bool {
@@ -358,7 +419,11 @@ func observationLess(left, right Observation) bool {
 	if left.SourceDigest != right.SourceDigest {
 		return left.SourceDigest < right.SourceDigest
 	}
-	return observationNodeKey(left.Participant) < observationNodeKey(right.Participant)
+	leftNode, rightNode := observationNodeKey(left.Participant), observationNodeKey(right.Participant)
+	if leftNode != rightNode {
+		return leftNode < rightNode
+	}
+	return observationAttributeKey(left.Attributes) < observationAttributeKey(right.Attributes)
 }
 
 func observationNodeKey(value *control.NodeRef) string {
@@ -380,6 +445,84 @@ func cloneObservations(values []Observation) []Observation {
 			related := *values[index].RelatedParticipant
 			result[index].RelatedParticipant = &related
 		}
+		result[index].Attributes = append([]ObservationAttribute(nil), values[index].Attributes...)
 	}
 	return result
+}
+
+func isCoreObservationKind(kind ObservationKind) bool {
+	_, ok := observationKinds[kind]
+	return ok
+}
+
+func validObservationKind(kind ObservationKind) bool {
+	return isCoreObservationKind(kind) || validNamespacedObservationName(string(kind))
+}
+
+func validObservationField(field ObservationField) bool {
+	if _, ok := observationFields[field]; ok {
+		return true
+	}
+	return validTargetObservationField(field)
+}
+
+func validTargetObservationField(field ObservationField) bool {
+	return validNamespacedObservationName(string(field))
+}
+
+func validNamespacedObservationName(value string) bool {
+	parts := strings.Split(value, "/")
+	if len(parts) < 2 || len(value) > 128 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || part[0] < 'a' || part[0] > 'z' || part[len(part)-1] == '-' {
+			return false
+		}
+		for _, character := range part {
+			if (character < 'a' || character > 'z') &&
+				(character < '0' || character > '9') && character != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validObservationValueType(value ObservationValueType) bool {
+	return value == ObservationValueString || value == ObservationValueUint ||
+		value == ObservationValueBool || value == ObservationValueNodeID
+}
+
+func validObservationScalar(valueType ObservationValueType, value string) bool {
+	if !validObservationValueType(valueType) || value == "" || len(value) > 256 ||
+		strings.TrimSpace(value) != value {
+		return false
+	}
+	switch valueType {
+	case ObservationValueString:
+		return true
+	case ObservationValueBool:
+		return value == "true" || value == "false"
+	case ObservationValueUint:
+		parsed, err := strconv.ParseUint(value, 10, 64)
+		return err == nil && strconv.FormatUint(parsed, 10) == value
+	case ObservationValueNodeID:
+		return !strings.ContainsAny(value, " /\\")
+	default:
+		return false
+	}
+}
+
+func observationAttributeKey(attributes []ObservationAttribute) string {
+	var builder strings.Builder
+	for _, attribute := range attributes {
+		builder.WriteString(string(attribute.Field))
+		builder.WriteByte(0)
+		builder.WriteString(string(attribute.Type))
+		builder.WriteByte(0)
+		builder.WriteString(attribute.Value)
+		builder.WriteByte(0)
+	}
+	return builder.String()
 }

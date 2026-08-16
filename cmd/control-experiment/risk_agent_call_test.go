@@ -64,9 +64,9 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		ID: "decision-after-message-loss", PropertyRef: "decision-continuity",
 		InspirationRef: "message-loss-progress", Summary: "Observe a decision after one message is dropped.",
 		MechanismSteps: []controlexperiment.RiskMechanismStep{
-			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start the client operation."},
-			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped, Rationale: "Remove one protocol message while progress is active."},
-			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe the later decision frontier."},
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start the client operation.", SupportRefs: []string{"primer/message-progress"}},
+			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped, Rationale: "Remove one protocol message while progress is active.", SupportRefs: []string{"primer/message-progress"}},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe the later decision frontier.", SupportRefs: []string{"primer/message-progress"}},
 		},
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
@@ -100,13 +100,15 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("exploration_memory")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("property_ref")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("mechanism_steps")) ||
+			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("support_refs")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("available_support_refs")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("candidates")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("Every claimed causal trigger")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("Every bind_as token must occur")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("^[a-z0-9]")) {
 			t.Fatalf("unexpected risk request: %#v/%v", payload, err)
 		}
-		response := a2b2OpenRouterResponse(t, transportCalls, content)
+		response := fixtureOpenRouterResponse(t, transportCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
 	directory := filepath.Join(t.TempDir(), "risk-provider")
@@ -179,19 +181,23 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 		KnowledgeSources:     sources,
 		MaxKnowledgeRequests: controlexperiment.RiskKnowledgeRequestsPerCall,
 	}
+	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
+		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
+	)
 	system, user, err := riskAgentPrompt(view)
 	if err != nil {
 		t.Fatal(err)
 	}
 	output, err := riskAgentStructuredOutput(view)
-	if err != nil || !strings.Contains(system, "RiskKnowledgeRequestBatch") ||
-		!strings.Contains(user, "candidate generation occurs in the next call") ||
+	if err != nil || !strings.Contains(system, "RiskAgentResponseEnvelope") ||
+		!strings.Contains(user, "Prefer a direct portfolio") ||
 		!bytes.Contains([]byte(user), []byte("adapter.go:Check")) ||
-		output.Name != "risk_knowledge_requests" ||
-		len(output.Schema) > 16<<10 ||
+		output.Name != "risk_grounding_or_portfolio" ||
+		len(output.Schema) > 32<<10 ||
 		!bytes.Contains(output.Schema, []byte("knowledge_requests")) ||
 		!bytes.Contains(output.Schema, []byte("adapters/etcdraftv2/adapter.go:Check")) ||
-		bytes.Contains(output.Schema, []byte("candidates")) {
+		!bytes.Contains(output.Schema, []byte("candidates")) ||
+		!bytes.Contains(output.Schema, []byte("response_kind")) {
 		t.Fatalf("knowledge-assisted Risk contract incomplete: %s\n%s\n%s\n%v", system, user, output.Schema, err)
 	}
 	view.MaxKnowledgeRequests = 0
@@ -200,12 +206,24 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 		StartLine: 10, EndLine: 12, TotalLines: 100,
 		Text: "func (adapter *Adapter) Check(action control.Action) error {\n  return nil\n}", Truncated: true,
 	}}
+	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
+		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
+	)
 	system, user, err = riskAgentPrompt(view)
 	output, outputErr := riskAgentStructuredOutput(view)
+	var portfolioSchema struct {
+		Properties struct {
+			Candidates struct {
+				MinItems int `json:"minItems"`
+			} `json:"candidates"`
+		} `json:"properties"`
+	}
+	schemaErr := json.Unmarshal(output.Schema, &portfolioSchema)
 	if err != nil || outputErr != nil || !strings.Contains(system, "RiskCandidatePortfolio") ||
 		!strings.Contains(user, "bounded knowledge_results") ||
 		!bytes.Contains([]byte(user), []byte("func (adapter *Adapter) Check")) ||
 		output.Name != "risk_candidate_portfolio" ||
+		schemaErr != nil || portfolioSchema.Properties.Candidates.MinItems != 1 ||
 		!bytes.Contains(output.Schema, []byte("candidates")) ||
 		bytes.Contains(output.Schema, []byte("knowledge_requests")) {
 		t.Fatalf("knowledge result did not transition to portfolio: %s\n%s\n%s\n%v/%v",
@@ -219,7 +237,12 @@ func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
 		t.Fatal(err)
 	}
 	reference := "adapters/omnipaxosv2/adapter.go:Manifest"
-	requestBytes, err := json.Marshal(controlexperiment.RiskKnowledgeRequestBatch{
+	requestBytes, err := json.Marshal(struct {
+		ResponseKind      string                                   `json:"response_kind"`
+		Candidates        []controlexperiment.RiskCandidate        `json:"candidates"`
+		KnowledgeRequests []controlexperiment.KnowledgeReadRequest `json:"knowledge_requests"`
+	}{
+		ResponseKind: "knowledge-query", Candidates: []controlexperiment.RiskCandidate{},
 		KnowledgeRequests: []controlexperiment.KnowledgeReadRequest{{
 			Reference: reference, MaxLines: 40,
 		}},
@@ -242,9 +265,9 @@ func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
 		var content []byte
 		switch providerCalls {
 		case 1:
-			if payload.ResponseFormat.JSONSchema.Name != "risk_knowledge_requests" ||
+			if payload.ResponseFormat.JSONSchema.Name != "risk_grounding_or_portfolio" ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("knowledge_requests")) ||
-				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("candidates")) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("candidates")) ||
 				!bytes.Contains([]byte(payload.Messages[1].Content), []byte(reference)) {
 				t.Fatalf("first Risk call did not expose declared sources: %#v", payload)
 			}
@@ -259,7 +282,7 @@ func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
 		default:
 			t.Fatalf("unexpected provider call %d", providerCalls)
 		}
-		response := a2b2OpenRouterResponse(t, providerCalls, content)
+		response := fixtureOpenRouterResponse(t, providerCalls, content)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
 	})
 	journal, err := newStatelessAgentCallJournal(filepath.Join(t.TempDir(), "knowledge-risk"), client, "fixture-key")

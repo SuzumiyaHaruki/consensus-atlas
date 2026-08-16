@@ -24,10 +24,7 @@ func TestEtcdraftAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 		knowledge.Protocol != "etcdraft" || knowledge.Family != "raft" ||
 		knowledge.TargetDossier == nil || len(knowledge.Properties) < 6 ||
 		len(knowledge.IssuePatterns) < 6 || len(knowledge.TargetDossier.BlindSpots) < 3 ||
-		experiment.validateAgentic() != nil || experiment.SearchMaxDepth != 0 ||
-		experiment.SearchMaxWorkItems != 0 || experiment.SearchMaxWorkUnits != 0 ||
-		experiment.ExplorerBudget != (controlexperiment.SemanticExplorerBudget{}) ||
-		workload.Validate() != nil {
+		experiment.validateAgentic() != nil || workload.Validate() != nil {
 		t.Fatalf("etcd/raft A9e1 materials did not load: %#v/%#v/%#v/%v",
 			knowledge, experiment, workload, err)
 	}

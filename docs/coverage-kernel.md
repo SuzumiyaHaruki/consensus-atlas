@@ -1,89 +1,36 @@
-# Coverage Kernel v2
+# Coverage Kernel v2（历史设计）
 
-Coverage Kernel v2 is the trusted boundary between Agent proposals and a
-reported coverage percentage. Agents may select obligation IDs and generate
-tests, but cannot mark an obligation covered.
+## 当前状态
 
-## Fixed denominator
+Coverage Kernel v2 曾用固定义务、Profile 和 Ledger 统计有界覆盖率。相关 Campaign、
+`internal/campaign`、`internal/agentcampaign` 和 Raft campaign compiler 已从当前活动实现删除。
 
-A v2 `Profile` uses `coverage.obligations`; legacy v1 profiles use
-`coverage.atoms` and remain replayable. Mixing the two representations is
-rejected. The complete Profile is canonically hashed, and a `Ledger` rejects
-evidence produced against a different Profile or Driver Manifest.
+`profiles/` 中留存的 JSON 是历史设计和实验参考数据，当前 Agentic Episode 不会加载它们，
+也不会以 12 或 55 个 Raft 义务作为最终测试分母。因此不能从这些文件声称当前系统已完成
+固定 Profile 覆盖评测。
 
-Each v2 obligation contains:
+## 仍然保留的原则
 
-- explicit reach predicates;
-- explicit observation predicates;
-- optional strict before/after constraints, same-batch/target/message
-  correlation and excluded interval events;
-- optional bounded counts with stable distinct keys;
-- optional versioned Family Pack semantic predicates;
-- required deterministic monitors;
-- capability requirements, risk, weight and support status.
+历史设计中两个原则仍适用于当前主线：
 
-The JSON schema is `profiles/schema-v2.json`. Go validation remains the trusted
-validator and additionally checks weight sums, unique IDs, event kinds and
-non-empty evidence.
+- Agent 可以提出风险、Action 意图和候选 assertion，但不能自行给出覆盖或缺陷 verdict；
+- 有效证据必须来自真实执行、fresh Replay 和已注册 Oracle，而不是 Agent 生成的标签。
 
-## Strong evidence
-
-The matcher grants coverage only when all five conditions hold:
+当前活动路径是：
 
 ```text
-Reach + Observe + Check + Replay + Conform
+Risk Agent candidate
+    → Scenario Agent plan
+    → enabled Action materialization
+    → Trace + fresh Replay
+    → target-local/generic Oracle
+    → protocol/control/joint PSS 和调查进度
 ```
 
-Trace predicates inspect real Runtime event kinds, endpoints, outcomes and
-trusted observations. An Agent target or an invented label cannot satisfy an
-obligation that also requires a real event or ordering predicate. A stored evidence reference contains the trace
-digest, matching steps, checked monitors, Oracle violations and artifact/run
-identity.
+Oracle 失败和 PSS/进度统计始终分开报告；后者不能创建缺陷判定。
 
-An Oracle failure does not erase coverage: the scenario was reached and
-checked, while the Oracle result is reported independently.
+## 未来恢复固定分母时的边界
 
-## Ledger
-
-`coverage.NewLedger` freezes deep copies of the Profile and Driver Manifest.
-Its mutable state is private; callers and Agents receive detached `Report()`
-and `Debts()` snapshots. `AddRun` is the only state transition.
-
-Ledger entry states are:
-
-- `uncovered`: no strong witness and no targeted attempt;
-- `attempted`: targeted by a test but strong evidence is incomplete;
-- `covered`: at least one strong witness exists;
-- `unsupported`: remains in the denominator but is not actionable scheduling
-  debt.
-
-Debts are returned in deterministic risk-first, attempt-count, ID order. A run
-may cover an untargeted obligation when the trace genuinely supplies its
-evidence; targeting alone only increments the attempt count.
-
-## Integration versus campaign profiles
-
-The etcd/raft Contract compiles to a 12-obligation integration Profile. It
-answers only whether the Driver exposes the declared control and observation
-boundaries. It is not used as the final test-campaign denominator.
-
-`families/raft/campaign.go` expands the reviewed bounded spec
-`profiles/raft/three-node-cft-v1.json` into a separate 55-obligation campaign
-Profile. It covers role transitions, Ready/message orderings, role and storage
-crash points, message faults, bounded depth/quorum/log/partition shapes and
-property activations. Two obligations remain explicitly unsupported by the
-current etcd/raft Driver. The compiler derives support only from the frozen
-Driver Manifest, sorts the denominator and validates Profile v2 before output.
-
-Raft state relations are evaluated by the versioned Raft Family matcher over
-frozen trace snapshots. The generic matcher contains no Raft type or role.
-Actual unsafe outcomes such as conflicting durable entries remain Oracle
-results; the compiler rejects them as required reachable coverage shapes.
-
-The runner writes both the summary and the single-run Ledger into its result.
-`internal/campaign` now adds replayed Random/DFS runs from bounded Test Plans to
-one Ledger and supplies only detached Coverage Debt to the planning boundary.
-`internal/agentcampaign` now keeps that Ledger in a private incremental Session,
-records a hash-chained Blackboard, and accepts bounded Test Plan proposals from
-the first DeepSeek Planner. Scenario/Critic role separation and reliable repair
-of failed plans remain the next milestone.
+若后续需要固定义务评分，它必须作为当前 Agentic artifact 的一个评估器，而不是恢复一套
+独立 Campaign runner/session。新分母还必须用真实 Target 可达性和已执行 monitor 重新校准；
+历史 Raft Profile 不能直接充当跨协议的当前指标。

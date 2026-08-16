@@ -35,6 +35,15 @@ type ProtocolProperty struct {
 	EvidenceLevel string `json:"evidence_level,omitempty"`
 }
 
+func cloneProtocolKnowledge(value ProtocolKnowledgePack) ProtocolKnowledgePack {
+	value.Knowledge = append([]KnowledgeStatement(nil), value.Knowledge...)
+	value.Properties = append([]ProtocolProperty(nil), value.Properties...)
+	value.IssuePatterns = append([]HistoricalIssuePattern(nil), value.IssuePatterns...)
+	value.TargetDossier = cloneTargetDossier(value.TargetDossier)
+	value.Risks = cloneProtocolKnowledgeRisks(value.Risks)
+	return value
+}
+
 // HistoricalIssuePattern gives the Agent cross-protocol implementation
 // experience without embedding a target-specific reproduction schedule.
 type HistoricalIssuePattern struct {
@@ -161,8 +170,13 @@ func (pack ProtocolKnowledgePack) Validate() error {
 // are deliberately absent: they remain supported only by legacy curated
 // baselines that construct an explicit TestHypothesis.
 func (pack ProtocolKnowledgePack) ValidateAgentMaterials() error {
-	if pack.Validate() != nil || len(pack.Properties) == 0 || len(pack.IssuePatterns) == 0 || len(pack.Risks) != 0 {
+	if pack.Validate() != nil || len(pack.Properties) == 0 || len(pack.Risks) != 0 {
 		return errors.New("EXPERIMENT_AGENT_MATERIALS_INVALID")
+	}
+	for _, property := range pack.Properties {
+		if property.EvidenceLevel == "" {
+			return errors.New("EXPERIMENT_AGENT_PROPERTY_EVIDENCE_REQUIRED")
+		}
 	}
 	return nil
 }

@@ -88,16 +88,34 @@ func newOmnipaxosAgenticEpisodeTarget(
 		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_INPUT_INVALID")
 	}
 	observationProjector := omnipaxosv2.ObservationProjector{}
+	oracleRegistry := omnipaxosAgenticOracleRegistry()
+	if oracleRegistry.validate() != nil {
+		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_ORACLE_REGISTRY_INVALID")
+	}
+	actions := []control.ActionKind{
+		control.ActionDeliverMessage, control.ActionDropMessage, control.ActionFireTemporal,
+		control.ActionInvoke,
+	}
 	surface, err := controlexperiment.NewAgentTargetSurface(
 		"omnipaxos-v2", inputs.Qualification.Bundle.Manifest, inputs.Workload,
 		inputs.Experiment.Runtime, inputs.Experiment.FaultEnvelope,
+		controlexperiment.AgentTargetExtensions{
+			ComposableActions:       actions,
+			ObservationCapabilities: observationProjector.Capabilities(),
+			OracleCapabilities:      oracleRegistry.Capabilities(),
+			FidelityBoundaries: []controlexperiment.AgentFidelityBoundary{{
+				ID:                  "single-worker-memory-storage",
+				Summary:             "All participants use MemoryStorage in one worker process; durable node restart, partial persistence, and process-isolated recovery are not represented.",
+				AffectedPropertyIDs: []string{"recovery-suffix-continuity"},
+			}},
+		},
 	)
 	if err != nil {
 		return agenticEpisodeTarget{}, err
 	}
 	target := agenticEpisodeTarget{
 		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge, Surface: surface,
-		Actions:              inputs.Qualification.Bundle.Manifest.Capabilities.Actions,
+		OracleRegistry:       oracleRegistry,
 		ObservationProjector: observationProjector,
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
@@ -107,7 +125,8 @@ func newOmnipaxosAgenticEpisodeTarget(
 				return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: inputs.WorkerPath})
 			}
 			return scenarioEpisodeCoreInputs{
-				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis, RiskSpec: risk.Spec,
+				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis,
+				AcceptedHypothesis: &risk.AcceptedHypothesis, RiskSpec: risk.Spec,
 				Root: inputs.Root, Runtime: inputs.Experiment.Runtime,
 				FaultEnvelope:    inputs.Experiment.faultEnvelope(),
 				SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,

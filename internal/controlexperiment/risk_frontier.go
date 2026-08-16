@@ -185,6 +185,46 @@ func reconstructRiskFrontierRuntime(
 	return view, snapshot, runtime, work, nil
 }
 
+func projectRiskFrontierFromLiveRuntime(
+	ctx context.Context,
+	id string,
+	spec semantic.RiskWitnessSpec,
+	result semantic.RiskWitnessResult,
+	trace controlruntime.Trace,
+	faultEnvelope *FaultEnvelope,
+	runtime *controlruntime.Runtime,
+) (RiskFrontierView, controlruntime.Snapshot, error) {
+	if runtime == nil || result.ExecutionDigest != trace.Digest ||
+		result.TargetIdentityDigest != trace.ManifestDigest {
+		return RiskFrontierView{}, controlruntime.Snapshot{},
+			errors.New("EXPERIMENT_SCENARIO_LIVE_FRONTIER_INPUT_INVALID")
+	}
+	current, err := runtime.Trace()
+	if err != nil || current.Digest != trace.Digest || len(current.Records) != len(trace.Records) {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, errors.Join(
+			errors.New("EXPERIMENT_SCENARIO_LIVE_FRONTIER_DRIFT"), err,
+		)
+	}
+	progress, err := semantic.NewRiskWitnessProgress(spec, result)
+	if err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, err
+	}
+	enabled, err := runtime.EnabledActions(ctx)
+	if err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, err
+	}
+	snapshot := runtime.Snapshot()
+	admissible := admissibleActions(
+		faultEnvelope, faultUsageFromRecords(trace.Records), enabled, snapshot,
+	)
+	frontier, err := newActionFrontierView(id, trace, snapshot, enabled, admissible)
+	if err != nil {
+		return RiskFrontierView{}, controlruntime.Snapshot{}, err
+	}
+	view, err := newRiskFrontierView(id, spec, progress, frontier)
+	return view, snapshot, err
+}
+
 func newRiskFrontierView(
 	id string,
 	spec semantic.RiskWitnessSpec,

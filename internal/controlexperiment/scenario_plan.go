@@ -70,6 +70,17 @@ type ScenarioExecution struct {
 	Work              StatelessDFSWork           `json:"work"`
 }
 
+// ScenarioActionPreparer materializes one trusted, target-composed Action only
+// after an Agent selector has no match in the ordinary Runtime frontier. It is
+// intended for author-supplied actions such as Partition that require an Offer
+// call; the returned Action must immediately become the unique selector match.
+type ScenarioActionPreparer func(
+	context.Context,
+	FrontierActionSelector,
+	controlruntime.Trace,
+	*controlruntime.Runtime,
+) (control.ActionID, bool, error)
+
 func ParseScenarioPlan(data []byte) (ScenarioPlan, error) {
 	if len(data) == 0 || len(data) > ScenarioPlanMaxBytes {
 		return ScenarioPlan{}, errors.New("EXPERIMENT_SCENARIO_PLAN_JSON_INVALID")
@@ -107,9 +118,9 @@ func (plan ScenarioPlan) Validate() error {
 }
 
 // ExecuteBoundedScenarioPlan resolves each selector only against the current
-// trusted admissible frontier. Zero or multiple matches stop with mechanical
-// feedback; the function never guesses and never accepts an Agent-authored
-// execution fact.
+// trusted admissible frontier. One exclusively owned Runtime carries strategic
+// steps and after_milestone progress; the promoted final Trace is independently
+// fresh-replayed once. Zero or multiple matches stop with mechanical feedback.
 func ExecuteBoundedScenarioPlan(
 	ctx context.Context,
 	executionID string,
@@ -123,22 +134,58 @@ func ExecuteBoundedScenarioPlan(
 	faultEnvelope *FaultEnvelope,
 	newAdapter AdapterFactory,
 	projector SemanticPrefixProjector,
+	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
 	if !validMethodToken(executionID) || plan.Validate() != nil || maxSteps <= 0 ||
 		maxSteps > ScenarioPlanMaxSteps || spec.Validate() != nil || root.Validate() != nil ||
 		maxDecisions <= 0 || maxDecisions > ScenarioAgentMaxDecisions ||
 		rootRisk.Validate(spec) != nil || rootRisk.ExecutionDigest != root.Digest ||
 		rootRisk.TargetIdentityDigest != root.ManifestDigest || newAdapter == nil ||
-		isNilSemanticComponent(projector) || projector.ID() != rootRisk.ProjectorID {
+		isNilSemanticComponent(projector) || projector.ID() != rootRisk.ProjectorID ||
+		len(preparers) > 1 || len(preparers) == 1 && preparers[0] == nil {
 		return ScenarioExecution{}, errors.New("EXPERIMENT_SCENARIO_EXECUTION_INPUT_INVALID")
+	}
+	var preparer ScenarioActionPreparer
+	if len(preparers) == 1 {
+		preparer = preparers[0]
 	}
 	result := ScenarioExecution{
 		PlanID: plan.ID, Status: ScenarioStatusCompleted, FinalTrace: root, FinalRisk: rootRisk,
 	}
+	view, snapshot, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
+		ctx, executionID+"-frontier-01", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, faultEnvelope, newAdapter,
+	)
+	addDFSPhase(&result.Work.FrontierReconstruction, reconstruction)
+	if err != nil {
+		return ScenarioExecution{}, err
+	}
+	closeWith := func(cause error) error {
+		return errors.Join(cause, runtime.Close())
+	}
+	refreshFrontier := func(id string) error {
+		var refreshErr error
+		view, snapshot, refreshErr = projectRiskFrontierFromLiveRuntime(
+			ctx, id, spec, result.FinalRisk, result.FinalTrace, faultEnvelope, runtime,
+		)
+		return refreshErr
+	}
+	projectChild := func(id string, child controlruntime.Trace) error {
+		risk, projectErr := projector.Project(id, spec, child)
+		if projectErr != nil {
+			return fmt.Errorf("EXPERIMENT_SCENARIO_RISK_PROJECTION_FAILED: %w", projectErr)
+		}
+		if risk.Validate(spec) != nil || risk.ProjectorID != projector.ID() ||
+			risk.ExecutionDigest != child.Digest || risk.TargetIdentityDigest != child.ManifestDigest {
+			return errors.New("EXPERIMENT_SCENARIO_RISK_PROJECTION_INVALID")
+		}
+		result.FinalTrace, result.FinalRisk = child, risk
+		return nil
+	}
 	for index, step := range plan.Steps {
 		progress, err := semantic.NewRiskWitnessProgress(spec, result.FinalRisk)
 		if err != nil {
-			return ScenarioExecution{}, err
+			return ScenarioExecution{}, closeWith(err)
 		}
 		if index >= maxSteps {
 			result.Status = ScenarioStatusStopped
@@ -168,16 +215,7 @@ func ExecuteBoundedScenarioPlan(
 					})
 					break
 				}
-				automatic, err := ExecuteScenarioNaturalProgress(
-					ctx, fmt.Sprintf("%s-step-%02d-wait-%02d", executionID, index+1,
-						len(result.AutomaticProgress)+1), 1, spec, result.FinalRisk,
-					result.FinalTrace, runtimeConfig, faultEnvelope, newAdapter, projector,
-				)
-				addScenarioExecutionWork(&result.Work, automatic.Execution.Work)
-				if err != nil {
-					return result, err
-				}
-				if len(automatic.Execution.Steps) == 0 {
+				if scenarioClientTerminal(snapshot) {
 					result.Status = ScenarioStatusStopped
 					result.Steps = append(result.Steps, ScenarioStepFeedback{
 						StepID: step.ID, Outcome: ScenarioStepRejected,
@@ -186,14 +224,56 @@ func ExecuteBoundedScenarioPlan(
 					})
 					break
 				}
-				for _, value := range automatic.Execution.Steps {
-					value.StepID = fmt.Sprintf("%s-wait-%02d", step.ID, len(result.AutomaticProgress)+1)
-					result.AutomaticProgress = append(result.AutomaticProgress, value)
+				action, ok := scenarioNaturalProgressAction(view.Actions)
+				if !ok {
+					result.Status = ScenarioStatusStopped
+					result.Steps = append(result.Steps, ScenarioStepFeedback{
+						StepID: step.ID, Outcome: ScenarioStepRejected,
+						ReasonCode: ScenarioReasonMilestoneUnreachable,
+						Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
+					})
+					break
 				}
-				result.FinalTrace, result.FinalRisk = automatic.Execution.FinalTrace, automatic.Execution.FinalRisk
+				choice, choiceErr := NewFrontierChoice(
+					fmt.Sprintf("%s-step-%02d-wait-choice-%02d", executionID, index+1,
+						len(result.AutomaticProgress)+1), view, spec, action.ActionID,
+				)
+				if choiceErr != nil {
+					return ScenarioExecution{}, closeWith(choiceErr)
+				}
+				frontier, frontierErr := scenarioActionFrontier(view)
+				if frontierErr != nil {
+					return ScenarioExecution{}, closeWith(frontierErr)
+				}
+				child, materialization, executeErr := executeDFSChildOnLiveRuntime(
+					ctx, frontier, choice.Action, runtime,
+				)
+				addDFSPhase(&result.Work.ChildMaterialization, materialization)
+				if executeErr != nil {
+					return result, &StatelessDFSExecutionError{
+						Work: result.Work, cause: closeWith(executeErr),
+					}
+				}
+				if projectErr := projectChild(
+					fmt.Sprintf("%s-step-%02d-wait-risk-%02d", executionID, index+1,
+						len(result.AutomaticProgress)+1), child,
+				); projectErr != nil {
+					return ScenarioExecution{}, closeWith(projectErr)
+				}
 				progress, err = semantic.NewRiskWitnessProgress(spec, result.FinalRisk)
 				if err != nil {
-					return ScenarioExecution{}, err
+					return ScenarioExecution{}, closeWith(err)
+				}
+				result.AutomaticProgress = append(result.AutomaticProgress, ScenarioStepFeedback{
+					StepID:  fmt.Sprintf("%s-wait-%02d", step.ID, len(result.AutomaticProgress)+1),
+					Outcome: ScenarioStepApplied, Decision: view.NextDecision, ViewDigest: view.Digest,
+					MatchCount: 1, Choice: &choice, RiskProgress: progress,
+				})
+				if refreshErr := refreshFrontier(fmt.Sprintf(
+					"%s-step-%02d-wait-frontier-%02d", executionID, index+1,
+					len(result.AutomaticProgress)+1,
+				)); refreshErr != nil {
+					return ScenarioExecution{}, closeWith(refreshErr)
 				}
 			}
 			if result.Status == ScenarioStatusStopped {
@@ -209,23 +289,49 @@ func ExecuteBoundedScenarioPlan(
 			})
 			break
 		}
-		view, _, runtime, reconstruction, err := reconstructRiskFrontierRuntime(
-			ctx, fmt.Sprintf("%s-step-%02d", executionID, index+1), spec, result.FinalRisk,
-			result.FinalTrace, len(result.FinalTrace.Records), runtimeConfig, faultEnvelope, newAdapter,
-		)
-		addDFSPhase(&result.Work.FrontierReconstruction, reconstruction)
-		if err != nil {
-			return ScenarioExecution{}, err
-		}
 		matches := scenarioMatches(view.Actions, step.Selector)
+		preparedAction := false
+		if len(matches) == 0 && preparer != nil {
+			preparedID, prepared, prepareErr := preparer(
+				ctx, step.Selector, result.FinalTrace, runtime,
+			)
+			if prepareErr != nil {
+				return ScenarioExecution{}, closeWith(prepareErr)
+			}
+			if prepared {
+				preparedAction = true
+				chargePrepareActions(&result.Work.ChildMaterialization, 1)
+				enabled, enabledErr := runtime.EnabledActions(ctx)
+				if enabledErr != nil {
+					return ScenarioExecution{}, closeWith(enabledErr)
+				}
+				admissible := admissibleActions(
+					faultEnvelope, faultUsageFromRecords(result.FinalTrace.Records),
+					enabled, runtime.Snapshot(),
+				)
+				actionFrontier, frontierErr := newActionFrontierView(
+					view.ID, result.FinalTrace, runtime.Snapshot(), enabled, admissible,
+				)
+				if frontierErr != nil {
+					return ScenarioExecution{}, closeWith(frontierErr)
+				}
+				view, frontierErr = newRiskFrontierView(view.ID, spec, progress, actionFrontier)
+				if frontierErr != nil {
+					return ScenarioExecution{}, closeWith(frontierErr)
+				}
+				matches = scenarioMatches(view.Actions, step.Selector)
+				if preparedID == "" || len(matches) != 1 || matches[0].ActionID != preparedID {
+					return ScenarioExecution{}, closeWith(
+						errors.New("EXPERIMENT_SCENARIO_PREPARED_ACTION_MISMATCH"),
+					)
+				}
+			}
+		}
 		feedback := ScenarioStepFeedback{
 			StepID: step.ID, Outcome: ScenarioStepRejected, Decision: view.NextDecision,
 			ViewDigest: view.Digest, MatchCount: len(matches), RiskProgress: progress,
 		}
 		if len(matches) != 1 {
-			if err := runtime.Close(); err != nil {
-				return ScenarioExecution{}, err
-			}
 			result.Status = ScenarioStatusStopped
 			feedback.ReasonCode = ScenarioReasonNoMatch
 			if len(matches) > 1 {
@@ -239,39 +345,55 @@ func ExecuteBoundedScenarioPlan(
 			fmt.Sprintf("%s-choice-%02d", executionID, index+1), view, spec, matches[0].ActionID,
 		)
 		if err != nil {
-			return ScenarioExecution{}, errors.Join(err, runtime.Close())
+			return ScenarioExecution{}, closeWith(err)
 		}
 		frontier, err := scenarioActionFrontier(view)
 		if err != nil {
-			return ScenarioExecution{}, errors.Join(err, runtime.Close())
+			return ScenarioExecution{}, closeWith(err)
 		}
-		child, materialization, verification, err := materializeDFSChildFromRuntime(
-			ctx, frontier, choice.Action, runtime, runtimeConfig, newAdapter,
+		var preparedPrefixes []controlruntime.Trace
+		if preparedAction {
+			preparedPrefixes = append(preparedPrefixes, result.FinalTrace)
+		}
+		child, materialization, err := executeDFSChildOnLiveRuntime(
+			ctx, frontier, choice.Action, runtime, preparedPrefixes...,
 		)
 		addDFSPhase(&result.Work.ChildMaterialization, materialization)
-		addDFSPhase(&result.Work.ChildVerification, verification)
 		if err != nil {
 			result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
 				result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
-			return result, &StatelessDFSExecutionError{Work: result.Work, cause: err}
+			return result, &StatelessDFSExecutionError{Work: result.Work, cause: closeWith(err)}
 		}
-		risk, err := projector.Project(
-			fmt.Sprintf("%s-risk-%02d", executionID, index+1), spec, child,
-		)
+		if projectErr := projectChild(
+			fmt.Sprintf("%s-risk-%02d", executionID, index+1), child,
+		); projectErr != nil {
+			return ScenarioExecution{}, closeWith(projectErr)
+		}
+		progress, err = semantic.NewRiskWitnessProgress(spec, result.FinalRisk)
 		if err != nil {
-			return ScenarioExecution{}, fmt.Errorf("EXPERIMENT_SCENARIO_RISK_PROJECTION_FAILED: %w", err)
-		}
-		if risk.Validate(spec) != nil || risk.ProjectorID != projector.ID() ||
-			risk.ExecutionDigest != child.Digest || risk.TargetIdentityDigest != child.ManifestDigest {
-			return ScenarioExecution{}, errors.New("EXPERIMENT_SCENARIO_RISK_PROJECTION_INVALID")
-		}
-		progress, err = semantic.NewRiskWitnessProgress(spec, risk)
-		if err != nil {
-			return ScenarioExecution{}, err
+			return ScenarioExecution{}, closeWith(err)
 		}
 		feedback.Outcome, feedback.Choice, feedback.RiskProgress = ScenarioStepApplied, &choice, progress
 		result.Steps = append(result.Steps, feedback)
-		result.FinalTrace, result.FinalRisk = child, risk
+		if index+1 < len(plan.Steps) {
+			if refreshErr := refreshFrontier(fmt.Sprintf(
+				"%s-step-%02d-frontier", executionID, index+2,
+			)); refreshErr != nil {
+				return ScenarioExecution{}, closeWith(refreshErr)
+			}
+		}
+	}
+	if err := runtime.Close(); err != nil {
+		return ScenarioExecution{}, err
+	}
+	if len(result.FinalTrace.Records) > len(root.Records) {
+		verification, verifyErr := verifyDFSChild(ctx, result.FinalTrace, runtimeConfig, newAdapter)
+		addDFSPhase(&result.Work.ChildVerification, verification)
+		if verifyErr != nil {
+			result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
+				result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
+			return result, &StatelessDFSExecutionError{Work: result.Work, cause: verifyErr}
+		}
 	}
 	result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
 		result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
@@ -331,10 +453,14 @@ func CompileScenarioPolicy(
 	}
 	rules := make([]DecisionRule, len(execution.FinalTrace.Records))
 	for index, record := range execution.FinalTrace.Records {
-		rules[index] = DecisionRule{
+		rule := DecisionRule{
 			Decision: index + 1, Kind: record.Action.Kind,
 			Node: record.Action.Node.Node, ActionID: record.Action.ID,
 		}
+		if record.Action.Kind == control.ActionPartition {
+			rule.Parameters = append(json.RawMessage(nil), record.Action.Parameters...)
+		}
+		rules[index] = rule
 	}
 	policy := Policy{
 		Version: PolicyVersion, ID: id, Rules: rules,

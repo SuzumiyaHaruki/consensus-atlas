@@ -233,7 +233,10 @@ func runAgenticEpisodeDirectory(
 		return recoveredAgenticEpisode{}, errors.New("AGENTIC_EPISODE_ACTIVE_OPTIONS_INVALID")
 	}
 	composition, err := options.Prepare(ctx)
-	if err != nil || composition.Target.validate() != nil || composition.Budget.validate() != nil ||
+	if err != nil {
+		return recoveredAgenticEpisode{}, err
+	}
+	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 		len(composition.KnowledgeSourceMounts) > 0 &&
 			controlexperiment.ValidateKnowledgeSourceMounts(composition.KnowledgeSourceMounts) != nil ||
 		composition.Client.HTTP == nil || openRouterTransportFreeze(composition.Client).Validate() != nil ||
@@ -336,7 +339,7 @@ func agenticEpisodeBudgetFromExperiment(
 	scenarioCalls int,
 	maxPlanSteps int,
 	maxRuntimeDecisions int,
-	logical controlexperiment.CampaignLogicalBudget,
+	logical controlexperiment.AgenticLogicalBudget,
 ) (agenticEpisodeBudget, error) {
 	riskCalls := logical.MaxModelCalls - scenarioCalls
 	if riskCalls > controlexperiment.RiskAgentMaxCalls {

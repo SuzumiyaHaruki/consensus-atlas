@@ -8,6 +8,7 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
@@ -17,7 +18,24 @@ const (
 	agenticEpisodeScenarioStopped = "scenario-agent-stopped"
 	agenticEpisodeTokenStopped    = "model-token-threshold-reached"
 	agenticEpisodeExecutionFailed = "execution-failed"
+
+	agenticEvidenceCapabilityGap        = "capability-gap"
+	agenticEvidencePlanningFailed       = "planning-failed"
+	agenticEvidenceBudgetExhausted      = "search-budget-exhausted"
+	agenticEvidenceExecutionFailed      = "execution-failed"
+	agenticEvidenceInconclusive         = "inconclusive"
+	agenticEvidenceRiskReached          = "risk-reached"
+	agenticEvidenceRiskUnverified       = "risk-reached-unverified"
+	agenticEvidenceOracleFinding        = "oracle-finding"
+	agenticEvidenceHypothesisNotReached = "hypothesis-not-reached"
 )
+
+func addAgentModelWork(total *controlexperiment.ModelWork, value controlexperiment.ModelWork) {
+	total.Calls += value.Calls
+	total.InputTokens += value.InputTokens
+	total.OutputTokens += value.OutputTokens
+	total.TotalTokens += value.TotalTokens
+}
 
 var errAgenticEpisodeTokenThreshold = errors.New("AGENTIC_EPISODE_MODEL_TOKEN_THRESHOLD_REACHED")
 
@@ -59,6 +77,20 @@ type agenticEpisodeWork struct {
 	QualifiedExecution controlexperiment.WorkLedger       `json:"qualified_execution"`
 }
 
+// agenticEvidenceAssessment separates orchestration completion from what the
+// produced evidence actually establishes. In particular, an executed scenario
+// whose witness was not reached is inconclusive, never a rejected hypothesis.
+type agenticEvidenceAssessment struct {
+	Status                string   `json:"status"`
+	ReasonCode            string   `json:"reason_code,omitempty"`
+	PropertyID            string   `json:"property_id,omitempty"`
+	EvidenceLevel         string   `json:"evidence_level,omitempty"`
+	OracleIDs             []string `json:"oracle_ids,omitempty"`
+	FidelityAssessment    string   `json:"fidelity_assessment,omitempty"`
+	FidelityBoundaryIDs   []string `json:"fidelity_boundary_ids,omitempty"`
+	FirstMissingMilestone string   `json:"first_missing_milestone,omitempty"`
+}
+
 type agenticEpisodeResult struct {
 	Status                string                                      `json:"status"`
 	RiskAgent             controlexperiment.RiskAgentResult           `json:"risk_agent"`
@@ -69,6 +101,7 @@ type agenticEpisodeResult struct {
 	Testing               *scenarioTestingResult                      `json:"testing,omitempty"`
 	Metrics               agenticEpisodeMetrics                       `json:"metrics"`
 	Work                  agenticEpisodeWork                          `json:"work"`
+	Assessment            agenticEvidenceAssessment                   `json:"evidence_assessment"`
 }
 
 // agenticEpisodeObservationProjector is the only semantic surface the common
@@ -86,8 +119,8 @@ type agenticEpisodeTarget struct {
 	ID                   string
 	Knowledge            controlexperiment.ProtocolKnowledgePack
 	Surface              controlexperiment.AgentTargetSurface
-	Actions              []control.ActionKind
 	ObservationProjector agenticEpisodeObservationProjector
+	OracleRegistry       agenticOracleRegistry
 	ScenarioInputs       func(
 		controlexperiment.ScenarioRiskHypothesis,
 		controlexperiment.SemanticPrefixProjector,
@@ -101,17 +134,22 @@ type agenticEpisodeTarget struct {
 }
 
 func (target agenticEpisodeTarget) validate() error {
+	actions := target.Surface.Capabilities.ComposableActions
 	if strings.TrimSpace(target.ID) == "" || strings.ContainsAny(target.ID, " /\\") ||
 		target.Knowledge.ValidateAgentMaterials() != nil || target.ObservationProjector == nil ||
-		target.Surface.Validate() != nil || target.Surface.TargetID != target.ID ||
+		target.Surface.ValidateAgainstKnowledge(target.Knowledge) != nil ||
+		target.Surface.TargetID != target.ID ||
+		target.OracleRegistry.validate() != nil ||
+		!target.OracleRegistry.MatchesCapabilities(target.Surface.Capabilities.OracleCapabilities) ||
 		reflect.ValueOf(target.ObservationProjector).Kind() == reflect.Pointer &&
 			reflect.ValueOf(target.ObservationProjector).IsNil() ||
 		semantic.ValidateObservationCapabilities(target.ObservationProjector.Capabilities()) != nil ||
-		len(target.Actions) == 0 || target.ScenarioInputs == nil || target.Execute == nil {
+		!target.Surface.MatchesPlanningInputs(actions, target.ObservationProjector.Capabilities()) ||
+		len(actions) == 0 || target.ScenarioInputs == nil || target.Execute == nil {
 		return errors.New("AGENTIC_EPISODE_TARGET_INVALID")
 	}
-	seen := make(map[control.ActionKind]bool, len(target.Actions))
-	for _, action := range target.Actions {
+	seen := make(map[control.ActionKind]bool, len(actions))
+	for _, action := range actions {
 		if action.Validate() != nil || seen[action] {
 			return errors.New("AGENTIC_EPISODE_TARGET_ACTIONS_INVALID")
 		}
@@ -131,7 +169,12 @@ func runAgenticEpisode(
 	activateRiskKey func() error,
 	activateScenarioKey func() error,
 ) (agenticEpisodeResult, error) {
-	result := agenticEpisodeResult{Status: agenticEpisodeRiskStopped}
+	result := agenticEpisodeResult{
+		Status: agenticEpisodeRiskStopped,
+		Assessment: agenticEvidenceAssessment{
+			Status: agenticEvidencePlanningFailed, ReasonCode: "risk-candidate-unavailable",
+		},
+	}
 	if target.validate() != nil || riskJournal == nil || scenarioJournal == nil ||
 		scenarioJournal.core == nil || riskJournal == scenarioJournal.core || budget.validate() != nil ||
 		activateRiskKey == nil || activateScenarioKey == nil ||
@@ -139,10 +182,11 @@ func runAgenticEpisode(
 		return result, errors.New("AGENTIC_EPISODE_INPUT_INVALID")
 	}
 	capabilities := target.ObservationProjector.Capabilities()
+	actions := target.Surface.Capabilities.ComposableActions
 	risk, runErr := controlexperiment.DiscoverRiskWithPlanner(
 		ctx, controlexperiment.RiskAgentBudget{
 			MaxCalls: budget.MaxRiskCalls, MaxTokens: budget.MaxObservedTokens,
-		}, target.Knowledge, capabilities, target.Actions, memory, &target.Surface, knowledgeReader,
+		}, target.Knowledge, capabilities, actions, memory, &target.Surface, knowledgeReader,
 		func(ctx context.Context, view controlexperiment.RiskAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
@@ -167,15 +211,19 @@ func runAgenticEpisode(
 		return result, runErr
 	}
 	if risk.Accepted == nil {
+		result.Assessment = assessRiskAgentStop(risk)
 		return result, nil
 	}
+	result.Assessment = target.acceptedEvidenceAssessment(*risk.Accepted)
 	result.Metrics.CandidateAccepted = true
 	if result.Work.Model.TotalTokens >= budget.MaxObservedTokens {
 		result.Status = agenticEpisodeTokenStopped
+		result.Assessment.Status = agenticEvidenceBudgetExhausted
+		result.Assessment.ReasonCode = "model-token-threshold-reached"
 		return result, nil
 	}
 	scenarioRisk, err := controlexperiment.BuildScenarioRiskHypothesis(
-		target.Knowledge, *risk.Accepted, capabilities, target.Actions,
+		target.Knowledge, *risk.Accepted, capabilities, actions, &target.Surface,
 	)
 	if err != nil {
 		return result, err
@@ -189,6 +237,8 @@ func runAgenticEpisode(
 	coreInputs, err := target.ScenarioInputs(scenarioRisk, projector)
 	if err != nil || !reflect.DeepEqual(coreInputs.Knowledge, scenarioRisk.Knowledge) ||
 		!reflect.DeepEqual(coreInputs.Hypothesis, scenarioRisk.Hypothesis) ||
+		coreInputs.AcceptedHypothesis == nil ||
+		!reflect.DeepEqual(*coreInputs.AcceptedHypothesis, scenarioRisk.AcceptedHypothesis) ||
 		!reflect.DeepEqual(coreInputs.RiskSpec, scenarioRisk.Spec) || coreInputs.RiskProjector == nil ||
 		coreInputs.RiskProjector.ID() != projector.ID() {
 		return result, errors.New("AGENTIC_EPISODE_TARGET_SCENARIO_INVALID")
@@ -233,11 +283,15 @@ func runAgenticEpisode(
 	result.Work.ScenarioSearch = scenario.Agent.ExecutionWork
 	if errors.Is(scenarioErr, errAgenticEpisodeTokenThreshold) {
 		result.Status = agenticEpisodeTokenStopped
+		result.Assessment.Status = agenticEvidenceBudgetExhausted
+		result.Assessment.ReasonCode = "model-token-threshold-reached"
 		return result, nil
 	}
 	if scenarioErr != nil {
 		if scenario.Failure != nil {
 			result.Status = agenticEpisodeExecutionFailed
+			result.Assessment.Status = agenticEvidenceExecutionFailed
+			result.Assessment.ReasonCode = scenario.Failure.Code
 			result.Failure = cloneAgenticEpisodeFailure(scenario.Failure)
 			return result, nil
 		}
@@ -245,6 +299,8 @@ func runAgenticEpisode(
 	}
 	if scenario.Agent.Execution == nil {
 		result.Status = agenticEpisodeScenarioStopped
+		result.Assessment.Status = agenticEvidencePlanningFailed
+		result.Assessment.ReasonCode = "scenario-planning-failed"
 		return result, nil
 	}
 	testing, err := target.Execute(ctx, scenarioRisk, projector, *scenario.Agent.Execution)
@@ -258,7 +314,114 @@ func runAgenticEpisode(
 		return result, err
 	}
 	result.Work.QualifiedExecution = testing.Bundle.Work
+	result.Assessment = assessTestingEvidence(
+		result.Assessment, testing, *scenario.Agent.Execution, coreInputs.Root,
+		budget.MaxRuntimeDecisions,
+	)
 	return result, nil
+}
+
+func (target agenticEpisodeTarget) acceptedEvidenceAssessment(
+	accepted controlexperiment.RiskCandidateAssessment,
+) agenticEvidenceAssessment {
+	assessment := agenticEvidenceAssessment{
+		Status: agenticEvidencePlanningFailed, ReasonCode: "scenario-not-executed",
+		PropertyID:         accepted.Candidate.PropertyRef,
+		OracleIDs:          target.Surface.OracleIDsForProperty(accepted.Candidate.PropertyRef),
+		FidelityAssessment: accepted.FidelityAssessment,
+	}
+	for _, notice := range accepted.FidelityNotices {
+		assessment.FidelityBoundaryIDs = append(assessment.FidelityBoundaryIDs, notice.Reference)
+	}
+	for _, property := range target.Knowledge.Properties {
+		if property.ID == accepted.Candidate.PropertyRef {
+			assessment.EvidenceLevel = property.EvidenceLevel
+			break
+		}
+	}
+	return assessment
+}
+
+func assessRiskAgentStop(result controlexperiment.RiskAgentResult) agenticEvidenceAssessment {
+	assessment := agenticEvidenceAssessment{
+		Status: agenticEvidencePlanningFailed, ReasonCode: "risk-candidate-unavailable",
+	}
+	if len(result.Attempts) == 0 {
+		return assessment
+	}
+	feedback := result.Attempts[len(result.Attempts)-1].Feedback
+	assessment.ReasonCode = feedback.ReasonCode
+	if len(feedback.CapabilityGaps) > 0 {
+		assessment.Status = agenticEvidenceCapabilityGap
+		assessment.ReasonCode = feedback.CapabilityGaps[0].Code
+		return assessment
+	}
+	for _, review := range feedback.Reviews {
+		if len(review.CapabilityGaps) > 0 {
+			assessment.Status = agenticEvidenceCapabilityGap
+			assessment.ReasonCode = review.CapabilityGaps[0].Code
+			return assessment
+		}
+		if len(review.Issues) > 0 {
+			assessment.Status = agenticEvidenceCapabilityGap
+			assessment.ReasonCode = review.Issues[0].Code
+			return assessment
+		}
+	}
+	if len(feedback.Issues) > 0 {
+		assessment.Status = agenticEvidenceCapabilityGap
+		assessment.ReasonCode = feedback.Issues[0].Code
+	}
+	return assessment
+}
+
+func assessTestingEvidence(
+	assessment agenticEvidenceAssessment,
+	testing scenarioTestingResult,
+	execution controlexperiment.ScenarioExecution,
+	root controlruntime.Trace,
+	maxDecisions int,
+) agenticEvidenceAssessment {
+	if len(testing.Oracle.Violations) > 0 {
+		assessment.Status = agenticEvidenceOracleFinding
+		assessment.ReasonCode = testing.Oracle.Violations[0].Monitor
+		return assessment
+	}
+	if testing.Risk.Status == semantic.RiskWitnessReached {
+		assessment.Status = agenticEvidenceRiskReached
+		assessment.ReasonCode = "property-oracle-clean"
+		if len(assessment.OracleIDs) == 0 {
+			assessment.Status = agenticEvidenceRiskUnverified
+			assessment.ReasonCode = "missing-property-oracle"
+		} else if !containsAllStrings(testing.Oracle.Checked, assessment.OracleIDs) {
+			assessment.Status = agenticEvidenceRiskUnverified
+			assessment.ReasonCode = "property-oracle-not-executed"
+		}
+		return assessment
+	}
+	assessment.Status = agenticEvidenceInconclusive
+	assessment.ReasonCode = agenticEvidenceHypothesisNotReached
+	if len(testing.Risk.MissingMilestones) > 0 {
+		assessment.FirstMissingMilestone = testing.Risk.MissingMilestones[0]
+	}
+	if len(execution.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+		assessment.Status = agenticEvidenceBudgetExhausted
+		assessment.ReasonCode = "runtime-decision-budget-exhausted"
+	}
+	return assessment
+}
+
+func containsAllStrings(values []string, required []string) bool {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, value := range required {
+		if !seen[value] {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneAgenticEpisodeFailure(failure *controlexperiment.MethodFailure) *controlexperiment.MethodFailure {

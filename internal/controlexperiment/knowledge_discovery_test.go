@@ -74,6 +74,21 @@ func TestKnowledgeDiscoveryRejectsSymlinkEscapeAndMissingLocator(t *testing.T) {
 	}
 }
 
+func TestKnowledgeDiscoveryStopsWhenLocatorIsAmbiguous(t *testing.T) {
+	root := t.TempDir()
+	content := "package ordinary\nfunc Check() {}\nfunc Check() {}\n"
+	if err := os.WriteFile(filepath.Join(root, "ordinary.go"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := knowledgeDiscoveryFixture(t, []string{"ordinary.go:Check"})
+	result, err := ReadDeclaredKnowledgeSource(root, pack, KnowledgeReadRequest{
+		Reference: "ordinary.go:Check", MaxLines: 10,
+	})
+	if err != nil || result.Validate() != nil || result.ReasonCode != KnowledgeDiscoveryLocatorAmbiguous {
+		t.Fatalf("ambiguous locator did not stop mechanically: %#v/%v", result, err)
+	}
+}
+
 func TestKnowledgeDiscoveryUsesLongestExplicitSourceMount(t *testing.T) {
 	repository := t.TempDir()
 	dependency := t.TempDir()
@@ -106,8 +121,11 @@ func knowledgeDiscoveryFixture(t *testing.T, references []string) ProtocolKnowle
 	t.Helper()
 	pack, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
 		ID: "knowledge-discovery-fixture", Family: "leader-based-cft", Protocol: "fixture-consensus",
-		Knowledge:  []KnowledgeStatement{{ID: "primer", Text: "A participant advances through host-driven ticks."}},
-		Properties: []ProtocolProperty{{ID: "progress", Summary: "A submitted operation can make progress."}},
+		Knowledge: []KnowledgeStatement{{ID: "primer", Text: "A participant advances through host-driven ticks."}},
+		Properties: []ProtocolProperty{{
+			ID: "progress", Summary: "A submitted operation can make progress.",
+			EvidenceLevel: PropertyEvidenceHypothesis,
+		}},
 		IssuePatterns: []HistoricalIssuePattern{{
 			ID: "tick-boundary", Summary: "Host tick ordering can affect progress.", Mechanism: "Tick handling is delayed.",
 		}},

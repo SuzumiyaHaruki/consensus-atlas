@@ -23,7 +23,7 @@ func TestHypothesisRequiresExplicitAllowedBackend(t *testing.T) {
 			ID: riskSpec.RiskID, Summary: "Exercise explicit backend binding.",
 			RequiredCapabilities: []string{"natural-time"},
 			RequiredActions:      []control.ActionKind{control.ActionFireTemporal},
-			AllowedBackendIDs:    []string{SemanticBestFirstAlgorithmID},
+			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
 		}},
 	})
 	if err != nil {
@@ -31,9 +31,9 @@ func TestHypothesisRequiresExplicitAllowedBackend(t *testing.T) {
 	}
 	hypothesis, err := NewTestHypothesis(
 		"explicit-backend-hypothesis", knowledge, riskSpec,
-		"Validate against the backend selected by the active consumer.", SemanticBestFirstAlgorithmID,
+		"Validate against the backend selected by the active consumer.", ScenarioPlanningBackendID,
 	)
-	if err != nil || hypothesis.Validate(knowledge, riskSpec, SemanticBestFirstAlgorithmID) != nil {
+	if err != nil || hypothesis.Validate(knowledge, riskSpec, ScenarioPlanningBackendID) != nil {
 		t.Fatalf("allowed backend rejected: %#v/%v", hypothesis, err)
 	}
 	if hypothesis.Validate(knowledge, riskSpec, StatelessSearchBoundedDepthFirst) == nil {

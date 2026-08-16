@@ -2,23 +2,61 @@ package omnipaxosv2
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"sync"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 )
+
+const workerStderrLimit = 64 << 10
+
+// workerStderr captures bounded worker diagnostics. os/exec may still be
+// copying stderr after Decode returns on a killed process, so readers must
+// take a synchronized snapshot rather than inspect bytes.Buffer directly.
+type workerStderr struct {
+	mu        sync.Mutex
+	data      []byte
+	truncated bool
+}
+
+func (stderr *workerStderr) Write(value []byte) (int, error) {
+	stderr.mu.Lock()
+	defer stderr.mu.Unlock()
+	original := len(value)
+	remaining := workerStderrLimit - len(stderr.data)
+	if remaining <= 0 {
+		stderr.truncated = stderr.truncated || original > 0
+		return original, nil
+	}
+	if len(value) > remaining {
+		value = value[:remaining]
+		stderr.truncated = true
+	}
+	stderr.data = append(stderr.data, value...)
+	return original, nil
+}
+
+func (stderr *workerStderr) snapshot() string {
+	stderr.mu.Lock()
+	defer stderr.mu.Unlock()
+	result := string(stderr.data)
+	if stderr.truncated {
+		result += "\n[stderr truncated]"
+	}
+	return result
+}
 
 type workerClient struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
 	decode   *json.Decoder
 	encode   *json.Encoder
-	stderr   bytes.Buffer
+	stderr   workerStderr
 	nextID   uint64
 	closed   bool
 	terminal bool
@@ -110,7 +148,7 @@ func (client *workerClient) exchange(request workerRequest) (workerResponse, err
 	if err := client.decode.Decode(&response); err != nil {
 		return workerResponse{}, &workerFailure{
 			class: control.ExecutionFailureAdapterIO, code: "OMNIPAXOS_WORKER_READ_FAILED",
-			cause: fmt.Errorf("OMNIPAXOS_WORKER_READ: %w: %s", err, client.stderr.String()),
+			cause: fmt.Errorf("OMNIPAXOS_WORKER_READ: %w: %s", err, client.stderr.snapshot()),
 		}
 	}
 	if response.SchemaVersion != workerSchema || response.ID != request.ID {
@@ -133,7 +171,7 @@ func (client *workerClient) close() error {
 		return closeErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("OMNIPAXOS_WORKER_EXIT: %w: %s", waitErr, client.stderr.String())
+		return fmt.Errorf("OMNIPAXOS_WORKER_EXIT: %w: %s", waitErr, client.stderr.snapshot())
 	}
 	return nil
 }

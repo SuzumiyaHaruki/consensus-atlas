@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces experiment-etcdraft-v2-stateless-canonical-campaign experiment-etcdraft-v2-stateless-uniform-campaign experiment-etcdraft-v2-semantic-explorer-calibration
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -16,7 +16,7 @@ test-fast: audit-no-v1
 test-race-core: audit-no-v1
 	go test -race -count=1 -timeout 20m ./adapters/... ./internal/control ./internal/controlruntime
 	go test -race -count=1 -timeout 20m ./cmd/control-experiment \
-		-run '^(TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable|TestEtcdraftM518b0GuardedIntentCompilesAndUsesQualifiedExecutor)$$'
+		-run '^(TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable|TestEtcdraftComposableActionsAreReachableAndReplayable)$$'
 
 # The manifest must be an exact partition of every top-level test in the heavy
 # composition package. A new, renamed, duplicated or unclassified test fails
@@ -112,28 +112,3 @@ audit-portable-cft-matrix:
 audit-control-surfaces:
 	go test ./qualifications/etcdraftv2 \
 		-run 'TestFrozenControlSurfaceComparisonMatchesFreshQualifications|TestSurfaceDeclarationCannotSelfAwardSchedulerControl' -count=1
-
-experiment-etcdraft-v2-stateless-canonical-campaign:
-	go run ./cmd/control-experiment -strategy campaign-etcdraft-stateless-canonical-v1 \
-		-stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
-		-campaign-dir artifacts/experiments/etcdraft-v2-stateless-canonical-m5.23r3/campaign \
-		-campaign-attempts 3 -campaign-wall-clock-ms 600000 \
-		-out artifacts/experiments/etcdraft-v2-stateless-canonical-m5.23r3/summary.json \
-		-campaign-observation-out artifacts/experiments/etcdraft-v2-stateless-canonical-m5.23r3/observation.json
-
-experiment-etcdraft-v2-stateless-uniform-campaign:
-	go run ./cmd/control-experiment -strategy campaign-etcdraft-stateless-uniform-v1 \
-		-stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
-		-campaign-dir artifacts/experiments/etcdraft-v2-stateless-uniform-m5.23r3/campaign \
-		-campaign-attempts 3 -campaign-wall-clock-ms 600000 -policy-seed 1 \
-		-out artifacts/experiments/etcdraft-v2-stateless-uniform-m5.23r3/summary.json \
-		-campaign-observation-out artifacts/experiments/etcdraft-v2-stateless-uniform-m5.23r3/observation.json
-
-# Explicit opt-in A2b3 public calibration. The preregistered spec is checked
-# by tests; model artifacts remain under an ignored user-selected directory.
-experiment-etcdraft-v2-semantic-explorer-calibration:
-	@test -n "$(AGENT_KEY_FILE)" || (echo 'AGENT_KEY_FILE is required' >&2; exit 1)
-	@test -n "$(AGENT_ARTIFACT_DIR)" || (echo 'AGENT_ARTIFACT_DIR is required' >&2; exit 1)
-	go run ./cmd/control-experiment -strategy etcdraft-public-semantic-explorer-a2b3 \
-		-stateless-corpus benchmarks/experiments/etcdraft-v2-root-corpus-m5.23e/root-corpus.json \
-		-campaign-dir "$(AGENT_ARTIFACT_DIR)" -agent-key-file "$(AGENT_KEY_FILE)"

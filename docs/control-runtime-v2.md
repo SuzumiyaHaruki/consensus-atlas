@@ -224,5 +224,5 @@ Conformance 用外部驱动机械检查声明；声明本身不能授予资格�
 当前 etcd/raft 已覆盖消息、自然 tick、crash/restart、effect、workload、Evidence、PSS 和 strict Replay；
 OmniPaxos 证明非 Raft 复用；HashiCorp Raft 保留 partial 结果。
 
-Control Runtime 本身进入维护状态。下一阶段不扩展 Runtime，而是把 Semantic Explorer 选择的 prefix 接入
-已有 qualified execution、PSS、fresh Replay 和 Oracle，形成单 episode 测试结果。
+Control Runtime 本身进入维护状态。后续只在活动 Agentic 调查暴露明确控制缺口时扩展 Runtime；普通协议语义
+优先留在 Target-local Observation、Action preparer 和 Oracle 中。

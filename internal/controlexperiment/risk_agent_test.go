@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,6 +75,7 @@ func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T
 				},
 			}
 		}
+		candidate = riskCandidateWithSupport(candidate, "primer/rounds")
 		encoded, err := json.Marshal(candidate)
 		return encoded, ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5}, err
 	}
@@ -125,16 +127,19 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 		}
 		if calls == 1 {
 			if len(view.KnowledgeSources) != 1 || len(view.KnowledgeResults) != 0 ||
-				view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall {
+				view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall ||
+				slices.Contains(view.AvailableSupportRefs, "source/"+catalog[0].Reference) {
 				t.Fatalf("first view lacked declared discovery surface: %#v", view)
 			}
-			encoded, marshalErr := json.Marshal(RiskKnowledgeRequestBatch{KnowledgeRequests: []KnowledgeReadRequest{{
-				Reference: catalog[0].Reference, MaxLines: 20,
-			}}})
+			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
+				KnowledgeRequests: []KnowledgeReadRequest{{Reference: catalog[0].Reference, MaxLines: 20}},
+			})
 			return encoded, ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5}, marshalErr
 		}
 		if len(view.KnowledgeResults) != 1 || !strings.Contains(view.KnowledgeResults[0].Text, "retryLostMessage") ||
-			view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeRead {
+			view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeRead ||
+			!slices.Contains(view.AvailableSupportRefs, "source/"+catalog[0].Reference) {
 			t.Fatalf("read result did not return to the repair view: %#v", view)
 		}
 		candidate := RiskCandidate{
@@ -151,6 +156,7 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
 			},
 		}
+		candidate = riskCandidateWithSupport(candidate, "source/"+catalog[0].Reference)
 		alternative := candidate
 		alternative.ID = "decision-after-alternate-retry"
 		encoded, marshalErr := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate, alternative}})
@@ -165,6 +171,121 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonKnowledgeRead || readerCalls != 1 || calls != 2 ||
 		result.ModelWork != (ModelWork{Calls: 2, InputTokens: 7, OutputTokens: 5, TotalTokens: 12}) {
 		t.Fatalf("knowledge-assisted Risk loop failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
+	}
+}
+
+func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	knowledge.TargetDossier = cloneTargetDossier(knowledge.TargetDossier)
+	knowledge.TargetDossier.Components[0].EvidenceRefs = append(
+		knowledge.TargetDossier.Components[0].EvidenceRefs, "fixture.go:retry",
+	)
+	var err error
+	knowledge, err = NewProtocolKnowledgePack(knowledge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := KnowledgeSourceCatalog(knowledge)
+	if err != nil || len(catalog) != 2 {
+		t.Fatalf("two-source fixture invalid: %#v/%v", catalog, err)
+	}
+	byLocator := make(map[string]KnowledgeSource, len(catalog))
+	for _, source := range catalog {
+		byLocator[source.Locator] = source
+	}
+	readerCalls := 0
+	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
+		readerCalls++
+		source := byLocator["round"]
+		if readerCalls == 1 {
+			if request.Reference != source.Reference {
+				t.Fatalf("unexpected first source: %#v", request)
+			}
+			return stoppedKnowledgeRead(source, KnowledgeDiscoveryLocatorNotFound), nil
+		}
+		source = byLocator["retry"]
+		if request.Reference != source.Reference {
+			t.Fatalf("stopped read was not followed by another source: %#v", request)
+		}
+		return KnowledgeReadResult{
+			Status: KnowledgeDiscoveryCompleted, Source: source, StartLine: 2, EndLine: 3,
+			TotalLines: 3, Text: "func retry() {}\n", Truncated: true,
+		}, nil
+	}
+	calls := 0
+	planner := func(_ context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
+		calls++
+		if err := view.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if calls <= 2 {
+			locator := "round"
+			if calls == 2 {
+				locator = "retry"
+				if len(view.KnowledgeResults) != 1 ||
+					view.KnowledgeResults[0].ReasonCode != KnowledgeDiscoveryLocatorNotFound ||
+					view.MaxKnowledgeRequests != 1 || view.Prior == nil ||
+					view.Prior.ReasonCode != RiskAgentReasonKnowledgeReadStopped {
+					t.Fatalf("stopped result did not preserve one remaining choice: %#v", view)
+				}
+			}
+			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
+				KnowledgeRequests: []KnowledgeReadRequest{{
+					Reference: byLocator[locator].Reference, MaxLines: 20,
+				}},
+			})
+			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+		}
+		if view.MaxKnowledgeRequests != 0 || len(view.KnowledgeResults) != 2 ||
+			view.KnowledgeResults[1].Status != KnowledgeDiscoveryCompleted {
+			t.Fatalf("completed result did not close source discovery: %#v", view)
+		}
+		candidate := RiskCandidate{
+			ID: "decision-after-alternate-source", PropertyRef: "bounded-progress",
+			InspirationRef: "message-loss-progress", Summary: "Observe a decision after message loss.",
+			MechanismSteps: []RiskMechanismStep{
+				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start work."},
+				{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped, Rationale: "Exercise loss."},
+				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe progress."},
+			},
+			Predicates: []semantic.ObservationPredicate{
+				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+				{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
+				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+			},
+		}
+		candidate = riskCandidateWithSupport(candidate, "source/"+byLocator["retry"].Reference)
+		encoded, marshalErr := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
+		return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+	}
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 3, MaxTokens: 30}, knowledge,
+		[]semantic.ObservationCapability{
+			{Kind: semantic.ObservationWorkloadInvoked},
+			{Kind: semantic.ObservationMessageDropped},
+			{Kind: semantic.ObservationDecisionAdvanced},
+		},
+		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage}, nil, nil, reader, planner,
+	)
+	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil || calls != 3 || readerCalls != 2 {
+		t.Fatalf("alternate-source discovery failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
+	}
+}
+
+func TestRiskAgentResponseEnvelopeRequiresOneExclusiveBranch(t *testing.T) {
+	portfolio, requests, query, err := parseRiskAgentResponse([]byte(
+		`{"response_kind":"portfolio","candidates":[{"id":"candidate"}],"knowledge_requests":[]}`,
+	))
+	if err != nil || query || len(requests) != 0 || len(portfolio.Candidates) != 1 ||
+		portfolio.Candidates[0].ID != "candidate" {
+		t.Fatalf("direct envelope portfolio was not parsed: %#v/%#v/%v/%v", portfolio, requests, query, err)
+	}
+	_, _, _, err = parseRiskAgentResponse([]byte(
+		`{"response_kind":"knowledge-query","candidates":[{"id":"candidate"}],"knowledge_requests":[{"reference":"fixture.go:round","max_lines":20}]}`,
+	))
+	if !errors.Is(err, errRiskCandidateJSON) {
+		t.Fatalf("mixed envelope branches were accepted: %v", err)
 	}
 }
 
@@ -191,6 +312,7 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
 		},
 	}
+	qualified = riskCandidateWithSupport(qualified, "primer/rounds")
 	unknownProperty := qualified
 	unknownProperty.ID = "unknown-property-hypothesis"
 	unknownProperty.PropertyRef = "not-supplied"
@@ -232,6 +354,22 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 	if memory[0].SatisfiedMilestones[0] != "invoke" {
 		t.Fatal("Risk Agent mutated caller-owned exploration memory")
 	}
+	invisible := riskCandidateWithSupport(qualified, "source/fixture.go:round")
+	invisibleBytes, err := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{invisible}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejected, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 1, MaxTokens: 10},
+		knowledge, capabilities, actions, nil, nil, nil,
+		func(context.Context, RiskAgentView) ([]byte, ModelWork, error) {
+			return invisibleBytes, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, nil
+		},
+	)
+	if err != nil || len(rejected.Attempts) != 1 ||
+		rejected.Attempts[0].Feedback.ReasonCode != RiskAgentReasonSupport {
+		t.Fatalf("unread source support was accepted: %#v/%v", rejected, err)
+	}
 }
 
 func TestRiskAgentRepairsUnboundMechanismFromMechanicalFeedback(t *testing.T) {
@@ -269,6 +407,7 @@ func TestRiskAgentRepairsUnboundMechanismFromMechanicalFeedback(t *testing.T) {
 		{MilestoneID: "change", Kind: semantic.ObservationCoordinatorChange, Rationale: "Observe the coordinator transition."},
 		{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe subsequent decision progress."},
 	}
+	corrected = riskCandidateWithSupport(corrected, "primer/rounds")
 	calls := 0
 	result, err := DiscoverRiskWithPlanner(
 		context.Background(), RiskAgentBudget{MaxCalls: 2, MaxTokens: 20},
@@ -372,8 +511,15 @@ func TestAcceptedRiskCandidateClosesScenarioBridgeBounds(t *testing.T) {
 	}
 	bridge, err := BuildScenarioRiskHypothesis(knowledge, assessment, capabilities, actions)
 	if err != nil || bridge.Knowledge.Validate() != nil || bridge.Knowledge.TargetDossier == nil ||
-		bridge.Knowledge.TargetDossier.Scope != knowledge.TargetDossier.Scope {
+		bridge.Knowledge.TargetDossier.Scope != knowledge.TargetDossier.Scope ||
+		bridge.AcceptedHypothesis.Validate(bridge.Knowledge, bridge.Hypothesis, bridge.Spec) != nil {
 		t.Fatalf("accepted boundary candidate did not close the Scenario bridge: %#v/%v", bridge, err)
+	}
+	tamperedContext := bridge.AcceptedHypothesis
+	tamperedContext.Candidate.Predicates = cloneObservationPredicates(tamperedContext.Candidate.Predicates)
+	tamperedContext.Candidate.Predicates[0].MilestoneID = "changed-milestone"
+	if tamperedContext.Validate(bridge.Knowledge, bridge.Hypothesis, bridge.Spec) == nil {
+		t.Fatal("accepted context drifted away from its executable witness")
 	}
 
 	tooLongMechanism := candidate
@@ -416,12 +562,35 @@ func TestAgentMaterialsBoundReferencesAndReserveOriginal(t *testing.T) {
 		t.Fatal("unknown Property evidence level was accepted")
 	}
 
+	emptyEvidence := knowledge
+	emptyEvidence.Properties = append([]ProtocolProperty(nil), knowledge.Properties...)
+	emptyEvidence.Properties[0].EvidenceLevel = ""
+	emptyEvidence, err := NewProtocolKnowledgePack(emptyEvidence)
+	if err != nil || emptyEvidence.ValidateAgentMaterials() == nil {
+		t.Fatalf("active Agent material accepted an unspecified evidence level: %v", err)
+	}
+
+	noPatterns := knowledge
+	noPatterns.IssuePatterns = nil
+	noPatterns, err = NewProtocolKnowledgePack(noPatterns)
+	if err != nil || noPatterns.ValidateAgentMaterials() != nil {
+		t.Fatalf("no-pattern Agent material was rejected: %v", err)
+	}
+
 	invalidDossier := knowledge
 	invalidDossier.TargetDossier = cloneTargetDossier(knowledge.TargetDossier)
 	invalidDossier.TargetDossier.Components[0].EvidenceRefs = []string{"", "source.go:1"}
 	if _, err := NewProtocolKnowledgePack(invalidDossier); err == nil {
 		t.Fatal("empty Target Dossier evidence reference was accepted")
 	}
+}
+
+func riskCandidateWithSupport(candidate RiskCandidate, reference string) RiskCandidate {
+	candidate.MechanismSteps = append([]RiskMechanismStep(nil), candidate.MechanismSteps...)
+	for index := range candidate.MechanismSteps {
+		candidate.MechanismSteps[index].SupportRefs = []string{reference}
+	}
+	return candidate
 }
 
 func riskAgentFixtureKnowledge(t *testing.T) ProtocolKnowledgePack {

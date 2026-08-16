@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion       = "scenario-agent-complete-intent-v7"
+	scenarioAgentPromptVersion       = "scenario-agent-complete-intent-v8"
 	scenarioPlanStructuredOutputName = "scenario_plan_v2"
 )
 
@@ -154,7 +154,9 @@ func scenarioAgentPrompt(
 		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
 		view.Hypothesis.Validate(
 			view.Knowledge, spec, controlexperiment.ScenarioPlanningBackendID,
-		) != nil || view.Frontier.Validate(spec) != nil || view.MaxSteps <= 0 ||
+		) != nil || view.AcceptedHypothesis != nil &&
+		view.AcceptedHypothesis.Validate(view.Knowledge, view.Hypothesis, spec) != nil ||
+		view.Frontier.Validate(spec) != nil || view.MaxSteps <= 0 ||
 		!scenarioPromptMilestonesMatch(spec, view.OrderedMilestones) ||
 		view.Semantics.Validate(view.Frontier) != nil ||
 		view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps || len(view.Frontier.Actions) == 0 {
@@ -166,17 +168,38 @@ func scenarioAgentPrompt(
 		prior.NaturalProgress = nil
 		promptView.Prior = &prior
 	}
+	agentView := any(promptView)
+	implementationContext := "Use target_dossier as implementation context: preserve stated public contracts and treat blind spots " +
+		"as unavailable evidence rather than permission to invent an internal transition. "
+	if promptView.AcceptedHypothesis != nil {
+		agentView = struct {
+			AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis"`
+			TargetSurface      *controlexperiment.AgentTargetSurface        `json:"target_surface,omitempty"`
+			OrderedMilestones  []string                                     `json:"ordered_milestones"`
+			Frontier           controlexperiment.RiskFrontierView           `json:"root_frontier"`
+			Semantics          controlexperiment.ScenarioSemanticExposure   `json:"action_semantics"`
+			MaxSteps           int                                          `json:"max_steps"`
+			Prior              *controlexperiment.ScenarioAgentFeedback     `json:"prior_feedback,omitempty"`
+		}{
+			AcceptedHypothesis: promptView.AcceptedHypothesis,
+			TargetSurface:      promptView.TargetSurface, OrderedMilestones: promptView.OrderedMilestones,
+			Frontier: promptView.Frontier, Semantics: promptView.Semantics,
+			MaxSteps: promptView.MaxSteps, Prior: promptView.Prior,
+		}
+		implementationContext = "Use accepted_hypothesis as the investigated mechanism and executable witness. It is an " +
+			"Agent proposal accepted for execution, not a protocol fact or verdict. "
+	}
 	input := struct {
-		PromptVersion  string                              `json:"prompt_version"`
-		SelectorFields []string                            `json:"selector_fields"`
-		AgentView      controlexperiment.ScenarioAgentView `json:"agent_view"`
+		PromptVersion  string   `json:"prompt_version"`
+		SelectorFields []string `json:"selector_fields"`
+		AgentView      any      `json:"agent_view"`
 	}{
 		PromptVersion: scenarioAgentPromptVersion,
 		SelectorFields: []string{
 			"action_id", "kind", "node", "item_kind", "owner", "message_source",
 			"message_target", "temporal_kind", "effect_kind", "durability",
 		},
-		AgentView: promptView,
+		AgentView: agentView,
 	}
 	encoded, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
@@ -187,15 +210,17 @@ func scenarioAgentPrompt(
 		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
 	user := "Create one complete but bounded test intent of at most max_steps that advances the supplied hypothesis. " +
-		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. Use target_dossier as implementation " +
-		"context: preserve stated public contracts and treat blind spots " +
-		"as unavailable evidence rather than permission to invent an internal transition. " +
+		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. " +
+		implementationContext +
 		"A later step may use after_milestone only with an ID listed in ordered_milestones; the trusted " +
 		"executor will advance ordinary effects, messages, and naturally due timers until that milestone is observed. " +
 		"A trusted concretizer requires " +
 		"each selector to match exactly one current admissible Action. A completed prior_feedback means the trusted root has " +
 		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback includes the complete " +
 		"previous_plan and failed_step; return a complete revised plan from the current frontier and repair its mechanical reason. " +
+		"When present, prior_feedback.progress_delta is the compact trusted account of decisions, new milestones, the first missing " +
+		"milestone, transition novelty, repeated scheduling-pattern depth, and recent Action kinds. Use it to continue, revise, or " +
+		"change the intervention; repetition is search feedback and is not itself a protocol verdict. " +
 		"Frozen input JSON:\n" + string(encoded)
 	if view.MaxSteps == 1 {
 		system += " Return exactly one step using the exact action_id of one current Action."

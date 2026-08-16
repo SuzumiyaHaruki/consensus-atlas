@@ -2,13 +2,18 @@ package etcdraftv2
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-const ObservationProjectionID = "official-etcdraft-v2/common-observations-v1"
+const (
+	ObservationProjectionID                               = "official-etcdraft-v2/observations-v2"
+	ObservationRaftTermAdvanced semantic.ObservationKind  = "raft/term-advanced"
+	ObservationFieldRaftTerm    semantic.ObservationField = "raft/term"
+)
 
 type ObservationProjector struct{}
 
@@ -41,6 +46,11 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 		}},
 		{Kind: semantic.ObservationEpochAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationDecisionAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
+		{Kind: ObservationRaftTermAdvanced,
+			Fields: append(append([]semantic.ObservationField{}, node...), ObservationFieldRaftTerm),
+			FieldTypes: map[semantic.ObservationField]semantic.ObservationValueType{
+				ObservationFieldRaftTerm: semantic.ObservationValueUint,
+			}},
 	}
 }
 
@@ -105,6 +115,14 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 				Kind: semantic.ObservationEpochAdvanced, Step: record.Step,
 				SourceDigest: digest, Participant: optionalNodeRef(participant, hasCoordinator),
 			})
+			events = append(events, semantic.Observation{
+				Kind: ObservationRaftTermAdvanced, Step: record.Step,
+				SourceDigest: digest, Participant: optionalNodeRef(participant, hasCoordinator),
+				Attributes: []semantic.ObservationAttribute{{
+					Field: ObservationFieldRaftTerm, Type: semantic.ObservationValueUint,
+					Value: strconv.FormatUint(currentTerm, 10),
+				}},
+			})
 			previousTerm = currentTerm
 		}
 		if hasCoordinator && previousCoordinator.Node != "" && currentCoordinator != previousCoordinator {
@@ -134,7 +152,9 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 			activeWorkload = false
 		}
 	}
-	return semantic.NewObservationHistory(ObservationProjectionID, trace, events)
+	return semantic.NewObservationHistoryWithCapabilities(
+		ObservationProjectionID, trace, events, (ObservationProjector{}).Capabilities(),
+	)
 }
 
 func etcdraftObservationInput(parameters json.RawMessage) (Input, error) {

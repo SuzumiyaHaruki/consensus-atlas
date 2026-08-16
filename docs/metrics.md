@@ -29,7 +29,9 @@ The scenario runner records a single-trace prefix curve:
 
 Each state witness stores its canonical key, first trace step and canonical state. This makes every count auditable.
 
-`cmd/experiment` additionally aggregates the state-key union across independent runs from one verified measurement root. Historical curves are indexed by charged scheduler decisions. New benchmark comparisons must also index or cap them by Campaign v2 primary work so repeated setup is not free.
+Agentic Episode artifacts record the state-key union and prefix progress from the executed trace. Historical curves were
+indexed by charged scheduler decisions. New benchmark comparisons must also index or cap them by an explicitly reported
+execution-work budget so repeated setup and reconstruction are not free.
 
 ### Fair comparison protocol
 
@@ -41,7 +43,10 @@ A cross-method experiment must freeze:
 - Oracle set;
 - measurement window and budget definition.
 
-Use Campaign v2 `primary.work_units` as the primary common budget. It charges fresh-SUT attempts, repeated bootstrap/prepare work, Runtime events drained during setup, and measurement events. Scheduler decisions and run count remain separate explanatory axes; neither is sufficient because setup lengths and quiescent paths differ. Also report replay work, executed SUT inputs, wall-clock/CPU and model tokens. Repeat stochastic methods with fixed, published seeds and report median plus dispersion.
+Use the current Agentic investigation budget and measured execution work as the common budget. Report fresh-SUT setup,
+frontier reconstruction, scheduler decisions, Replay work, executed SUT inputs, wall-clock/CPU and model tokens separately.
+Scheduler decisions and episode count remain explanatory axes; neither alone is sufficient because setup lengths and
+quiescent paths differ. Repeat stochastic methods with fixed, published seeds and report median plus dispersion.
 
 Bootstrap and other fixed setup transitions must be excluded from the measured search window or shown as a separate shared prefix. Otherwise every method receives the same early discoveries and area-under-curve comparisons are biased.
 
@@ -106,31 +111,34 @@ control items or target Evidence, and some may not be visible in the protocol vi
 Oracle projectors should expose a concrete missing distinction only after a calibration demonstrates that Core PSS alone
 merges a relevant mechanism. Do not add absolute term values or per-cycle counters merely to increase PSS counts.
 
-## 4. Fixed-profile semantic coverage
+## 4. Historical fixed-profile semantic coverage
 
-The existing Profile score answers a different question:
+The removed Campaign path used a Profile score to answer a different question:
 
 > How many of a frozen, reviewable set of test obligations have strong evidence?
 
-Profile v2 uses structured Coverage Obligations rather than a single free-form witness label. An obligation requires `Reach + Observe + Check + Replay + Conform`. A digest-bound Coverage Ledger accumulates strong evidence across tests and reports uncovered, attempted, covered and unsupported entries. The fixed denominator allows a final test campaign to report what remains unsupported or uncovered. It still does not estimate the probability that the protocol is correct.
+Profile v2 used structured Coverage Obligations rather than a single free-form witness label. An obligation required
+`Reach + Observe + Check + Replay + Conform`. That model remains useful design history, but its compiler, Ledger and Campaign
+runner are not in the active Agentic execution path.
 
-For etcd/raft, the 12 onboarding obligations measure integration quality only.
-The final bounded test metric uses the independently compiled 55-obligation
-Raft campaign Profile. This prevents a Driver capability catalog from being
-misreported as comprehensive protocol testing.
+The retained 12-obligation onboarding and 55-obligation Raft JSON files are historical/reference material. They are not
+the current final test metric, do not evaluate OmniPaxos, and cannot support a claim of comprehensive coverage.
 
-Use PSD to explain state-discovery behavior. Use fixed Profile/SCS coverage to assess the resulting test suite against declared obligations. Evaluate method effectiveness primarily on hidden historical defects/semantic mutants and correct controls. Always report trusted Oracle results separately.
+The active system uses PSD, transition/depth measurements, Risk progress and trusted Oracle results. A future fixed
+denominator may be added as an evaluator over current Agentic artifacts, but must not restore a parallel execution path.
 
 ## 5. External defect effectiveness
 
-The primary method-level result is evaluated by `internal/defectbench` under a private, versioned Manifest:
+The retained `internal/defectbench` substrate defines the intended method-level result under a private, versioned Manifest:
 
 - independent root-cause kill rate on hidden historical defects and semantic mutants;
 - primary work to first trusted kill and stable reproduction;
 - false-positive rate on correct controls;
 - invalid-trial and total primary/replay cost.
 
-The evaluator recomputes registered Oracle monitors from stored traces and requires identity, budget, replay and conformance evidence. Coverage score and PSS discoveries are copied only as explanatory covariates; they cannot create kill credit. Multiple variants representing one root cause count once in the primary percentage. See `docs/defect-benchmark.md`.
+The current Agentic artifact is not yet wired into that holdout evaluator. When it is, the evaluator must recompute
+registered Oracle monitors from stored traces and require identity, budget, Replay and conformance evidence. Coverage and
+PSS discoveries remain explanatory covariates; they cannot create finding credit. See `docs/defect-benchmark.md`.
 
 ## 6. Known limitations and safeguards
 
@@ -138,9 +146,10 @@ The evaluator recomputes registered Oracle monitors from stored traces and requi
 - State coverage cannot distinguish two paths reaching the same state. Transition and temporal-depth reporting are required;
   causal-graph coverage should be added only when a concrete evaluation miss requires it.
 - A growing discovery curve does not establish completeness in an open or unbounded state space.
-- Campaign v2 now records deterministic primary/replay work, but the harness does not yet report wall-clock/CPU/RSS cost or repeated-seed confidence intervals.
+- The active harness does not yet report complete wall-clock/CPU/RSS cost or repeated-seed confidence intervals.
 - PSS changes require a new ID. Results from different PSS IDs must not be combined on the same curve.
 
 The current `self_normalized_area` uses each method's own final state count. It describes discovery timing only and must be shown beside final unique states and raw prefix area; it is not a shared completeness-normalized score.
 
-The design is inspired by MODIST's use of protocol-level state discovery for comparing search strategies, while retaining ConsensusAtlas's separate fixed-denominator result assessment.
+The design is inspired by MODIST's use of protocol-level state discovery for comparing search strategies. Fixed-denominator
+assessment is historical work and remains a future evaluator concern rather than an active runtime feature.

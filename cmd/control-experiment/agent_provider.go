@@ -29,6 +29,10 @@ const (
 	agentProviderUsageObserved       = "observed"
 )
 
+func validateAgentKeyFileName(value string) bool {
+	return strings.TrimSpace(value) != "" && !strings.ContainsAny(value, "\r\n\x00")
+}
+
 type agentHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }

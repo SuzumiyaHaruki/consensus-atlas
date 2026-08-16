@@ -11,105 +11,9 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 	omnipaxosqualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/omnipaxosv2"
 )
-
-type omnipaxosScenarioInputs struct {
-	WorkerPath        string
-	Knowledge         controlexperiment.ProtocolKnowledgePack
-	Hypothesis        controlexperiment.TestHypothesis
-	Experiment        omnipaxosScenarioExperimentConfig
-	Workload          controlexperiment.WorkloadPlan
-	RiskSpec          semantic.RiskWitnessSpec
-	RiskQualification semantic.RiskQualification
-	Root              controlruntime.Trace
-	Qualification     omnipaxosScenarioQualification
-}
-
-func prepareOmnipaxosScenario(
-	ctx context.Context,
-	workerPath string,
-	semanticInputPath string,
-) (omnipaxosScenarioInputs, error) {
-	spec, err := omnipaxosMessageLossWitness()
-	if err != nil {
-		return omnipaxosScenarioInputs{}, err
-	}
-	knowledge, hypothesis, experiment, workload, err := loadOmnipaxosScenarioAuthoringSource(
-		semanticInputPath, spec,
-	)
-	if err != nil {
-		return omnipaxosScenarioInputs{}, err
-	}
-	root, err := buildOmnipaxosScenarioRoot(ctx, workerPath, experiment, workload)
-	if err != nil {
-		return omnipaxosScenarioInputs{}, err
-	}
-	qualification, err := qualifyOmnipaxosScenario(ctx, workerPath)
-	if err != nil {
-		return omnipaxosScenarioInputs{}, err
-	}
-	riskQualification, err := semantic.QualifyRisk(
-		omnipaxosMessageLossObservationPredicates(),
-		(omnipaxosv2.ObservationProjector{}).Capabilities(),
-		qualification.Bundle.Manifest.Capabilities.Actions,
-	)
-	if err != nil {
-		return omnipaxosScenarioInputs{}, err
-	}
-	if !riskQualification.Qualified {
-		return omnipaxosScenarioInputs{}, errors.New("OMNIPAXOS_SCENARIO_RISK_UNQUALIFIED")
-	}
-	return omnipaxosScenarioInputs{
-		WorkerPath: workerPath, Knowledge: knowledge, Hypothesis: hypothesis,
-		Experiment: experiment, Workload: workload, RiskSpec: spec,
-		RiskQualification: riskQualification, Root: root, Qualification: qualification,
-	}, nil
-}
-
-func runOmnipaxosScenarioAgentEpisode(
-	ctx context.Context,
-	inputs omnipaxosScenarioInputs,
-	journal *scenarioAgentCallJournal,
-	maxCalls int,
-	activateKey func() error,
-) (scenarioAgentEpisodeResult, error) {
-	factory := func() (control.Adapter, error) {
-		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: inputs.WorkerPath})
-	}
-	projector := omnipaxosScenarioProjector{}
-	result, err := runScenarioAgentEpisodeCore(ctx, scenarioEpisodeCoreInputs{
-		RootID:    "omnipaxos-invoked-scenario",
-		Knowledge: inputs.Knowledge, Hypothesis: inputs.Hypothesis,
-		RiskSpec: inputs.RiskSpec, Root: inputs.Root, Runtime: inputs.Experiment.Runtime,
-		FaultEnvelope:    inputs.Experiment.faultEnvelope(),
-		SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
-		NewAdapter:       factory, RiskProjector: projector,
-		SemanticProjector: func(trace controlruntime.Trace, frontier controlexperiment.RiskFrontierView,
-			snapshot controlruntime.Snapshot) (controlexperiment.ScenarioSemanticExposure, error) {
-			return projectOmnipaxosScenarioSemantics(
-				inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
-			)
-		},
-	}, journal, maxCalls, inputs.Experiment.ScenarioMaxSteps,
-		inputs.Experiment.ScenarioMaxDecisions, activateKey)
-	if err != nil {
-		return result, err
-	}
-	if result.Agent.Status == controlexperiment.ScenarioAgentCompleted {
-		testing, err := executeOmnipaxosScenarioQualified(
-			ctx, inputs.WorkerPath, inputs.Experiment, inputs.Workload,
-			inputs.Qualification, inputs.Root, *result.Agent.Execution,
-		)
-		if err != nil {
-			return scenarioAgentEpisodeResult{}, err
-		}
-		result.Testing = &testing
-	}
-	return result, nil
-}
 
 func buildOmnipaxosScenarioRoot(
 	ctx context.Context,
@@ -213,25 +117,6 @@ func qualifyOmnipaxosScenario(
 	return omnipaxosScenarioQualification{Bundle: bundle, Admission: admission}, nil
 }
 
-func executeOmnipaxosScenarioQualified(
-	ctx context.Context,
-	workerPath string,
-	experiment omnipaxosScenarioExperimentConfig,
-	workload controlexperiment.WorkloadPlan,
-	qualification omnipaxosScenarioQualification,
-	root controlruntime.Trace,
-	execution controlexperiment.ScenarioExecution,
-) (scenarioTestingResult, error) {
-	spec, err := omnipaxosMessageLossWitness()
-	if err != nil {
-		return scenarioTestingResult{}, err
-	}
-	return executeOmnipaxosScenarioQualifiedRisk(
-		ctx, workerPath, experiment, workload, qualification, root, execution,
-		spec, omnipaxosScenarioProjector{},
-	)
-}
-
 func executeOmnipaxosScenarioQualifiedRisk(
 	ctx context.Context,
 	workerPath string,
@@ -304,7 +189,8 @@ func newOmnipaxosScenarioTestingResult(
 	bundle controlexperiment.ExecutionBundle,
 	risk semantic.RiskWitnessResult,
 ) scenarioTestingResult {
-	verdict := oracle.CheckBundle(bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{})
+	registry := omnipaxosAgenticOracleRegistry()
+	verdict := registry.Check(bundle)
 	outcome := scenarioTestingPassed
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingViolation
@@ -315,14 +201,6 @@ func newOmnipaxosScenarioTestingResult(
 		UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
 		Replay:              bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
 	}
-}
-
-func validateOmnipaxosScenarioTesting(result scenarioTestingResult) error {
-	spec, err := omnipaxosMessageLossWitness()
-	if err != nil {
-		return err
-	}
-	return validateOmnipaxosScenarioTestingRisk(result, spec, omnipaxosScenarioProjector{})
 }
 
 func validateOmnipaxosScenarioTestingRisk(
@@ -340,9 +218,11 @@ func validateOmnipaxosScenarioTestingRisk(
 	if err != nil || !reflect.DeepEqual(result.Risk, risk) {
 		return errors.New("OMNIPAXOS_SCENARIO_TESTING_RISK_INVALID")
 	}
-	verdict := oracle.CheckBundle(
-		result.Bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{},
-	)
+	registry := omnipaxosAgenticOracleRegistry()
+	if registryErr := registry.validate(); registryErr != nil {
+		return registryErr
+	}
+	verdict := registry.Check(result.Bundle)
 	outcome := scenarioTestingPassed
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingViolation

@@ -239,13 +239,23 @@ func executeRun(
 	var selections []SelectionAudit
 	for decision := 1; decision <= decisionBudget; decision++ {
 		prepareBefore := runtime.Snapshot()
-		offeredAction, offered, err := offerNextWorkloadInvocation(
-			ctx, plan.Workload, offeredWorkload, runtime, router, currentEvidence, strictWorkload,
-		)
+		offeredAction, offered, err := offerPolicyPreparation(plan.Policy, decision, runtime)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
-				"primary-prepare", "EXPERIMENT_WORKLOAD_PREPARE_FAILED", plan.Run, decision, *work, err,
+				"primary-prepare", "EXPERIMENT_POLICY_PREPARE_FAILED", plan.Run, decision, *work, err,
 			)
+		}
+		workloadOffered := false
+		if !offered {
+			offeredAction, workloadOffered, err = offerNextWorkloadInvocation(
+				ctx, plan.Workload, offeredWorkload, runtime, router, currentEvidence, strictWorkload,
+			)
+			offered = workloadOffered
+			if err != nil {
+				return RunReport{}, nil, executionFailure(
+					"primary-prepare", "EXPERIMENT_WORKLOAD_PREPARE_FAILED", plan.Run, decision, *work, err,
+				)
+			}
 		}
 		if offered {
 			chargePrepareActions(&work.Primary, 1)
@@ -293,9 +303,13 @@ func executeRun(
 			)
 		}
 		if offered && action.ID != offeredAction {
-			cause := fmt.Errorf("EXPERIMENT_WORKLOAD_OFFER_NOT_SELECTED: %s", offeredAction)
+			code := "EXPERIMENT_POLICY_PREPARED_ACTION_NOT_SELECTED"
+			if workloadOffered {
+				code = "EXPERIMENT_WORKLOAD_OFFER_NOT_SELECTED"
+			}
+			cause := fmt.Errorf("%s: %s", code, offeredAction)
 			return RunReport{}, nil, executionFailure(
-				"primary-policy", "EXPERIMENT_WORKLOAD_OFFER_NOT_SELECTED", plan.Run, decision, *work, cause,
+				"primary-policy", code, plan.Run, decision, *work, cause,
 			)
 		}
 		if faultEnvelope != nil {
@@ -318,7 +332,7 @@ func executeRun(
 				"primary-select", "EXPERIMENT_RUNTIME_ENABLED_DIGEST_MISMATCH", plan.Run, decision, *work, cause,
 			)
 		}
-		if offered {
+		if workloadOffered {
 			offeredWorkload++
 		}
 		faultUsage.record(action)
@@ -486,6 +500,37 @@ func executeRun(
 		runReport.Faults = &usage
 	}
 	return runReport, samples, nil
+}
+
+// offerPolicyPreparation reconstructs an exact author-supplied Action before
+// policy selection. Ordinary Runtime actions and workload Invokes do not pass
+// through this path.
+func offerPolicyPreparation(
+	policy Policy,
+	decision int,
+	runtime *controlruntime.Runtime,
+) (control.ActionID, bool, error) {
+	for _, rule := range policy.Rules {
+		if rule.Decision != decision || rule.Kind != control.ActionPartition {
+			continue
+		}
+		parameters, err := control.DecodePartitionParameters(rule.Parameters)
+		if err != nil {
+			return "", false, fmt.Errorf("EXPERIMENT_POLICY_PARTITION_DECODE_FAILED: %w", err)
+		}
+		actionID, err := runtime.OfferPartition(parameters.Left, parameters.Right)
+		if err != nil {
+			return "", false, fmt.Errorf("EXPERIMENT_POLICY_PARTITION_OFFER_FAILED: %w", err)
+		}
+		if actionID != rule.ActionID {
+			return "", false, fmt.Errorf(
+				"EXPERIMENT_POLICY_PARTITION_ID_MISMATCH: expected=%s actual=%s",
+				rule.ActionID, actionID,
+			)
+		}
+		return actionID, true, nil
+	}
+	return "", false, nil
 }
 
 func finalTraceEvidence(trace controlruntime.Trace) control.EvidenceEnvelope {

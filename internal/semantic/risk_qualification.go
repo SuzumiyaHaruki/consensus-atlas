@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -19,9 +20,10 @@ const (
 // may reference. It describes facts the projector can produce, not protocol
 // internals or runtime control semantics.
 type ObservationCapability struct {
-	Kind   ObservationKind               `json:"kind"`
-	Fields []ObservationField            `json:"fields,omitempty"`
-	Values map[ObservationField][]string `json:"values,omitempty"`
+	Kind       ObservationKind                           `json:"kind"`
+	Fields     []ObservationField                        `json:"fields,omitempty"`
+	FieldTypes map[ObservationField]ObservationValueType `json:"field_types,omitempty"`
+	Values     map[ObservationField][]string             `json:"values,omitempty"`
 }
 
 // RiskRequirements is mechanically compiled from ordered predicates. Actions
@@ -150,7 +152,13 @@ func QualifyRisk(
 				continue
 			}
 			for _, value := range required.Values[field] {
-				if _, ok := capability.values[field][value]; !ok {
+				allowed := capability.values[field]
+				valueType := capability.fieldTypes[field]
+				_, explicitlyAllowed := allowed[value]
+				if len(allowed) == 0 && valueType != "" {
+					explicitlyAllowed = validObservationScalar(valueType, value)
+				}
+				if !explicitlyAllowed {
 					result.Issues = append(result.Issues, RiskQualificationIssue{
 						Code: RiskIssueMissingObservationValue, Kind: required.Kind, Field: field, Value: value,
 					})
@@ -197,7 +205,7 @@ func indexObservationCapabilities(
 ) (map[ObservationKind]indexedObservationCapability, error) {
 	result := make(map[ObservationKind]indexedObservationCapability, len(capabilities))
 	for _, capability := range capabilities {
-		if _, ok := observationKinds[capability.Kind]; !ok {
+		if !validObservationKind(capability.Kind) {
 			return nil, errors.New("RISK_OBSERVATION_CAPABILITY_KIND_INVALID")
 		}
 		if _, exists := result[capability.Kind]; exists {
@@ -205,13 +213,26 @@ func indexObservationCapabilities(
 		}
 		fields := make(map[ObservationField]struct{}, len(capability.Fields))
 		for _, field := range capability.Fields {
-			if _, ok := observationFields[field]; !ok {
+			if !validObservationField(field) {
 				return nil, errors.New("RISK_OBSERVATION_CAPABILITY_FIELD_INVALID")
 			}
 			if _, exists := fields[field]; exists {
 				return nil, errors.New("RISK_OBSERVATION_CAPABILITY_FIELD_DUPLICATE")
 			}
 			fields[field] = struct{}{}
+		}
+		fieldTypes := make(map[ObservationField]ObservationValueType, len(capability.FieldTypes))
+		for field, valueType := range capability.FieldTypes {
+			if _, ok := fields[field]; !ok || !validTargetObservationField(field) ||
+				!validObservationValueType(valueType) {
+				return nil, errors.New("RISK_OBSERVATION_CAPABILITY_FIELD_TYPE_INVALID")
+			}
+			fieldTypes[field] = valueType
+		}
+		for field := range fields {
+			if validTargetObservationField(field) && fieldTypes[field] == "" {
+				return nil, errors.New("RISK_OBSERVATION_CAPABILITY_FIELD_TYPE_REQUIRED")
+			}
 		}
 		values := make(map[ObservationField]map[string]struct{}, len(capability.Values))
 		for field, allowed := range capability.Values {
@@ -221,6 +242,7 @@ func indexObservationCapabilities(
 			set := make(map[string]struct{}, len(allowed))
 			for index, value := range allowed {
 				if value == "" || len(value) > 128 || strings.TrimSpace(value) != value ||
+					(fieldTypes[field] != "" && !validObservationScalar(fieldTypes[field], value)) ||
 					(index > 0 && allowed[index-1] >= value) {
 					return nil, errors.New("RISK_OBSERVATION_CAPABILITY_VALUE_INVALID")
 				}
@@ -228,14 +250,64 @@ func indexObservationCapabilities(
 			}
 			values[field] = set
 		}
-		result[capability.Kind] = indexedObservationCapability{fields: fields, values: values}
+		result[capability.Kind] = indexedObservationCapability{
+			fields: fields, fieldTypes: fieldTypes, values: values,
+		}
 	}
 	return result, nil
 }
 
 type indexedObservationCapability struct {
-	fields map[ObservationField]struct{}
-	values map[ObservationField]map[string]struct{}
+	fields     map[ObservationField]struct{}
+	fieldTypes map[ObservationField]ObservationValueType
+	values     map[ObservationField]map[string]struct{}
+}
+
+func observationMatchesCapability(
+	event Observation,
+	capability indexedObservationCapability,
+) bool {
+	if capability.fields == nil {
+		return false
+	}
+	actual := make(map[ObservationField]string)
+	if event.Participant != nil {
+		actual[ObservationFieldParticipant] = fmt.Sprintf("%s@%d", event.Participant.Node, event.Participant.Incarnation)
+		actual[ObservationFieldParticipantNode] = string(event.Participant.Node)
+	}
+	if event.RelatedParticipant != nil {
+		actual[ObservationFieldRelatedParticipant] = fmt.Sprintf(
+			"%s@%d", event.RelatedParticipant.Node, event.RelatedParticipant.Incarnation,
+		)
+		actual[ObservationFieldRelatedNode] = string(event.RelatedParticipant.Node)
+	}
+	for field, value := range map[ObservationField]string{
+		ObservationFieldRequestID:       event.RequestID,
+		ObservationFieldParticipantRole: event.ParticipantRole,
+		ObservationFieldMessageRole:     event.MessageRole,
+		ObservationFieldOperationStage:  event.OperationStage,
+	} {
+		if value != "" {
+			actual[field] = value
+		}
+	}
+	for _, attribute := range event.Attributes {
+		if capability.fieldTypes[attribute.Field] != attribute.Type {
+			return false
+		}
+		actual[attribute.Field] = attribute.Value
+	}
+	for field, value := range actual {
+		if _, ok := capability.fields[field]; !ok {
+			return false
+		}
+		if allowed := capability.values[field]; len(allowed) > 0 {
+			if _, ok := allowed[value]; !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func observationAction(kind ObservationKind) (control.ActionKind, bool) {

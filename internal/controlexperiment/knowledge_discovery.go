@@ -23,6 +23,7 @@ const (
 	KnowledgeDiscoverySourceNotText    = "source-not-text"
 	KnowledgeDiscoveryMountUnavailable = "source-mount-unavailable"
 	KnowledgeDiscoveryLocatorNotFound  = "locator-not-found"
+	KnowledgeDiscoveryLocatorAmbiguous = "locator-ambiguous"
 	KnowledgeDiscoveryRangeInvalid     = "line-range-invalid"
 
 	KnowledgeDiscoveryMaxLines        = 160
@@ -188,7 +189,10 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 	if start == 0 {
 		start = 1
 		if source.Locator != "" {
-			located := locateKnowledgeLine(lines, source.Locator)
+			located, ambiguous := locateKnowledgeLine(lines, source.Locator)
+			if ambiguous {
+				return stoppedKnowledgeRead(*source, KnowledgeDiscoveryLocatorAmbiguous), nil
+			}
 			if located == 0 {
 				return stoppedKnowledgeRead(*source, KnowledgeDiscoveryLocatorNotFound), nil
 			}
@@ -328,7 +332,7 @@ func splitKnowledgeLines(text string) []string {
 	return strings.Split(text, "\n")
 }
 
-func locateKnowledgeLine(lines []string, locator string) int {
+func locateKnowledgeLine(lines []string, locator string) (int, bool) {
 	candidates := []string{locator}
 	if index := strings.LastIndex(locator, "::"); index >= 0 && index+2 < len(locator) {
 		candidates = append(candidates, locator[index+2:])
@@ -336,14 +340,66 @@ func locateKnowledgeLine(lines []string, locator string) int {
 	if index := strings.LastIndex(locator, "."); index >= 0 && index+1 < len(locator) {
 		candidates = append(candidates, locator[index+1:])
 	}
-	for _, candidate := range compactKnowledgeLocators(candidates) {
-		for index, line := range lines {
-			if strings.Contains(line, candidate) {
-				return index + 1
+	compact := compactKnowledgeLocators(candidates)
+	for _, declarationsOnly := range []bool{true, false} {
+		for _, candidate := range compact {
+			matches := knowledgeLocatorMatches(lines, candidate, declarationsOnly)
+			if len(matches) > 1 {
+				return 0, true
+			}
+			if len(matches) == 1 {
+				return matches[0], false
 			}
 		}
 	}
-	return 0
+	return 0, false
+}
+
+func knowledgeLocatorMatches(lines []string, candidate string, declarationsOnly bool) []int {
+	result := make([]int, 0, 1)
+	for index, line := range lines {
+		position := knowledgeLocatorPosition(line, candidate)
+		if position < 0 || declarationsOnly && !knowledgeDeclarationPrefix(line[:position]) {
+			continue
+		}
+		result = append(result, index+1)
+	}
+	return result
+}
+
+func knowledgeLocatorPosition(line, candidate string) int {
+	for offset := 0; offset <= len(line)-len(candidate); {
+		index := strings.Index(line[offset:], candidate)
+		if index < 0 {
+			return -1
+		}
+		index += offset
+		end := index + len(candidate)
+		if (index == 0 || !knowledgeIdentifierByte(line[index-1])) &&
+			(end == len(line) || !knowledgeIdentifierByte(line[end])) {
+			return index
+		}
+		offset = index + 1
+	}
+	return -1
+}
+
+func knowledgeIdentifierByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' || value == '_'
+}
+
+func knowledgeDeclarationPrefix(prefix string) bool {
+	prefix = strings.TrimLeft(prefix, " \t")
+	if strings.Contains(prefix, "//") || strings.ContainsAny(prefix, "{}") {
+		return false
+	}
+	for _, marker := range []string{"func ", "type ", "fn ", "pub fn ", "struct ", "pub struct ", "enum ", "pub enum ", "const ", "var "} {
+		if strings.HasPrefix(prefix, marker) {
+			return true
+		}
+	}
+	return strings.Contains(prefix, " fn ")
 }
 
 func compactKnowledgeLocators(values []string) []string {

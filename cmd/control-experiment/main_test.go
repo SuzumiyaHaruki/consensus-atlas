@@ -99,48 +99,6 @@ func TestEtcdraftSemanticWorkloadIsQualifiedCommittedAndReplayStable(t *testing.
 	}
 }
 
-func TestEtcdraftExperimentSemanticsV2PreservesTerminalAndPendingRuns(t *testing.T) {
-	completedReport, completedBundle, err := etcdraftBundle(
-		context.Background(), "workload-semantics-v2", 96, 1,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	completed := completedReport.Runs[0]
-	if completedReport.SchemaVersion != controlexperiment.SchemaVersionV2 ||
-		completedReport.Config.WorkloadRouterID != etcdraftv2.WorkloadRouterID ||
-		completed.Termination != controlexperiment.RunTerminationConfigured ||
-		completed.BudgetReached || completed.ChargedDecisions != 42 ||
-		len(completed.Selections) != completed.ChargedDecisions ||
-		completed.Workload == nil || completed.Workload.Completed != 1 ||
-		completed.Workload.Results[0].Status != "committed" {
-		t.Fatalf("unexpected configured-stop run: %#v report=%s bundle=%s",
-			completed, completedReport.Digest, completedBundle.Digest)
-	}
-	if err := completedBundle.Validate(); err != nil {
-		t.Fatal(err)
-	}
-
-	pendingReport, pendingBundle, err := etcdraftBundle(
-		context.Background(), "workload-semantics-v2", 1, 1,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pending := pendingReport.Runs[0]
-	if pending.Termination != controlexperiment.RunTerminationBudget || !pending.BudgetReached ||
-		pending.ChargedDecisions != 1 || pending.Workload == nil || pending.Workload.Offered != 0 ||
-		pending.Workload.Completed != 0 || pending.Workload.Pending != 1 ||
-		pending.Workload.FinalRoute == nil ||
-		pending.Workload.FinalRoute.Status != controlexperiment.WorkloadRouteNoCandidate {
-		t.Fatalf("unexpected pending run: %#v report=%s bundle=%s",
-			pending, pendingReport.Digest, pendingBundle.Digest)
-	}
-	if err := pendingBundle.Validate(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestEtcdraftBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 	baseline, err := etcdraftReport(context.Background(), "workload-evaluation-v3", 96, 1)
 	if err != nil {
@@ -241,22 +199,16 @@ func TestRetiredUnqualifiedStrategiesStayUnavailable(t *testing.T) {
 }
 
 func TestAgentStrategiesRequireExplicitSemanticInput(t *testing.T) {
-	for _, strategy := range []string{
-		etcdraftSemanticCalibrationStrategy,
-		etcdraftScenarioSessionStrategy,
-		omnipaxosScenarioSessionStrategy,
-	} {
-		output := &strings.Builder{}
-		err := run(context.Background(), []string{
-			"-strategy", strategy,
-			"-campaign-dir", filepath.Join(t.TempDir(), "agent-run"),
-			"-stateless-corpus", etcdraftTestRootCorpusPath,
-			"-agent-key-file", "fixture-key-source",
-			"-agent-model", openRouterFixtureModel,
-		}, output)
-		if err == nil || !strings.Contains(err.Error(), "-semantic-input") {
-			t.Fatalf("strategy %q accepted implicit semantic knowledge: %v", strategy, err)
-		}
+	output := &strings.Builder{}
+	err := run(context.Background(), []string{
+		"-strategy", agenticEpisodeStrategy,
+		"-target", "etcdraft-v2",
+		"-campaign-dir", filepath.Join(t.TempDir(), "agent-run"),
+		"-agent-key-file", "fixture-key-source",
+		"-agent-model", openRouterFixtureModel,
+	}, output)
+	if err == nil || !strings.Contains(err.Error(), "AGENTIC_EPISODE_ACTIVE_INPUT_REQUIRED") {
+		t.Fatalf("Agentic Episode accepted implicit semantic knowledge: %v", err)
 	}
 }
 

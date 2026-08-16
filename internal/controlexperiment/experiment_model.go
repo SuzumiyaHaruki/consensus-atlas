@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -97,6 +98,9 @@ type DecisionRule struct {
 	Kind     control.ActionKind `json:"kind"`
 	Node     control.NodeID     `json:"node,omitempty"`
 	ActionID control.ActionID   `json:"action_id,omitempty"`
+	// Parameters are retained only for author-supplied Actions that must be
+	// reconstructed through an Offer API before exact policy selection.
+	Parameters json.RawMessage `json:"parameters,omitempty"`
 }
 
 // Policy is intentionally limited to common Action fields. Rules override the
@@ -175,6 +179,14 @@ func (policy Policy) Validate(decisionBudget int) error {
 		}
 		if err := rule.Kind.Validate(); err != nil {
 			return err
+		}
+		if rule.Kind == control.ActionPartition {
+			parameters, err := control.DecodePartitionParameters(rule.Parameters)
+			if err != nil || rule.ActionID == "" || parameters.ID == "" {
+				return errors.New("EXPERIMENT_POLICY_PARTITION_PREPARATION_INVALID")
+			}
+		} else if len(rule.Parameters) != 0 {
+			return errors.New("EXPERIMENT_POLICY_PREPARATION_PARAMETERS_UNEXPECTED")
 		}
 		seenDecisions[rule.Decision] = true
 	}
@@ -572,6 +584,18 @@ type ModelWork struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
+// AgenticLogicalBudget is editable investigation input. The active episode
+// converts it to its own bounded execution budget; it is not a durable
+// Campaign coordinator contract.
+type AgenticLogicalBudget struct {
+	MaxAttempts                  int `json:"max_attempts"`
+	MaxPrimarySchedulerDecisions int `json:"max_primary_scheduler_decisions"`
+	MaxPrimaryWorkUnits          int `json:"max_primary_work_units"`
+	MaxReplayWorkUnits           int `json:"max_replay_work_units"`
+	MaxModelCalls                int `json:"max_model_calls"`
+	MaxModelTokens               int `json:"max_model_tokens"`
+}
+
 type ResourceAccounting struct {
 	WallTime string `json:"wall_time"`
 	CPUTime  string `json:"cpu_time"`
@@ -688,6 +712,10 @@ func measuredWork(report Report) WorkLedger {
 			chargePrepareActions(&work.Primary, run.Workload.Offered)
 			chargePrepareActions(&work.Replay, run.Workload.Offered)
 		}
+		if run.Faults != nil {
+			chargePrepareActions(&work.Primary, run.Faults.Partitions)
+			chargePrepareActions(&work.Replay, run.Faults.Partitions)
+		}
 	}
 	return work
 }
@@ -697,6 +725,11 @@ func expectedPrepareActions(config Config) int {
 	for _, run := range config.Runs {
 		if run.Workload != nil {
 			total += len(run.Workload.Invocations)
+		}
+		for _, rule := range run.Policy.Rules {
+			if rule.Kind == control.ActionPartition {
+				total++
+			}
 		}
 	}
 	return total

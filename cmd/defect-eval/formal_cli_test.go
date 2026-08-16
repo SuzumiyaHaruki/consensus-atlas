@@ -144,18 +144,6 @@ func TestFormalModeRejectsMixedPublicFlags(t *testing.T) {
 	}
 }
 
-func TestPairedScenarioModeRejectsEvaluationOutputFlags(t *testing.T) {
-	err := run([]string{
-		"-paired-scenario", "-formal-contract", "contract.json",
-		"-formal-exposure-audit", "exposure.json", "-formal-inputs", "inputs.json",
-		"-fresh-artifacts", "artifacts", "-semantic-input", "semantic.json",
-		"-agent-key-file", "key.txt", "-agent-model", "fixture/model", "-out", "evaluation.json",
-	})
-	if err == nil || !strings.Contains(err.Error(), "no evaluation-output flags") {
-		t.Fatalf("mixed paired Scenario mode error = %v", err)
-	}
-}
-
 func formalCLITestExecution(
 	t *testing.T,
 ) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {

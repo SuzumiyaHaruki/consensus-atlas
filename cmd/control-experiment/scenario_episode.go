@@ -18,18 +18,20 @@ type scenarioAgentEpisodeResult struct {
 }
 
 type scenarioEpisodeCoreInputs struct {
-	RootID            string
-	Knowledge         controlexperiment.ProtocolKnowledgePack
-	Hypothesis        controlexperiment.TestHypothesis
-	RiskSpec          semantic.RiskWitnessSpec
-	Root              controlruntime.Trace
-	Runtime           controlexperiment.RuntimeConfig
-	FaultEnvelope     *controlexperiment.FaultEnvelope
-	TargetSurface     *controlexperiment.AgentTargetSurface
-	SemanticExposure  controlexperiment.ScenarioSemanticExposureMode
-	NewAdapter        controlexperiment.AdapterFactory
-	RiskProjector     controlexperiment.SemanticPrefixProjector
-	SemanticProjector controlexperiment.ScenarioSemanticProjector
+	RootID             string
+	Knowledge          controlexperiment.ProtocolKnowledgePack
+	Hypothesis         controlexperiment.TestHypothesis
+	AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext
+	RiskSpec           semantic.RiskWitnessSpec
+	Root               controlruntime.Trace
+	Runtime            controlexperiment.RuntimeConfig
+	FaultEnvelope      *controlexperiment.FaultEnvelope
+	TargetSurface      *controlexperiment.AgentTargetSurface
+	SemanticExposure   controlexperiment.ScenarioSemanticExposureMode
+	NewAdapter         controlexperiment.AdapterFactory
+	ActionPreparer     controlexperiment.ScenarioActionPreparer
+	RiskProjector      controlexperiment.SemanticPrefixProjector
+	SemanticProjector  controlexperiment.ScenarioSemanticProjector
 }
 
 func runScenarioAgentEpisodeCore(
@@ -74,10 +76,10 @@ func runScenarioAgentEpisodeCore(
 	return result, nil
 }
 
-// runScenarioEpisodeCore is the shared trusted execution substrate for A8.
-// A planner supplies only ScenarioPlan JSON and model accounting; frontier
-// reconstruction, concretization, natural progress, Replay and qualification
-// remain identical for deterministic and provider-backed planners.
+// runScenarioEpisodeCore is the shared trusted execution substrate used by
+// active Agentic target compositions. A planner supplies only ScenarioPlan
+// JSON and model accounting; frontier reconstruction, concretization, natural
+// progress, Replay and qualification remain trusted.
 func runScenarioEpisodeCore(
 	ctx context.Context,
 	inputs scenarioEpisodeCoreInputs,
@@ -118,12 +120,17 @@ func runScenarioEpisodeCore(
 	if err != nil {
 		return scenarioAgentEpisodeResult{}, err
 	}
+	var preparers []controlexperiment.ScenarioActionPreparer
+	if inputs.ActionPreparer != nil {
+		preparers = append(preparers, inputs.ActionPreparer)
+	}
 	agent, err := controlexperiment.ExploreScenarioWithPlanner(
 		ctx, maxCalls, maxPlanSteps, maxDecisions,
 		inputs.Knowledge, inputs.Hypothesis, inputs.RiskSpec, frontier, semantics,
 		rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.TargetSurface,
+		inputs.AcceptedHypothesis,
 		inputs.NewAdapter,
-		inputs.RiskProjector, inputs.SemanticProjector, planner,
+		inputs.RiskProjector, inputs.SemanticProjector, planner, preparers...,
 	)
 	result := scenarioAgentEpisodeResult{
 		Agent: agent, FrontierWork: frontierWork,

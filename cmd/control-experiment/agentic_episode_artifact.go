@@ -37,6 +37,7 @@ type agenticEpisodeArtifact struct {
 	RiskResultID          string                                      `json:"risk_result_id,omitempty"`
 	Metrics               agenticEpisodeMetrics                       `json:"metrics"`
 	Work                  agenticEpisodeWork                          `json:"work"`
+	Assessment            agenticEvidenceAssessment                   `json:"evidence_assessment,omitempty"`
 }
 
 type agenticEpisodeRecoveryBinding struct {
@@ -69,6 +70,7 @@ func newAgenticEpisodeArtifact(
 		ScenarioProviderCalls: append([]controlexperiment.StatelessAgentCallAudit(nil),
 			result.ScenarioProviderCalls...),
 		Failure: cloneAgenticEpisodeFailure(result.Failure), Metrics: result.Metrics, Work: result.Work,
+		Assessment: result.Assessment,
 	}
 	if result.RiskAgent.Accepted != nil {
 		accepted := *result.RiskAgent.Accepted
@@ -201,8 +203,13 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_AUDIT_INVALID")
 		}
 	}
-	if artifact.Accepted != nil && validateAgenticEpisodeAssessment(*artifact.Accepted) != nil {
-		return errors.New("AGENTIC_EPISODE_ARTIFACT_ASSESSMENT_INVALID")
+	if !agenticAssessmentMatchesSummary(artifact) {
+		return errors.New("AGENTIC_EPISODE_ARTIFACT_ASSESSMENT_SUMMARY_INVALID")
+	}
+	if artifact.Accepted != nil {
+		if err := validateAgenticEpisodeAssessment(*artifact.Accepted); err != nil {
+			return errors.Join(errors.New("AGENTIC_EPISODE_ARTIFACT_ASSESSMENT_CANDIDATE_INVALID"), err)
+		}
 	}
 	switch artifact.Status {
 	case agenticEpisodeRiskStopped:
@@ -232,6 +239,85 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_STATUS_INVALID")
 	}
 	return nil
+}
+
+func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
+	assessment := artifact.Assessment
+	// Summaries created before the evidence-assessment field remain readable;
+	// new summaries always populate it in newAgenticEpisodeArtifact.
+	if assessment.Status == "" {
+		return true
+	}
+	if assessment.ReasonCode == "" ||
+		(assessment.EvidenceLevel != "" &&
+			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceHypothesis &&
+			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceObservable &&
+			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceOracleBacked) {
+		return false
+	}
+	for index, oracleID := range assessment.OracleIDs {
+		if oracleID == "" || (index > 0 && assessment.OracleIDs[index-1] >= oracleID) {
+			return false
+		}
+	}
+	if assessment.FidelityAssessment != "" &&
+		assessment.FidelityAssessment != controlexperiment.AgentFidelityNotApplicable &&
+		assessment.FidelityAssessment != controlexperiment.AgentFidelityUnassessed {
+		return false
+	}
+	for index, boundaryID := range assessment.FidelityBoundaryIDs {
+		if boundaryID == "" || index > 0 && assessment.FidelityBoundaryIDs[index-1] >= boundaryID {
+			return false
+		}
+	}
+	if artifact.Accepted == nil {
+		if assessment.PropertyID != "" || assessment.EvidenceLevel != "" || len(assessment.OracleIDs) != 0 ||
+			assessment.FidelityAssessment != "" || len(assessment.FidelityBoundaryIDs) != 0 {
+			return false
+		}
+	} else if assessment.PropertyID != artifact.Accepted.Candidate.PropertyRef ||
+		assessment.EvidenceLevel == "" {
+		return false
+	} else if assessment.FidelityAssessment != "" {
+		if assessment.FidelityAssessment != artifact.Accepted.FidelityAssessment {
+			return false
+		}
+		wantBoundaries := make([]string, len(artifact.Accepted.FidelityNotices))
+		for index, notice := range artifact.Accepted.FidelityNotices {
+			wantBoundaries[index] = notice.Reference
+		}
+		if len(assessment.FidelityBoundaryIDs) != len(wantBoundaries) {
+			return false
+		}
+		for index := range wantBoundaries {
+			if assessment.FidelityBoundaryIDs[index] != wantBoundaries[index] {
+				return false
+			}
+		}
+	}
+	switch artifact.Status {
+	case agenticEpisodeRiskStopped:
+		return assessment.Status == agenticEvidencePlanningFailed ||
+			assessment.Status == agenticEvidenceCapabilityGap
+	case agenticEpisodeScenarioStopped:
+		return assessment.Status == agenticEvidencePlanningFailed
+	case agenticEpisodeTokenStopped:
+		return assessment.Status == agenticEvidenceBudgetExhausted
+	case agenticEpisodeExecutionFailed:
+		return assessment.Status == agenticEvidenceExecutionFailed
+	case agenticEpisodeCompleted:
+		if artifact.Metrics.OracleFindings > 0 {
+			return assessment.Status == agenticEvidenceOracleFinding
+		}
+		if artifact.Metrics.RiskReached {
+			return assessment.Status == agenticEvidenceRiskReached ||
+				assessment.Status == agenticEvidenceRiskUnverified
+		}
+		return assessment.Status == agenticEvidenceInconclusive ||
+			assessment.Status == agenticEvidenceBudgetExhausted
+	default:
+		return false
+	}
 }
 
 func (binding agenticEpisodeRecoveryBinding) validate() error {
@@ -280,8 +366,27 @@ func validateAgenticEpisodeAssessment(
 ) error {
 	candidate := assessment.Candidate
 	if candidate.Validate() != nil || assessment.Spec.Validate() != nil ||
-		!assessment.Qualification.Qualified || len(assessment.Qualification.Issues) != 0 {
+		!assessment.Qualification.Qualified || len(assessment.Qualification.Issues) != 0 ||
+		len(assessment.CapabilityGaps) != 0 || len(candidate.RequiredFidelity) != 0 {
 		return errors.New("AGENTIC_EPISODE_ASSESSMENT_INVALID")
+	}
+	if assessment.FidelityAssessment != "" &&
+		assessment.FidelityAssessment != controlexperiment.AgentFidelityNotApplicable &&
+		assessment.FidelityAssessment != controlexperiment.AgentFidelityUnassessed {
+		return errors.New("AGENTIC_EPISODE_ASSESSMENT_FIDELITY_INVALID")
+	}
+	for index, notice := range assessment.FidelityNotices {
+		if notice.Code != controlexperiment.AgentCapabilityNoticeFidelityUnassessed ||
+			notice.Reference == "" || notice.Summary == "" ||
+			index > 0 && assessment.FidelityNotices[index-1].Reference >= notice.Reference {
+			return errors.New("AGENTIC_EPISODE_ASSESSMENT_FIDELITY_INVALID")
+		}
+	}
+	if assessment.FidelityAssessment == controlexperiment.AgentFidelityUnassessed &&
+		len(assessment.FidelityNotices) == 0 ||
+		assessment.FidelityAssessment == controlexperiment.AgentFidelityNotApplicable &&
+			len(assessment.FidelityNotices) != 0 {
+		return errors.New("AGENTIC_EPISODE_ASSESSMENT_FIDELITY_INVALID")
 	}
 	milestones := make([]string, len(candidate.Predicates))
 	orders := make([]semantic.RiskWitnessOrder, 0, len(candidate.Predicates)-1)
@@ -347,7 +452,7 @@ func deriveAgenticExplorationMemory(
 			return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EPISODE_INVALID")
 		}
 		entry := controlexperiment.RiskExplorationMemoryEntry{
-			Episode: index + 1, EpisodeOutcome: episode.Summary.Status,
+			Episode: index + 1, EpisodeOutcome: episode.Summary.Assessment.Status,
 			ModelCalls:  episode.Summary.Work.Model.Calls,
 			ModelTokens: episode.Summary.Work.Model.TotalTokens,
 			SearchWorkUnits: episode.Summary.Work.ScenarioFrontier.WorkUnits +
@@ -355,6 +460,9 @@ func deriveAgenticExplorationMemory(
 			ExecutionWorkUnits: episode.Summary.Work.QualifiedExecution.Primary.WorkUnits +
 				episode.Summary.Work.QualifiedExecution.Replay.WorkUnits,
 			MechanicalReasonCodes: agenticExplorationReasonCodes(episode.Summary.RiskFeedback),
+		}
+		if entry.EpisodeOutcome == "" {
+			entry.EpisodeOutcome = episode.Summary.Status
 		}
 		if episode.Summary.Accepted != nil {
 			candidate := episode.Summary.Accepted.Candidate
