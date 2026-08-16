@@ -208,8 +208,9 @@ Qualification 验证 Adapter/Runtime 的机械能力。Target surface 进一步�
 Agentic Episode 保存紧凑 `summary.json` 和完整 `bundle.json`。summary 可以从 bundle、journal 和 Target recovery binding
 重新派生；终态恢复不访问 SUT、provider 或 key。
 
-`cmd/defect-eval` 当前支持保存 Bundle 和 MethodSpec 的 control/candidate 评测。旧 A8 paired launcher 已删除；下一阶段
-需要让 evaluator 直接消费当前 Agentic artifact，形成 private holdout/paired method 评测，而不是恢复旧 session。
+`cmd/defect-eval` 支持保存 Bundle/MethodSpec 的旧评测，也能通过 `-agentic-inputs` 直接消费
+当前 Agentic Episode 目录。私有 contract 提供 pair、SUT 身份、预算和 monitor composition；
+summary 只提供方法状态/成本，独立 evaluator 从 Bundle 重算 verdict。旧 A8 paired launcher/session 不参与此路径。
 
 评价面保持分离：
 

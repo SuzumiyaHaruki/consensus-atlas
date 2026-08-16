@@ -138,9 +138,9 @@ git diff --check
 
 普通测试不读取 key、不访问模型服务。完整 race 只在明确里程碑运行。
 
-当前已经证明两个真实 CFT 库可以复用同一 Agent/Runtime/Replay/Oracle 流程，但尚未证明 Agent 优于其他搜索方法，
-也尚未发现新的实现问题。形式化 evaluator 当前仍评估保存的 Bundle/MethodSpec；旧 A8 paired evaluator 已删除，
-新的 Agentic holdout 评测尚未实现。
+当前已经证明两个真实 CFT 库可以复用同一 Agent/Runtime/Replay/Oracle 流程，且 Agentic Episode
+目录可直接进入 private pair/exposure/Oracle 评测边界。这仍未证明 Agent 优于其他搜索方法，
+也尚未发现新的实现问题。旧 A8 paired evaluator/session 已删除，不参与新 Agentic holdout 路径。
 
 继续阅读：[`docs/architecture.md`](docs/architecture.md)、[`docs/CURRENT_STAGE.md`](docs/CURRENT_STAGE.md) 和
 [`docs/ConsensusAtlas-总体规划.md`](docs/ConsensusAtlas-总体规划.md)。

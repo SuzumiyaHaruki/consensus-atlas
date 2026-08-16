@@ -303,7 +303,7 @@ provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分�
 
 ## 8. 路线阶段
 
-### M1：最小底座闭合与瘦身（当前）
+### M1：最小底座闭合与瘦身（已完成）
 
 - 统一 client terminal/Risk/budget 终止语义；
 - 删除固定 24-action compatibility checkpoint；
@@ -313,12 +313,16 @@ provider、key 或 SUT。失败 Action 的 terminal outcome 与成功 Trace 分�
 
 完成标准：活动 CLI、两个 Target、终态恢复和 Bundle evaluator 均可编译测试；文档只描述当前路径。
 
-### M2：Agentic holdout evaluator
+### M2：Agentic holdout evaluator（当前）
 
 - 定义 evaluator 输入为当前 episode summary/bundle/journal audit；
 - 对 control/candidate SUT 使用同一 Agentic 方法和预算；
 - evaluator 从保存证据重算 Oracle，不启动第二套 A8 session；
 - 输出 killed/survived/false-positive/invalid 和成本。
+
+当前已完成 summary/bundle 到 private pair/exposure/Agreement 评测的端到端桥接，并分别用
+etcd/raft 和 OmniPaxos projector 验证。后续可按需注册 target-local monitor，但不在评估器中
+复制 Target 执行逻辑。
 
 不增加无具体失败场景的 frozen contract 或 gate；优先复用现有 Bundle/MethodSpec/defectbench 类型。
 

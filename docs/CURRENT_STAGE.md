@@ -2,13 +2,14 @@
 
 更新时间：2026-08-16
 分支：`feature/agentic-consensus-testing`
-阶段：A9e4c13R 最小底座闭合与历史路径瘦身；尚未进入 A9e4d。
+阶段：A9e4d1 Agentic artifact → private holdout evaluator 桥接（已完成）。
 
 ## 一句话状态
 
 活动系统已经收敛为“Risk Agent → Scenario Agent → 两个真实 Target → 确定性执行/Replay → PSS/Risk/Oracle”。
 client terminal 只表示 workload 已返回；Risk 未达且预算尚存时继续调查。旧 A2/A8/Campaign 路径已从生产代码
-删除，当前最小底座与瘦身已完成；Agentic holdout evaluator 属于下一阶段。
+删除。当前 Agentic Episode 的 `summary.json`/`bundle.json` 已能直接进入现有 private pair/exposure/
+Oracle 评测边界，不启动第二套搜索或执行器。
 
 ## 当前输入
 
@@ -115,7 +116,21 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 - etcd/raft、OmniPaxos 的协议特有 composition；
 - Bundle/MethodSpec evaluator 和 defectbench。
 
-当前 Go 代码约 32.2k 生产行、14.2k 测试行；审计前约为 41.5k/18.9k。工作区 diff 的净删除量超过 11k 行。
+当前 Go 代码约 32.7k 生产行、14.6k 测试行；审计前约为 41.5k/18.9k。
+
+### 5. Agentic holdout 桥接
+
+`cmd/defect-eval -agentic-inputs` 接收私有 trial 到 Episode 目录的映射，并复用现有
+`FormalBenchmarkContract` 和 `FormalExposureAudit`。评估器：
+
+- 从 Episode summary 读取方法状态和 model work，它们只是解释字段；
+- 仅对 completed Episode 的完整 Bundle 重新执行私有 projector/monitor；
+- 将未完成、缺 Bundle 或 contract/build/budget 不匹配的 trial 记为 `invalid`；
+- 完全忽略 Agent 自报的 `oracle-finding` verdict，只由重算 monitor 生成 killed/false-positive；
+- 同一评估入口支持 etcd/raft 和 OmniPaxos 的 DecisionProjector。
+
+当前 holdout composition 只注册两个 Target 共用的 Agreement monitor。Target-local monitor 还未转移到
+evaluator 可注册包；这是后续能力扩展，不影响本轮桥接语义。
 
 ## 当前输出
 
@@ -130,6 +145,9 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 - Replay 状态、`Oracle.Checked` 和 violations；
 - model calls/tokens、Runtime decision allowance 和停止原因。
 
+一次 private holdout 评测另外生成按 trial 排序的 control/candidate 结果、invalid 原因、重算
+Oracle 和汇总统计。私有 pair/root-cause 信息不进入 Agent 输入。
+
 ## 当前证据边界
 
 已经证明：
@@ -139,6 +157,7 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 - 保存 Trace 可 fresh Replay；
 - target-local Observation/Oracle 不要求公共 Core 理解协议；
 - 能力不足与假设未达、预算耗尽、执行失败可以分开报告。
+- 当前 Agentic artifact 可被 private evaluator 机械消费，且方法自报 verdict 不会创建 finding。
 
 尚未证明：
 
@@ -146,7 +165,7 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 - Coverage/PSS 能预测缺陷检出；
 - 存在新的 etcd/raft 或 OmniPaxos 问题；
 - 当前 RawNode/MemoryStorage Target 等价于生产部署；
-- Agentic 方法已经进入 private holdout evaluator。
+- 已有真实非公开 holdout 数据集及 Agent 相对 baseline 的效果结论。
 
 ## 下一步
 
@@ -161,5 +180,8 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 `git diff --check` 通过。OmniPaxos deadline 精确 race 用例连续两轮通过，`make test-race-core`
 已完整通过。
 
-之后才进入 A9e4d，优先实现当前 Agentic artifact 的 holdout 评测输入，而不是恢复旧 A8 paired session。再下一步
-才扩大 Agent 源码导航、branch/control/ablate/minimize 和长时 Investigation。
+A9e4d1 的完成条件是：使用两个不同协议 projector 验证评估核心，并用 etcd/raft
+fixture 完成 CLI 端到端 control/candidate 测试。该条件已满足；受影响包的普通测试、
+race、全量 `go test ./...`、`go vet ./...`、旧路径/race shard 审计和 `git diff --check`
+均通过。下一阶段进入 Agent 能力扩展，优先 `branch/control/ablate/minimize`，不恢复旧
+A8 paired session。

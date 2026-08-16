@@ -80,8 +80,21 @@ func run(args []string) error {
 	formalContractPath := flags.String("formal-contract", "", "private FormalBenchmarkContract")
 	formalExposurePath := flags.String("formal-exposure-audit", "", "passed private FormalExposureAudit")
 	formalInputsPath := flags.String("formal-inputs", "", "private multi-trial audit/binary path manifest")
+	agenticInputsPath := flags.String("agentic-inputs", "", "private trial-to-Agentic-Episode directory manifest")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *agenticInputsPath != "" {
+		if *formalContractPath == "" || *formalExposurePath == "" || *outPath == "" ||
+			*formalInputsPath != "" || *methodSpecPath != "" || *freshArtifacts != "" ||
+			*manifestPath != "" || *controlPath != "" || *candidatePath != "" ||
+			*controlAuditPath != "" || *controlBinaryPath != "" ||
+			*candidateAuditPath != "" || *candidateBinaryPath != "" {
+			return errors.New("agentic holdout evaluation requires contract, exposure audit, agentic inputs, out, and no runner/public-pair flags")
+		}
+		return runAgenticHoldoutEvaluation(
+			*formalContractPath, *formalExposurePath, *agenticInputsPath, *outPath,
+		)
 	}
 	formalMode := *formalContractPath != "" || *formalExposurePath != "" || *formalInputsPath != ""
 	if formalMode {
