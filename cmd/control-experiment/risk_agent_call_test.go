@@ -178,6 +178,9 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 			AvailableIntents: []string{intent},
 		})
 		if err != nil || !bytes.Contains(minimal.Schema, []byte(`"required":["intent","plan"]`)) ||
+			!bytes.Contains(minimal.Schema, []byte(`"message_type_hint"`)) ||
+			!bytes.Contains(minimal.Schema, []byte(`"effect_phase"`)) ||
+			!bytes.Contains(minimal.Schema, []byte(`"effect_outcome"`)) ||
 			bytes.Contains(minimal.Schema, []byte(`"branch_id"`)) ||
 			bytes.Contains(minimal.Schema, []byte(`"from_branch_id"`)) ||
 			bytes.Contains(minimal.Schema, []byte(`"reference_branch_id"`)) {

@@ -55,6 +55,11 @@ Trace 必须得到相同的 yield、evidence 和终态；`Check`/enabled 查询�
 - 允许的完成/失败结果；
 - 对 visible、durable、applied 状态的影响。
 
+M4j1 已将其中可机械检查的最小部分落到现有 Manifest：消息可声明 type hint 与 metadata key；HostEffect 可声明
+kind、phase、durability、完成结果和失败结果。声明存在时，Runtime 会逐个校验实际 emission；声明为空的历史
+Target 保持原行为，并不因此被推断为具备这些细粒度能力。当前 frontier 会把实际依赖、消息提示/metadata、
+effect phase 和本 Action outcome 投影给 Agent，selector 只能使用当前 enabled Action 上已有的值。
+
 ### 3.4 生命周期与持久化
 
 节点生命周期和存储生命周期必须分离。实现应明确 volatile、visible、durable、applied 四种状态，并能从精确

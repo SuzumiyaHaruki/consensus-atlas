@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v14"
-	scenarioInvestigationStructuredOutputName = "scenario_investigation_v5"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v15"
+	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
 type scenarioAgentCallJournal struct {
@@ -132,8 +132,10 @@ func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentV
 				"properties": map[string]any{
 					"kind": stringField, "node": stringField, "item_kind": stringField,
 					"owner": stringField, "message_source": stringField,
-					"message_target": stringField, "temporal_kind": stringField,
-					"effect_kind": stringField, "durability": stringField,
+					"message_target": stringField, "message_type_hint": stringField,
+					"temporal_kind": stringField, "effect_kind": stringField,
+					"effect_phase": stringField, "effect_outcome": stringField,
+					"durability": stringField,
 					"actor_role": map[string]any{"type": "string", "enum": []string{
 						controlexperiment.ConsensusActorLeader, controlexperiment.ConsensusActorReplica,
 						controlexperiment.ConsensusActorContender,
@@ -269,7 +271,8 @@ func scenarioAgentPrompt(
 		PromptVersion: scenarioAgentPromptVersion,
 		SelectorFields: []string{
 			"action_id", "kind", "node", "item_kind", "owner", "message_source",
-			"message_target", "temporal_kind", "effect_kind", "durability", "actor_role",
+			"message_target", "message_type_hint", "temporal_kind", "effect_kind",
+			"effect_phase", "effect_outcome", "durability", "actor_role",
 			"message_class", "epoch_relation", "operation_state",
 		},
 		AgentView: agentView,
@@ -295,6 +298,8 @@ func scenarioAgentPrompt(
 		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
 		"The optional actor_role, message_class, epoch_relation, and operation_state selector fields may use only non-unknown " +
 		"values present in action_semantics for the same Action; they narrow the current frontier but do not create an Action. " +
+		"message_type_hint, effect_phase, and effect_outcome are opaque target-declared values copied from the current " +
+		"frontier; use only values present on an enabled Action. " +
 		"Selector node, owner, message_source, and message_target values are node ID JSON strings such as n1, never " +
 		"identity objects with node/incarnation fields. A stopped prior_feedback must be answered with intent=revise, not continue. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."

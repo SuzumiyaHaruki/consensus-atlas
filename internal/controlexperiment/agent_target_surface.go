@@ -94,6 +94,8 @@ type AgentTargetExtensions struct {
 type AgentCapabilitySurface struct {
 	DeclaredActions         []control.ActionKind             `json:"declared_actions"`
 	ComposableActions       []control.ActionKind             `json:"composable_actions"`
+	Message                 *control.MessageCapability       `json:"message,omitempty"`
+	HostEffects             []control.HostEffectCapability   `json:"host_effects,omitempty"`
 	ObservationCapabilities []semantic.ObservationCapability `json:"observation_capabilities"`
 	OracleCapabilities      []AgentOracleCapability          `json:"oracle_capabilities"`
 	FidelityBoundaries      []AgentFidelityBoundary          `json:"fidelity_boundaries,omitempty"`
@@ -174,6 +176,8 @@ func NewAgentTargetSurface(
 		Capabilities: AgentCapabilitySurface{
 			DeclaredActions:         declaredActions,
 			ComposableActions:       append([]control.ActionKind(nil), extensions.ComposableActions...),
+			Message:                 cloneMessageCapability(manifest.Capabilities.Message),
+			HostEffects:             cloneHostEffectCapabilities(manifest.Capabilities.HostEffects),
 			ObservationCapabilities: cloneObservationCapabilities(extensions.ObservationCapabilities),
 			OracleCapabilities:      cloneAgentOracleCapabilities(extensions.OracleCapabilities),
 			FidelityBoundaries:      cloneAgentFidelityBoundaries(extensions.FidelityBoundaries),
@@ -217,12 +221,35 @@ func (surface AgentTargetSurface) Validate() error {
 		}
 	}
 	if validateAgentCapabilitySurface(surface.Capabilities) != nil ||
+		!surfaceHostEffectsMatchKinds(surface.EffectKinds, surface.Capabilities.HostEffects) ||
 		validateComposableFaultAllowance(
 			surface.Capabilities.ComposableActions, surface.FaultAllowance,
 		) != nil {
 		return errors.New("EXPERIMENT_AGENT_TARGET_SURFACE_INVALID")
 	}
 	return nil
+}
+
+func surfaceHostEffectsMatchKinds(kinds []string, capabilities []control.HostEffectCapability) bool {
+	if len(capabilities) == 0 {
+		return true
+	}
+	if len(kinds) != len(capabilities) {
+		return false
+	}
+	declared := make(map[string]bool, len(kinds))
+	for _, kind := range kinds {
+		if kind == "" || declared[kind] {
+			return false
+		}
+		declared[kind] = true
+	}
+	for _, capability := range capabilities {
+		if !declared[capability.Kind] {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidateAgainstKnowledge keeps Oracle and fidelity references honest without
@@ -368,6 +395,8 @@ func cloneAgentTargetSurface(surface *AgentTargetSurface) *AgentTargetSurface {
 	cloned.Capabilities.ComposableActions = append(
 		[]control.ActionKind(nil), surface.Capabilities.ComposableActions...,
 	)
+	cloned.Capabilities.Message = cloneMessageCapability(surface.Capabilities.Message)
+	cloned.Capabilities.HostEffects = cloneHostEffectCapabilities(surface.Capabilities.HostEffects)
 	cloned.Capabilities.ObservationCapabilities = cloneObservationCapabilities(
 		surface.Capabilities.ObservationCapabilities,
 	)
@@ -444,6 +473,8 @@ func validateComposableFaultAllowance(
 func validateAgentCapabilitySurface(surface AgentCapabilitySurface) error {
 	if !canonicalActionKinds(surface.DeclaredActions, true) ||
 		!canonicalActionKinds(surface.ComposableActions, true) ||
+		!validAgentMessageCapability(surface.Message) ||
+		!validAgentHostEffectCapabilities(surface.HostEffects) ||
 		semantic.ValidateObservationCapabilities(surface.ObservationCapabilities) != nil ||
 		len(surface.ObservationCapabilities) == 0 || len(surface.OracleCapabilities) == 0 {
 		return errors.New("EXPERIMENT_AGENT_TARGET_CAPABILITIES_INVALID")
@@ -452,6 +483,12 @@ func validateAgentCapabilitySurface(surface AgentCapabilitySurface) error {
 	for _, action := range surface.ComposableActions {
 		if !declared[action] {
 			return errors.New("EXPERIMENT_AGENT_TARGET_CAPABILITIES_INVALID")
+		}
+	}
+	for _, capability := range surface.HostEffects {
+		if len(capability.AllowedResults) > 0 && !declared[control.ActionCompleteEffect] ||
+			len(capability.AllowedFailures) > 0 && !declared[control.ActionFailEffect] {
+			return errors.New("EXPERIMENT_AGENT_TARGET_EFFECT_ACTION_INVALID")
 		}
 	}
 	for index, oracle := range surface.OracleCapabilities {
@@ -480,6 +517,22 @@ func sortAgentCapabilitySurface(surface *AgentCapabilitySurface) {
 	sort.Slice(surface.ComposableActions, func(i, j int) bool {
 		return surface.ComposableActions[i] < surface.ComposableActions[j]
 	})
+	if surface.Message != nil {
+		sort.Strings(surface.Message.TypeHints)
+		sort.Strings(surface.Message.MetadataKeys)
+	}
+	for index := range surface.HostEffects {
+		capability := &surface.HostEffects[index]
+		sort.Strings(capability.Phases)
+		sort.Slice(capability.Durabilities, func(i, j int) bool {
+			return capability.Durabilities[i] < capability.Durabilities[j]
+		})
+		sort.Strings(capability.AllowedResults)
+		sort.Strings(capability.AllowedFailures)
+	}
+	sort.Slice(surface.HostEffects, func(i, j int) bool {
+		return surface.HostEffects[i].Kind < surface.HostEffects[j].Kind
+	})
 	sort.Slice(surface.ObservationCapabilities, func(i, j int) bool {
 		return surface.ObservationCapabilities[i].Kind < surface.ObservationCapabilities[j].Kind
 	})
@@ -501,6 +554,52 @@ func sortAgentCapabilitySurface(surface *AgentCapabilitySurface) {
 	for index := range surface.FidelityBoundaries {
 		sort.Strings(surface.FidelityBoundaries[index].AffectedPropertyIDs)
 	}
+}
+
+func validAgentMessageCapability(capability *control.MessageCapability) bool {
+	return capability == nil ||
+		canonicalStrings(capability.TypeHints, false) && canonicalStrings(capability.MetadataKeys, false)
+}
+
+func validAgentHostEffectCapabilities(capabilities []control.HostEffectCapability) bool {
+	for index, capability := range capabilities {
+		if capability.Kind == "" || index > 0 && capabilities[index-1].Kind >= capability.Kind ||
+			!canonicalStrings(capability.Phases, false) || len(capability.Durabilities) == 0 ||
+			!canonicalStrings(capability.AllowedResults, false) ||
+			!canonicalStrings(capability.AllowedFailures, false) ||
+			len(capability.AllowedResults)+len(capability.AllowedFailures) == 0 {
+			return false
+		}
+		for durabilityIndex, durability := range capability.Durabilities {
+			if durability != control.DurabilityVolatile && durability != control.DurabilityVisible &&
+				durability != control.DurabilityDurable && durability != control.DurabilityApplied ||
+				durabilityIndex > 0 && capability.Durabilities[durabilityIndex-1] >= durability {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func cloneMessageCapability(capability *control.MessageCapability) *control.MessageCapability {
+	if capability == nil {
+		return nil
+	}
+	result := *capability
+	result.TypeHints = append([]string(nil), capability.TypeHints...)
+	result.MetadataKeys = append([]string(nil), capability.MetadataKeys...)
+	return &result
+}
+
+func cloneHostEffectCapabilities(values []control.HostEffectCapability) []control.HostEffectCapability {
+	result := append([]control.HostEffectCapability(nil), values...)
+	for index := range result {
+		result[index].Phases = append([]string(nil), values[index].Phases...)
+		result[index].Durabilities = append([]control.DurabilityClass(nil), values[index].Durabilities...)
+		result[index].AllowedResults = append([]string(nil), values[index].AllowedResults...)
+		result[index].AllowedFailures = append([]string(nil), values[index].AllowedFailures...)
+	}
+	return result
 }
 
 func cloneAgentOracleCapabilities(values []AgentOracleCapability) []AgentOracleCapability {

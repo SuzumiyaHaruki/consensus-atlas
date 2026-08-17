@@ -2,6 +2,7 @@ package controlexperiment
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sort"
@@ -20,18 +21,23 @@ const (
 // remains bound by ActionDigest, while payload and protocol evidence stay out
 // of the planner-facing view.
 type FrontierActionRef struct {
-	ActionID      control.ActionID        `json:"action_id"`
-	ActionDigest  string                  `json:"action_digest"`
-	Kind          control.ActionKind      `json:"kind"`
-	Node          control.NodeRef         `json:"node_ref,omitempty"`
-	ItemID        control.ItemID          `json:"item_id,omitempty"`
-	ItemKind      control.ItemKind        `json:"item_kind,omitempty"`
-	Owner         control.NodeRef         `json:"owner,omitempty"`
-	MessageSource control.NodeRef         `json:"message_source,omitempty"`
-	MessageTarget control.NodeID          `json:"message_target,omitempty"`
-	TemporalKind  control.TemporalKind    `json:"temporal_kind,omitempty"`
-	EffectKind    string                  `json:"effect_kind,omitempty"`
-	Durability    control.DurabilityClass `json:"durability,omitempty"`
+	ActionID        control.ActionID        `json:"action_id"`
+	ActionDigest    string                  `json:"action_digest"`
+	Kind            control.ActionKind      `json:"kind"`
+	Node            control.NodeRef         `json:"node_ref,omitempty"`
+	ItemID          control.ItemID          `json:"item_id,omitempty"`
+	ItemKind        control.ItemKind        `json:"item_kind,omitempty"`
+	Dependencies    []control.ItemID        `json:"dependencies,omitempty"`
+	Owner           control.NodeRef         `json:"owner,omitempty"`
+	MessageSource   control.NodeRef         `json:"message_source,omitempty"`
+	MessageTarget   control.NodeID          `json:"message_target,omitempty"`
+	MessageTypeHint string                  `json:"message_type_hint,omitempty"`
+	MessageMetadata map[string]string       `json:"message_metadata,omitempty"`
+	TemporalKind    control.TemporalKind    `json:"temporal_kind,omitempty"`
+	EffectKind      string                  `json:"effect_kind,omitempty"`
+	EffectPhase     string                  `json:"effect_phase,omitempty"`
+	EffectOutcome   string                  `json:"effect_outcome,omitempty"`
+	Durability      control.DurabilityClass `json:"durability,omitempty"`
 }
 
 type RiskFrontierView struct {
@@ -50,20 +56,23 @@ type RiskFrontierView struct {
 }
 
 type FrontierActionSelector struct {
-	ActionID       control.ActionID        `json:"action_id,omitempty"`
-	Kind           control.ActionKind      `json:"kind,omitempty"`
-	Node           control.NodeID          `json:"node,omitempty"`
-	ItemKind       control.ItemKind        `json:"item_kind,omitempty"`
-	Owner          control.NodeID          `json:"owner,omitempty"`
-	MessageSource  control.NodeID          `json:"message_source,omitempty"`
-	MessageTarget  control.NodeID          `json:"message_target,omitempty"`
-	TemporalKind   control.TemporalKind    `json:"temporal_kind,omitempty"`
-	EffectKind     string                  `json:"effect_kind,omitempty"`
-	Durability     control.DurabilityClass `json:"durability,omitempty"`
-	ActorRole      string                  `json:"actor_role,omitempty"`
-	MessageClass   string                  `json:"message_class,omitempty"`
-	EpochRelation  string                  `json:"epoch_relation,omitempty"`
-	OperationState string                  `json:"operation_state,omitempty"`
+	ActionID        control.ActionID        `json:"action_id,omitempty"`
+	Kind            control.ActionKind      `json:"kind,omitempty"`
+	Node            control.NodeID          `json:"node,omitempty"`
+	ItemKind        control.ItemKind        `json:"item_kind,omitempty"`
+	Owner           control.NodeID          `json:"owner,omitempty"`
+	MessageSource   control.NodeID          `json:"message_source,omitempty"`
+	MessageTarget   control.NodeID          `json:"message_target,omitempty"`
+	MessageTypeHint string                  `json:"message_type_hint,omitempty"`
+	TemporalKind    control.TemporalKind    `json:"temporal_kind,omitempty"`
+	EffectKind      string                  `json:"effect_kind,omitempty"`
+	EffectPhase     string                  `json:"effect_phase,omitempty"`
+	EffectOutcome   string                  `json:"effect_outcome,omitempty"`
+	Durability      control.DurabilityClass `json:"durability,omitempty"`
+	ActorRole       string                  `json:"actor_role,omitempty"`
+	MessageClass    string                  `json:"message_class,omitempty"`
+	EpochRelation   string                  `json:"epoch_relation,omitempty"`
+	OperationState  string                  `json:"operation_state,omitempty"`
 }
 
 type FrontierChoice struct {
@@ -245,7 +254,7 @@ func newRiskFrontierView(
 		PrefixTraceDigest: frontier.PrefixTraceDigest, SnapshotDigest: frontier.SnapshotDigest,
 		RuntimeEnabledDigest: frontier.RuntimeEnabledDigest, AdmissibleDigest: frontier.AdmissibleDigest,
 		RuntimeActionCount: frontier.RuntimeActionCount,
-		Actions:            append([]FrontierActionRef(nil), frontier.Actions...),
+		Actions:            cloneFrontierActionRefs(frontier.Actions),
 	}
 	sealed, err := view.seal()
 	if err != nil {
@@ -306,7 +315,8 @@ func (selector FrontierActionSelector) validate() error {
 	if selector.ActionID != "" {
 		if selector.Kind != "" || selector.Node != "" || selector.ItemKind != "" || selector.Owner != "" ||
 			selector.MessageSource != "" || selector.MessageTarget != "" || selector.TemporalKind != "" ||
-			selector.EffectKind != "" || selector.Durability != "" || selector.ActorRole != "" ||
+			selector.MessageTypeHint != "" || selector.EffectKind != "" || selector.EffectPhase != "" ||
+			selector.EffectOutcome != "" || selector.Durability != "" || selector.ActorRole != "" ||
 			selector.MessageClass != "" || selector.EpochRelation != "" || selector.OperationState != "" {
 			return errors.New("EXPERIMENT_FRONTIER_SELECTOR_EXACT_MIXED")
 		}
@@ -349,8 +359,11 @@ func (selector FrontierActionSelector) matches(action FrontierActionRef, hints .
 		(selector.Owner == "" || selector.Owner == action.Owner.Node) &&
 		(selector.MessageSource == "" || selector.MessageSource == action.MessageSource.Node) &&
 		(selector.MessageTarget == "" || selector.MessageTarget == action.MessageTarget) &&
+		(selector.MessageTypeHint == "" || selector.MessageTypeHint == action.MessageTypeHint) &&
 		(selector.TemporalKind == "" || selector.TemporalKind == action.TemporalKind) &&
 		(selector.EffectKind == "" || selector.EffectKind == action.EffectKind) &&
+		(selector.EffectPhase == "" || selector.EffectPhase == action.EffectPhase) &&
+		(selector.EffectOutcome == "" || selector.EffectOutcome == action.EffectOutcome) &&
 		(selector.Durability == "" || selector.Durability == action.Durability)
 	if !matched || selector.ActorRole == "" && selector.MessageClass == "" &&
 		selector.EpochRelation == "" && selector.OperationState == "" {
@@ -457,14 +470,56 @@ func (action FrontierActionRef) validate() error {
 	}
 	if action.ItemID == "" {
 		if action.ItemKind != "" || action.Owner.Node != "" || action.MessageSource.Node != "" ||
-			action.MessageTarget != "" || action.TemporalKind != "" || action.EffectKind != "" ||
-			action.Durability != "" {
+			action.MessageTarget != "" || action.MessageTypeHint != "" || len(action.MessageMetadata) != 0 ||
+			action.TemporalKind != "" || action.EffectKind != "" || action.EffectPhase != "" ||
+			action.EffectOutcome != "" || action.Durability != "" || len(action.Dependencies) != 0 {
 			return errors.New("EXPERIMENT_FRONTIER_ACTION_ITEM_INVALID")
 		}
 		return nil
 	}
 	if action.ItemKind.Validate() != nil || action.Owner.Validate() != nil {
 		return errors.New("EXPERIMENT_FRONTIER_ACTION_ITEM_INVALID")
+	}
+	dependencies := make(map[control.ItemID]bool, len(action.Dependencies))
+	for _, dependency := range action.Dependencies {
+		if dependency == "" || dependencies[dependency] {
+			return errors.New("EXPERIMENT_FRONTIER_ACTION_DEPENDENCY_INVALID")
+		}
+		dependencies[dependency] = true
+	}
+	switch action.ItemKind {
+	case control.ItemMessage:
+		if action.MessageSource.Node == "" || action.MessageTarget == "" || action.TemporalKind != "" ||
+			action.EffectKind != "" || action.EffectPhase != "" || action.EffectOutcome != "" || action.Durability != "" {
+			return errors.New("EXPERIMENT_FRONTIER_ACTION_MESSAGE_INVALID")
+		}
+		if action.MessageSource.Validate() != nil {
+			return errors.New("EXPERIMENT_FRONTIER_ACTION_MESSAGE_INVALID")
+		}
+		for key := range action.MessageMetadata {
+			if key == "" {
+				return errors.New("EXPERIMENT_FRONTIER_ACTION_MESSAGE_INVALID")
+			}
+		}
+	case control.ItemTemporal:
+		if action.TemporalKind == "" || action.MessageSource.Node != "" || action.MessageTarget != "" ||
+			action.MessageTypeHint != "" || len(action.MessageMetadata) != 0 || action.EffectKind != "" ||
+			action.EffectPhase != "" || action.EffectOutcome != "" || action.Durability != "" {
+			return errors.New("EXPERIMENT_FRONTIER_ACTION_TEMPORAL_INVALID")
+		}
+	case control.ItemEffect:
+		if action.EffectKind == "" || action.Durability == "" || action.EffectOutcome == "" ||
+			action.MessageSource.Node != "" || action.MessageTarget != "" || action.MessageTypeHint != "" ||
+			len(action.MessageMetadata) != 0 || action.TemporalKind != "" ||
+			(action.Kind != control.ActionCompleteEffect && action.Kind != control.ActionFailEffect) {
+			return errors.New("EXPERIMENT_FRONTIER_ACTION_EFFECT_INVALID")
+		}
+	default:
+		if action.MessageSource.Node != "" || action.MessageTarget != "" || action.MessageTypeHint != "" ||
+			len(action.MessageMetadata) != 0 || action.TemporalKind != "" || action.EffectKind != "" ||
+			action.EffectPhase != "" || action.EffectOutcome != "" || action.Durability != "" {
+			return errors.New("EXPERIMENT_FRONTIER_ACTION_ITEM_DETAILS_INVALID")
+		}
 	}
 	return nil
 }
@@ -493,16 +548,32 @@ func frontierActionRefs(
 				return nil, errors.New("EXPERIMENT_FRONTIER_ACTION_ITEM_MISSING")
 			}
 			ref.ItemKind, ref.Owner = item.Kind, item.Owner
+			ref.Dependencies = append([]control.ItemID(nil), item.Value.Dependencies...)
 			if item.Value.Message != nil {
 				ref.MessageSource = item.Value.Message.Source
 				ref.MessageTarget = item.Value.Message.Target
+				ref.MessageTypeHint = item.Value.Message.TypeHint
+				if len(item.Value.Message.Metadata) > 0 {
+					ref.MessageMetadata = make(map[string]string, len(item.Value.Message.Metadata))
+					for key, value := range item.Value.Message.Metadata {
+						ref.MessageMetadata[key] = value
+					}
+				}
 			}
 			if item.Value.Temporal != nil {
 				ref.TemporalKind = item.Value.Temporal.Kind
 			}
 			if item.Value.Effect != nil {
 				ref.EffectKind = item.Value.Effect.Kind
+				ref.EffectPhase = item.Value.Effect.Phase
 				ref.Durability = item.Value.Effect.Durability
+				if action.Kind == control.ActionCompleteEffect || action.Kind == control.ActionFailEffect {
+					var parameters control.AdapterResultParameters
+					if err := json.Unmarshal(action.Parameters, &parameters); err != nil || parameters.Result == "" {
+						return nil, errors.New("EXPERIMENT_FRONTIER_EFFECT_OUTCOME_INVALID")
+					}
+					ref.EffectOutcome = parameters.Result
+				}
 			}
 		}
 		if err := ref.validate(); err != nil {
@@ -538,7 +609,7 @@ func frontierSubset(runtimeEnabled, admissible []control.Action) bool {
 }
 
 func (view RiskFrontierView) seal() (RiskFrontierView, error) {
-	view.Actions = append([]FrontierActionRef(nil), view.Actions...)
+	view.Actions = cloneFrontierActionRefs(view.Actions)
 	view.Digest = ""
 	digest, err := control.CanonicalDigest(view)
 	if err != nil {
@@ -546,6 +617,20 @@ func (view RiskFrontierView) seal() (RiskFrontierView, error) {
 	}
 	view.Digest = digest
 	return view, nil
+}
+
+func cloneFrontierActionRefs(values []FrontierActionRef) []FrontierActionRef {
+	result := append([]FrontierActionRef(nil), values...)
+	for index := range result {
+		result[index].Dependencies = append([]control.ItemID(nil), values[index].Dependencies...)
+		if len(values[index].MessageMetadata) > 0 {
+			result[index].MessageMetadata = make(map[string]string, len(values[index].MessageMetadata))
+			for key, value := range values[index].MessageMetadata {
+				result[index].MessageMetadata[key] = value
+			}
+		}
+	}
+	return result
 }
 
 func (choice FrontierChoice) seal() (FrontierChoice, error) {

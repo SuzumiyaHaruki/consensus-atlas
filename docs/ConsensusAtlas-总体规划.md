@@ -626,13 +626,19 @@ continue/revise/abandon 决策，不能把 stalled/repeated 当成协议 verdict
 Timer callback/clock advance 分离。每轮紧凑 `summary.json` 也持久化同一 ProgressDelta，便于恢复后审计
 Agent 实际收到的机械反馈。M4i 未修改公共 ActionKind、具体协议、Adapter、PSS 或 Oracle，也未调用模型。
 
-### M4j：生成共识可测试性接口（草案完成，代码实现待后续）
+### M4j：生成共识可测试性接口（M4j1 最小公共闭环完成）
 
 非冻结草案位于 `docs/generated-consensus-testability.md`。它把接入接口分为公共原因型控制动词、受控资源/HostEffect、
 Target-local 类型与语义投影、当前 FaultEnvelope 四层，并按 T1 算法级确定性、T2 持久化恢复、T3 协议扩展分级。
 资格继续复用 `PortableCFTProfileV3`、Manifest、组合测试和 Replay，不新建平行 contract。
 
-下一步先审查并补齐公共 capability 对 HostEffect 阶段、失败结果、消息 metadata 和 fidelity 的描述能力；
+M4j1 已在现有 Manifest 上增加可选的消息 type hint/metadata key 与 HostEffect phase/durability/outcome 描述，
+并贯通 Runtime emission 校验、AgentTargetSurface、enabled frontier、Scenario selector、Trace 和 Replay。
+协议无关 described fixture 同时覆盖 effect complete/fail 和超声明拒绝；旧 fixture identity/Trace 不变，
+没有新增平行 contract、hash、baseline 或 gate。
+
+下一步不立即给每个真实 Target 填满新字段。先使用 M4j1 作为接入扩展缝：若恢复具体 Target 改造，按真实
+Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。
 在用户明确恢复具体 Target 改造前，不修改 etcd/raft、OmniPaxos 或 Hashicorp Raft 实现。
 
 ### M5：效果实验

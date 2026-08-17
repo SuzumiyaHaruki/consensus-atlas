@@ -115,6 +115,59 @@ func TestManifestDigestIgnoresCapabilityOrder(t *testing.T) {
 	}
 }
 
+func TestManifestValidatesAndCanonicalizesRichItemCapabilities(t *testing.T) {
+	left := fixtureManifest()
+	left.Capabilities.Actions = append(
+		left.Capabilities.Actions, control.ActionCompleteEffect, control.ActionFailEffect,
+	)
+	left.Capabilities.Items = append(left.Capabilities.Items, control.ItemEffect)
+	left.Capabilities.EffectKinds = []string{"persist"}
+	left.Capabilities.Message = &control.MessageCapability{
+		TypeHints: []string{"append", "vote"}, MetadataKeys: []string{"epoch", "slot"},
+	}
+	left.Capabilities.HostEffects = []control.HostEffectCapability{{
+		Kind: "persist", Phases: []string{"prepare", "sync"},
+		Durabilities: []control.DurabilityClass{
+			control.DurabilityVisible, control.DurabilityDurable,
+		},
+		AllowedResults: []string{"ok", "partial"}, AllowedFailures: []string{"io-error"},
+	}}
+	if err := left.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	right := left
+	right.Capabilities.Message = &control.MessageCapability{
+		TypeHints: []string{"vote", "append"}, MetadataKeys: []string{"slot", "epoch"},
+	}
+	right.Capabilities.HostEffects = []control.HostEffectCapability{{
+		Kind: "persist", Phases: []string{"sync", "prepare"},
+		Durabilities: []control.DurabilityClass{
+			control.DurabilityDurable, control.DurabilityVisible,
+		},
+		AllowedResults: []string{"partial", "ok"}, AllowedFailures: []string{"io-error"},
+	}}
+	leftDigest, err := left.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightDigest, err := right.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leftDigest != rightDigest {
+		t.Fatalf("rich capability order changed digest: %s != %s", leftDigest, rightDigest)
+	}
+
+	invalid := left
+	invalid.Capabilities.HostEffects = []control.HostEffectCapability{{
+		Kind: "persist", Durabilities: []control.DurabilityClass{"invented"},
+		AllowedResults: []string{"ok"},
+	}}
+	if err := invalid.Validate(); control.ValidationCode(err) != "HOST_EFFECT_CAPABILITY_DURABILITY_INVALID" {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func fixtureManifest() control.AdapterManifest {
 	return control.AdapterManifest{
 		SchemaVersion: control.SchemaVersion,

@@ -137,6 +137,15 @@ type MessageEnvelope struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+// MessageCapability describes the target-authored, protocol-neutral shape of
+// messages that may be emitted. Type hints and metadata keys remain opaque to
+// Core; Runtime only checks that an emitted envelope stays within this
+// declaration.
+type MessageCapability struct {
+	TypeHints    []string `json:"type_hints,omitempty"`
+	MetadataKeys []string `json:"metadata_keys,omitempty"`
+}
+
 type TemporalKind string
 
 const (
@@ -178,11 +187,23 @@ const (
 type HostEffect struct {
 	ID              EffectID        `json:"id"`
 	Kind            string          `json:"kind"`
+	Phase           string          `json:"phase,omitempty"`
 	Owner           NodeRef         `json:"owner"`
 	Request         PayloadEnvelope `json:"request"`
 	AllowedResults  []string        `json:"allowed_results,omitempty"`
 	AllowedFailures []string        `json:"allowed_failures,omitempty"`
 	Durability      DurabilityClass `json:"durability"`
+}
+
+// HostEffectCapability is a manifest-level upper bound for effects of one
+// kind. Phase and outcome strings are target-local; durability keeps its
+// existing cross-target meaning.
+type HostEffectCapability struct {
+	Kind            string            `json:"kind"`
+	Phases          []string          `json:"phases,omitempty"`
+	Durabilities    []DurabilityClass `json:"durabilities"`
+	AllowedResults  []string          `json:"allowed_results,omitempty"`
+	AllowedFailures []string          `json:"allowed_failures,omitempty"`
 }
 
 type HostCallback struct {
@@ -278,6 +299,11 @@ func (item ProducedItem) validateTypedPayload() error {
 		}
 		if item.Message.CloneOf != "" && item.Message.CloneOf == item.Message.ID {
 			return invalid("MESSAGE_CLONE_SELF_REFERENCE", "message.clone_of", string(item.Message.ID))
+		}
+		for key := range item.Message.Metadata {
+			if key == "" {
+				return invalid("MESSAGE_METADATA_KEY_REQUIRED", "message.metadata", "must not contain an empty key")
+			}
 		}
 		return item.Message.Payload.Validate()
 	case ItemTemporal:
@@ -461,15 +487,17 @@ type EntropyCapability struct {
 }
 
 type CapabilityManifest struct {
-	Actions            []ActionKind       `json:"actions,omitempty"`
-	Items              []ItemKind         `json:"items,omitempty"`
-	Temporal           TemporalCapability `json:"temporal"`
-	Entropy            EntropyCapability  `json:"entropy"`
-	CrashModes         []string           `json:"crash_modes,omitempty"`
-	EffectKinds        []string           `json:"effect_kinds,omitempty"`
-	StrictYield        bool               `json:"strict_yield"`
-	StrictReplay       bool               `json:"strict_replay"`
-	DurableCheckpoints bool               `json:"durable_checkpoints"`
+	Actions            []ActionKind           `json:"actions,omitempty"`
+	Items              []ItemKind             `json:"items,omitempty"`
+	Temporal           TemporalCapability     `json:"temporal"`
+	Entropy            EntropyCapability      `json:"entropy"`
+	CrashModes         []string               `json:"crash_modes,omitempty"`
+	EffectKinds        []string               `json:"effect_kinds,omitempty"`
+	Message            *MessageCapability     `json:"message,omitempty"`
+	HostEffects        []HostEffectCapability `json:"host_effects,omitempty"`
+	StrictYield        bool                   `json:"strict_yield"`
+	StrictReplay       bool                   `json:"strict_replay"`
+	DurableCheckpoints bool                   `json:"durable_checkpoints"`
 }
 
 type AdapterManifest struct {
@@ -539,6 +567,20 @@ func (manifest AdapterManifest) Validate() error {
 	if err := uniqueStrings("capabilities.effect_kinds", manifest.Capabilities.EffectKinds); err != nil && len(manifest.Capabilities.EffectKinds) > 0 {
 		return err
 	}
+	if manifest.Capabilities.Message != nil {
+		if !containsItemKind(manifest.Capabilities.Items, ItemMessage) {
+			return invalid("MESSAGE_CAPABILITY_REQUIRES_ITEM", "capabilities.message", string(ItemMessage))
+		}
+		if err := uniqueStrings("capabilities.message.type_hints", manifest.Capabilities.Message.TypeHints); err != nil && len(manifest.Capabilities.Message.TypeHints) > 0 {
+			return err
+		}
+		if err := uniqueStrings("capabilities.message.metadata_keys", manifest.Capabilities.Message.MetadataKeys); err != nil && len(manifest.Capabilities.Message.MetadataKeys) > 0 {
+			return err
+		}
+	}
+	if err := validateHostEffectCapabilities(manifest.Capabilities); err != nil {
+		return err
+	}
 	if err := uniqueStrings("evidence_schemas", manifest.EvidenceSchemas); err != nil && len(manifest.EvidenceSchemas) > 0 {
 		return err
 	}
@@ -576,9 +618,109 @@ func (manifest AdapterManifest) Digest() (string, error) {
 	sort.Strings(copyManifest.Capabilities.CrashModes)
 	copyManifest.Capabilities.EffectKinds = append([]string(nil), manifest.Capabilities.EffectKinds...)
 	sort.Strings(copyManifest.Capabilities.EffectKinds)
+	if manifest.Capabilities.Message != nil {
+		message := *manifest.Capabilities.Message
+		message.TypeHints = append([]string(nil), message.TypeHints...)
+		message.MetadataKeys = append([]string(nil), message.MetadataKeys...)
+		sort.Strings(message.TypeHints)
+		sort.Strings(message.MetadataKeys)
+		copyManifest.Capabilities.Message = &message
+	}
+	copyManifest.Capabilities.HostEffects = append(
+		[]HostEffectCapability(nil), manifest.Capabilities.HostEffects...,
+	)
+	for index := range copyManifest.Capabilities.HostEffects {
+		capability := &copyManifest.Capabilities.HostEffects[index]
+		capability.Phases = append([]string(nil), capability.Phases...)
+		capability.Durabilities = append([]DurabilityClass(nil), capability.Durabilities...)
+		capability.AllowedResults = append([]string(nil), capability.AllowedResults...)
+		capability.AllowedFailures = append([]string(nil), capability.AllowedFailures...)
+		sort.Strings(capability.Phases)
+		sort.Slice(capability.Durabilities, func(i, j int) bool {
+			return capability.Durabilities[i] < capability.Durabilities[j]
+		})
+		sort.Strings(capability.AllowedResults)
+		sort.Strings(capability.AllowedFailures)
+	}
+	sort.Slice(copyManifest.Capabilities.HostEffects, func(i, j int) bool {
+		return copyManifest.Capabilities.HostEffects[i].Kind < copyManifest.Capabilities.HostEffects[j].Kind
+	})
 	copyManifest.EvidenceSchemas = append([]string(nil), manifest.EvidenceSchemas...)
 	sort.Strings(copyManifest.EvidenceSchemas)
 	return CanonicalDigest(copyManifest)
+}
+
+func validateHostEffectCapabilities(capabilities CapabilityManifest) error {
+	if len(capabilities.HostEffects) == 0 {
+		return nil
+	}
+	if !containsItemKind(capabilities.Items, ItemEffect) ||
+		len(capabilities.HostEffects) != len(capabilities.EffectKinds) {
+		return invalid("HOST_EFFECT_CAPABILITY_INCOMPLETE", "capabilities.host_effects", "must describe every effect kind")
+	}
+	effectKinds := make(map[string]bool, len(capabilities.EffectKinds))
+	for _, kind := range capabilities.EffectKinds {
+		effectKinds[kind] = true
+	}
+	seen := make(map[string]bool, len(capabilities.HostEffects))
+	for _, capability := range capabilities.HostEffects {
+		if capability.Kind == "" || !effectKinds[capability.Kind] || seen[capability.Kind] {
+			return invalid("HOST_EFFECT_CAPABILITY_KIND_INVALID", "capabilities.host_effects.kind", capability.Kind)
+		}
+		seen[capability.Kind] = true
+		if err := uniqueStrings("capabilities.host_effects.phases", capability.Phases); err != nil && len(capability.Phases) > 0 {
+			return err
+		}
+		if len(capability.Durabilities) == 0 {
+			return invalid("HOST_EFFECT_CAPABILITY_DURABILITY_REQUIRED", "capabilities.host_effects.durabilities", capability.Kind)
+		}
+		durabilities := make(map[DurabilityClass]bool, len(capability.Durabilities))
+		for _, durability := range capability.Durabilities {
+			switch durability {
+			case DurabilityVolatile, DurabilityVisible, DurabilityDurable, DurabilityApplied:
+			default:
+				return invalid("HOST_EFFECT_CAPABILITY_DURABILITY_INVALID", "capabilities.host_effects.durabilities", string(durability))
+			}
+			if durabilities[durability] {
+				return invalid("VALUE_DUPLICATE", "capabilities.host_effects.durabilities", string(durability))
+			}
+			durabilities[durability] = true
+		}
+		if len(capability.AllowedResults)+len(capability.AllowedFailures) == 0 {
+			return invalid("HOST_EFFECT_CAPABILITY_OUTCOME_REQUIRED", "capabilities.host_effects", capability.Kind)
+		}
+		if len(capability.AllowedResults) > 0 && !containsActionKind(capabilities.Actions, ActionCompleteEffect) {
+			return invalid("HOST_EFFECT_RESULT_ACTION_MISSING", "capabilities.actions", string(ActionCompleteEffect))
+		}
+		if len(capability.AllowedFailures) > 0 && !containsActionKind(capabilities.Actions, ActionFailEffect) {
+			return invalid("HOST_EFFECT_FAILURE_ACTION_MISSING", "capabilities.actions", string(ActionFailEffect))
+		}
+		if err := uniqueStrings("capabilities.host_effects.allowed_results", capability.AllowedResults); err != nil && len(capability.AllowedResults) > 0 {
+			return err
+		}
+		if err := uniqueStrings("capabilities.host_effects.allowed_failures", capability.AllowedFailures); err != nil && len(capability.AllowedFailures) > 0 {
+			return err
+		}
+	}
+	return nil
+}
+
+func containsItemKind(values []ItemKind, target ItemKind) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsActionKind(values []ActionKind, target ActionKind) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func uniqueStrings(field string, values []string) error {

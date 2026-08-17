@@ -427,7 +427,7 @@ func executeBoundedScenarioPlan(
 			feedback.ReasonCode = ScenarioReasonNoMatch
 			if len(matches) > 1 {
 				feedback.ReasonCode = ScenarioReasonAmbiguous
-				feedback.Available = append([]FrontierActionRef(nil), matches...)
+				feedback.Available = cloneFrontierActionRefs(matches)
 			}
 			result.Steps = append(result.Steps, feedback)
 			break
@@ -716,6 +716,10 @@ func scenarioSelectorTrace(
 			filters = append(filters, filter{field: "message_target", requested: string(selector.MessageTarget),
 				matches: func(value candidate) bool { return value.action.MessageTarget == selector.MessageTarget }})
 		}
+		if selector.MessageTypeHint != "" {
+			filters = append(filters, filter{field: "message_type_hint", requested: selector.MessageTypeHint,
+				matches: func(value candidate) bool { return value.action.MessageTypeHint == selector.MessageTypeHint }})
+		}
 		if selector.TemporalKind != "" {
 			filters = append(filters, filter{field: "temporal_kind", requested: string(selector.TemporalKind),
 				matches: func(value candidate) bool { return value.action.TemporalKind == selector.TemporalKind }})
@@ -723,6 +727,14 @@ func scenarioSelectorTrace(
 		if selector.EffectKind != "" {
 			filters = append(filters, filter{field: "effect_kind", requested: selector.EffectKind,
 				matches: func(value candidate) bool { return value.action.EffectKind == selector.EffectKind }})
+		}
+		if selector.EffectPhase != "" {
+			filters = append(filters, filter{field: "effect_phase", requested: selector.EffectPhase,
+				matches: func(value candidate) bool { return value.action.EffectPhase == selector.EffectPhase }})
+		}
+		if selector.EffectOutcome != "" {
+			filters = append(filters, filter{field: "effect_outcome", requested: selector.EffectOutcome,
+				matches: func(value candidate) bool { return value.action.EffectOutcome == selector.EffectOutcome }})
 		}
 		if selector.Durability != "" {
 			filters = append(filters, filter{field: "durability", requested: string(selector.Durability),
@@ -773,7 +785,7 @@ func scenarioActionFrontier(view RiskFrontierView) (ActionFrontierView, error) {
 		PrefixDecisions: view.PrefixDecisions, NextDecision: view.NextDecision,
 		PrefixTraceDigest: view.PrefixTraceDigest, SnapshotDigest: view.SnapshotDigest,
 		RuntimeEnabledDigest: view.RuntimeEnabledDigest, AdmissibleDigest: view.AdmissibleDigest,
-		RuntimeActionCount: view.RuntimeActionCount, Actions: append([]FrontierActionRef(nil), view.Actions...),
+		RuntimeActionCount: view.RuntimeActionCount, Actions: cloneFrontierActionRefs(view.Actions),
 	}
 	return frontier.seal()
 }

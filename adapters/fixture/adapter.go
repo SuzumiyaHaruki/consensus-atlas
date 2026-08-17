@@ -42,6 +42,7 @@ type nodeState struct {
 }
 
 type Adapter struct {
+	described   bool
 	nodes       map[control.NodeID]nodeState
 	entropy     *controlentropy.Provider
 	pending     *control.AdapterCommand
@@ -57,7 +58,14 @@ func New() *Adapter {
 	return &Adapter{}
 }
 
-func (*Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
+// NewDescribed enables the richer protocol-neutral capability declarations
+// used by composition tests. New keeps the historical fixture identity and
+// traces unchanged.
+func NewDescribed() *Adapter {
+	return &Adapter{described: true}
+}
+
+func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
 	configurationDigest, err := control.CanonicalDigest(struct {
 		Nodes       []control.NodeID `json:"nodes"`
 		PulsePeriod uint64           `json:"pulse_period"`
@@ -65,7 +73,7 @@ func (*Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
 	if err != nil {
 		return control.AdapterManifest{}, err
 	}
-	return control.AdapterManifest{
+	manifest := control.AdapterManifest{
 		SchemaVersion: control.SchemaVersion,
 		AdapterID:     "control-fixture-v1", ImplementationID: "protocol-free-fixture/v1",
 		BuildID: "in-tree-fixture-v1", ConfigurationDigest: configurationDigest,
@@ -95,7 +103,20 @@ func (*Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
 			StrictYield: true, StrictReplay: true, DurableCheckpoints: true,
 		},
 		EvidenceSchemas: []string{"consensus-atlas/fixture-evidence/v1"},
-	}, nil
+	}
+	if adapter.described {
+		manifest.AdapterID = "control-described-fixture-v1"
+		manifest.BuildID = "in-tree-described-fixture-v1"
+		manifest.Capabilities.Message = &control.MessageCapability{
+			TypeHints: []string{"fixture-message"}, MetadataKeys: []string{"channel"},
+		}
+		manifest.Capabilities.HostEffects = []control.HostEffectCapability{{
+			Kind: "persist", Phases: []string{"storage"},
+			Durabilities:   []control.DurabilityClass{control.DurabilityDurable},
+			AllowedResults: []string{"ok"}, AllowedFailures: []string{"io-error"},
+		}}
+	}
+	return manifest, nil
 }
 
 func (adapter *Adapter) Reset(_ context.Context, seed []byte) error {
@@ -441,11 +462,16 @@ func (adapter *Adapter) message(owner control.NodeRef, target control.NodeID, va
 	if err != nil {
 		return control.ProducedItem{}, err
 	}
+	message := &control.MessageEnvelope{
+		ID: control.MessageID(messageID), Source: owner, Target: target, Payload: payload,
+	}
+	if adapter.described {
+		message.TypeHint = "fixture-message"
+		message.Metadata = map[string]string{"channel": "peer"}
+	}
 	return control.ProducedItem{
 		ID: itemID, Kind: control.ItemMessage, Owner: owner, Dependencies: dependencies,
-		Message: &control.MessageEnvelope{
-			ID: control.MessageID(messageID), Source: owner, Target: target, Payload: payload,
-		},
+		Message: message,
 	}, nil
 }
 
@@ -458,13 +484,17 @@ func (adapter *Adapter) effect(owner control.NodeRef, value string) (control.Pro
 	if err != nil {
 		return control.ProducedItem{}, err
 	}
+	effect := &control.HostEffect{
+		ID: control.EffectID(effectID), Kind: "persist", Owner: owner, Request: payload,
+		AllowedResults: []string{"ok"}, AllowedFailures: []string{"io-error"},
+		Durability: control.DurabilityDurable,
+	}
+	if adapter.described {
+		effect.Phase = "storage"
+	}
 	return control.ProducedItem{
 		ID: itemID, Kind: control.ItemEffect, Owner: owner,
-		Effect: &control.HostEffect{
-			ID: control.EffectID(effectID), Kind: "persist", Owner: owner, Request: payload,
-			AllowedResults: []string{"ok"}, AllowedFailures: []string{"io-error"},
-			Durability: control.DurabilityDurable,
-		},
+		Effect: effect,
 	}, nil
 }
 

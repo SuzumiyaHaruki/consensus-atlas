@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4i Milestone-directed Scenario revision（实现完成）。
+阶段：M4j1 协议无关可测试性能力闭环（实现完成）。
 
 ## 一句话状态
 
@@ -166,6 +166,18 @@ evidence 的 step/kind、Timer callback 与真实逻辑时钟推进、fault allo
 本阶段没有改动具体共识、Adapter、PSS、Oracle 或公共 ActionKind，也没有再次调用模型。生成共识可测试性接口的
 非冻结草案已写入 `docs/generated-consensus-testability.md`，继续复用 PortableCFTProfile/Manifest/组合测试，
 不建立第二套资格 contract。具体协议 host/wrapper 改造按用户要求暂缓。
+
+M4j1 已把草案中已有、但此前未贯通的事实接入现有主链。Manifest 可选声明消息 type hint/metadata key，
+以及每类 HostEffect 的 phase、durability 和允许完成/失败结果；Runtime 会拒绝超出声明的 emission。
+同一声明由 `AgentTargetSurface.capabilities` 机械投影，当前 enabled frontier 进一步公开实际依赖、消息提示/
+metadata、effect phase 和本 Action 的 outcome。Scenario selector 可用 `message_type_hint`、`effect_phase`、
+`effect_outcome` 精确绑定真实 Action，不能创建新消息、效果或结果。
+
+协议无关 described fixture 已覆盖 `Manifest → emission validation → enabled frontier → complete/fail → Trace →
+fresh Replay`，并另有超出消息声明即进入 terminal failure 的负向回归。普通历史 fixture 保持原 identity 和 Trace，
+因此没有更新旧 digest 或 baseline。本阶段没有修改 etcd/raft、OmniPaxos、Hashicorp Raft、公共 ActionKind、PSS
+或 Oracle，也没有调用模型。Scenario prompt 升为 v15，structured output 升为 v6，新的 MethodSpec 会与 M4h
+工件自然区分。
 
 ## 当前输入
 

@@ -75,6 +75,10 @@ Action kind 是公共词汇，但可达性是 Target-local 事实。Manifest 的
 它不能伪造消息、修改 payload，也不能投递一个从未产生的消息。延迟由“不选择已存消息”自然形成，因此消息可以跨越
 多个其他 Action 后再投递或丢弃。
 
+Manifest 可以选择进一步声明消息 type hint 与 metadata key。它们是 Target-local 字符串，不进入公共协议枚举；
+一旦声明，Runtime 会拒绝超出范围的 emission。Agent frontier 只展示已产生消息的实际提示、metadata 和依赖，
+因此这些字段可以用于收窄当前 Action，但不能伪造消息或修改 payload。
+
 ### 3.3 虚拟时间
 
 Runtime 不提供“直接触发某个协议超时”。Adapter 暴露当前自然 temporal item，选择 `fire-temporal-event` 后调用目标
@@ -84,6 +88,10 @@ Runtime 不提供“直接触发某个协议超时”。Adapter 暴露当前自�
 
 Crash 只作用于运行节点，Restart 只作用于已停止节点。具体 durable image、Ready/WAL/effect 顺序由 Target composition
 负责；公共 Runtime 不假设所有协议都有相同持久化层。不可表达的窗口通过 fidelity boundary 报告，不伪装成假设失败。
+
+HostEffect 的富能力描述同样是可选的 Target-local 声明：kind、phase、durability、允许完成结果和允许失败结果。
+Runtime 校验实际 effect 不越过该上界；frontier 把当前 effect 的 phase、durability 和具体 Action outcome 暴露给
+Scenario Agent。公共层不解释 `persist`、`sync`、`snapshot` 等名字的协议含义。
 
 ## 4. Target composition
 

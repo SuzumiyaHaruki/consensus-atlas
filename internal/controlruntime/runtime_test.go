@@ -60,6 +60,46 @@ type closeTrackingAdapter struct {
 	closes int
 }
 
+type undeclaredMessageTypeAdapter struct {
+	control.Adapter
+}
+
+type undeclaredEffectPhaseAdapter struct {
+	control.Adapter
+}
+
+func (adapter *undeclaredMessageTypeAdapter) Collect(
+	ctx context.Context,
+	yield control.YieldID,
+) (control.Emission, error) {
+	emission, err := adapter.Adapter.Collect(ctx, yield)
+	if err != nil {
+		return control.Emission{}, err
+	}
+	for index := range emission.Items {
+		if emission.Items[index].Message != nil {
+			emission.Items[index].Message.TypeHint = "undeclared-message"
+		}
+	}
+	return emission.Seal()
+}
+
+func (adapter *undeclaredEffectPhaseAdapter) Collect(
+	ctx context.Context,
+	yield control.YieldID,
+) (control.Emission, error) {
+	emission, err := adapter.Adapter.Collect(ctx, yield)
+	if err != nil {
+		return control.Emission{}, err
+	}
+	for index := range emission.Items {
+		if emission.Items[index].Effect != nil {
+			emission.Items[index].Effect.Phase = "undeclared-phase"
+		}
+	}
+	return emission.Seal()
+}
+
 func (adapter *closeTrackingAdapter) Close() error {
 	adapter.closes++
 	return nil
@@ -86,6 +126,52 @@ func TestRuntimeOwnsAndClosesAdapter(t *testing.T) {
 	}
 	if adapter.closes != 1 {
 		t.Fatalf("adapter closes = %d, want 1", adapter.closes)
+	}
+}
+
+func TestRuntimeRejectsEmissionOutsideRichMessageCapability(t *testing.T) {
+	ctx := context.Background()
+	adapter := &undeclaredMessageTypeAdapter{Adapter: fixture.NewDescribed()}
+	runtime, err := controlruntime.New(ctx, adapter, runtimeConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := fixture.InputPayload(fixture.Input{
+		Operation: fixture.OpEmitMessage, Target: "n2", Value: "value",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionID, err := runtime.OfferInvoke(ctx, "n1", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Select(ctx, actionID); err == nil ||
+		!strings.Contains(err.Error(), "MESSAGE_TYPE_HINT_UNDECLARED") {
+		t.Fatalf("Select() error = %v, want undeclared message rejection", err)
+	}
+}
+
+func TestRuntimeRejectsEmissionOutsideRichHostEffectCapability(t *testing.T) {
+	ctx := context.Background()
+	adapter := &undeclaredEffectPhaseAdapter{Adapter: fixture.NewDescribed()}
+	runtime, err := controlruntime.New(ctx, adapter, runtimeConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := fixture.InputPayload(fixture.Input{
+		Operation: fixture.OpEmitDurableMessage, Target: "n2", Value: "value",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionID, err := runtime.OfferInvoke(ctx, "n1", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Select(ctx, actionID); err == nil ||
+		!strings.Contains(err.Error(), "HOST_EFFECT_PHASE_UNDECLARED") {
+		t.Fatalf("Select() error = %v, want undeclared effect phase rejection", err)
 	}
 }
 

@@ -133,8 +133,18 @@ func (runtime *Runtime) validateEmission(emission control.Emission, futureOwner 
 				return fmt.Errorf("TEMPORAL_CAPABILITY_MISSING: %s", item.Temporal.Kind)
 			}
 		}
-		if item.Effect != nil && !runtime.supportsEffect(item.Effect.Kind) {
-			return fmt.Errorf("EFFECT_CAPABILITY_MISSING: %s", item.Effect.Kind)
+		if item.Message != nil {
+			if err := runtime.validateMessageCapability(*item.Message); err != nil {
+				return err
+			}
+		}
+		if item.Effect != nil {
+			if !runtime.supportsEffect(item.Effect.Kind) {
+				return fmt.Errorf("EFFECT_CAPABILITY_MISSING: %s", item.Effect.Kind)
+			}
+			if err := runtime.validateHostEffectCapability(*item.Effect); err != nil {
+				return err
+			}
 		}
 		newItems[item.ID] = item
 	}
@@ -176,6 +186,75 @@ func (runtime *Runtime) validateEmission(emission control.Emission, futureOwner 
 		}
 	}
 	return nil
+}
+
+func (runtime *Runtime) validateMessageCapability(message control.MessageEnvelope) error {
+	capability := runtime.manifest.Capabilities.Message
+	if capability == nil {
+		return nil
+	}
+	if message.TypeHint != "" && !containsString(capability.TypeHints, message.TypeHint) {
+		return fmt.Errorf("MESSAGE_TYPE_HINT_UNDECLARED: %s", message.TypeHint)
+	}
+	for key := range message.Metadata {
+		if !containsString(capability.MetadataKeys, key) {
+			return fmt.Errorf("MESSAGE_METADATA_KEY_UNDECLARED: %s", key)
+		}
+	}
+	return nil
+}
+
+func (runtime *Runtime) validateHostEffectCapability(effect control.HostEffect) error {
+	if len(runtime.manifest.Capabilities.HostEffects) == 0 {
+		return nil
+	}
+	var capability *control.HostEffectCapability
+	for index := range runtime.manifest.Capabilities.HostEffects {
+		candidate := &runtime.manifest.Capabilities.HostEffects[index]
+		if candidate.Kind == effect.Kind {
+			capability = candidate
+			break
+		}
+	}
+	if capability == nil {
+		return fmt.Errorf("HOST_EFFECT_CAPABILITY_MISSING: %s", effect.Kind)
+	}
+	if effect.Phase == "" && len(capability.Phases) > 0 ||
+		effect.Phase != "" && !containsString(capability.Phases, effect.Phase) {
+		return fmt.Errorf("HOST_EFFECT_PHASE_UNDECLARED: %s", effect.Phase)
+	}
+	if !containsDurability(capability.Durabilities, effect.Durability) {
+		return fmt.Errorf("HOST_EFFECT_DURABILITY_UNDECLARED: %s", effect.Durability)
+	}
+	for _, result := range effect.AllowedResults {
+		if !containsString(capability.AllowedResults, result) {
+			return fmt.Errorf("HOST_EFFECT_RESULT_UNDECLARED: %s", result)
+		}
+	}
+	for _, failure := range effect.AllowedFailures {
+		if !containsString(capability.AllowedFailures, failure) {
+			return fmt.Errorf("HOST_EFFECT_FAILURE_UNDECLARED: %s", failure)
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsDurability(values []control.DurabilityClass, target control.DurabilityClass) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (runtime *Runtime) validateOwner(owner control.NodeRef, futureOwner *control.NodeRef) error {

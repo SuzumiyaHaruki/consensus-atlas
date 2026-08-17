@@ -405,7 +405,7 @@ func ExploreScenarioWithPlanner(
 				ReferenceBranchID: proposal.ReferenceBranchID,
 				RootDecision:      selected.frontier.NextDecision,
 				FinalDecision:     frontier.NextDecision,
-				AvailableActions:  append([]FrontierActionRef(nil), frontier.Actions...), Plan: plan,
+				AvailableActions:  cloneFrontierActionRefs(frontier.Actions), Plan: plan,
 				AppliedInterventions: appliedScenarioInterventions(execution),
 				Outcome:              attempt.Feedback.Outcome, ReasonCode: attempt.Feedback.ReasonCode,
 				ProgressDelta: cloneScenarioProgressDelta(attempt.Feedback.ProgressDelta),
@@ -683,7 +683,7 @@ func cloneScenarioSemantics(exposure ScenarioSemanticExposure) ScenarioSemanticE
 }
 
 func cloneScenarioFrontier(view RiskFrontierView) RiskFrontierView {
-	view.Actions = append([]FrontierActionRef(nil), view.Actions...)
+	view.Actions = cloneFrontierActionRefs(view.Actions)
 	view.Progress = cloneRiskProgress(view.Progress)
 	return view
 }
@@ -786,7 +786,7 @@ func cloneScenarioPlan(plan *ScenarioPlan) *ScenarioPlan {
 func cloneScenarioStepFeedback(feedback []ScenarioStepFeedback) []ScenarioStepFeedback {
 	result := append([]ScenarioStepFeedback(nil), feedback...)
 	for index := range result {
-		result[index].Available = append([]FrontierActionRef(nil), feedback[index].Available...)
+		result[index].Available = cloneFrontierActionRefs(feedback[index].Available)
 		result[index].SelectorTrace = append(
 			[]ScenarioSelectorFilter(nil), feedback[index].SelectorTrace...,
 		)

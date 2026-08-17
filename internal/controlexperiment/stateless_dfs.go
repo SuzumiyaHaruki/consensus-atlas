@@ -268,7 +268,7 @@ func (boundedStatelessDFSAlgorithm) Explore(
 
 func NewCanonicalStatelessGuidancePolicy() StatelessGuidancePolicy {
 	return StatelessGuidancePolicyFunc(func(view ActionFrontierView) ([]FrontierActionRef, error) {
-		return append([]FrontierActionRef(nil), view.Actions...), nil
+		return cloneFrontierActionRefs(view.Actions), nil
 	})
 }
 
@@ -311,7 +311,7 @@ func exploreBoundedStatelessDFS(
 		result.Work.TotalWorkUnits += reconstruction.WorkUnits
 		result.StatesExpanded++
 		guidanceView := view
-		guidanceView.Actions = append([]FrontierActionRef(nil), view.Actions...)
+		guidanceView.Actions = cloneFrontierActionRefs(view.Actions)
 		actions, err := guidance.Order(guidanceView)
 		if err != nil {
 			return err
@@ -886,7 +886,7 @@ func validDFSPhaseWork(work PhaseWork) bool {
 }
 
 func (view ActionFrontierView) seal() (ActionFrontierView, error) {
-	view.Actions = append([]FrontierActionRef(nil), view.Actions...)
+	view.Actions = cloneFrontierActionRefs(view.Actions)
 	view.Digest = ""
 	digest, err := control.CanonicalDigest(view)
 	if err != nil {
