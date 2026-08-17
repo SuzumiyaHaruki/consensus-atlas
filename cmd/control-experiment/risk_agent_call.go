@@ -76,8 +76,9 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"An evidence_level describes current observation or Oracle support, not whether a property is true. Respect each issue pattern's " +
 		"applicability and boundary; do not turn a documented contract violation or unavailable blind-spot behavior into a core defect claim. " +
 		"Express the suspected mechanism only through mechanism_steps: provide exactly one step per predicate in the same order, " +
-		"with the exact same milestone_id and kind. Each rationale explains why that observed milestone matters. Every claimed causal " +
-		"trigger, including message loss, timeout, crash, coordinator change, or decision, must therefore have its own predicate and " +
+		"with the exact same milestone_id and kind. Each rationale explains why that observed milestone matters, must be concise, and " +
+		"must be no longer than 256 UTF-8 bytes. Every claimed causal trigger, including message loss, timeout, crash, coordinator change, " +
+		"or decision, must therefore have its own predicate and " +
 		"matching mechanism step. " +
 		"Each mechanism step cites one to three exact available_support_refs that informed it. A support reference records visibility, not proof. " +
 		"A source/... reference is available only after its bounded source excerpt appears in knowledge_results. " +

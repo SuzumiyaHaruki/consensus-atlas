@@ -177,6 +177,11 @@ mechanical probe that the real TargetSurface must reject before Runtime executio
 structured arm receives the derived gap reference and summary. The probe and one-Scenario-call limit are part of the existing
 MethodSpec. Report this as feedback sensitivity, not protocol coverage or defect effectiveness.
 
+The first probe-based baseline still stopped before Scenario: three otherwise bounded candidates had several 161–182 character
+rationales, exceeding the former 160-byte per-step bound despite complete mechanisms of only 1105–1186 bytes. Its repair call hit
+the 32,000 output-token limit; total cost was 78,182 tokens. M4k5c raises only the per-step bound to 256 while retaining the existing
+2048-byte complete-mechanism bound. This failed attempt is provider/contract calibration cost, not an adaptation observation.
+
 ## 7. Known limitations and safeguards
 
 - A state key can over-merge if the PSS omits a safety-relevant relation, or over-split if it retains an irrelevant one. Invariance and separation tests are therefore part of the Family Pack.

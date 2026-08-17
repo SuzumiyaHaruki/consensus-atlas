@@ -647,7 +647,7 @@ M4j3 将同一机械缺口贯通到最终停止、Episode assessment、compact a
 Memory。最后一轮 capability gap 不再被覆盖成 call-budget/planning failure；Memory 只携带缺口 reason code，
 不携带 Oracle finding。这使“Agent 假设失败”和“当前 Target 无法执行”保持可区分，同时不引入第二套状态模型。
 
-### M4k：释放 Agent 的调查与自我修订能力（M4k5a 完成）
+### M4k：释放 Agent 的调查与自我修订能力（M4k5c 完成）
 
 M4k 不再横向扩公共控制面，而是在现有可信边界内增加 Agent 的有效反馈。M4k1 将 Scenario 机械产生的
 capability gap 以 `code/reference/summary` 结构化形式带入下一 Episode；Risk Agent 能区分同属
@@ -688,6 +688,11 @@ MethodSpec，不新增第二套 hash；调用者篡改探针结果会在 Episode
 M4k5b 真实配对只回答“结构化能力反馈是否改变下一次 Risk/Scenario 选择”，不回答长期缺陷发现率。主要输出是：
 accepted Risk 是否依赖缺失控制、首个 Scenario 是否再次命中 capability gap、是否进入可信执行、模型成本和最终
 机械停止原因。若该最小实验有差异，再进入多 seed；若无差异，应接受 TargetSurface 本身已经足够，而不是继续堆字段。
+
+首次 probe 基线又暴露了一个与反馈无关的旧限制：3 个 otherwise bounded candidate 仅因少量 rationale 超过 160
+字符而全部被判 mechanism-unaligned，随后一次 32K 修订被截断。M4k5c 将单步上限调整为 256，仍受完整 mechanism
+2048 上限约束，并以 Risk prompt v5 绑定方法身份。该修改来自可复现的具体失败样本，不是为扩大 DSL；若新 arm
+首轮仍失败，必须先报告新的精确 qualification reason，而不能继续无界重跑。
 
 下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。

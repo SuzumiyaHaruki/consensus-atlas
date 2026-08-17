@@ -12,6 +12,25 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
+func TestRiskMechanismAllowsBoundedAgentRationale(t *testing.T) {
+	predicates := []semantic.ObservationPredicate{
+		{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+		{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+	}
+	steps := []RiskMechanismStep{
+		{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: strings.Repeat("a", 200)},
+		{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "decision evidence closes the hypothesis"},
+	}
+	mechanism, err := deriveRiskMechanism(predicates, steps)
+	if err != nil || len(mechanism) >= 2048 {
+		t.Fatalf("bounded rationale was rejected: bytes=%d err=%v", len(mechanism), err)
+	}
+	steps[0].Rationale = strings.Repeat("a", RiskMechanismStepMaxBytes+1)
+	if _, err := deriveRiskMechanism(predicates, steps); err == nil {
+		t.Fatal("oversized rationale was accepted")
+	}
+}
+
 func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	capabilities := []semantic.ObservationCapability{

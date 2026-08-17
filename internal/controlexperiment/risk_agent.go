@@ -21,7 +21,7 @@ const (
 	RiskCandidateMaxSteps        = 6
 	RiskCandidatePortfolioMax    = 3
 	RiskExplorationMemoryMax     = 8
-	RiskMechanismStepMaxBytes    = 160
+	RiskMechanismStepMaxBytes    = 256
 	RiskMechanismSupportMax      = 3
 	riskSupportReferenceMaxBytes = targetEvidenceReferenceMaxBytes + len("source/")
 	RiskKnowledgeRequestsPerCall = 2

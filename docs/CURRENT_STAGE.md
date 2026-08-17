@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4k5a 机械能力探针配对校准（实现完成，待真实运行）。
+阶段：M4k5c Risk 解释边界校准（实现完成，待重新运行配对）。
 
 ## 一句话状态
 
@@ -231,6 +231,13 @@ structured arm 保留同一 `code/reference/summary`。探针计划和单次 Sce
 必须与 Target 重新推导结果一致。OmniPaxos v1 探针请求 `crash n2`，真实 surface 机械返回 missing-action。
 两组各只运行一个 Episode、最多一次 Scenario 调用，从而在显著降低 token 成本的同时保证实验变量在首个 Risk
 请求前已经激活。探针不是协议执行证据，也不能获得 finding credit。
+
+M4k5b reason-code arm 已证明探针接线有效，但仍未到 Scenario：首轮 3 个 portfolio candidate 都因
+`risk-candidate-mechanism-unaligned` 被拒绝，修订调用再次打满 32,000 输出 tokens。两次共 78,182 tokens。
+原始响应检查表明 `suspected_mechanism` 已正确留空、milestone/kind 对齐，唯一共同失败是 6 个 rationale 中少量
+长度为 161–182，而旧单步上限为 160；每个完整派生 mechanism 仅 1105–1186，远低于既有 2048 总上限。
+M4k5c 因此把单步 rationale 上限放宽到 256，同时保留 2048 总上限，并在 prompt 明示字节边界。Risk prompt
+升为 v5，旧失败 MethodSpec 不会与新实验混淆。该调整不改变候选数量、Action、执行、Replay 或 verdict 边界。
 
 ## 当前输入
 
