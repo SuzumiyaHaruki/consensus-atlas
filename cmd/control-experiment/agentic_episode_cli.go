@@ -82,10 +82,14 @@ func runAgenticInvestigationCLI(
 		},
 	})
 	fmt.Fprintf(stdout,
-		"investigation=%s target=%s episodes=%d stop=%s model_calls=%d model_tokens=%d runtime_decision_allowance=%d unreconciled_model_calls=%d\n",
+		"investigation=%s target=%s episodes=%d stop=%s model_calls=%d model_tokens=%d runtime_decision_allowance=%d unreconciled_model_calls=%d capability_gap_attempts=%d repeated_capability_gap_attempts=%d capability_repair_attempts=%d capability_repair_executions=%d\n",
 		options.CampaignDirectory, options.Target, len(result.Episodes), result.StopReason,
 		result.ModelWork.Calls, result.ModelWork.TotalTokens, result.RuntimeDecisionAllowance,
 		result.UnreconciledModelCalls,
+		result.CapabilityAdaptation.GapAttempts,
+		result.CapabilityAdaptation.RepeatedGapAttempts,
+		result.CapabilityAdaptation.RepairAttempts,
+		result.CapabilityAdaptation.RepairExecutions,
 	)
 	return err
 }

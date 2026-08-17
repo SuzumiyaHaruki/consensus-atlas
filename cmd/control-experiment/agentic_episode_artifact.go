@@ -162,6 +162,9 @@ func newAgenticEpisodeArtifact(
 			}
 			artifact.ScenarioAttemptFeedback = append(artifact.ScenarioAttemptFeedback, compact)
 		}
+		applyAgenticCapabilityAdaptationMetrics(
+			&artifact.Metrics, artifact.ScenarioAttemptFeedback,
+		)
 	}
 	if result.Testing != nil {
 		artifact.PlanID = result.Testing.PlanID
@@ -317,6 +320,7 @@ func recoverAgenticEpisodeArtifacts(
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BRANCH_EVIDENCE")
 	}
 	metrics, metricsErr := agenticEpisodeMetricsFromEvidence(recovered.Testing, recovered.BranchTesting)
+	applyAgenticCapabilityAdaptationMetrics(&metrics, artifact.ScenarioAttemptFeedback)
 	if metricsErr != nil || !agenticMetricsMatchArtifact(
 		metrics, artifact.Metrics, artifact.PlanID != "",
 	) ||
@@ -462,6 +466,13 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		if attempt.ProgressDelta != nil && !validAgenticScenarioProgress(*attempt.ProgressDelta) {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
 		}
+	}
+	expectedAdaptation := agenticCapabilityAdaptationFromAttempts(artifact.ScenarioAttemptFeedback)
+	if artifact.Metrics.CapabilityGapAttempts != expectedAdaptation.GapAttempts ||
+		artifact.Metrics.RepeatedCapabilityGapAttempts != expectedAdaptation.RepeatedGapAttempts ||
+		artifact.Metrics.CapabilityRepairAttempts != expectedAdaptation.RepairAttempts ||
+		artifact.Metrics.CapabilityRepairExecutions != expectedAdaptation.RepairExecutions {
+		return errors.New("AGENTIC_EPISODE_ARTIFACT_CAPABILITY_METRICS_INVALID")
 	}
 	seenBranches := make(map[string]bool, len(artifact.BranchEvidence))
 	for index, branch := range artifact.BranchEvidence {
@@ -908,6 +919,9 @@ func deriveAgenticExplorationMemory(
 		}
 		if episode.Testing != nil || len(episode.BranchTesting) > 0 {
 			metrics, err := agenticEpisodeMetricsFromEvidence(episode.Testing, episode.BranchTesting)
+			applyAgenticCapabilityAdaptationMetrics(
+				&metrics, episode.Summary.ScenarioAttemptFeedback,
+			)
 			if err != nil || !agenticMetricsMatchArtifact(
 				metrics, episode.Summary.Metrics, episode.Testing != nil,
 			) {
@@ -1047,4 +1061,61 @@ func agenticExplorationCapabilityGaps(
 		}
 	}
 	return result
+}
+
+type agenticCapabilityAdaptationMetrics struct {
+	GapAttempts         int
+	RepeatedGapAttempts int
+	RepairAttempts      int
+	RepairExecutions    int
+}
+
+// capability adaptation is computed only from durable Scenario attempt
+// evidence. A repeated signature ignores the step ID because a revised plan
+// may rename the step while requesting the same unavailable control.
+func agenticCapabilityAdaptationFromAttempts(
+	attempts []agenticScenarioAttemptArtifact,
+) agenticCapabilityAdaptationMetrics {
+	var metrics agenticCapabilityAdaptationMetrics
+	seen := make(map[string]bool)
+	for index, attempt := range attempts {
+		if len(attempt.CapabilityGaps) == 0 {
+			continue
+		}
+		metrics.GapAttempts++
+		current := make(map[string]bool, len(attempt.CapabilityGaps))
+		for _, gap := range attempt.CapabilityGaps {
+			signature := gap.Code + "\x00" + gap.Summary
+			current[signature] = true
+		}
+		repeated := false
+		for signature := range current {
+			repeated = repeated || seen[signature]
+		}
+		if repeated {
+			metrics.RepeatedGapAttempts++
+		}
+		for signature := range current {
+			seen[signature] = true
+		}
+		if index+1 < len(attempts) {
+			metrics.RepairAttempts++
+			next := attempts[index+1]
+			if next.EnteredExecution && len(next.CapabilityGaps) == 0 {
+				metrics.RepairExecutions++
+			}
+		}
+	}
+	return metrics
+}
+
+func applyAgenticCapabilityAdaptationMetrics(
+	metrics *agenticEpisodeMetrics,
+	attempts []agenticScenarioAttemptArtifact,
+) {
+	adaptation := agenticCapabilityAdaptationFromAttempts(attempts)
+	metrics.CapabilityGapAttempts = adaptation.GapAttempts
+	metrics.RepeatedCapabilityGapAttempts = adaptation.RepeatedGapAttempts
+	metrics.CapabilityRepairAttempts = adaptation.RepairAttempts
+	metrics.CapabilityRepairExecutions = adaptation.RepairExecutions
 }

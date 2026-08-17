@@ -74,15 +74,19 @@ func (budget agenticEpisodeBudget) validate() error {
 }
 
 type agenticEpisodeMetrics struct {
-	CandidateAccepted  bool `json:"candidate_accepted"`
-	ExecutedCandidates int  `json:"executed_candidates"`
-	BranchCandidates   int  `json:"branch_candidates"`
-	RiskReached        bool `json:"risk_reached"`
-	CorePSSSamples     int  `json:"core_pss_samples"`
-	UniquePSSStates    int  `json:"unique_pss_states"`
-	ProtocolPSSStates  int  `json:"protocol_pss_states,omitempty"`
-	ControlPSSStates   int  `json:"control_pss_states,omitempty"`
-	OracleFindings     int  `json:"oracle_findings"`
+	CandidateAccepted             bool `json:"candidate_accepted"`
+	ExecutedCandidates            int  `json:"executed_candidates"`
+	BranchCandidates              int  `json:"branch_candidates"`
+	RiskReached                   bool `json:"risk_reached"`
+	CorePSSSamples                int  `json:"core_pss_samples"`
+	UniquePSSStates               int  `json:"unique_pss_states"`
+	ProtocolPSSStates             int  `json:"protocol_pss_states,omitempty"`
+	ControlPSSStates              int  `json:"control_pss_states,omitempty"`
+	OracleFindings                int  `json:"oracle_findings"`
+	CapabilityGapAttempts         int  `json:"capability_gap_attempts,omitempty"`
+	RepeatedCapabilityGapAttempts int  `json:"repeated_capability_gap_attempts,omitempty"`
+	CapabilityRepairAttempts      int  `json:"capability_repair_attempts,omitempty"`
+	CapabilityRepairExecutions    int  `json:"capability_repair_executions,omitempty"`
 }
 
 type agenticEpisodeWork struct {

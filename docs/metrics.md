@@ -149,7 +149,21 @@ explanatory covariates and cannot create finding credit. See `docs/defect-benchm
 An earlier Episode that stops without a Bundle remains charged search work; it does not invalidate a later qualified
 candidate in the same complete Investigation. An Investigation with no qualified candidate evidence remains invalid.
 
-## 6. Known limitations and safeguards
+## 6. Agent capability-feedback adaptation
+
+Agentic Episode summaries derive four explanatory counts from the durable Scenario attempt sequence:
+
+- `capability_gap_attempts`: attempts rejected by at least one trusted Target capability gap;
+- `repeated_capability_gap_attempts`: gap attempts whose `code + summary` signature appeared earlier;
+- `capability_repair_attempts`: gap attempts followed by another Scenario proposal;
+- `capability_repair_executions`: those repair opportunities whose next proposal has no capability gap and enters trusted execution.
+
+Step IDs are excluded from the repeat signature because a revision may rename a step while requesting the same unavailable control.
+The complete Investigation recomputes the same counts across Episode boundaries. Report raw numerators and denominators; the useful
+derived ratios are repair executions per repair attempt and repeated gaps per gap attempt. These measure whether Agent feedback is
+being used. They are not state coverage, defect findings, or evidence that a protocol property holds.
+
+## 7. Known limitations and safeguards
 
 - A state key can over-merge if the PSS omits a safety-relevant relation, or over-split if it retains an irrelevant one. Invariance and separation tests are therefore part of the Family Pack.
 - State coverage cannot distinguish two paths reaching the same state. Transition and temporal-depth reporting are required;

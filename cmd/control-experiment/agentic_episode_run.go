@@ -65,6 +65,7 @@ type agenticInvestigationResult struct {
 	ModelWork                controlexperiment.ModelWork
 	RuntimeDecisionAllowance int
 	UnreconciledModelCalls   int
+	CapabilityAdaptation     agenticCapabilityAdaptationMetrics
 }
 
 func (budget agenticInvestigationBudget) validate() error {
@@ -186,7 +187,18 @@ func runAgenticInvestigation(
 		result.StopReason = agenticInvestigationEpisodeLimit
 	}
 	result.ExplorationMemory, err = deriveAgenticExplorationMemory(result.Episodes)
+	result.CapabilityAdaptation = agenticInvestigationCapabilityAdaptation(result.Episodes)
 	return result, err
+}
+
+func agenticInvestigationCapabilityAdaptation(
+	episodes []recoveredAgenticEpisode,
+) agenticCapabilityAdaptationMetrics {
+	var attempts []agenticScenarioAttemptArtifact
+	for _, episode := range episodes {
+		attempts = append(attempts, episode.Summary.ScenarioAttemptFeedback...)
+	}
+	return agenticCapabilityAdaptationFromAttempts(attempts)
 }
 
 func recoverAgenticInvestigationEpisodes(

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4k1 结构化能力缺口 Memory（实现完成）。
+阶段：M4k2 Agent 能力修订机械指标（实现完成）。
 
 ## 一句话状态
 
@@ -198,6 +198,12 @@ Scenario preflight 已保存的 `code/reference/summary` 结构化 gap。Risk pr
 不可用的控制，应结合当前 `target_surface` 改用可执行机制或其他性质，而不是重复请求或宣称协议问题。消息 type、
 Action kind 以及 effect kind/phase/outcome/durability 的具体请求会保留在摘要中；Memory 深拷贝和类型校验防止 Agent
 回写调用方证据。该信息完全来自 Manifest/TargetSurface/Scenario 机械检查，不包含 Oracle finding，也不赋予新 Action。
+
+M4k2 从现有 durable Scenario attempt 顺序机械计算四个计数：`capability_gap_attempts`、
+`repeated_capability_gap_attempts`、`capability_repair_attempts` 和 `capability_repair_executions`。重复签名使用
+gap code + 请求摘要而忽略可被 Agent 重命名的 step ID；repair success 只在 gap 后的下一次计划没有新 gap 且真实进入
+可信执行时计数。Episode summary 保存局部计数，Investigation CLI 按所有 Episode 的连续 attempt 顺序重算，因此能观察
+跨 Episode 修订。它们只衡量 Agent 是否利用能力反馈，不创建 coverage、finding 或协议 verdict。
 
 ## 当前输入
 

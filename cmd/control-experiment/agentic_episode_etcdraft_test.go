@@ -312,6 +312,33 @@ func TestScenarioCapabilityGapRemainsMechanicalEpisodeEvidence(t *testing.T) {
 	}
 }
 
+func TestAgenticCapabilityAdaptationMetricsUseDurableAttemptOrder(t *testing.T) {
+	gap := controlexperiment.AgentCapabilityGap{
+		Code:      controlexperiment.AgentCapabilityGapMissingControl,
+		Reference: "first-step",
+		Summary:   "the requested persist failure is unavailable",
+	}
+	repeated := gap
+	repeated.Reference = "renamed-step"
+	attempts := []agenticScenarioAttemptArtifact{
+		{CapabilityGaps: []controlexperiment.AgentCapabilityGap{gap}},
+		{CapabilityGaps: []controlexperiment.AgentCapabilityGap{repeated}},
+		{EnteredExecution: true},
+	}
+	metrics := agenticCapabilityAdaptationFromAttempts(attempts)
+	if metrics.GapAttempts != 2 || metrics.RepeatedGapAttempts != 1 ||
+		metrics.RepairAttempts != 2 || metrics.RepairExecutions != 1 {
+		t.Fatalf("capability adaptation metrics drifted: %#v", metrics)
+	}
+	episodes := []recoveredAgenticEpisode{
+		{Summary: agenticEpisodeArtifact{ScenarioAttemptFeedback: attempts[:1]}},
+		{Summary: agenticEpisodeArtifact{ScenarioAttemptFeedback: attempts[1:]}},
+	}
+	if investigation := agenticInvestigationCapabilityAdaptation(episodes); investigation != metrics {
+		t.Fatalf("Investigation metrics lost cross-Episode repair: %#v/%#v", investigation, metrics)
+	}
+}
+
 func TestUnselectedReplayStableBranchRunsIndependentOracle(t *testing.T) {
 	calls := 0
 	target := agenticEpisodeTarget{Execute: func(
