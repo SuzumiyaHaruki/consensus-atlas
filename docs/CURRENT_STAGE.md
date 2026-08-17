@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4j2 测试意图—Target 能力反馈闭环（实现完成）。
+阶段：M4j3 能力缺口证据归因闭环（实现完成）。
 
 ## 一句话状态
 
@@ -186,6 +186,12 @@ proposal 和 capability gaps 会进入下一轮 `revise`，且不消耗 Runtime 
 反查 Action kind，因此不能绕过 composable 边界。若旧 Target 没有可选消息/HostEffect 细节声明，Core 不猜测其能力，
 仍交给真实 frontier 匹配，避免把“未评估”误写成“不支持”。协议无关回归已证明错误计划不产生 Runtime work、修订后
 计划正常执行并 fresh Replay；Scenario prompt 升为 v16。本阶段仍未修改任何具体共识实现，也未调用模型。
+
+M4j3 修正了最后一轮能力缺口被覆盖为普通 call-budget/planning failure 的归因问题。如果没有可交付路径且最后一次
+可信预检返回 capability gap，Scenario 以独立 `capability-gap` 停止；Episode assessment 保留具体
+`missing-action`/`missing-control-capability`，compact artifact 保存 gap 与失败 step。后续 Episode 的 Risk Agent
+只能看到这些机械 reason code，不会看到 Oracle 结论，因此可以避开当前 Target 无法执行的方向，而不会把基础设施
+缺口误学成协议假设无效。该收口未增加 Action、预算、hash、baseline 或新资格 gate。
 
 ## 当前输入
 

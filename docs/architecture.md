@@ -72,6 +72,7 @@ Action kind 是公共词汇，但可达性是 Target-local 事实。Manifest 的
 Scenario 计划在执行前只检查可机械证明的能力矛盾：非 composable Action，或 Target 可选富声明明确排除的
 消息/HostEffect 取值。缺口作为 `missing-action`/`missing-control-capability` 返回 Agent 修订且不消耗 Runtime
 decision；当前 frontier 的精确 ActionID 也要反查 kind。没有富声明只表示未评估，不能据此拒绝计划。
+若调查最终停在该缺口，Episode 与后续 Agent Memory 保留机械原因，不把它覆盖成预算耗尽或协议 verdict。
 
 ### 3.2 Item 与消息所有权
 

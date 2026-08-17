@@ -697,7 +697,8 @@ func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
 		return assessment.Status == agenticEvidencePlanningFailed ||
 			assessment.Status == agenticEvidenceCapabilityGap
 	case agenticEpisodeScenarioStopped:
-		return assessment.Status == agenticEvidencePlanningFailed
+		return assessment.Status == agenticEvidencePlanningFailed ||
+			assessment.Status == agenticEvidenceCapabilityGap
 	case agenticEpisodeTokenStopped:
 		return assessment.Status == agenticEvidenceBudgetExhausted
 	case agenticEpisodeExecutionFailed:
@@ -874,7 +875,9 @@ func deriveAgenticExplorationMemory(
 				(episode.Testing != nil || len(episode.BranchTesting) > 0) {
 			return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EPISODE_INVALID")
 		}
-		reasons := agenticExplorationReasonCodes(episode.Summary.RiskFeedback)
+		reasons := agenticExplorationReasonCodes(
+			episode.Summary.RiskFeedback, episode.Summary.ScenarioAttemptFeedback,
+		)
 		if episode.Summary.ScenarioStopReason == controlexperiment.ScenarioAgentStopHypothesisAbandoned {
 			reasons = append(reasons, controlexperiment.ScenarioAgentStopHypothesisAbandoned)
 		}
@@ -1003,21 +1006,26 @@ func agenticEvidenceExecutionWorkUnits(work agenticEpisodeWork) int {
 
 func agenticExplorationReasonCodes(
 	feedback *controlexperiment.RiskAgentFeedback,
+	scenario []agenticScenarioAttemptArtifact,
 ) []string {
-	if feedback == nil {
-		return nil
-	}
 	seen := make(map[string]bool)
-	result := make([]string, 0, len(feedback.Reviews)+1)
+	result := make([]string, 0, len(scenario)+1)
 	appendReason := func(reason string) {
 		if reason != "" && !seen[reason] {
 			seen[reason] = true
 			result = append(result, reason)
 		}
 	}
-	appendReason(feedback.ReasonCode)
-	for _, review := range feedback.Reviews {
-		appendReason(review.ReasonCode)
+	if feedback != nil {
+		appendReason(feedback.ReasonCode)
+		for _, review := range feedback.Reviews {
+			appendReason(review.ReasonCode)
+		}
+	}
+	for _, attempt := range scenario {
+		for _, gap := range attempt.CapabilityGaps {
+			appendReason(gap.Code)
+		}
 	}
 	return result
 }

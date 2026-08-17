@@ -48,6 +48,7 @@ const (
 	ScenarioAgentStopCallBudget             = "call-budget-exhausted"
 	ScenarioAgentStopFinalSelectionRequired = "final-selection-required"
 	ScenarioAgentStopHypothesisAbandoned    = "hypothesis-abandoned"
+	ScenarioAgentStopCapabilityGap          = "capability-gap"
 )
 
 type ScenarioAgentFeedback struct {
@@ -460,6 +461,8 @@ func ExploreScenarioWithPlanner(
 	stop := ScenarioAgentStopCallBudget
 	if result.Execution == nil && len(result.Branches) > 0 {
 		stop = ScenarioAgentStopFinalSelectionRequired
+	} else if prior != nil && len(prior.CapabilityGaps) > 0 {
+		stop = ScenarioAgentStopCapabilityGap
 	}
 	return finishScenarioAgentResult(result, root, stop), nil
 }

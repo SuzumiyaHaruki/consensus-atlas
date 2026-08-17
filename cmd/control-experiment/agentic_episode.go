@@ -365,6 +365,9 @@ func runAgenticEpisode(
 		case controlexperiment.ScenarioAgentStopHypothesisAbandoned:
 			result.Assessment.Status = agenticEvidenceInconclusive
 			result.Assessment.ReasonCode = agenticEvidenceHypothesisAbandoned
+		case controlexperiment.ScenarioAgentStopCapabilityGap:
+			result.Assessment.Status = agenticEvidenceCapabilityGap
+			result.Assessment.ReasonCode = lastScenarioCapabilityGapCode(scenario.Agent)
 		default:
 			result.Assessment.Status = agenticEvidencePlanningFailed
 			result.Assessment.ReasonCode = "scenario-planning-failed"
@@ -389,6 +392,15 @@ func runAgenticEpisode(
 	)
 	result.Assessment = overrideWithBranchOracleFinding(result.Assessment, result.BranchTesting)
 	return result, nil
+}
+
+func lastScenarioCapabilityGapCode(result controlexperiment.ScenarioAgentResult) string {
+	for index := len(result.Attempts) - 1; index >= 0; index-- {
+		if len(result.Attempts[index].Feedback.CapabilityGaps) > 0 {
+			return result.Attempts[index].Feedback.CapabilityGaps[0].Code
+		}
+	}
+	return controlexperiment.ScenarioAgentStopCapabilityGap
 }
 
 func executeAgenticBranchCandidates(

@@ -276,6 +276,35 @@ func TestAgenticEvidenceUsesGlobalScenarioDecisionAccounting(t *testing.T) {
 	}
 }
 
+func TestScenarioCapabilityGapRemainsMechanicalEpisodeEvidence(t *testing.T) {
+	scenario := controlexperiment.ScenarioAgentResult{Attempts: []controlexperiment.ScenarioAgentAttempt{{
+		Feedback: controlexperiment.ScenarioAgentFeedback{CapabilityGaps: []controlexperiment.AgentCapabilityGap{{
+			Code:      controlexperiment.AgentCapabilityGapMissingControl,
+			Reference: "effect-step",
+			Summary:   "requested effect outcome is unavailable",
+		}}},
+	}}}
+	if got := lastScenarioCapabilityGapCode(scenario); got != controlexperiment.AgentCapabilityGapMissingControl {
+		t.Fatalf("terminal capability gap reason was lost: %q", got)
+	}
+	reasons := agenticExplorationReasonCodes(nil, []agenticScenarioAttemptArtifact{{
+		CapabilityGaps: scenario.Attempts[0].Feedback.CapabilityGaps,
+	}})
+	if len(reasons) != 1 || reasons[0] != controlexperiment.AgentCapabilityGapMissingControl {
+		t.Fatalf("capability gap did not reach mechanical Memory: %#v", reasons)
+	}
+	summary := agenticEpisodeArtifact{
+		Status:             agenticEpisodeScenarioStopped,
+		ScenarioStopReason: controlexperiment.ScenarioAgentStopCapabilityGap,
+		Assessment: agenticEvidenceAssessment{
+			Status: agenticEvidenceCapabilityGap, ReasonCode: controlexperiment.AgentCapabilityGapMissingControl,
+		},
+	}
+	if !agenticAssessmentMatchesSummary(summary) {
+		t.Fatal("Scenario capability-gap assessment was rejected as planning failure")
+	}
+}
+
 func TestUnselectedReplayStableBranchRunsIndependentOracle(t *testing.T) {
 	calls := 0
 	target := agenticEpisodeTarget{Execute: func(

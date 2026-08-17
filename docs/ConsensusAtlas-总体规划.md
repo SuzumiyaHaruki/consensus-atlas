@@ -626,7 +626,7 @@ continue/revise/abandon 决策，不能把 stalled/repeated 当成协议 verdict
 Timer callback/clock advance 分离。每轮紧凑 `summary.json` 也持久化同一 ProgressDelta，便于恢复后审计
 Agent 实际收到的机械反馈。M4i 未修改公共 ActionKind、具体协议、Adapter、PSS 或 Oracle，也未调用模型。
 
-### M4j：生成共识可测试性接口（M4j2 意图—能力反馈闭环完成）
+### M4j：生成共识可测试性接口（M4j3 能力缺口归因闭环完成）
 
 非冻结草案位于 `docs/generated-consensus-testability.md`。它把接入接口分为公共原因型控制动词、受控资源/HostEffect、
 Target-local 类型与语义投影、当前 FaultEnvelope 四层，并按 T1 算法级确定性、T2 持久化恢复、T3 协议扩展分级。
@@ -642,6 +642,10 @@ M4j2 复用这份能力表对 Scenario 计划做最小机械预检：非 composa
 精确 ActionID 由可信当前 frontier 反查 kind，不能绕过能力边界。缺少可选富声明的旧 Target 保持未评估，Core
 不把它自动判成不支持；实际可达性仍由 enabled frontier、Trace 与 Replay 决定。这样闭合的是“测试需求 → 能力判断
 → revise”循环，而不是预先枚举所有协议语义。
+
+M4j3 将同一机械缺口贯通到最终停止、Episode assessment、compact artifact 和下一 Episode 的 Agent-facing
+Memory。最后一轮 capability gap 不再被覆盖成 call-budget/planning failure；Memory 只携带缺口 reason code，
+不携带 Oracle finding。这使“Agent 假设失败”和“当前 Target 无法执行”保持可区分，同时不引入第二套状态模型。
 
 下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。

@@ -296,6 +296,27 @@ func TestScenarioAgentRevisesMechanicalCapabilityGapWithoutRuntimeWork(t *testin
 		result.Attempts[0].Execution != nil || result.Attempts[0].Feedback.CapabilityGaps[0].Code != AgentCapabilityGapMissingAction {
 		t.Fatalf("capability repair did not preserve Runtime budget: %#v calls=%d err=%v", result, calls, err)
 	}
+	stopped, err := ExploreScenarioWithPlanner(
+		ctx, 1, 1, 1, knowledge, hypothesis, spec, frontier,
+		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
+		&surface, nil, factory, projector,
+		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
+			return unknownScenarioSemantics(t, next), nil
+		},
+		func(context.Context, ScenarioAgentView) ([]byte, ModelWork, error) {
+			encoded, marshalErr := json.Marshal(ScenarioInvestigationProposal{
+				Intent: ScenarioIntentContinue,
+				Plan: ScenarioPlan{ID: "terminal-gap", Steps: []ScenarioStep{{
+					ID: "unsupported-failure", Selector: FrontierActionSelector{Kind: control.ActionFailEffect},
+				}}},
+			})
+			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+		},
+	)
+	if err != nil || stopped.StopReason != ScenarioAgentStopCapabilityGap ||
+		stopped.DecisionsUsed != 0 || stopped.Execution != nil {
+		t.Fatalf("terminal capability gap was misclassified: %#v/%v", stopped, err)
+	}
 }
 
 func frontierRefOfKind(t *testing.T, refs []FrontierActionRef, kind control.ActionKind) FrontierActionRef {
