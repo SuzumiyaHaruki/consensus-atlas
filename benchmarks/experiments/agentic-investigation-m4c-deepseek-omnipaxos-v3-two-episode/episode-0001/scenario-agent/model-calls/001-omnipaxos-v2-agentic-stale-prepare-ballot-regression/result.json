@@ -1,0 +1,24 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "48485d7f0c83530d6d7036f321ea509a35604a58131d9cfabc7f96ae0dee0d68",
+  "status": "content-ready",
+  "content": "ewogICJpbnRlbnQiOiAiY29udGludWUiLAogICJicmFuY2hfaWQiOiAic3RhbGUtcHJlcGFyZS1uMi1lbGVjdGlvbi1jb250IiwKICAicGxhbiI6IHsKICAgICJpZCI6ICJzdGFsZS1wcmVwYXJlLW4yLWVsZWN0aW9uLXBsYW4iLAogICAgInN0ZXBzIjogWwogICAgICB7CiAgICAgICAgImlkIjogInMxLWZpcmUtbjItcHVsc2UiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJhY3Rpb25faWQiOiAiYWN0aW9uLTgxOTRjMGU3ZGEwZjA0MTliZDBiZWZhNGFjNGQyM2I3M2NlYjFlNmIxY2I5OWI0M2EwYjY2NTRjZjQyZjI5YmMiCiAgICAgICAgfQogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogInMyLWRlbGl2ZXItbjItcHJlcGFyZS10by1uMyIsCiAgICAgICAgImFmdGVyX21pbGVzdG9uZSI6ICJtMi10aW1lciIsCiAgICAgICAgInNlbGVjdG9yIjogewogICAgICAgICAgImtpbmQiOiAiZGVsaXZlci1tZXNzYWdlIiwKICAgICAgICAgICJub2RlIjogIm4zIiwKICAgICAgICAgICJvd25lciI6ICJuMiIsCiAgICAgICAgICAibWVzc2FnZV9zb3VyY2UiOiAibjIiLAogICAgICAgICAgIm1lc3NhZ2VfdGFyZ2V0IjogIm4zIiwKICAgICAgICAgICJpdGVtX2tpbmQiOiAibWVzc2FnZSIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAiczMtZGVsaXZlci1uMy1wcm9taXNlLXRvLW4yIiwKICAgICAgICAiYWZ0ZXJfbWlsZXN0b25lIjogIm0zLW5ldy1wcm9taXNlIiwKICAgICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgICAia2luZCI6ICJkZWxpdmVyLW1lc3NhZ2UiLAogICAgICAgICAgIm5vZGUiOiAibjIiLAogICAgICAgICAgIm93bmVyIjogIm4zIiwKICAgICAgICAgICJtZXNzYWdlX3NvdXJjZSI6ICJuMyIsCiAgICAgICAgICAibWVzc2FnZV90YXJnZXQiOiAibjIiLAogICAgICAgICAgIml0ZW1fa2luZCI6ICJtZXNzYWdlIgogICAgICAgIH0KICAgICAgfQogICAgXQogIH0KfQ==",
+  "content_digest": "c1c119e7a5c6624466542e210320e9cd71f3f3f438dbc086c4b83454f516b236",
+  "response_digest": "0528133b6ac02293fd5a18583a5a71520721a46d27fbb733315b4b7c73e07749",
+  "response": {
+    "id": "fe75414e-12b2-4794-ae51-466b1f5db94d",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+  },
+  "duration_millis": 152426,
+  "work": {
+    "calls": 1,
+    "input_tokens": 8635,
+    "output_tokens": 16994,
+    "total_tokens": 25629
+  },
+  "transport_attempts": 1,
+  "provider_usage_status": "observed",
+  "digest": "e39b60e0b28c6a6f41219e38ea3aea32ff7e043d46a9e19747350bac773addde"
+}

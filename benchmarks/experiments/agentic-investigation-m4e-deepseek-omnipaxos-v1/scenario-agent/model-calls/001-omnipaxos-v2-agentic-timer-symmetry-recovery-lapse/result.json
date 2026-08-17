@@ -1,0 +1,24 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "ea60d22df5825daef02ed3f6d4c268d64b9c0f95f2c6925bcd91c5b7dbbaac65",
+  "status": "content-ready",
+  "content": "eyJpbnRlbnQiOiJjb250aW51ZSIsInBsYW4iOnsiaWQiOiJ0aW1lci1zeW1tZXRyeS1yZWNvdmVyeS1sYXBzZS1jb250aW51ZSIsInN0ZXBzIjpbeyJpZCI6ImRyb3Atdm90ZS10by1uMiIsInNlbGVjdG9yIjp7ImFjdGlvbl9pZCI6ImFjdGlvbi04ZjRlNmE5ODIxN2RhYjIyYjBiZGMyMTExNGIzMTljYTI2YjE5MzRhOWY4NjExMDRjM2QyZThkNTg3NDFkNjliIn19LHsiaWQiOiJmaXJlLW4yLXB1bHNlIiwiYWZ0ZXJfbWlsZXN0b25lIjoiZm9sbG93ZXItc2lsZW5jZWQiLCJzZWxlY3RvciI6eyJraW5kIjoiZmlyZS10ZW1wb3JhbC1ldmVudCIsIm5vZGUiOiJuMiIsInRlbXBvcmFsX2tpbmQiOiJwZXJpb2RpYy1wdWxzZSJ9fSx7ImlkIjoiZmlyZS1uMS1wdWxzZS1hZnRlci1oYW5kb2ZmIiwiYWZ0ZXJfbWlsZXN0b25lIjoibGVhZGVyc2hpcC1oYW5kb2ZmIiwic2VsZWN0b3IiOnsia2luZCI6ImZpcmUtdGVtcG9yYWwtZXZlbnQiLCJub2RlIjoibjEiLCJ0ZW1wb3JhbF9raW5kIjoicGVyaW9kaWMtcHVsc2UifX1dfX0=",
+  "content_digest": "f951d423d6448e9b188df9f280db28fcaa48793d6640e9222e6148d8e6994baf",
+  "response_digest": "6458ffff654ec0530b03d841ca789769c1c1308780a3f15ecf161737a396897e",
+  "response": {
+    "id": "b3239e40-4456-47e0-9a34-98212b934576",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+  },
+  "duration_millis": 126934,
+  "work": {
+    "calls": 1,
+    "input_tokens": 8603,
+    "output_tokens": 13709,
+    "total_tokens": 22312
+  },
+  "transport_attempts": 1,
+  "provider_usage_status": "observed",
+  "digest": "f560d0bb77b0f923cde457af21bc7999f1a68fe9f62db241dedce80d1033bd68"
+}

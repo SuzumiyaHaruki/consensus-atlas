@@ -1,0 +1,61 @@
+{
+  "schema_version": "consensus-atlas/agentic-method-spec/v1",
+  "executor_id": "consensus-atlas/agentic-episode-cli/v1",
+  "strategy": "agentic-episode-v1",
+  "implementation_id": "consensus-atlas/agentic-method/m4c-v3",
+  "target_id": "omnipaxos-v2",
+  "transport": {
+    "provider": "deepseek",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "thinking": "high",
+    "structured_output_mode": "json-object",
+    "stream": false,
+    "request_timeout_ms": 900000,
+    "routing_policy": "provider-fixed",
+    "allow_provider_fallback": false,
+    "temperature": 0,
+    "max_output_tokens": 32000,
+    "max_calls_per_arm": 1,
+    "max_retries": 0
+  },
+  "risk_prompt_version": "risk-agent-navigation-v2",
+  "scenario_prompt_version": "scenario-agent-investigation-v11",
+  "semantic_input_schema": "omnipaxos-agentic-input-v1",
+  "semantic_input_digest": "f0bc159b54f18d485987500bfedcdfaf1209d5bb420ed11ca50fc9248744aea9",
+  "scenario_semantic_exposure": "full",
+  "source_exposure": {
+    "mode": "dossier-declared-readonly-navigation-v2",
+    "reference_prefixes": [
+      "repo"
+    ],
+    "catalog_digest": "bc8b31427f97de2ed713c33b4e2eda32ab37deb7f64588729b12ce320ae6f4bf"
+  },
+  "episode_limits": {
+    "max_risk_calls": 3,
+    "max_scenario_calls": 3,
+    "max_total_calls": 6,
+    "max_observed_tokens": 120000,
+    "max_scenario_plan_steps": 4,
+    "max_runtime_decisions": 64,
+    "session_wall_clock_ms": 1200000
+  },
+  "investigation_episodes": 2,
+  "episode_budget": {
+    "max_attempts": 2,
+    "max_primary_scheduler_decisions": 4096,
+    "max_primary_work_units": 8192,
+    "max_replay_work_units": 4096,
+    "max_model_calls": 6,
+    "max_model_tokens": 120000
+  },
+  "investigation_budget": {
+    "max_attempts": 4,
+    "max_primary_scheduler_decisions": 8192,
+    "max_primary_work_units": 16384,
+    "max_replay_work_units": 8192,
+    "max_model_calls": 12,
+    "max_model_tokens": 240000
+  },
+  "digest": "66bdc5747e28863612341476cbb99ba908e0f36cb1fc243dff6d5ee8df898e54"
+}

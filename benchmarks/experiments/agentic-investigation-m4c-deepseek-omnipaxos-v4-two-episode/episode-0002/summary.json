@@ -1,0 +1,477 @@
+{
+  "target_id": "omnipaxos-v2",
+  "method_spec_digest": "034878cda095b55b93deac094a540ee828cd5a0b466cad8d4ec2dc954d5f3928",
+  "status": "scenario-agent-stopped",
+  "budget": {
+    "max_risk_calls": 3,
+    "max_scenario_calls": 3,
+    "max_total_calls": 6,
+    "max_observed_tokens": 120000,
+    "max_scenario_plan_steps": 4,
+    "max_runtime_decisions": 64,
+    "logical_budget": {
+      "max_attempts": 2,
+      "max_primary_scheduler_decisions": 4096,
+      "max_primary_work_units": 8192,
+      "max_replay_work_units": 4096,
+      "max_model_calls": 6,
+      "max_model_tokens": 120000
+    }
+  },
+  "accepted_risk": {
+    "candidate": {
+      "id": "aligned-timer-ballot-oscillation",
+      "property_ref": "bounded-coordinator-recovery",
+      "inspiration_ref": "timer-symmetry-liveness",
+      "summary": "While the sole client write is inflight at n1, natural pulses on n2 and then n3 start competing ballots before either lower-priority node can complete a quorum. Promise evidence moves leadership n1-\u003en2-\u003en3; the trigger is whether a decision still advances from the final aligned ballot within the investigation bound.",
+      "suspected_mechanism": "invoke-n1 [workload-invoked]: The client operation starts at n1, the configured coordinator, and creates the inflight log entry that competing ballots must eventually decide. -\u003e tick-n2 [temporal-fired]: A natural pulse on n2 advances its election timer and starts a competing ballot before n1's quorum completes. -\u003e n1-promise-to-n2 [omnipaxos/promise-raised]: n1 observes n2's ballot and raises a promise, releasing the old leadership and exposing the accepted suffix to the new ballot. -\u003e tick-n3 [temporal-fired]: A natural pulse on n3 starts another competing ballot before n2 can marshal its quorum, keeping the leadership unstable. -\u003e n2-promise-to-n3 [omnipaxos/promise-raised]: n2 receives n3's higher ballot and raises a promise, so the final coordinator's evidence is assembled across two transitions. -\u003e decide-at-n3 [decision-advanced]: A decision from the final ballot is the falsifiable recovery outcome: if aligned pulses prevent it, recovery is not bounded.",
+      "mechanism_steps": [
+        {
+          "milestone_id": "invoke-n1",
+          "kind": "workload-invoked",
+          "rationale": "The client operation starts at n1, the configured coordinator, and creates the inflight log entry that competing ballots must eventually decide.",
+          "support_refs": [
+            "dossier/contracts/append-origin-identity",
+            "primer/ballot-and-log-progress",
+            "dossier/active-experiment/worker-priority-config"
+          ]
+        },
+        {
+          "milestone_id": "tick-n2",
+          "kind": "temporal-fired",
+          "rationale": "A natural pulse on n2 advances its election timer and starts a competing ballot before n1's quorum completes.",
+          "support_refs": [
+            "dossier/control-semantics/natural-periodic-pulse",
+            "dossier/active-experiment/worker-priority-config",
+            "pattern/timer-symmetry-liveness"
+          ]
+        },
+        {
+          "milestone_id": "n1-promise-to-n2",
+          "kind": "omnipaxos/promise-raised",
+          "rationale": "n1 observes n2's ballot and raises a promise, releasing the old leadership and exposing the accepted suffix to the new ballot.",
+          "support_refs": [
+            "primer/quorum-and-recovery",
+            "pattern/promise-recovery-regression",
+            "dossier/blind-spots/coarse-message-type-hints"
+          ]
+        },
+        {
+          "milestone_id": "tick-n3",
+          "kind": "temporal-fired",
+          "rationale": "A natural pulse on n3 starts another competing ballot before n2 can marshal its quorum, keeping the leadership unstable.",
+          "support_refs": [
+            "dossier/control-semantics/natural-periodic-pulse",
+            "pattern/timer-symmetry-liveness",
+            "dossier/active-experiment/worker-priority-config"
+          ]
+        },
+        {
+          "milestone_id": "n2-promise-to-n3",
+          "kind": "omnipaxos/promise-raised",
+          "rationale": "n2 receives n3's higher ballot and raises a promise, so the final coordinator's evidence is assembled across two transitions.",
+          "support_refs": [
+            "primer/quorum-and-recovery",
+            "pattern/promise-recovery-regression",
+            "pattern/timer-symmetry-liveness"
+          ]
+        },
+        {
+          "milestone_id": "decide-at-n3",
+          "kind": "decision-advanced",
+          "rationale": "A decision from the final ballot is the falsifiable recovery outcome: if aligned pulses prevent it, recovery is not bounded.",
+          "support_refs": [
+            "dossier/contracts/decided-result-source",
+            "dossier/components/decision-prefix-evidence",
+            "primer/ballot-and-log-progress"
+          ]
+        }
+      ],
+      "predicates": [
+        {
+          "milestone_id": "invoke-n1",
+          "kind": "workload-invoked",
+          "constraints": [
+            {
+              "field": "participant",
+              "bind_as": "n1"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n1"
+            },
+            {
+              "field": "participant-role",
+              "equals": "coordinator"
+            }
+          ]
+        },
+        {
+          "milestone_id": "tick-n2",
+          "kind": "temporal-fired",
+          "constraints": [
+            {
+              "field": "participant",
+              "bind_as": "n2"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n2"
+            }
+          ]
+        },
+        {
+          "milestone_id": "n1-promise-to-n2",
+          "kind": "omnipaxos/promise-raised",
+          "constraints": [
+            {
+              "field": "participant",
+              "bind_as": "n1"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n1"
+            },
+            {
+              "field": "omnipaxos/ballot-node",
+              "bind_as": "n2"
+            }
+          ]
+        },
+        {
+          "milestone_id": "tick-n3",
+          "kind": "temporal-fired",
+          "constraints": [
+            {
+              "field": "participant",
+              "bind_as": "n3"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n3"
+            }
+          ]
+        },
+        {
+          "milestone_id": "n2-promise-to-n3",
+          "kind": "omnipaxos/promise-raised",
+          "constraints": [
+            {
+              "field": "participant",
+              "bind_as": "n2"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n2"
+            },
+            {
+              "field": "omnipaxos/ballot-node",
+              "bind_as": "n3"
+            }
+          ]
+        },
+        {
+          "milestone_id": "decide-at-n3",
+          "kind": "decision-advanced",
+          "constraints": [
+            {
+              "field": "participant",
+              "bind_as": "n3"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n3"
+            }
+          ]
+        }
+      ]
+    },
+    "spec": {
+      "schema_version": "consensus-atlas/risk-witness-spec/v1",
+      "id": "aligned-timer-ballot-oscillation-witness",
+      "family_id": "paxos",
+      "risk_id": "aligned-timer-ballot-oscillation",
+      "milestones": [
+        {
+          "id": "invoke-n1"
+        },
+        {
+          "id": "tick-n2"
+        },
+        {
+          "id": "n1-promise-to-n2"
+        },
+        {
+          "id": "tick-n3"
+        },
+        {
+          "id": "n2-promise-to-n3"
+        },
+        {
+          "id": "decide-at-n3"
+        }
+      ],
+      "required_order": [
+        {
+          "before": "invoke-n1",
+          "after": "tick-n2"
+        },
+        {
+          "before": "n1-promise-to-n2",
+          "after": "tick-n3"
+        },
+        {
+          "before": "n2-promise-to-n3",
+          "after": "decide-at-n3"
+        },
+        {
+          "before": "tick-n2",
+          "after": "n1-promise-to-n2"
+        },
+        {
+          "before": "tick-n3",
+          "after": "n2-promise-to-n3"
+        }
+      ],
+      "digest": "3d7d6fcc2afceebf25c78408bf3e32fb3f32a6f34a6642baf511f51481273401"
+    },
+    "qualification": {
+      "qualified": true,
+      "requirements": {
+        "observations": [
+          {
+            "kind": "decision-advanced",
+            "fields": [
+              "participant",
+              "participant-node"
+            ]
+          },
+          {
+            "kind": "omnipaxos/promise-raised",
+            "fields": [
+              "omnipaxos/ballot-node",
+              "participant",
+              "participant-node"
+            ]
+          },
+          {
+            "kind": "temporal-fired",
+            "fields": [
+              "participant",
+              "participant-node"
+            ]
+          },
+          {
+            "kind": "workload-invoked",
+            "fields": [
+              "participant",
+              "participant-node",
+              "participant-role"
+            ],
+            "values": {
+              "participant-role": [
+                "coordinator"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          "fire-temporal-event",
+          "invoke"
+        ]
+      }
+    },
+    "fidelity_assessment": "not-applicable"
+  },
+  "risk_attempts": 1,
+  "risk_feedback": {
+    "outcome": "accepted",
+    "candidate_id": "aligned-timer-ballot-oscillation",
+    "candidate_reviews": [
+      {
+        "ordinal": 1,
+        "candidate_id": "recovery-suffix-acceptor-loss",
+        "outcome": "stopped",
+        "reason_code": "risk-candidate-mechanism-unaligned"
+      },
+      {
+        "ordinal": 2,
+        "candidate_id": "aligned-timer-ballot-oscillation",
+        "outcome": "qualified"
+      },
+      {
+        "ordinal": 3,
+        "candidate_id": "client-op-across-epoch-transition",
+        "outcome": "qualified"
+      }
+    ]
+  },
+  "scenario_status": "stopped",
+  "scenario_stop_reason": "call-budget-exhausted",
+  "scenario_attempts": 3,
+  "scenario_decisions_used": 0,
+  "selected_path_decisions": 0,
+  "branch_exploration_decisions": 0,
+  "risk_provider_calls": [
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 1,
+      "root_id": "omnipaxos-v2-risk-agent",
+      "search_request_digest": "7aa269312849c2c9ee41f7829932abdf61191511e64dcd05b98d3ebff65513b2",
+      "intent_digest": "a0838f88d99681ad7627f192ce195e471370e2cedd225f2d8ebad522b520d435",
+      "dispatch_digest": "def2315857eae90f8a346f99e38f7daf0e9b97dcdb1785a817cffec833881a52",
+      "result_digest": "f7784f05163442b5a1bffe511f8d136ea61a56b33b749800c204389ece8ab8b0",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 12067,
+        "output_tokens": 20018,
+        "total_tokens": 32085
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "70d912ff9d14b195bbdbe46566bffb56ab849732eb9ed40ca973dd71ba4a2c9b"
+    }
+  ],
+  "scenario_provider_calls": [
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 1,
+      "root_id": "omnipaxos-v2-agentic-aligned-timer-ballot-oscillation",
+      "search_request_digest": "dcd9b440b919bc406b364a468f96c777f4b6db60ef7eec3c9090c3792c5f5fe3",
+      "intent_digest": "c9028c93a6bb8f41fc5c6fd78d5ddc286026d172c45e8a9b4655e81c827f6a63",
+      "dispatch_digest": "179985dd2f3a50fa58031b3ab760fb3e0883b5e057cde15e4b1b271bf4578730",
+      "result_digest": "865aba04dd87c4d031e9f56e9dade4652dbb5d1e285fb42aca004cba936b62c3",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 8639,
+        "output_tokens": 328,
+        "total_tokens": 8967
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "40b8e262d49ca1aaa9337619bbee67d061622057b4f5f39a6cfa92797394a372"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 2,
+      "root_id": "omnipaxos-v2-agentic-aligned-timer-ballot-oscillation",
+      "search_request_digest": "ca9bcd3e68651a74e3ceb41b11e4042ebc98b75aeed2f38236c96ae6c3a424e6",
+      "intent_digest": "bc957ea6af11d1cdcccc56cf6966d87c08762ccde78a1b8a6ac848c2a3614423",
+      "dispatch_digest": "b4b2689d6c305197d33b6a1771ab88af5874d2a70445322def2d746142f7440a",
+      "result_digest": "56e75486e6347e457dedfd5f3709f592b5652df233a7ba6c4373dea116317e3b",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 8683,
+        "output_tokens": 124,
+        "total_tokens": 8807
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "b80cbf3bb7e63593913c9d250ab1803da03043be6c23d508cb480f7b02fcc123"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 3,
+      "root_id": "omnipaxos-v2-agentic-aligned-timer-ballot-oscillation",
+      "search_request_digest": "cdfa3caf7258b805c4cd3e91dba3d76cb76dd49adb90e1b853e5d17192da6ac9",
+      "intent_digest": "14bf371a21bd1043bcaef6da4c810b8a7693b130d6eb9710ad7e5d315f832f7c",
+      "dispatch_digest": "3b4f751029271a73785f9e8e96510d7779e93d932040d0e34dae57cff2b56bd9",
+      "result_digest": "1206d711982420c6e9a8ad14e0f354907b8f67d654d553264768e8480b49a939",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 8677,
+        "output_tokens": 285,
+        "total_tokens": 8962
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "4de48957e0f2b18d0dfd561249b1ec2a39fecef689460a3db0a7ed33beafa971"
+    }
+  ],
+  "metrics": {
+    "candidate_accepted": true,
+    "executed_candidates": 0,
+    "branch_candidates": 0,
+    "risk_reached": false,
+    "core_pss_samples": 0,
+    "unique_pss_states": 0,
+    "oracle_findings": 0
+  },
+  "work": {
+    "model": {
+      "calls": 4,
+      "input_tokens": 38066,
+      "output_tokens": 20755,
+      "total_tokens": 58821
+    },
+    "scenario_frontier": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 1,
+      "scheduler_decisions": 23,
+      "work_units": 25
+    },
+    "scenario_search": {
+      "frontier_reconstruction": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "child_materialization": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "child_verification": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "total_work_units": 0
+    },
+    "qualified_execution": {
+      "primary": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "replay": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 0,
+        "work_units": 0
+      },
+      "model": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      },
+      "resources": {
+        "wall_time": "",
+        "cpu_time": "",
+        "peak_rss": ""
+      }
+    }
+  },
+  "evidence_assessment": {
+    "status": "planning-failed",
+    "reason_code": "scenario-planning-failed",
+    "property_id": "bounded-coordinator-recovery",
+    "evidence_level": "hypothesis-only",
+    "fidelity_assessment": "not-applicable"
+  }
+}

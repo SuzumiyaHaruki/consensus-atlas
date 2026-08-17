@@ -1,0 +1,24 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "3d5ea2b1c61dff70f92488407a11288567c6056d2e41ca4ba393b41e5358f223",
+  "status": "content-ready",
+  "content": "ewogICJpbnRlbnQiOiAiY29udGludWUiLAogICJicmFuY2hfaWQiOiAiYm91bmRlZC1yZWNvdmVyeS1kcm9wLWNvdXBsaW5nLWNvbnRpbnVlIiwKICAicGxhbiI6IHsKICAgICJpZCI6ICJib3VuZGVkLXJlY292ZXJ5LWRyb3AtY291cGxpbmctcGxhbiIsCiAgICAic3RlcHMiOiBbCiAgICAgIHsKICAgICAgICAiaWQiOiAic3RlcC0xIiwKICAgICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgICAia2luZCI6ICJkcm9wLW1lc3NhZ2UiLAogICAgICAgICAgIm5vZGUiOiAibjEiLAogICAgICAgICAgIm1lc3NhZ2Vfc291cmNlIjogIm4xIiwKICAgICAgICAgICJtZXNzYWdlX3RhcmdldCI6ICJuMiIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAic3RlcC0yIiwKICAgICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgICAia2luZCI6ICJmaXJlLXRlbXBvcmFsLWV2ZW50IiwKICAgICAgICAgICJub2RlIjogIm4yIgogICAgICAgIH0KICAgICAgfSwKICAgICAgewogICAgICAgICJpZCI6ICJzdGVwLTMiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJraW5kIjogImRlbGl2ZXItbWVzc2FnZSIsCiAgICAgICAgICAibm9kZSI6ICJuMiIsCiAgICAgICAgICAibWVzc2FnZV9zb3VyY2UiOiAibjEiLAogICAgICAgICAgIm1lc3NhZ2VfdGFyZ2V0IjogIm4yIgogICAgICAgIH0KICAgICAgfQogICAgXQogIH0KfQ==",
+  "content_digest": "1fd19ec6350ba8101bbc198ae837e2e01a7e334d163f4af333f1b27f5cc0eec1",
+  "response_digest": "072cade588ef309e75e7853701a57d0eff26ccc3ccbf4189a3f56a2f9cdcc870",
+  "response": {
+    "id": "1168e6ea-c1a7-41f1-be08-9613e187d1dd",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+  },
+  "duration_millis": 1717,
+  "work": {
+    "calls": 1,
+    "input_tokens": 8052,
+    "output_tokens": 203,
+    "total_tokens": 8255
+  },
+  "transport_attempts": 1,
+  "provider_usage_status": "observed",
+  "digest": "0e3cea8daac31738ec4beb0dbf965b62da0c1e4252d220099663f623d1ab2845"
+}

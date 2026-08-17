@@ -1,0 +1,24 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "d81631ff3b43f5f1f2a1c7cb5b145746d7f18b750ef7c7b86e27d33ba1a5b442",
+  "status": "content-ready",
+  "content": "ewogICJpbnRlbnQiOiAicmV2aXNlIiwKICAicGxhbiI6IHsKICAgICJpZCI6ICJjbGllbnQtb3AtbG9zcy1yZWNvdmVyeS1yZXZpc2UtY2xlYXItdGhlbi1kcm9wIiwKICAgICJzdGVwcyI6IFsKICAgICAgewogICAgICAgICJpZCI6ICJkZWxpdmVyLWxlZ2FjeS1yZXBsaWNhdGlvbi1uMiIsCiAgICAgICAgInNlbGVjdG9yIjogewogICAgICAgICAgImFjdGlvbl9pZCI6ICJhY3Rpb24tNTc1MDE2ZTQ5NjFjYTU2ZGI1ODBkMTM4YzYyZTY5NTc3ZTIxMmUyOTI3NmJjOWNhOGM1ZGE2OTBlNGZiYWY0YiIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAiZGVsaXZlci1sZWdhY3ktdm90ZS1uMiIsCiAgICAgICAgInNlbGVjdG9yIjogewogICAgICAgICAgImtpbmQiOiAiZGVsaXZlci1tZXNzYWdlIiwKICAgICAgICAgICJub2RlIjogIm4yIiwKICAgICAgICAgICJvd25lciI6ICJuMSIsCiAgICAgICAgICAibWVzc2FnZV9zb3VyY2UiOiAibjEiLAogICAgICAgICAgIm1lc3NhZ2VfdGFyZ2V0IjogIm4yIiwKICAgICAgICAgICJpdGVtX2tpbmQiOiAibWVzc2FnZSIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAiaW52b2tlLXJlcXVlc3QtYXQtbjEiLAogICAgICAgICJhZnRlcl9taWxlc3RvbmUiOiAicmVxdWVzdC1hdC1sZWFkZXIiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJraW5kIjogImludm9rZSIsCiAgICAgICAgICAibm9kZSI6ICJuMSIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAiZHJvcC1yZXF1ZXN0LXJlcGxpY2F0aW9uLW4yIiwKICAgICAgICAiYWZ0ZXJfbWlsZXN0b25lIjogImRlY2lzaW9uLWluLW5ldy1iYWxsb3QiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJraW5kIjogImRyb3AtbWVzc2FnZSIsCiAgICAgICAgICAibm9kZSI6ICJuMSIsCiAgICAgICAgICAib3duZXIiOiAibjEiLAogICAgICAgICAgIm1lc3NhZ2Vfc291cmNlIjogIm4xIiwKICAgICAgICAgICJtZXNzYWdlX3RhcmdldCI6ICJuMiIsCiAgICAgICAgICAiaXRlbV9raW5kIjogIm1lc3NhZ2UiCiAgICAgICAgfQogICAgICB9CiAgICBdCiAgfQp9",
+  "content_digest": "6548c863c26934854e861a1342dde1d2d1346d5ded4354266840fe9170458f2f",
+  "response_digest": "f26314f6dcaaafc30dfdc77efdf038267535f4ee09e0811fbd209964e4a89229",
+  "response": {
+    "id": "58b0413d-3faa-4a4d-aa5e-6eacf928f080",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+  },
+  "duration_millis": 215620,
+  "work": {
+    "calls": 1,
+    "input_tokens": 8331,
+    "output_tokens": 24786,
+    "total_tokens": 33117
+  },
+  "transport_attempts": 1,
+  "provider_usage_status": "observed",
+  "digest": "bd4141e5e07213ec0d48ee161fdca25db54d62a9e82d2aca5ccf5405349f2e6d"
+}

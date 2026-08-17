@@ -1,0 +1,24 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "33d2510db770531e3c484df774119d0f0573e867191b6d3d0715a13c3ee17db4",
+  "status": "content-ready",
+  "content": "ewogICJpbnRlbnQiOiAicmV2aXNlIiwKICAicGxhbiI6IHsKICAgICJpZCI6ICJ0aW1lci1zeW1tZXRyeS1yZWNvdmVyeS1sYXBzZS1yZXZpc2UtMiIsCiAgICAic3RlcHMiOiBbCiAgICAgIHsKICAgICAgICAiaWQiOiAiZGVsaXZlci12b3RlLXRvLW4zIiwKICAgICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgICAiYWN0aW9uX2lkIjogImFjdGlvbi00ZThmYTBkYjJiMTIxOTIxZmNkOWZjNjlmYmJiOWFjYWJiMzk5NzAzZmZlYjBmOGFiNjM3YmUxN2Y5Yjg5YjI2IgogICAgICAgIH0KICAgICAgfSwKICAgICAgewogICAgICAgICJpZCI6ICJkZWxpdmVyLXJlcGxpY2F0aW9uLXRvLW4yIiwKICAgICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgICAia2luZCI6ICJkZWxpdmVyLW1lc3NhZ2UiLAogICAgICAgICAgIm5vZGUiOiAibjIiLAogICAgICAgICAgIml0ZW1fa2luZCI6ICJtZXNzYWdlIiwKICAgICAgICAgICJtZXNzYWdlX3NvdXJjZSI6ICJuMSIsCiAgICAgICAgICAibWVzc2FnZV90YXJnZXQiOiAibjIiCiAgICAgICAgfQogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImludm9rZS1jbGllbnQtYXQtbjEiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJraW5kIjogImludm9rZSIsCiAgICAgICAgICAibm9kZSI6ICJuMSIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAiZmlyZS1uMi1wdWxzZSIsCiAgICAgICAgInNlbGVjdG9yIjogewogICAgICAgICAgImtpbmQiOiAiZmlyZS10ZW1wb3JhbC1ldmVudCIsCiAgICAgICAgICAibm9kZSI6ICJuMiIsCiAgICAgICAgICAidGVtcG9yYWxfa2luZCI6ICJwZXJpb2RpYy1wdWxzZSIKICAgICAgICB9CiAgICAgIH0KICAgIF0KICB9Cn0=",
+  "content_digest": "de3aa1958386769d9e515c15b32ffe40c0dd7f76222141988060df5f6c529579",
+  "response_digest": "d824910ecd8d228abdc619f58f3f5b855685d56a8a6af23484838ed41ec2f1a8",
+  "response": {
+    "id": "29186a1b-eaae-436a-b985-20baf6e9d044",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+  },
+  "duration_millis": 199040,
+  "work": {
+    "calls": 1,
+    "input_tokens": 8407,
+    "output_tokens": 22714,
+    "total_tokens": 31121
+  },
+  "transport_attempts": 1,
+  "provider_usage_status": "observed",
+  "digest": "c5339a850e186de36f0879479343f5962320aac3c2de65638143021de35e0af5"
+}

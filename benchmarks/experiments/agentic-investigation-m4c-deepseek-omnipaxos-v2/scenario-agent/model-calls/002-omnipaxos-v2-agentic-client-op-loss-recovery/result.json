@@ -1,0 +1,24 @@
+{
+  "schema_version": "consensus-atlas/stateless-agent-call-result/v1",
+  "dispatch_digest": "cd9d04869c5f19d2f64e82269761b7038f36d6dff3d807b9d8c9ee61f0248c60",
+  "status": "content-ready",
+  "content": "ewogICJpbnRlbnQiOiAiY29udGludWUiLAogICJicmFuY2hfaWQiOiAiYnJhbmNoLWNsaWVudC1vcC1sb3NzLXJlY292ZXJ5LWNvbnRpbnVlLTEiLAogICJmcm9tX2JyYW5jaF9pZCI6ICJvbW5pcGF4b3MtdjItYWdlbnRpYy1jbGllbnQtb3AtbG9zcy1yZWNvdmVyeS1mcm9udGllciIsCiAgInBsYW4iOiB7CiAgICAiaWQiOiAicGxhbi1jbGllbnQtb3AtbG9zcy1yZWNvdmVyeS0xIiwKICAgICJzdGVwcyI6IFsKICAgICAgewogICAgICAgICJpZCI6ICJzdGVwLTEiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJhY3Rpb25faWQiOiAiYWN0aW9uLTdhYTYzY2E5MTFjZmI3OTI4MTgwZjI1MjA5OWIwZDE3YTVhZjdkODViYzkwNWJjZjIyYjgwMGQwZmIxNmJiMjUiCiAgICAgICAgfQogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogInN0ZXAtMiIsCiAgICAgICAgInNlbGVjdG9yIjogewogICAgICAgICAgImtpbmQiOiAiZmlyZS10ZW1wb3JhbC1ldmVudCIsCiAgICAgICAgICAibm9kZSI6ICJuMiIsCiAgICAgICAgICAidGVtcG9yYWxfa2luZCI6ICJwZXJpb2RpYy1wdWxzZSIKICAgICAgICB9CiAgICAgIH0sCiAgICAgIHsKICAgICAgICAiaWQiOiAic3RlcC0zIiwKICAgICAgICAic2VsZWN0b3IiOiB7CiAgICAgICAgICAia2luZCI6ICJkZWxpdmVyLW1lc3NhZ2UiLAogICAgICAgICAgIm5vZGUiOiAibjMiLAogICAgICAgICAgIm1lc3NhZ2Vfc291cmNlIjogIm4yIgogICAgICAgIH0KICAgICAgfSwKICAgICAgewogICAgICAgICJpZCI6ICJzdGVwLTQiLAogICAgICAgICJzZWxlY3RvciI6IHsKICAgICAgICAgICJraW5kIjogImRlbGl2ZXItbWVzc2FnZSIsCiAgICAgICAgICAibm9kZSI6ICJuMiIsCiAgICAgICAgICAibWVzc2FnZV9zb3VyY2UiOiAibjMiCiAgICAgICAgfQogICAgICB9CiAgICBdCiAgfQp9",
+  "content_digest": "e171ce22a33fa0b61273b4a32c864836401f4daba95b303018ebcf39de8f367d",
+  "response_digest": "91dd55834f5c10a652eeef605aa067ee25a761a30d2381b6e579c94f75960323",
+  "response": {
+    "id": "90d32af5-86d3-4163-84a4-55d2f6197821",
+    "model": "deepseek-v4-flash",
+    "finish_reason": "stop",
+    "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+  },
+  "duration_millis": 137525,
+  "work": {
+    "calls": 1,
+    "input_tokens": 8337,
+    "output_tokens": 17316,
+    "total_tokens": 25653
+  },
+  "transport_attempts": 1,
+  "provider_usage_status": "observed",
+  "digest": "be62682f3d61a8a8023ceb2dbfa5103f21ad78a8201e4e2309b12a3e1f124536"
+}

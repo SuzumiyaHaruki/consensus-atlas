@@ -1,0 +1,466 @@
+{
+  "target_id": "omnipaxos-v2",
+  "method_spec_digest": "fa00bb515d83e0873333ebab5bf2e35e09fc043fdc9f8f9c16c8258024a9f6af",
+  "status": "completed",
+  "budget": {
+    "max_risk_calls": 3,
+    "max_scenario_calls": 3,
+    "max_total_calls": 6,
+    "max_observed_tokens": 120000,
+    "max_scenario_plan_steps": 4,
+    "max_runtime_decisions": 64,
+    "logical_budget": {
+      "max_attempts": 2,
+      "max_primary_scheduler_decisions": 4096,
+      "max_primary_work_units": 8192,
+      "max_replay_work_units": 4096,
+      "max_model_calls": 6,
+      "max_model_tokens": 120000
+    }
+  },
+  "accepted_risk": {
+    "candidate": {
+      "id": "recovery-after-single-drop",
+      "property_ref": "client-operation-continuity",
+      "inspiration_ref": "epoch-transition-state-reuse",
+      "summary": "Suspected mechanism: after the coordinator's outbound message is dropped, a timer-driven leader handoff occurs before a majority has the operation; the new leader reuses accepted-suffix state from the older epoch, so the post-handoff decision may not be the same client operation.",
+      "suspected_mechanism": "op-append [workload-invoked]: A single client operation is submitted to the current coordinator and becomes the command whose continuity is at risk. -\u003e lost-quorum-copy [message-dropped]: Dropping the coordinator's inflight message prevents the operation from reaching every participant before the timer-driven transition. -\u003e follower-timer [temporal-fired]: A follower's periodic pulse starts an election while the operation may be absent from its accepted suffix. -\u003e leader-handoff [coordinator-changed]: The leadership handoff occurs before a stable majority has the operation, so the new leader's reconciliation is the continuity point. -\u003e post-handoff-decide [decision-advanced]: A decision is taken after the handoff; if it advances a log position without the appended command, the client operation continuity hypothesis is exposed.",
+      "mechanism_steps": [
+        {
+          "milestone_id": "op-append",
+          "kind": "workload-invoked",
+          "rationale": "A single client operation is submitted to the current coordinator and becomes the command whose continuity is at risk.",
+          "support_refs": [
+            "dossier/contracts/append-origin-identity",
+            "surface/workload",
+            "dossier/assumptions/cft-participants"
+          ]
+        },
+        {
+          "milestone_id": "lost-quorum-copy",
+          "kind": "message-dropped",
+          "rationale": "Dropping the coordinator's inflight message prevents the operation from reaching every participant before the timer-driven transition.",
+          "support_refs": [
+            "surface/fault-allowance",
+            "dossier/control-semantics/stored-message-control",
+            "pattern/message-loss-progress-coupling"
+          ]
+        },
+        {
+          "milestone_id": "follower-timer",
+          "kind": "temporal-fired",
+          "rationale": "A follower's periodic pulse starts an election while the operation may be absent from its accepted suffix.",
+          "support_refs": [
+            "dossier/control-semantics/natural-periodic-pulse",
+            "dossier/active-experiment/worker-priority-config",
+            "surface/temporal"
+          ]
+        },
+        {
+          "milestone_id": "leader-handoff",
+          "kind": "coordinator-changed",
+          "rationale": "The leadership handoff occurs before a stable majority has the operation, so the new leader's reconciliation is the continuity point.",
+          "support_refs": [
+            "primer/ballot-and-log-progress",
+            "primer/quorum-and-recovery",
+            "pattern/epoch-transition-state-reuse"
+          ]
+        },
+        {
+          "milestone_id": "post-handoff-decide",
+          "kind": "decision-advanced",
+          "rationale": "A decision is taken after the handoff; if it advances a log position without the appended command, the client operation continuity hypothesis is exposed.",
+          "support_refs": [
+            "dossier/contracts/decided-result-source",
+            "primer/ballot-and-log-progress",
+            "surface/oracles"
+          ]
+        }
+      ],
+      "predicates": [
+        {
+          "milestone_id": "op-append",
+          "kind": "workload-invoked",
+          "constraints": [
+            {
+              "field": "participant-role",
+              "equals": "coordinator"
+            },
+            {
+              "field": "participant-node",
+              "bind_as": "n1"
+            }
+          ]
+        },
+        {
+          "milestone_id": "lost-quorum-copy",
+          "kind": "message-dropped",
+          "constraints": [
+            {
+              "field": "participant-node",
+              "bind_as": "n1"
+            },
+            {
+              "field": "operation-stage",
+              "equals": "inflight"
+            }
+          ]
+        },
+        {
+          "milestone_id": "follower-timer",
+          "kind": "temporal-fired",
+          "constraints": [
+            {
+              "field": "participant-node",
+              "bind_as": "n2"
+            }
+          ]
+        },
+        {
+          "milestone_id": "leader-handoff",
+          "kind": "coordinator-changed",
+          "constraints": [
+            {
+              "field": "participant-node",
+              "bind_as": "n2"
+            },
+            {
+              "field": "related-participant-node",
+              "bind_as": "n1"
+            }
+          ]
+        },
+        {
+          "milestone_id": "post-handoff-decide",
+          "kind": "decision-advanced",
+          "constraints": [
+            {
+              "field": "participant-node",
+              "bind_as": "n2"
+            }
+          ]
+        }
+      ]
+    },
+    "spec": {
+      "schema_version": "consensus-atlas/risk-witness-spec/v1",
+      "id": "recovery-after-single-drop-witness",
+      "family_id": "paxos",
+      "risk_id": "recovery-after-single-drop",
+      "milestones": [
+        {
+          "id": "op-append"
+        },
+        {
+          "id": "lost-quorum-copy"
+        },
+        {
+          "id": "follower-timer"
+        },
+        {
+          "id": "leader-handoff"
+        },
+        {
+          "id": "post-handoff-decide"
+        }
+      ],
+      "required_order": [
+        {
+          "before": "follower-timer",
+          "after": "leader-handoff"
+        },
+        {
+          "before": "leader-handoff",
+          "after": "post-handoff-decide"
+        },
+        {
+          "before": "lost-quorum-copy",
+          "after": "follower-timer"
+        },
+        {
+          "before": "op-append",
+          "after": "lost-quorum-copy"
+        }
+      ],
+      "digest": "dc58f7eb72e8283520dee0039c9c2f5491f28aa6c0472a7af1765186f68737d1"
+    },
+    "qualification": {
+      "qualified": true,
+      "requirements": {
+        "observations": [
+          {
+            "kind": "coordinator-changed",
+            "fields": [
+              "participant-node",
+              "related-participant-node"
+            ]
+          },
+          {
+            "kind": "decision-advanced",
+            "fields": [
+              "participant-node"
+            ]
+          },
+          {
+            "kind": "message-dropped",
+            "fields": [
+              "operation-stage",
+              "participant-node"
+            ],
+            "values": {
+              "operation-stage": [
+                "inflight"
+              ]
+            }
+          },
+          {
+            "kind": "temporal-fired",
+            "fields": [
+              "participant-node"
+            ]
+          },
+          {
+            "kind": "workload-invoked",
+            "fields": [
+              "participant-node",
+              "participant-role"
+            ],
+            "values": {
+              "participant-role": [
+                "coordinator"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          "drop-message",
+          "fire-temporal-event",
+          "invoke"
+        ]
+      }
+    },
+    "fidelity_assessment": "not-applicable"
+  },
+  "risk_attempts": 1,
+  "risk_feedback": {
+    "outcome": "accepted",
+    "candidate_id": "recovery-after-single-drop",
+    "candidate_reviews": [
+      {
+        "ordinal": 1,
+        "candidate_id": "recovery-after-single-drop",
+        "outcome": "qualified"
+      },
+      {
+        "ordinal": 2,
+        "candidate_id": "timer-toggled-leadership",
+        "outcome": "qualified"
+      },
+      {
+        "ordinal": 3,
+        "candidate_id": "promise-regression-handoff",
+        "outcome": "qualified"
+      }
+    ]
+  },
+  "scenario_status": "completed",
+  "scenario_stop_reason": "call-budget-exhausted",
+  "scenario_attempts": 3,
+  "scenario_attempt_feedback": [
+    {
+      "ordinal": 1,
+      "intent": "continue",
+      "outcome": "stopped",
+      "reason_code": "milestone-unreachable",
+      "failed_step_id": "s4",
+      "entered_execution": true
+    },
+    {
+      "ordinal": 2,
+      "intent": "revise",
+      "outcome": "stopped",
+      "reason_code": "milestone-unreachable",
+      "failed_step_id": "s2",
+      "entered_execution": true
+    },
+    {
+      "ordinal": 3,
+      "intent": "revise",
+      "outcome": "stopped",
+      "reason_code": "milestone-unreachable",
+      "failed_step_id": "s2",
+      "entered_execution": true
+    }
+  ],
+  "scenario_decisions_used": 16,
+  "selected_path_decisions": 16,
+  "branch_exploration_decisions": 0,
+  "risk_provider_calls": [
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 1,
+      "root_id": "omnipaxos-v2-risk-agent",
+      "search_request_digest": "4d603274919f7bdb400e9c13991a72999b1d02ff56235512bc4353f619a660f9",
+      "intent_digest": "7c963d03e2136b0f20ae3f6a2e04c936ab5b96fe889a38a9489a2debcac7e61d",
+      "dispatch_digest": "6ef87197c0b38dd76c34a566ba1fdea03bde1a1d177f5a7880689235ae0960f9",
+      "result_digest": "882651218ccfe90cfffc70a034e0f1fea964f1c9e5d752da488decfecfdc0892",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 12639,
+        "output_tokens": 22145,
+        "total_tokens": 34784
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "ec4a6a6d4d31e9162453cff9125adf5f3fe3eaa85830c8a3931a1f9bf3fa0cd2"
+    }
+  ],
+  "scenario_provider_calls": [
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 1,
+      "root_id": "omnipaxos-v2-agentic-recovery-after-single-drop",
+      "search_request_digest": "d73ee066e756392fc539bf514234b749f8e5f3de94cfdf7f1e2ba76b0f890e9e",
+      "intent_digest": "e00459354fbc198884fd50676e960e2ded20d82e05178adf18e6bb646a18dd6c",
+      "dispatch_digest": "f039c65c0f2f45ca792e5094af0835aa0b23bee8ca11e7ef544c12c346756599",
+      "result_digest": "c2aebfda03d294996eedfa5b1c8922c295225d332ae6c7fea265c1e42ba929ca",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 8427,
+        "output_tokens": 8332,
+        "total_tokens": 16759
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "3e69243fbed119bd8baacf9d30711a298460021b9d487e53cd3ddfb3b3fec5f6"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 2,
+      "root_id": "omnipaxos-v2-agentic-recovery-after-single-drop",
+      "search_request_digest": "3741277177e67b398dbbe3fad4f9a191488dc2cb144c648b0dcc7d2976abc1c7",
+      "intent_digest": "8ef03be2480be1c92d14c91774a37dbebabc2a186554b58404df246d24d4c606",
+      "dispatch_digest": "b70b6a8f51c4ccc54b57cb4af280a29692af122f88314e836ad34060d99e27c8",
+      "result_digest": "bc88a53b3d03b4f6c54ec2e1bd59212db3d08d846a494ef00b1e44d682ef6187",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 8839,
+        "output_tokens": 13055,
+        "total_tokens": 21894
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "6b11dd78faaec21a6975424963eac7e96c0c18f7dce137cf55e1e916459eeb58"
+    },
+    {
+      "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+      "ordinal": 3,
+      "root_id": "omnipaxos-v2-agentic-recovery-after-single-drop",
+      "search_request_digest": "97d06887f3c37e980212c3ba1c61875a37d45f9506cab42f21c7a3e505f36293",
+      "intent_digest": "ad8257785e96c0b51b04137a55bdb3a08049d36476c9737e9b8527f1de36468f",
+      "dispatch_digest": "bd4fd67ba8d19ea1cebba499697cd1c759f2f5d1cba8fb3b0a2a3a1ea5225b6b",
+      "result_digest": "675f71b42859d8e9332311599fb56f0878839e69d6c2801bfafcef1fa4906e65",
+      "status": "content-ready",
+      "work": {
+        "calls": 1,
+        "input_tokens": 8513,
+        "output_tokens": 15572,
+        "total_tokens": 24085
+      },
+      "transport_attempts": 1,
+      "provider_usage_status": "observed",
+      "digest": "4270a415815f945da6fd4088955cc4ddecc6177d01116d9fbc96d92f0acbb88b"
+    }
+  ],
+  "plan_id": "continue-recovery-after-single-drop",
+  "risk_result_id": "revise-recovery-after-single-drop-03-risk-01",
+  "trace_digest": "29595f2cc427af6ca9bc70ec52d0799c8ce1e19712c9383adf56392604228ab0",
+  "metrics": {
+    "candidate_accepted": true,
+    "executed_candidates": 1,
+    "branch_candidates": 0,
+    "risk_reached": false,
+    "core_pss_samples": 40,
+    "unique_pss_states": 38,
+    "protocol_pss_states": 4,
+    "control_pss_states": 37,
+    "oracle_findings": 0
+  },
+  "work": {
+    "model": {
+      "calls": 4,
+      "input_tokens": 38418,
+      "output_tokens": 59104,
+      "total_tokens": 97522
+    },
+    "scenario_frontier": {
+      "setup_attempts": 1,
+      "runtime_initializations": 1,
+      "prepare_actions": 1,
+      "scheduler_decisions": 23,
+      "work_units": 25
+    },
+    "scenario_search": {
+      "frontier_reconstruction": {
+        "setup_attempts": 3,
+        "runtime_initializations": 3,
+        "prepare_actions": 3,
+        "scheduler_decisions": 98,
+        "work_units": 104
+      },
+      "child_materialization": {
+        "setup_attempts": 0,
+        "runtime_initializations": 0,
+        "prepare_actions": 0,
+        "scheduler_decisions": 16,
+        "work_units": 16
+      },
+      "child_verification": {
+        "setup_attempts": 3,
+        "runtime_initializations": 3,
+        "prepare_actions": 3,
+        "scheduler_decisions": 114,
+        "work_units": 120
+      },
+      "total_work_units": 240
+    },
+    "qualified_execution": {
+      "primary": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 1,
+        "scheduler_decisions": 39,
+        "work_units": 41
+      },
+      "replay": {
+        "setup_attempts": 1,
+        "runtime_initializations": 1,
+        "prepare_actions": 1,
+        "scheduler_decisions": 39,
+        "work_units": 41
+      },
+      "model": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0
+      },
+      "resources": {
+        "wall_time": "not-collected",
+        "cpu_time": "not-collected",
+        "peak_rss": "not-collected"
+      }
+    }
+  },
+  "evidence_assessment": {
+    "status": "search-budget-exhausted",
+    "reason_code": "scenario-call-budget-exhausted",
+    "property_id": "client-operation-continuity",
+    "evidence_level": "observable-only",
+    "fidelity_assessment": "not-applicable",
+    "first_missing_milestone": "leader-handoff"
+  }
+}
