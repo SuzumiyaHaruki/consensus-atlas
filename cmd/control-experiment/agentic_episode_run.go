@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -22,15 +23,16 @@ const (
 )
 
 type agenticEpisodeComposition struct {
-	Target                 agenticEpisodeTarget
-	Budget                 agenticEpisodeBudget
-	MethodSpec             controlexperiment.AgenticMethodSpec
-	Memory                 []controlexperiment.RiskExplorationMemoryEntry
-	KnowledgeSourceMounts  []controlexperiment.KnowledgeSourceMount
-	Client                 agentIntentTransport
-	ScenarioClient         agentIntentTransport
-	SessionWallClockMS     int64
-	CapabilityFeedbackMode controlexperiment.AgenticCapabilityFeedbackMode
+	Target                  agenticEpisodeTarget
+	Budget                  agenticEpisodeBudget
+	MethodSpec              controlexperiment.AgenticMethodSpec
+	Memory                  []controlexperiment.RiskExplorationMemoryEntry
+	KnowledgeSourceMounts   []controlexperiment.KnowledgeSourceMount
+	Client                  agentIntentTransport
+	ScenarioClient          agentIntentTransport
+	SessionWallClockMS      int64
+	CapabilityFeedbackMode  controlexperiment.AgenticCapabilityFeedbackMode
+	CapabilityFeedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -144,7 +146,10 @@ func runAgenticInvestigation(
 			result.StopReason = agenticInvestigationDecisionLimit
 			break
 		}
-		composition.Memory = memory
+		if composition.CapabilityFeedbackProbe != nil && len(memory) > 0 {
+			return result, errors.New("AGENTIC_INVESTIGATION_CAPABILITY_PROBE_REQUIRES_ONE_EPISODE")
+		}
+		composition.Memory = append(composition.Memory, memory...)
 		directory := filepath.Join(clean, fmt.Sprintf("episode-%04d", ordinal))
 		resumeEpisode := partial && ordinal == startOrdinal
 		partialEpisode, runErr := runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
@@ -272,13 +277,19 @@ func runAgenticEpisodeDirectory(
 	if err != nil {
 		return recoveredAgenticEpisode{}, err
 	}
+	probeMemory, probeErr := agenticCapabilityFeedbackProbeMemory(
+		composition.Target.Surface, composition.CapabilityFeedbackProbe,
+	)
 	methodBound := composition.MethodSpec.Digest != ""
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 		methodBound && (composition.MethodSpec.Validate() != nil ||
 			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
-			composition.MethodSpec.CapabilityFeedbackMode != composition.CapabilityFeedbackMode) ||
+			composition.MethodSpec.CapabilityFeedbackMode != composition.CapabilityFeedbackMode ||
+			!reflect.DeepEqual(composition.MethodSpec.CapabilityFeedbackProbe, composition.CapabilityFeedbackProbe)) ||
 		!methodBound && composition.Target.MethodSpecDigest != "" ||
 		composition.CapabilityFeedbackMode.Validate() != nil ||
+		probeErr != nil || composition.CapabilityFeedbackProbe != nil &&
+		!reflect.DeepEqual(composition.Memory, probeMemory) ||
 		len(composition.KnowledgeSourceMounts) > 0 &&
 			controlexperiment.ValidateKnowledgeSourceMounts(composition.KnowledgeSourceMounts) != nil ||
 		composition.Client == nil || !composition.Client.ready() || composition.SessionWallClockMS <= 0 ||

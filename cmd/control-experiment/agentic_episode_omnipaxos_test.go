@@ -24,6 +24,58 @@ type failAfterInitialYieldAdapter struct {
 	runCalls int
 }
 
+func TestOmnipaxosCapabilityFeedbackProbeUsesRealTargetSurface(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
+	defer cancel()
+	workerPath := buildOmnipaxosScenarioWorker(t)
+	options := controlExperimentOptions{
+		Target: "omnipaxos-v2", WorkerPath: workerPath, InvestigationEpisodes: 1,
+		SemanticInput: "../../plans/agent/omnipaxos-agentic-calibration-v1.json",
+		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
+		CapabilityFeedbackMode:  controlexperiment.AgenticCapabilityFeedbackStructuredGaps,
+		CapabilityFeedbackProbe: "../../plans/agent/omnipaxos-capability-feedback-probe-v1.json",
+	}
+	composition, err := prepareAgenticEpisodeComposition(ctx, options)
+	if err != nil || composition.CapabilityFeedbackProbe == nil ||
+		composition.CapabilityFeedbackProbe.ID != "omnipaxos-missing-crash-probe-v1" ||
+		composition.MethodSpec.CapabilityFeedbackProbe == nil ||
+		composition.MethodSpec.CapabilityFeedbackProbe.ID != composition.CapabilityFeedbackProbe.ID ||
+		composition.Budget.MaxScenarioCalls != 1 || len(composition.Memory) != 1 ||
+		len(composition.Memory[0].CapabilityGaps) != 1 ||
+		composition.Memory[0].CapabilityGaps[0].Code != controlexperiment.AgentCapabilityGapMissingAction ||
+		!strings.Contains(composition.Memory[0].CapabilityGaps[0].Summary, "crash") {
+		t.Fatalf("OmniPaxos capability probe did not produce bound mechanical Memory: %#v/%v",
+			composition, err)
+	}
+	reasonOnly := projectAgenticCapabilityFeedbackMemory(
+		composition.Memory, controlexperiment.AgenticCapabilityFeedbackReasonCodes,
+	)
+	structured := projectAgenticCapabilityFeedbackMemory(
+		composition.Memory, controlexperiment.AgenticCapabilityFeedbackStructuredGaps,
+	)
+	if len(reasonOnly[0].CapabilityGaps) != 0 ||
+		len(reasonOnly[0].MechanicalReasonCodes) != 1 ||
+		len(structured[0].CapabilityGaps) != 1 {
+		t.Fatalf("capability probe arms did not differ only in structured gap exposure: %#v/%#v",
+			reasonOnly, structured)
+	}
+	tampered := composition
+	tampered.Memory = append([]controlexperiment.RiskExplorationMemoryEntry(nil), composition.Memory...)
+	tampered.Memory[0].CapabilityGaps = append(
+		[]controlexperiment.AgentCapabilityGap(nil), composition.Memory[0].CapabilityGaps...,
+	)
+	tampered.Memory[0].CapabilityGaps[0].Summary = "caller replaced the trusted probe result"
+	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
+		Directory: filepath.Join(t.TempDir(), "tampered-probe"), AgentKeyFile: "fixture-key.txt",
+		ReadKey:  func(string) (string, error) { return "fixture-key", nil },
+		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
+		Prepare:  func(context.Context) (agenticEpisodeComposition, error) { return tampered, nil },
+	})
+	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
+		t.Fatalf("method-bound probe Memory was replaceable: %v", err)
+	}
+}
+
 func TestAgenticArtifactAccountsChargedScenarioCallRejectedByTokenThreshold(t *testing.T) {
 	artifact := agenticEpisodeArtifact{
 		Status:            agenticEpisodeTokenStopped,

@@ -54,6 +54,26 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	if err != nil || structured.Validate() != nil || structured.Digest == spec.Digest {
 		t.Fatalf("structured feedback did not acquire distinct method identity: %#v/%v", structured, err)
 	}
+	probeInput := structured
+	probeInput.Digest = ""
+	probeInput.InvestigationEpisodes = 1
+	probeInput.InvestigationBudget = probeInput.EpisodeBudget
+	probeInput.EpisodeLimits.MaxScenarioCalls = 1
+	probeInput.CapabilityFeedbackProbe = &AgenticCapabilityFeedbackProbe{
+		ID: "missing-crash-probe", MaxScenarioCalls: 1,
+		Plan: ScenarioPlan{ID: "missing-crash-plan", Steps: []ScenarioStep{{
+			ID: "crash-n2", Selector: FrontierActionSelector{Kind: "crash", Node: "n2"},
+		}}},
+	}
+	probed, err := NewAgenticMethodSpec(probeInput)
+	if err != nil || probed.Validate() != nil || probed.Digest == structured.Digest {
+		t.Fatalf("capability probe did not acquire distinct method identity: %#v/%v", probed, err)
+	}
+	tamperedProbe := probed
+	tamperedProbe.CapabilityFeedbackProbe.Plan.Steps[0].Selector.Node = "n3"
+	if tamperedProbe.Validate() == nil {
+		t.Fatal("changed capability probe retained the old method identity")
+	}
 	reasonInput := spec
 	reasonInput.CapabilityFeedbackMode = AgenticCapabilityFeedbackReasonCodes
 	reasonInput.Digest = ""

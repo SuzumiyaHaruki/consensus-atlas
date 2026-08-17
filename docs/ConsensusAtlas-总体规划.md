@@ -647,7 +647,7 @@ M4j3 将同一机械缺口贯通到最终停止、Episode assessment、compact a
 Memory。最后一轮 capability gap 不再被覆盖成 call-budget/planning failure；Memory 只携带缺口 reason code，
 不携带 Oracle finding。这使“Agent 假设失败”和“当前 Target 无法执行”保持可区分，同时不引入第二套状态模型。
 
-### M4k：释放 Agent 的调查与自我修订能力（M4k4 完成）
+### M4k：释放 Agent 的调查与自我修订能力（M4k5a 完成）
 
 M4k 不再横向扩公共控制面，而是在现有可信边界内增加 Agent 的有效反馈。M4k1 将 Scenario 机械产生的
 capability gap 以 `code/reference/summary` 结构化形式带入下一 Episode；Risk Agent 能区分同属
@@ -677,6 +677,17 @@ M4k4 已完成上述方法归属：活动 CLI 的 `-capability-feedback` 明确�
 下一步 M4k5 是真实模型公开校准：固定模型、Target、输入材料、预算与 seed 配对运行两种反馈模式，比较上述四项
 adaptation 计数、进入可信执行的候选数及完整成本。该实验需要新的明确外部调用授权；在授权前只做本地预检和
 实验清单，不把 M4k3 scripted 差异外推为 LLM 效果。
+
+原始两 Episode 方案已被真实负证据否定：reason-code v1 因 Risk 输出截断在 80,670 tokens 终止；v2 在第一
+Episode 使用 121,571 tokens 后触发阈值，且没有 capability gap，因此既无法进入第二轮，也没有激活自变量。
+M4k5a 改为公开、协议无关格式的机械 capability probe：探针 ScenarioPlan 只交给真实 TargetSurface 预检，绝不
+进入 Runtime；只有确实得到 missing-action/missing-control 时才形成 calibration Memory。两 arm 使用同一探针，
+区别只在是否保留结构化 gap，并各运行一个 Episode、最多一次 Scenario 调用。探针内容和限额直接进入现有
+MethodSpec，不新增第二套 hash；调用者篡改探针结果会在 Episode composition 阶段被拒绝。
+
+M4k5b 真实配对只回答“结构化能力反馈是否改变下一次 Risk/Scenario 选择”，不回答长期缺陷发现率。主要输出是：
+accepted Risk 是否依赖缺失控制、首个 Scenario 是否再次命中 capability gap、是否进入可信执行、模型成本和最终
+机械停止原因。若该最小实验有差异，再进入多 seed；若无差异，应接受 TargetSurface 本身已经足够，而不是继续堆字段。
 
 下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。

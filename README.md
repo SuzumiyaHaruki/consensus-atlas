@@ -149,6 +149,8 @@ Agent 只能读取 Dossier 已声明的精确 reference；本地路径不会进�
 `end_line + 1` 继续非重叠窗口，也可以查看另一个声明 reference；重复或重叠窗口由可信代码拒绝。
 `-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
+公开反馈校准还可指定 `-capability-feedback-probe plans/agent/omnipaxos-capability-feedback-probe-v1.json`。
+探针只由真实 TargetSurface 预检，不执行 Action；当前格式固定最多一次 Scenario 调用，并完整进入 MethodSpec。
 
 ## 验证与研究边界
 

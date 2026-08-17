@@ -87,7 +87,9 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"participant-node, related-participant-node, or another node-id field. Every bind_as token must occur in at least two constraints; omit one-off field " +
 		"constraints instead of binding them. A bind_as token uses lowercase letters, digits, and hyphens only. " +
 		"Use exploration_memory to avoid exact repeats, reconsider milestone near-misses, and prefer mechanisms that may expose new protocol states; " +
-		"memory is prior evidence context, not permission to claim a verdict. A structured capability_gaps entry is trusted evidence " +
+		"memory is prior evidence context, not permission to claim a verdict. An entry with no candidate_id, zero model/execution work, " +
+		"and a capability reason may be a public mechanical calibration probe rather than an Agent-authored prior episode; it is not " +
+		"protocol execution evidence. A structured capability_gaps entry is trusted evidence " +
 		"that the prior plan requested a control unavailable on this Target; do not repeat a mechanism that depends on that unavailable " +
 		"control unless target_surface now exposes an alternative. Choose another executable mechanism or property instead. " +
 		"Place the most promising candidate first. If prior_feedback reports missing requirements, revise the portfolio using only the " +

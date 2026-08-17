@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4k4 能力反馈方法归属（实现完成）。
+阶段：M4k5a 机械能力探针配对校准（实现完成，待真实运行）。
 
 ## 一句话状态
 
@@ -217,6 +217,20 @@ M4k4 将这项消融从脚本自报变成活动运行配置。Agentic CLI 新增
 可信 `code/reference/summary`。该字段进入现有 typed `AgenticMethodSpec`，因此改变暴露方式必然改变方法 digest，
 Episode 组合也会拒绝 MethodSpec 与实际投影不一致。历史 MethodSpec 缺少该可选字段时仍按旧的 reason-code 视图
 验证原 digest，不重写历史工件。本阶段未增加第二套 hash、gate 或 baseline，也未调用模型。
+
+首次 M4k5 `reason-codes` 真实尝试没有形成有效配对。v1 的第二次 Risk 响应打满 32,000 输出 tokens 并以
+`agent-response-rejected` 终止，两次调用共 80,670 tokens；终态调用不能在原 journal 中被静默重试。fresh v2
+接受 Risk 并执行 10 个 Scenario decisions，但 4 次调用累计 121,571 tokens，越过 120,000-token Episode 阈值，
+第二 Episode 未启动。更关键的是 v2 的 `capability_gap_attempts=0`，因此反馈模式从未被激活。继续直接运行
+structured arm 只能比较模型随机性，不能回答结构化 gap 是否有效，故没有派发该 arm。
+
+M4k5a 将校准改成单 Episode 的真实 Target 机械探针。独立 JSON 只描述一个不执行的 ScenarioPlan；可信代码用
+实际 `AgentTargetSurface.ScenarioCapabilityGaps` 预检，要求产生至少一个 `missing-action` 或
+`missing-control-capability`，再形成零模型/零执行 work 的 calibration Memory。reason-code arm 隐去 gap 细节，
+structured arm 保留同一 `code/reference/summary`。探针计划和单次 Scenario 限额进入既有 MethodSpec；实际 Memory
+必须与 Target 重新推导结果一致。OmniPaxos v1 探针请求 `crash n2`，真实 surface 机械返回 missing-action。
+两组各只运行一个 Episode、最多一次 Scenario 调用，从而在显著降低 token 成本的同时保证实验变量在首个 Risk
+请求前已经激活。探针不是协议执行证据，也不能获得 finding credit。
 
 ## 当前输入
 

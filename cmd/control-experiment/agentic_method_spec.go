@@ -13,7 +13,7 @@ import (
 
 const (
 	agenticMethodSpecFile        = "method-spec.json"
-	riskAgentPromptVersion       = "risk-agent-navigation-v3"
+	riskAgentPromptVersion       = "risk-agent-navigation-v4"
 	etcdraftSemanticInputSchema  = "etcdraft-agentic-input-v1"
 	omnipaxosSemanticInputSchema = "omnipaxos-agentic-input-v1"
 )
@@ -28,6 +28,7 @@ func buildAgenticMethodSpec(
 	semanticExposure controlexperiment.ScenarioSemanticExposureMode,
 	sessionWallClockMS int64,
 	mounts []controlexperiment.KnowledgeSourceMount,
+	feedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe,
 ) (controlexperiment.AgenticMethodSpec, error) {
 	if target.validate() != nil || budget.validate() != nil || budget.Logical == nil ||
 		options.InvestigationEpisodes <= 0 || semanticInputSchema == "" || sessionWallClockMS <= 0 ||
@@ -59,6 +60,7 @@ func buildAgenticMethodSpec(
 		CapabilityFeedbackMode: controlexperiment.AgenticCapabilityFeedbackMode(
 			normalizedCapabilityFeedbackMode(options.CapabilityFeedbackMode),
 		),
+		CapabilityFeedbackProbe: feedbackProbe,
 		EpisodeLimits: controlexperiment.AgenticEpisodeLimits{
 			MaxRiskCalls: budget.MaxRiskCalls, MaxScenarioCalls: budget.MaxScenarioCalls,
 			MaxTotalCalls: budget.MaxTotalCalls, MaxObservedTokens: budget.MaxObservedTokens,

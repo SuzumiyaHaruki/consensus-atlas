@@ -12,24 +12,25 @@ import (
 )
 
 type controlExperimentOptions struct {
-	Out                    string
-	BundleOut              string
-	BundleEvidenceVersion  int
-	MethodSpecDigest       string
-	AgentKeyFile           string
-	AgentProvider          string
-	AgentModel             string
-	WorkerPath             string
-	Target                 string
-	SemanticInput          string
-	KnowledgeSourceMounts  []string
-	CampaignDirectory      string
-	CampaignResume         bool
-	InvestigationEpisodes  int
-	CapabilityFeedbackMode string
-	Strategy               string
-	Decisions              int
-	PolicySeed             uint64
+	Out                     string
+	BundleOut               string
+	BundleEvidenceVersion   int
+	MethodSpecDigest        string
+	AgentKeyFile            string
+	AgentProvider           string
+	AgentModel              string
+	WorkerPath              string
+	Target                  string
+	SemanticInput           string
+	KnowledgeSourceMounts   []string
+	CampaignDirectory       string
+	CampaignResume          bool
+	InvestigationEpisodes   int
+	CapabilityFeedbackMode  string
+	CapabilityFeedbackProbe string
+	Strategy                string
+	Decisions               int
+	PolicySeed              uint64
 }
 
 func (options controlExperimentOptions) hasNonSessionFlags() bool {
@@ -89,7 +90,8 @@ func validateQualifiedCLIOptions(options controlExperimentOptions) error {
 		options.WorkerPath != "" || options.Target != "" || len(options.KnowledgeSourceMounts) != 0 ||
 		options.InvestigationEpisodes != 1 ||
 		options.CapabilityFeedbackMode != "" &&
-			options.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps {
+			options.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
+		options.CapabilityFeedbackProbe != "" {
 		return errors.New("Agent flags require -strategy agentic-episode-v1")
 	}
 	if options.Out == "" {

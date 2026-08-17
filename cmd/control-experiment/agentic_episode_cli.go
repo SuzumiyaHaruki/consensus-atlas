@@ -144,6 +144,10 @@ func prepareAgenticEpisodeComposition(
 	if feedbackMode.Validate() != nil {
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_CAPABILITY_FEEDBACK_INVALID")
 	}
+	feedbackProbe, err := loadAgenticCapabilityFeedbackProbe(options.CapabilityFeedbackProbe)
+	if err != nil || feedbackProbe != nil && options.InvestigationEpisodes != 1 {
+		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_CAPABILITY_PROBE_INVALID")
+	}
 	client, err := newAgentIntentTransport(options.AgentProvider, options.AgentModel)
 	if err != nil {
 		return agenticEpisodeComposition{}, err
@@ -174,10 +178,18 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
+		budget, err = agenticEpisodeBudgetForCapabilityProbe(budget, feedbackProbe)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
+		memory, err := agenticCapabilityFeedbackProbeMemory(target.Surface, feedbackProbe)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
 		spec, err := buildAgenticMethodSpec(
 			options, target, budget, inputs.client, scenarioClient, etcdraftSemanticInputSchema,
 			inputs.experiment.ScenarioSemanticExposure, inputs.experiment.SessionWallClockMS,
-			knowledgeSourceMounts,
+			knowledgeSourceMounts, feedbackProbe,
 		)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
@@ -185,11 +197,13 @@ func prepareAgenticEpisodeComposition(
 		target.MethodSpecDigest = spec.Digest
 		return agenticEpisodeComposition{
 			Target: target, Budget: budget, MethodSpec: spec,
-			KnowledgeSourceMounts:  knowledgeSourceMounts,
-			Client:                 inputs.client,
-			ScenarioClient:         scenarioClient,
-			SessionWallClockMS:     inputs.experiment.SessionWallClockMS,
-			CapabilityFeedbackMode: feedbackMode,
+			KnowledgeSourceMounts:   knowledgeSourceMounts,
+			Client:                  inputs.client,
+			ScenarioClient:          scenarioClient,
+			SessionWallClockMS:      inputs.experiment.SessionWallClockMS,
+			CapabilityFeedbackMode:  feedbackMode,
+			CapabilityFeedbackProbe: feedbackProbe,
+			Memory:                  memory,
 		}, nil
 	case "omnipaxos-v2":
 		if options.WorkerPath == "" {
@@ -210,10 +224,18 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
+		budget, err = agenticEpisodeBudgetForCapabilityProbe(budget, feedbackProbe)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
+		memory, err := agenticCapabilityFeedbackProbeMemory(target.Surface, feedbackProbe)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
 		spec, err := buildAgenticMethodSpec(
 			options, target, budget, client, scenarioClient, omnipaxosSemanticInputSchema,
 			inputs.Experiment.ScenarioSemanticExposure, inputs.Experiment.SessionWallClockMS,
-			knowledgeSourceMounts,
+			knowledgeSourceMounts, feedbackProbe,
 		)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
@@ -222,9 +244,11 @@ func prepareAgenticEpisodeComposition(
 		return agenticEpisodeComposition{
 			Target: target, Budget: budget, MethodSpec: spec,
 			KnowledgeSourceMounts: knowledgeSourceMounts, Client: client,
-			ScenarioClient:         scenarioClient,
-			SessionWallClockMS:     inputs.Experiment.SessionWallClockMS,
-			CapabilityFeedbackMode: feedbackMode,
+			ScenarioClient:          scenarioClient,
+			SessionWallClockMS:      inputs.Experiment.SessionWallClockMS,
+			CapabilityFeedbackMode:  feedbackMode,
+			CapabilityFeedbackProbe: feedbackProbe,
+			Memory:                  memory,
 		}, nil
 	default:
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")

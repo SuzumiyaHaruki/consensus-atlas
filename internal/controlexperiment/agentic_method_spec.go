@@ -56,30 +56,49 @@ func (mode AgenticCapabilityFeedbackMode) Validate() error {
 	}
 }
 
+// AgenticCapabilityFeedbackProbe is a public calibration input. Trusted code
+// preflights the plan against the real TargetSurface and exposes only the
+// resulting mechanical gap through exploration Memory; the plan is never
+// executed as Runtime work.
+type AgenticCapabilityFeedbackProbe struct {
+	ID               string       `json:"id"`
+	Plan             ScenarioPlan `json:"plan"`
+	MaxScenarioCalls int          `json:"max_scenario_calls"`
+}
+
+func (probe AgenticCapabilityFeedbackProbe) Validate() error {
+	if !validMethodToken(probe.ID) || probe.Plan.Validate() != nil ||
+		probe.MaxScenarioCalls != 1 {
+		return errors.New("EXPERIMENT_AGENTIC_CAPABILITY_FEEDBACK_PROBE_INVALID")
+	}
+	return nil
+}
+
 // AgenticMethodSpec is the typed, protocol-neutral projection of the actual
 // Agent invocation configuration. SUT/build identity remains in the formal
 // benchmark contract and qualified Bundle; this spec binds the method knobs
 // that can vary for the same SUT.
 type AgenticMethodSpec struct {
-	SchemaVersion            string                        `json:"schema_version"`
-	ExecutorID               string                        `json:"executor_id"`
-	Strategy                 string                        `json:"strategy"`
-	ImplementationID         string                        `json:"implementation_id"`
-	TargetID                 string                        `json:"target_id"`
-	Transport                AgentTransportFreeze          `json:"transport"`
-	ScenarioTransport        *AgentTransportFreeze         `json:"scenario_transport,omitempty"`
-	RiskPromptVersion        string                        `json:"risk_prompt_version"`
-	ScenarioPromptVersion    string                        `json:"scenario_prompt_version"`
-	SemanticInputSchema      string                        `json:"semantic_input_schema"`
-	SemanticInputDigest      string                        `json:"semantic_input_digest"`
-	ScenarioSemanticExposure ScenarioSemanticExposureMode  `json:"scenario_semantic_exposure"`
-	CapabilityFeedbackMode   AgenticCapabilityFeedbackMode `json:"capability_feedback_mode,omitempty"`
-	SourceExposure           AgenticSourceExposureSpec     `json:"source_exposure"`
-	EpisodeLimits            AgenticEpisodeLimits          `json:"episode_limits"`
-	InvestigationEpisodes    int                           `json:"investigation_episodes"`
-	EpisodeBudget            AgenticLogicalBudget          `json:"episode_budget"`
-	InvestigationBudget      AgenticLogicalBudget          `json:"investigation_budget"`
-	Digest                   string                        `json:"digest"`
+	SchemaVersion            string                          `json:"schema_version"`
+	ExecutorID               string                          `json:"executor_id"`
+	Strategy                 string                          `json:"strategy"`
+	ImplementationID         string                          `json:"implementation_id"`
+	TargetID                 string                          `json:"target_id"`
+	Transport                AgentTransportFreeze            `json:"transport"`
+	ScenarioTransport        *AgentTransportFreeze           `json:"scenario_transport,omitempty"`
+	RiskPromptVersion        string                          `json:"risk_prompt_version"`
+	ScenarioPromptVersion    string                          `json:"scenario_prompt_version"`
+	SemanticInputSchema      string                          `json:"semantic_input_schema"`
+	SemanticInputDigest      string                          `json:"semantic_input_digest"`
+	ScenarioSemanticExposure ScenarioSemanticExposureMode    `json:"scenario_semantic_exposure"`
+	CapabilityFeedbackMode   AgenticCapabilityFeedbackMode   `json:"capability_feedback_mode,omitempty"`
+	CapabilityFeedbackProbe  *AgenticCapabilityFeedbackProbe `json:"capability_feedback_probe,omitempty"`
+	SourceExposure           AgenticSourceExposureSpec       `json:"source_exposure"`
+	EpisodeLimits            AgenticEpisodeLimits            `json:"episode_limits"`
+	InvestigationEpisodes    int                             `json:"investigation_episodes"`
+	EpisodeBudget            AgenticLogicalBudget            `json:"episode_budget"`
+	InvestigationBudget      AgenticLogicalBudget            `json:"investigation_budget"`
+	Digest                   string                          `json:"digest"`
 }
 
 func NewAgenticMethodSpec(spec AgenticMethodSpec) (AgenticMethodSpec, error) {
@@ -93,6 +112,11 @@ func NewAgenticMethodSpec(spec AgenticMethodSpec) (AgenticMethodSpec, error) {
 	if spec.ScenarioTransport != nil {
 		transport := *spec.ScenarioTransport
 		spec.ScenarioTransport = &transport
+	}
+	if spec.CapabilityFeedbackProbe != nil {
+		probe := *spec.CapabilityFeedbackProbe
+		probe.Plan.Steps = append([]ScenarioStep(nil), probe.Plan.Steps...)
+		spec.CapabilityFeedbackProbe = &probe
 	}
 	sort.Strings(spec.SourceExposure.ReferencePrefixes)
 	spec.Digest = ""
@@ -117,6 +141,9 @@ func (spec AgenticMethodSpec) Validate() error {
 		!validMethodToken(spec.ScenarioPromptVersion) || !validMethodToken(spec.SemanticInputSchema) ||
 		!validSHA256(spec.SemanticInputDigest) || spec.ScenarioSemanticExposure.Validate() != nil ||
 		spec.CapabilityFeedbackMode.Validate() != nil ||
+		spec.CapabilityFeedbackProbe != nil && spec.CapabilityFeedbackProbe.Validate() != nil ||
+		spec.CapabilityFeedbackProbe != nil && (spec.InvestigationEpisodes != 1 ||
+			spec.EpisodeLimits.MaxScenarioCalls != spec.CapabilityFeedbackProbe.MaxScenarioCalls) ||
 		spec.InvestigationEpisodes <= 0 || spec.InvestigationEpisodes > agenticMethodMaxInvestigation ||
 		spec.EpisodeBudget.Validate() != nil || spec.InvestigationBudget.Validate() != nil ||
 		!validAgenticSourceExposure(spec.SourceExposure) ||

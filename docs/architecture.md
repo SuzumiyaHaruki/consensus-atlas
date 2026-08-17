@@ -78,6 +78,10 @@ decision；当前 frontier 的精确 ActionID 也要反查 kind。没有富声�
 能力反馈暴露是方法配置而非 Agent 自报字段。活动 CLI 可选择只提供机械 reason codes，或额外提供结构化
 `code/reference/summary`；实际 Memory 投影与同一个 typed `AgenticMethodSpec` 字段机械绑定。这样可在不改变
 Runtime、Target 或 Oracle 的情况下做配对消融，同时拒绝“合同声明结构化反馈、实际却使用旧视图”的方法漂移。
+公开校准可额外提供一个 typed capability probe。它只是普通 ScenarioPlan，由真实 TargetSurface 运行同一
+`ScenarioCapabilityGaps` 预检；计划不会进入 Runtime。只有预检确实拒绝后，系统才生成零 work 的 calibration
+Memory，并从 MethodSpec 中的同一 probe 重新核对实际 Memory。该入口用于保证消融变量被激活，不属于自然调查、
+协议执行或 finding 证据。
 
 ### 3.2 Item 与消息所有权
 

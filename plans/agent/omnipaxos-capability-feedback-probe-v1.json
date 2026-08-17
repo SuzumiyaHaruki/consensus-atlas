@@ -1,0 +1,16 @@
+{
+  "id": "omnipaxos-missing-crash-probe-v1",
+  "plan": {
+    "id": "omnipaxos-missing-crash-plan-v1",
+    "steps": [
+      {
+        "id": "probe-crash-n2",
+        "selector": {
+          "kind": "crash",
+          "node": "n2"
+        }
+      }
+    ]
+  },
+  "max_scenario_calls": 1
+}

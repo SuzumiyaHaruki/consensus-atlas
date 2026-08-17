@@ -171,6 +171,12 @@ included in the existing typed MethodSpec digest. Historical specs with the fiel
 and their original digest. A real-model comparison must keep every other MethodSpec input fixed and report complete Investigation
 cost; the scripted fixture cannot supply an LLM-effect claim.
 
+The first real M4k5 baseline did not activate this metric: one attempt failed after 80,670 tokens, while a fresh attempt used
+121,571 tokens and stopped before Episode 2 with zero capability-gap attempts. The redesigned calibration therefore uses a public
+mechanical probe that the real TargetSurface must reject before Runtime execution. Both arms receive the same reason code; only the
+structured arm receives the derived gap reference and summary. The probe and one-Scenario-call limit are part of the existing
+MethodSpec. Report this as feedback sensitivity, not protocol coverage or defect effectiveness.
+
 ## 7. Known limitations and safeguards
 
 - A state key can over-merge if the PSS omits a safety-relevant relation, or over-split if it retains an irrelevant one. Invariance and separation tests are therefore part of the Family Pack.
