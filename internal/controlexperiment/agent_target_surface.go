@@ -3,6 +3,7 @@ package controlexperiment
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -375,7 +376,10 @@ func (surface AgentTargetSurface) ScenarioCapabilityGaps(
 			!surface.surfaceSupportsEffectSelector(selector) {
 			gaps = append(gaps, AgentCapabilityGap{
 				Code: AgentCapabilityGapMissingControl, Reference: step.ID,
-				Summary: "step requests an effect control outside the declared Target capability",
+				Summary: fmt.Sprintf(
+					"step requests an unavailable effect control: kind=%q phase=%q outcome=%q durability=%q",
+					selector.EffectKind, selector.EffectPhase, selector.EffectOutcome, selector.Durability,
+				),
 			})
 		}
 	}

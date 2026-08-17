@@ -158,22 +158,23 @@ type RiskCandidateReview struct {
 // original artifacts; this view only helps the Agent avoid repeating an
 // investigation through mechanical execution, Risk, PSS and cost feedback.
 type RiskExplorationMemoryEntry struct {
-	Episode               int      `json:"episode"`
-	CandidateID           string   `json:"candidate_id,omitempty"`
-	Summary               string   `json:"summary,omitempty"`
-	SuspectedMechanism    string   `json:"suspected_mechanism,omitempty"`
-	EpisodeOutcome        string   `json:"episode_outcome"`
-	RepeatedCandidate     bool     `json:"repeated_candidate,omitempty"`
-	RiskStatus            string   `json:"risk_status,omitempty"`
-	SatisfiedMilestones   []string `json:"satisfied_milestones,omitempty"`
-	FirstMissingMilestone string   `json:"first_missing_milestone,omitempty"`
-	ProtocolPSSStates     int      `json:"protocol_pss_states,omitempty"`
-	NewProtocolPSSStates  int      `json:"new_protocol_pss_states,omitempty"`
-	MechanicalReasonCodes []string `json:"mechanical_reason_codes,omitempty"`
-	ModelCalls            int      `json:"model_calls"`
-	ModelTokens           int      `json:"model_tokens"`
-	SearchWorkUnits       int      `json:"search_work_units"`
-	ExecutionWorkUnits    int      `json:"execution_work_units"`
+	Episode               int                  `json:"episode"`
+	CandidateID           string               `json:"candidate_id,omitempty"`
+	Summary               string               `json:"summary,omitempty"`
+	SuspectedMechanism    string               `json:"suspected_mechanism,omitempty"`
+	EpisodeOutcome        string               `json:"episode_outcome"`
+	RepeatedCandidate     bool                 `json:"repeated_candidate,omitempty"`
+	RiskStatus            string               `json:"risk_status,omitempty"`
+	SatisfiedMilestones   []string             `json:"satisfied_milestones,omitempty"`
+	FirstMissingMilestone string               `json:"first_missing_milestone,omitempty"`
+	ProtocolPSSStates     int                  `json:"protocol_pss_states,omitempty"`
+	NewProtocolPSSStates  int                  `json:"new_protocol_pss_states,omitempty"`
+	MechanicalReasonCodes []string             `json:"mechanical_reason_codes,omitempty"`
+	CapabilityGaps        []AgentCapabilityGap `json:"capability_gaps,omitempty"`
+	ModelCalls            int                  `json:"model_calls"`
+	ModelTokens           int                  `json:"model_tokens"`
+	SearchWorkUnits       int                  `json:"search_work_units"`
+	ExecutionWorkUnits    int                  `json:"execution_work_units"`
 }
 
 type RiskAgentView struct {
@@ -898,6 +899,16 @@ func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
 				return false
 			}
 		}
+		seenGaps := make(map[string]bool, len(value.CapabilityGaps))
+		for _, gap := range value.CapabilityGaps {
+			key := gap.Code + "\x00" + gap.Reference + "\x00" + gap.Summary
+			if !validMethodToken(gap.Code) || !validMethodToken(gap.Reference) ||
+				strings.TrimSpace(gap.Summary) != gap.Summary || gap.Summary == "" ||
+				len(gap.Summary) > protocolKnowledgeTextMaxBytes || seenGaps[key] {
+				return false
+			}
+			seenGaps[key] = true
+		}
 		previousEpisode = value.Episode
 	}
 	return true
@@ -1129,6 +1140,7 @@ func cloneRiskExplorationMemory(values []RiskExplorationMemoryEntry) []RiskExplo
 		result[index].MechanicalReasonCodes = append(
 			[]string(nil), values[index].MechanicalReasonCodes...,
 		)
+		result[index].CapabilityGaps = cloneAgentCapabilityGaps(values[index].CapabilityGaps)
 	}
 	return result
 }

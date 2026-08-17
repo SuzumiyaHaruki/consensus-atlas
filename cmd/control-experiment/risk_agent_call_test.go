@@ -60,6 +60,10 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		EpisodeOutcome:     controlexperiment.RiskMemoryOutcomeRiskNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
 		ProtocolPSSStates: 2, NewProtocolPSSStates: 1,
+		CapabilityGaps: []controlexperiment.AgentCapabilityGap{{
+			Code: controlexperiment.AgentCapabilityGapMissingControl, Reference: "persist-step",
+			Summary: "the requested persist failure is unavailable",
+		}},
 		ModelCalls: 2, ModelTokens: 12, SearchWorkUnits: 5, ExecutionWorkUnits: 4,
 	}}
 	candidate := controlexperiment.RiskCandidate{
@@ -102,6 +106,8 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("target_dossier")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observable-only")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("exploration_memory")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("persist-step")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("do not repeat a mechanism")) ||
 			bytes.Contains([]byte(payload.Messages[1].Content), []byte("oracle_findings")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("property_ref")) ||
 			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("mechanism_steps")) ||

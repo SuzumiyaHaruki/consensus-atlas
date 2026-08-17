@@ -878,6 +878,7 @@ func deriveAgenticExplorationMemory(
 		reasons := agenticExplorationReasonCodes(
 			episode.Summary.RiskFeedback, episode.Summary.ScenarioAttemptFeedback,
 		)
+		capabilityGaps := agenticExplorationCapabilityGaps(episode.Summary.ScenarioAttemptFeedback)
 		if episode.Summary.ScenarioStopReason == controlexperiment.ScenarioAgentStopHypothesisAbandoned {
 			reasons = append(reasons, controlexperiment.ScenarioAgentStopHypothesisAbandoned)
 		}
@@ -889,6 +890,7 @@ func deriveAgenticExplorationMemory(
 				episode.Summary.Work.ScenarioSearch.TotalWorkUnits,
 			ExecutionWorkUnits:    agenticEvidenceExecutionWorkUnits(episode.Summary.Work),
 			MechanicalReasonCodes: reasons,
+			CapabilityGaps:        capabilityGaps,
 		}
 		if episode.Summary.Accepted != nil {
 			candidate := episode.Summary.Accepted.Candidate
@@ -1025,6 +1027,23 @@ func agenticExplorationReasonCodes(
 	for _, attempt := range scenario {
 		for _, gap := range attempt.CapabilityGaps {
 			appendReason(gap.Code)
+		}
+	}
+	return result
+}
+
+func agenticExplorationCapabilityGaps(
+	scenario []agenticScenarioAttemptArtifact,
+) []controlexperiment.AgentCapabilityGap {
+	seen := make(map[string]bool)
+	var result []controlexperiment.AgentCapabilityGap
+	for _, attempt := range scenario {
+		for _, gap := range attempt.CapabilityGaps {
+			key := gap.Code + "\x00" + gap.Reference + "\x00" + gap.Summary
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, gap)
+			}
 		}
 	}
 	return result

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4j3 能力缺口证据归因闭环（实现完成）。
+阶段：M4k1 结构化能力缺口 Memory（实现完成）。
 
 ## 一句话状态
 
@@ -192,6 +192,12 @@ M4j3 修正了最后一轮能力缺口被覆盖为普通 call-budget/planning fa
 `missing-action`/`missing-control-capability`，compact artifact 保存 gap 与失败 step。后续 Episode 的 Risk Agent
 只能看到这些机械 reason code，不会看到 Oracle 结论，因此可以避开当前 Target 无法执行的方向，而不会把基础设施
 缺口误学成协议假设无效。该收口未增加 Action、预算、hash、baseline 或新资格 gate。
+
+M4k1 开始把重心转向 Agent 能力。跨 Episode Memory 不再只给 Risk Agent 一个宽泛 reason code，还会携带可信
+Scenario preflight 已保存的 `code/reference/summary` 结构化 gap。Risk prompt v3 明确要求：若上一轮机制依赖该 Target
+不可用的控制，应结合当前 `target_surface` 改用可执行机制或其他性质，而不是重复请求或宣称协议问题。消息 type、
+Action kind 以及 effect kind/phase/outcome/durability 的具体请求会保留在摘要中；Memory 深拷贝和类型校验防止 Agent
+回写调用方证据。该信息完全来自 Manifest/TargetSurface/Scenario 机械检查，不包含 Oracle finding，也不赋予新 Action。
 
 ## 当前输入
 

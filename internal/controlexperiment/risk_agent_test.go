@@ -443,7 +443,11 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
 		ProtocolPSSStates: 3, NewProtocolPSSStates: 2,
 		MechanicalReasonCodes: []string{RiskAgentReasonUnqualified},
-		ModelCalls:            2, ModelTokens: 12, SearchWorkUnits: 7, ExecutionWorkUnits: 5,
+		CapabilityGaps: []AgentCapabilityGap{{
+			Code: AgentCapabilityGapMissingControl, Reference: "storage-step",
+			Summary: "the requested storage failure outcome is unavailable",
+		}},
+		ModelCalls: 2, ModelTokens: 12, SearchWorkUnits: 7, ExecutionWorkUnits: 5,
 	}}
 	result, err := DiscoverRiskWithPlanner(
 		context.Background(), RiskAgentBudget{MaxCalls: 1, MaxTokens: 10},
@@ -451,10 +455,13 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 		func(_ context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
 			if len(view.ExplorationMemory) != 1 ||
 				view.ExplorationMemory[0].FirstMissingMilestone != "decision" ||
-				view.ExplorationMemory[0].NewProtocolPSSStates != 2 {
+				view.ExplorationMemory[0].NewProtocolPSSStates != 2 ||
+				len(view.ExplorationMemory[0].CapabilityGaps) != 1 ||
+				view.ExplorationMemory[0].CapabilityGaps[0].Reference != "storage-step" {
 				t.Fatalf("trusted exploration memory was not supplied: %#v", view.ExplorationMemory)
 			}
 			view.ExplorationMemory[0].SatisfiedMilestones[0] = "mutated"
+			view.ExplorationMemory[0].CapabilityGaps[0].Summary = "mutated"
 			return encoded, ModelWork{Calls: 1, InputTokens: 2, OutputTokens: 1, TotalTokens: 3}, nil
 		},
 	)
@@ -467,6 +474,9 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 	}
 	if memory[0].SatisfiedMilestones[0] != "invoke" {
 		t.Fatal("Risk Agent mutated caller-owned exploration memory")
+	}
+	if memory[0].CapabilityGaps[0].Summary != "the requested storage failure outcome is unavailable" {
+		t.Fatal("Risk Agent mutated caller-owned capability gap memory")
 	}
 	invisible := riskCandidateWithSupport(qualified, "source/fixture.go:round")
 	invisibleBytes, err := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{invisible}})

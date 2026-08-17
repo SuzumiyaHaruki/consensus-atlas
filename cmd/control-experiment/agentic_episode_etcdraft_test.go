@@ -293,6 +293,13 @@ func TestScenarioCapabilityGapRemainsMechanicalEpisodeEvidence(t *testing.T) {
 	if len(reasons) != 1 || reasons[0] != controlexperiment.AgentCapabilityGapMissingControl {
 		t.Fatalf("capability gap did not reach mechanical Memory: %#v", reasons)
 	}
+	gaps := agenticExplorationCapabilityGaps([]agenticScenarioAttemptArtifact{{
+		CapabilityGaps: scenario.Attempts[0].Feedback.CapabilityGaps,
+	}})
+	if len(gaps) != 1 || gaps[0].Reference != "effect-step" ||
+		gaps[0].Summary != "requested effect outcome is unavailable" {
+		t.Fatalf("structured capability gap did not reach Agent Memory: %#v", gaps)
+	}
 	summary := agenticEpisodeArtifact{
 		Status:             agenticEpisodeScenarioStopped,
 		ScenarioStopReason: controlexperiment.ScenarioAgentStopCapabilityGap,

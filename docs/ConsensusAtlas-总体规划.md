@@ -647,6 +647,17 @@ M4j3 将同一机械缺口贯通到最终停止、Episode assessment、compact a
 Memory。最后一轮 capability gap 不再被覆盖成 call-budget/planning failure；Memory 只携带缺口 reason code，
 不携带 Oracle finding。这使“Agent 假设失败”和“当前 Target 无法执行”保持可区分，同时不引入第二套状态模型。
 
+### M4k：释放 Agent 的调查与自我修订能力（M4k1 完成）
+
+M4k 不再横向扩公共控制面，而是在现有可信边界内增加 Agent 的有效反馈。M4k1 将 Scenario 机械产生的
+capability gap 以 `code/reference/summary` 结构化形式带入下一 Episode；Risk Agent 能区分同属
+`missing-control-capability` 的不同失败步骤和控制取值，并结合当前 TargetSurface 改换机制。只保留 reason code
+不足以完成这一点，因为上一 Episode 的完整 Scenario plan 不进入 Risk Memory。
+
+后续扩展优先以可测消融回答两个问题：结构化 gap 是否减少重复不可执行机制，以及基于源码/进展反馈的 branch、
+control、ablate 是否扩大独立 Oracle 实际检查到的候选集合。Agent 仍只提出 hypothesis 和 Action selector；Runtime、
+Trace、Replay、Oracle 与正式成本归属不变。
+
 下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。
 在用户明确恢复具体 Target 改造前，不修改 etcd/raft、OmniPaxos 或 Hashicorp Raft 实现。

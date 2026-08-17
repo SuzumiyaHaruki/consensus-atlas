@@ -73,6 +73,8 @@ Scenario 计划在执行前只检查可机械证明的能力矛盾：非 composa
 消息/HostEffect 取值。缺口作为 `missing-action`/`missing-control-capability` 返回 Agent 修订且不消耗 Runtime
 decision；当前 frontier 的精确 ActionID 也要反查 kind。没有富声明只表示未评估，不能据此拒绝计划。
 若调查最终停在该缺口，Episode 与后续 Agent Memory 保留机械原因，不把它覆盖成预算耗尽或协议 verdict。
+后续 Risk Agent 同时获得该缺口的结构化 step reference 与请求摘要，用于切换到当前 Target 可执行的机制；这些字段
+来自可信预检，不包含 Oracle finding，也不会创建新的 enabled Action。
 
 ### 3.2 Item 与消息所有权
 
