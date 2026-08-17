@@ -31,6 +31,8 @@ const (
 type AgenticTrialEvidence struct {
 	TargetID              string
 	MethodSpecDigest      string
+	MethodSpec            controlexperiment.AgenticMethodSpec
+	EpisodeCount          int
 	EpisodeStatus         string
 	EvidenceStatus        string
 	Budget                controlexperiment.AgenticLogicalBudget
@@ -207,18 +209,26 @@ func evaluateAgenticHoldoutTrial(
 	if evidence.MethodSpecDigest != contract.MethodSpecDigest {
 		return invalid("AGENTIC_HOLDOUT_METHOD_IDENTITY_MISMATCH")
 	}
+	if evidence.MethodSpec.Validate() != nil ||
+		evidence.MethodSpec.Digest != evidence.MethodSpecDigest ||
+		evidence.MethodSpec.TargetID != evidence.TargetID ||
+		evidence.EpisodeCount != evidence.MethodSpec.InvestigationEpisodes {
+		return invalid("AGENTIC_HOLDOUT_METHOD_SPEC_MISMATCH")
+	}
 	if evidence.Budget != *contract.AgenticBudget {
 		return invalid("AGENTIC_HOLDOUT_AGENTIC_BUDGET_MISMATCH")
 	}
-	if len(bundles) > evidence.Budget.MaxAttempts {
+	if evidence.MethodSpec.InvestigationBudget != evidence.Budget ||
+		len(bundles) > evidence.Budget.MaxAttempts {
 		return invalid("AGENTIC_HOLDOUT_ATTEMPT_BUDGET_EXCEEDED")
 	}
 	if evidence.ModelWork.Calls > evidence.Budget.MaxModelCalls ||
 		evidence.ModelWork.TotalTokens > evidence.Budget.MaxModelTokens {
 		return invalid("AGENTIC_HOLDOUT_MODEL_BUDGET_EXCEEDED")
 	}
-	searchDecisions, searchPrimary, searchOK := agenticSearchWork(evidence)
-	if !searchOK || evidence.ScenarioDecisionsUsed > searchDecisions {
+	searchDecisions, searchPrimary, searchReplay, searchOK := agenticSearchWork(evidence)
+	if !searchOK || evidence.ScenarioDecisionsUsed >
+		evidence.ScenarioSearch.ChildMaterialization.SchedulerDecisions {
 		return invalid("AGENTIC_HOLDOUT_SEARCH_WORK_INVALID")
 	}
 	results := make([]BundleTrialResult, 0, len(bundles))
@@ -245,6 +255,9 @@ func evaluateAgenticHoldoutTrial(
 	if totalsOK {
 		totalPrimary, totalsOK = safeAgenticAdd(totalPrimary, searchPrimary)
 	}
+	if totalsOK {
+		totalReplay, totalsOK = safeAgenticAdd(totalReplay, searchReplay)
+	}
 	if !totalsOK || totalDecisions > contract.Budget.MaxDecisions ||
 		totalPrimary > contract.Budget.MaxPrimaryWorkUnits {
 		result := invalid("AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED")
@@ -267,38 +280,49 @@ func evaluateAgenticHoldoutTrial(
 	return result
 }
 
-func agenticSearchWork(evidence AgenticTrialEvidence) (int, int, bool) {
-	phases := []controlexperiment.PhaseWork{
+func agenticSearchWork(evidence AgenticTrialEvidence) (int, int, int, bool) {
+	primaryPhases := []controlexperiment.PhaseWork{
 		evidence.ScenarioFrontier,
 		evidence.ScenarioSearch.FrontierReconstruction,
 		evidence.ScenarioSearch.ChildMaterialization,
-		evidence.ScenarioSearch.ChildVerification,
 	}
 	decisions, primary := 0, 0
-	for _, phase := range phases {
+	for _, phase := range primaryPhases {
 		if phase.SetupAttempts < 0 || phase.RuntimeInitializations < 0 ||
 			phase.RuntimeInitializations > phase.SetupAttempts || phase.PrepareActions < 0 ||
 			phase.SchedulerDecisions < 0 ||
 			phase.WorkUnits != phase.SetupAttempts+phase.PrepareActions+phase.SchedulerDecisions {
-			return 0, 0, false
+			return 0, 0, 0, false
 		}
 		var ok bool
 		decisions, ok = safeAgenticAdd(decisions, phase.SchedulerDecisions)
 		if !ok {
-			return 0, 0, false
+			return 0, 0, 0, false
 		}
 		primary, ok = safeAgenticAdd(primary, phase.WorkUnits)
 		if !ok {
-			return 0, 0, false
+			return 0, 0, 0, false
 		}
 	}
-	if evidence.ScenarioSearch.TotalWorkUnits !=
-		evidence.ScenarioSearch.FrontierReconstruction.WorkUnits+
-			evidence.ScenarioSearch.ChildMaterialization.WorkUnits+
-			evidence.ScenarioSearch.ChildVerification.WorkUnits {
-		return 0, 0, false
+	verification := evidence.ScenarioSearch.ChildVerification
+	if verification.SetupAttempts < 0 || verification.RuntimeInitializations < 0 ||
+		verification.RuntimeInitializations > verification.SetupAttempts || verification.PrepareActions < 0 ||
+		verification.SchedulerDecisions < 0 ||
+		verification.WorkUnits != verification.SetupAttempts+verification.PrepareActions+
+			verification.SchedulerDecisions {
+		return 0, 0, 0, false
 	}
-	return decisions, primary, true
+	searchTotal, ok := safeAgenticAdd(
+		evidence.ScenarioSearch.FrontierReconstruction.WorkUnits,
+		evidence.ScenarioSearch.ChildMaterialization.WorkUnits,
+	)
+	if ok {
+		searchTotal, ok = safeAgenticAdd(searchTotal, verification.WorkUnits)
+	}
+	if !ok || evidence.ScenarioSearch.TotalWorkUnits != searchTotal {
+		return 0, 0, 0, false
+	}
+	return decisions, primary, verification.WorkUnits, true
 }
 
 func agenticAggregateTrialWork(results []BundleTrialResult) (int, int, int, bool) {
@@ -346,13 +370,21 @@ func validAgenticTrialEvidence(evidence AgenticTrialEvidence) bool {
 		evidence.TargetID, evidence.EpisodeStatus, evidence.EvidenceStatus, evidence.ModelWork,
 	) ||
 		!bundleDigestValid(evidence.MethodSpecDigest) || evidence.Budget.Validate() != nil ||
+		evidence.MethodSpec.Validate() != nil || evidence.EpisodeCount <= 0 ||
 		evidence.RiskAttempts < 0 || evidence.ScenarioAttempts < 0 ||
 		evidence.RiskAttempts+evidence.ScenarioAttempts != evidence.ModelWork.Calls ||
 		evidence.ScenarioDecisionsUsed < 0 ||
-		len(evidence.CandidateBundles) > controlexperiment.ScenarioAgentMaxCalls {
+		len(evidence.CandidateBundles)+boolAgenticInt(evidence.Bundle != nil) > evidence.Budget.MaxAttempts {
 		return false
 	}
 	return true
+}
+
+func boolAgenticInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func validAgenticTrialMetadata(

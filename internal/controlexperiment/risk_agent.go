@@ -25,14 +25,15 @@ const (
 	RiskMechanismSupportMax      = 3
 	riskSupportReferenceMaxBytes = targetEvidenceReferenceMaxBytes + len("source/")
 	RiskKnowledgeRequestsPerCall = 2
-	RiskKnowledgeRequestsTotal   = 2
+	RiskKnowledgeRequestsTotal   = 4
 	RiskKnowledgeRequestMaxLines = 80
 
-	RiskMemoryOutcomeExecutionCompleted = "execution-completed"
-	RiskMemoryOutcomeBudgetExhausted    = "budget-exhausted"
-	RiskMemoryOutcomeRiskNearMiss       = "risk-near-miss"
-	RiskMemoryOutcomePlanningStopped    = "planning-stopped"
-	RiskMemoryOutcomeExecutionFailed    = "execution-failed"
+	RiskMemoryOutcomeExecutionCompleted  = "execution-completed"
+	RiskMemoryOutcomeBudgetExhausted     = "budget-exhausted"
+	RiskMemoryOutcomeRiskNearMiss        = "risk-near-miss"
+	RiskMemoryOutcomePlanningStopped     = "planning-stopped"
+	RiskMemoryOutcomeExecutionFailed     = "execution-failed"
+	RiskMemoryOutcomeHypothesisAbandoned = "hypothesis-abandoned"
 
 	RiskAgentAccepted = "accepted"
 	RiskAgentStopped  = "stopped"
@@ -40,6 +41,7 @@ const (
 	RiskAgentReasonJSON                 = "risk-candidate-json-invalid"
 	RiskAgentReasonCandidate            = "risk-candidate-invalid"
 	RiskAgentReasonBinding              = "risk-candidate-single-use-binding"
+	RiskAgentReasonBindingDomain        = "risk-candidate-binding-domain-mismatch"
 	RiskAgentReasonProperty             = "risk-candidate-property-unknown"
 	RiskAgentReasonInspiration          = "risk-candidate-inspiration-unknown"
 	RiskAgentReasonAlignment            = "risk-candidate-mechanism-unaligned"
@@ -66,14 +68,15 @@ func addModelWork(total *ModelWork, current ModelWork) {
 }
 
 var (
-	errRiskCandidateJSON      = errors.New("EXPERIMENT_RISK_CANDIDATE_JSON_INVALID")
-	errRiskCandidateDuplicate = errors.New("EXPERIMENT_RISK_CANDIDATE_EXISTING_RISK")
-	errRiskCandidateBinding   = errors.New("EXPERIMENT_RISK_CANDIDATE_BINDING_INVALID")
-	errRiskCandidateProperty  = errors.New("EXPERIMENT_RISK_CANDIDATE_PROPERTY_UNKNOWN")
-	errRiskCandidatePattern   = errors.New("EXPERIMENT_RISK_CANDIDATE_INSPIRATION_UNKNOWN")
-	errRiskCandidateAlignment = errors.New("EXPERIMENT_RISK_CANDIDATE_MECHANISM_UNALIGNED")
-	errRiskCandidateSupport   = errors.New("EXPERIMENT_RISK_CANDIDATE_SUPPORT_INVALID")
-	errRiskCandidateBridge    = errors.New("EXPERIMENT_RISK_CANDIDATE_SCENARIO_BRIDGE_INVALID")
+	errRiskCandidateJSON          = errors.New("EXPERIMENT_RISK_CANDIDATE_JSON_INVALID")
+	errRiskCandidateDuplicate     = errors.New("EXPERIMENT_RISK_CANDIDATE_EXISTING_RISK")
+	errRiskCandidateBinding       = errors.New("EXPERIMENT_RISK_CANDIDATE_BINDING_INVALID")
+	errRiskCandidateBindingDomain = errors.New("EXPERIMENT_RISK_CANDIDATE_BINDING_DOMAIN_MISMATCH")
+	errRiskCandidateProperty      = errors.New("EXPERIMENT_RISK_CANDIDATE_PROPERTY_UNKNOWN")
+	errRiskCandidatePattern       = errors.New("EXPERIMENT_RISK_CANDIDATE_INSPIRATION_UNKNOWN")
+	errRiskCandidateAlignment     = errors.New("EXPERIMENT_RISK_CANDIDATE_MECHANISM_UNALIGNED")
+	errRiskCandidateSupport       = errors.New("EXPERIMENT_RISK_CANDIDATE_SUPPORT_INVALID")
+	errRiskCandidateBridge        = errors.New("EXPERIMENT_RISK_CANDIDATE_SCENARIO_BRIDGE_INVALID")
 )
 
 // RiskMechanismStep binds one causal explanation to the exact Observation
@@ -117,7 +120,7 @@ const (
 )
 
 // riskAgentResponseEnvelope lets the Agent decide whether the supplied
-// materials are already sufficient or one bounded source read is useful.
+// materials are already sufficient or another bounded source read is useful.
 // Trusted code still validates the selected branch and every reference.
 type riskAgentResponseEnvelope struct {
 	ResponseKind      string                 `json:"response_kind"`
@@ -174,18 +177,19 @@ type RiskExplorationMemoryEntry struct {
 }
 
 type RiskAgentView struct {
-	Knowledge               ProtocolKnowledgePack            `json:"knowledge"`
-	TargetSurface           *AgentTargetSurface              `json:"target_surface,omitempty"`
-	ObservationCapabilities []semantic.ObservationCapability `json:"observation_capabilities"`
-	Actions                 []control.ActionKind             `json:"actions"`
-	MaxMilestones           int                              `json:"max_milestones"`
-	MaxCandidates           int                              `json:"max_candidates"`
-	ExplorationMemory       []RiskExplorationMemoryEntry     `json:"exploration_memory,omitempty"`
-	KnowledgeSources        []KnowledgeSource                `json:"knowledge_sources,omitempty"`
-	KnowledgeResults        []KnowledgeReadResult            `json:"knowledge_results,omitempty"`
-	AvailableSupportRefs    []string                         `json:"available_support_refs"`
-	MaxKnowledgeRequests    int                              `json:"max_knowledge_requests,omitempty"`
-	Prior                   *RiskAgentFeedback               `json:"prior_feedback,omitempty"`
+	Knowledge               ProtocolKnowledgePack               `json:"knowledge"`
+	TargetSurface           *AgentTargetSurface                 `json:"target_surface,omitempty"`
+	ObservationCapabilities []semantic.ObservationCapability    `json:"observation_capabilities"`
+	BindingDomains          []semantic.ObservationBindingDomain `json:"binding_domains,omitempty"`
+	Actions                 []control.ActionKind                `json:"actions"`
+	MaxMilestones           int                                 `json:"max_milestones"`
+	MaxCandidates           int                                 `json:"max_candidates"`
+	ExplorationMemory       []RiskExplorationMemoryEntry        `json:"exploration_memory,omitempty"`
+	KnowledgeSources        []KnowledgeSource                   `json:"knowledge_sources,omitempty"`
+	KnowledgeResults        []KnowledgeReadResult               `json:"knowledge_results,omitempty"`
+	AvailableSupportRefs    []string                            `json:"available_support_refs"`
+	MaxKnowledgeRequests    int                                 `json:"max_knowledge_requests,omitempty"`
+	Prior                   *RiskAgentFeedback                  `json:"prior_feedback,omitempty"`
 }
 
 type RiskCandidateAssessment struct {
@@ -225,9 +229,11 @@ func (budget RiskAgentBudget) Validate() error {
 }
 
 func (view RiskAgentView) Validate() error {
+	bindingDomains, bindingErr := semantic.ObservationBindingDomains(view.ObservationCapabilities)
 	if view.Knowledge.ValidateAgentMaterials() != nil ||
 		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
 		semantic.ValidateObservationCapabilities(view.ObservationCapabilities) != nil ||
+		bindingErr != nil || !reflect.DeepEqual(view.BindingDomains, bindingDomains) ||
 		!validRiskAgentActions(view.Actions) || view.MaxMilestones != RiskCandidateMaxSteps ||
 		view.MaxCandidates != RiskCandidatePortfolioMax ||
 		!validRiskExplorationMemory(view.ExplorationMemory) ||
@@ -265,6 +271,10 @@ func DiscoverRiskWithPlanner(
 			return RiskAgentResult{}, errors.New("EXPERIMENT_RISK_AGENT_KNOWLEDGE_INPUT_INVALID")
 		}
 	}
+	bindingDomains, err := semantic.ObservationBindingDomains(capabilities)
+	if err != nil {
+		return RiskAgentResult{}, errors.New("EXPERIMENT_RISK_AGENT_BINDING_INPUT_INVALID")
+	}
 	result := RiskAgentResult{Status: RiskAgentStopped}
 	var prior *RiskAgentFeedback
 	var knowledgeResults []KnowledgeReadResult
@@ -275,6 +285,7 @@ func DiscoverRiskWithPlanner(
 			Knowledge:               cloneProtocolKnowledge(knowledge),
 			TargetSurface:           cloneAgentTargetSurface(targetSurface),
 			ObservationCapabilities: cloneObservationCapabilities(capabilities),
+			BindingDomains:          append([]semantic.ObservationBindingDomain(nil), bindingDomains...),
 			Actions:                 append([]control.ActionKind(nil), actions...), MaxMilestones: RiskCandidateMaxSteps,
 			MaxCandidates:     RiskCandidatePortfolioMax,
 			ExplorationMemory: cloneRiskExplorationMemory(memory),
@@ -286,8 +297,7 @@ func DiscoverRiskWithPlanner(
 			Prior: cloneRiskAgentFeedback(prior),
 		}
 		remainingKnowledgeRequests := RiskKnowledgeRequestsTotal - knowledgeRequests
-		if knowledgeReader != nil && remainingKnowledgeRequests > 0 &&
-			!hasCompletedKnowledgeResult(knowledgeResults) {
+		if knowledgeReader != nil && remainingKnowledgeRequests > 0 && ordinal < budget.MaxCalls {
 			view.MaxKnowledgeRequests = min(RiskKnowledgeRequestsPerCall, remainingKnowledgeRequests)
 		}
 		response, work, err := planner(ctx, view)
@@ -325,7 +335,9 @@ func DiscoverRiskWithPlanner(
 			if knowledgeReader == nil {
 				reason = RiskAgentReasonKnowledgeUnavailable
 			} else if knowledgeRequests+len(requests) > RiskKnowledgeRequestsTotal ||
-				!validRiskKnowledgeRequests(requests, knowledgeSources, seenKnowledgeRequests) {
+				!validRiskKnowledgeRequests(
+					requests, knowledgeSources, knowledgeResults, seenKnowledgeRequests,
+				) {
 				reason = RiskAgentReasonKnowledgeBudget
 				if knowledgeRequests+len(requests) <= RiskKnowledgeRequestsTotal {
 					reason = RiskAgentReasonKnowledgeInvalid
@@ -459,6 +471,8 @@ func riskCandidateReason(err error) string {
 		return RiskAgentReasonJSON
 	case errors.Is(err, errRiskCandidateBinding):
 		return RiskAgentReasonBinding
+	case errors.Is(err, errRiskCandidateBindingDomain):
+		return RiskAgentReasonBindingDomain
 	case errors.Is(err, errRiskCandidateDuplicate):
 		return RiskAgentReasonDuplicate
 	case errors.Is(err, errRiskCandidateProperty):
@@ -766,6 +780,9 @@ func assessRiskCandidate(
 	if knowledge.Validate() != nil || candidate.ValidateAgentDraft() != nil {
 		return RiskCandidateAssessment{}, errors.New("EXPERIMENT_RISK_CANDIDATE_INPUT_INVALID")
 	}
+	if err := semantic.ValidateObservationPredicateBindings(candidate.Predicates, capabilities); err != nil {
+		return RiskCandidateAssessment{}, errors.Join(errRiskCandidateBindingDomain, err)
+	}
 	propertyFound := false
 	for _, property := range knowledge.Properties {
 		if property.ID == candidate.PropertyRef {
@@ -890,7 +907,7 @@ func validRiskMemoryOutcome(outcome string) bool {
 	switch outcome {
 	case RiskMemoryOutcomeExecutionCompleted, RiskMemoryOutcomeBudgetExhausted,
 		RiskMemoryOutcomeRiskNearMiss, RiskMemoryOutcomePlanningStopped,
-		RiskMemoryOutcomeExecutionFailed:
+		RiskMemoryOutcomeExecutionFailed, RiskMemoryOutcomeHypothesisAbandoned:
 		return true
 	default:
 		return false
@@ -918,9 +935,6 @@ func validRiskKnowledgeView(view RiskAgentView) bool {
 		if result.Validate() != nil || !declared[result.Source.Reference] {
 			return false
 		}
-	}
-	if view.MaxKnowledgeRequests > 0 && hasCompletedKnowledgeResult(view.KnowledgeResults) {
-		return false
 	}
 	return true
 }
@@ -997,18 +1011,10 @@ func VisibleRiskSupportRefs(
 	return compactSortedStrings(refs)
 }
 
-func hasCompletedKnowledgeResult(results []KnowledgeReadResult) bool {
-	for _, result := range results {
-		if result.Status == KnowledgeDiscoveryCompleted {
-			return true
-		}
-	}
-	return false
-}
-
 func validRiskKnowledgeRequests(
 	requests []KnowledgeReadRequest,
 	sources []KnowledgeSource,
+	results []KnowledgeReadResult,
 	seen map[string]bool,
 ) bool {
 	if len(requests) == 0 || len(requests) > RiskKnowledgeRequestsPerCall {
@@ -1019,15 +1025,48 @@ func validRiskKnowledgeRequests(
 		declared[source.Reference] = true
 	}
 	current := make(map[string]bool, len(requests))
+	windows := make(map[string][]knowledgeReadWindow)
+	for _, result := range results {
+		if result.Status == KnowledgeDiscoveryCompleted {
+			windows[result.Source.Reference] = append(
+				windows[result.Source.Reference],
+				knowledgeReadWindow{start: result.StartLine, end: result.EndLine},
+			)
+		}
+	}
 	for _, request := range requests {
 		key := riskKnowledgeRequestKey(request)
 		if !declared[request.Reference] || request.StartLine < 0 || request.MaxLines <= 0 ||
 			request.MaxLines > RiskKnowledgeRequestMaxLines || current[key] || seen[key] {
 			return false
 		}
+		if request.StartLine == 0 {
+			if len(windows[request.Reference]) > 0 {
+				return false
+			}
+		} else {
+			window := knowledgeReadWindow{
+				start: request.StartLine, end: request.StartLine + request.MaxLines - 1,
+			}
+			for _, existing := range windows[request.Reference] {
+				if window.overlaps(existing) {
+					return false
+				}
+			}
+			windows[request.Reference] = append(windows[request.Reference], window)
+		}
 		current[key] = true
 	}
 	return true
+}
+
+type knowledgeReadWindow struct {
+	start int
+	end   int
+}
+
+func (window knowledgeReadWindow) overlaps(other knowledgeReadWindow) bool {
+	return window.start <= other.end && other.start <= window.end
 }
 
 func riskKnowledgeRequestKey(request KnowledgeReadRequest) string {

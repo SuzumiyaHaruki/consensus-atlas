@@ -84,6 +84,28 @@ func TestAgenticHoldoutChargesSearchModelAndMethodIdentity(t *testing.T) {
 		t, report, trialID, "AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED",
 	)
 
+	highSearchReplay := original
+	highSearchReplay.ScenarioSearch.ChildVerification = controlexperiment.PhaseWork{
+		SetupAttempts: contract.AgenticBudget.MaxReplayWorkUnits,
+		WorkUnits:     contract.AgenticBudget.MaxReplayWorkUnits,
+	}
+	highSearchReplay.ScenarioSearch.TotalWorkUnits =
+		highSearchReplay.ScenarioSearch.ChildVerification.WorkUnits
+	evidence[trialID] = highSearchReplay
+	report, err = EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAgenticInvalidReason(t, report, trialID, "AGENTIC_HOLDOUT_REPLAY_BUDGET_EXCEEDED")
+	for _, result := range report.Results {
+		if result.TrialID == trialID && result.Result.ReplayWork <=
+			original.Bundle.Work.Replay.WorkUnits {
+			t.Fatalf("search verification was not charged as replay: %#v", result.Result)
+		}
+	}
+
 	overModel := original
 	overModel.RiskAttempts = contract.AgenticBudget.MaxModelCalls + 1
 	overModel.ModelWork = controlexperiment.ModelWork{
@@ -191,32 +213,14 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 		}
 	}
 	primaryBundle := *withBranch.Bundle
-	contract.Budget.MaxDecisions = max(len(primaryBundle.Trace.Records), len(branchBundle.Trace.Records))
-	contract.Budget.MaxPrimaryWorkUnits = max(
+	singlePrimary := max(
 		primaryBundle.Work.Primary.WorkUnits, branchBundle.Work.Primary.WorkUnits,
 	)
-	limitedBudget := *contract.AgenticBudget
-	limitedBudget.MaxPrimarySchedulerDecisions = contract.Budget.MaxDecisions
-	limitedBudget.MaxPrimaryWorkUnits = contract.Budget.MaxPrimaryWorkUnits
-	contract.AgenticBudget = &limitedBudget
-	for trialID, current := range evidence {
-		current.Budget = limitedBudget
-		evidence[trialID] = current
+	searchPrimary := contract.Budget.MaxPrimaryWorkUnits - singlePrimary
+	withBranch.ScenarioFrontier = controlexperiment.PhaseWork{
+		SetupAttempts: searchPrimary, WorkUnits: searchPrimary,
 	}
-	contract, err = contract.Seal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	view, err = contract.OpaqueView()
-	if err != nil {
-		t.Fatal(err)
-	}
-	exposure, err = AuditFormalExposure(
-		contract, view, []FormalPublicArtifact{{Bytes: []byte(`{"trial_id":"opaque-01"}`)}},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	evidence[findingID] = withBranch
 	report, err = EvaluateAgenticHoldoutBundles(
 		contract, exposure, evidence, etcdraftv2.DecisionProjector{},
 		digestFindingMonitor{digest: branchBundle.Digest},
@@ -229,7 +233,7 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 			(result.Result.Status != BundleStatusInvalid ||
 				result.Result.InvalidReason != "AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED" ||
 				result.Result.Decisions != len(primaryBundle.Trace.Records)+len(branchBundle.Trace.Records) ||
-				result.Result.PrimaryWork != primaryBundle.Work.Primary.WorkUnits+
+				result.Result.PrimaryWork != searchPrimary+primaryBundle.Work.Primary.WorkUnits+
 					branchBundle.Work.Primary.WorkUnits) {
 			t.Fatalf("multi-candidate budget was not aggregated before finding: %#v", result.Result)
 		}
@@ -257,15 +261,16 @@ func agenticHoldoutFixture(
 	t *testing.T,
 ) (FormalBenchmarkContract, FormalExposureAudit, map[string]AgenticTrialEvidence) {
 	t.Helper()
-	methodSpecDigest := testFormalDigest("agentic-holdout-method")
-	bundle := agenticHoldoutTestBundle(
-		t, methodSpecDigest,
-		"626173652d6167656e7469632d686f6c646f75742d736565642d7633",
-	)
 	budget := controlexperiment.AgenticLogicalBudget{
 		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 512, MaxPrimaryWorkUnits: 1024,
 		MaxReplayWorkUnits: 1024, MaxModelCalls: 6, MaxModelTokens: 50_000,
 	}
+	methodSpec := agenticHoldoutTestMethodSpec(t, 1, budget)
+	methodSpecDigest := methodSpec.Digest
+	bundle := agenticHoldoutTestBundle(
+		t, methodSpecDigest,
+		"626173652d6167656e7469632d686f6c646f75742d736565642d7633",
+	)
 	pair := func(index int, root string) FormalPair {
 		controlTrial := "opaque-0" + string(rune('1'+(index-1)*2))
 		candidateTrial := "opaque-0" + string(rune('2'+(index-1)*2))
@@ -322,12 +327,54 @@ func agenticHoldoutFixture(
 			copyBundle := bundle
 			evidence[trialID] = AgenticTrialEvidence{
 				TargetID: "etcdraft-v2", MethodSpecDigest: methodSpecDigest,
+				MethodSpec: methodSpec, EpisodeCount: 1,
 				EpisodeStatus: AgenticEpisodeCompleted, EvidenceStatus: "oracle-finding",
 				Budget: budget, ModelWork: controlexperiment.ModelWork{}, Bundle: &copyBundle,
 			}
 		}
 	}
 	return contract, exposure, evidence
+}
+
+func agenticHoldoutTestMethodSpec(
+	t *testing.T,
+	episodes int,
+	episodeBudget controlexperiment.AgenticLogicalBudget,
+) controlexperiment.AgenticMethodSpec {
+	t.Helper()
+	total, err := controlexperiment.ScaleAgenticLogicalBudget(episodeBudget, episodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := controlexperiment.NewAgenticMethodSpec(controlexperiment.AgenticMethodSpec{
+		TargetID: "etcdraft-v2",
+		Transport: controlexperiment.AgentTransportFreeze{
+			Provider: "openrouter", Endpoint: "https://openrouter.ai/api/v1/chat/completions",
+			Model: "fixture/agentic-model", Thinking: "low", ExcludeReasoning: true,
+			StructuredOutputMode: "json-schema", RequestTimeoutMS: 900_000,
+			RoutingPolicy: "openrouter-default", AllowProviderFallback: true,
+			MaxOutputTokens: 32000, MaxCallsPerArm: 1,
+		},
+		RiskPromptVersion:        "risk-agent-navigation-v2",
+		ScenarioPromptVersion:    "scenario-agent-investigation-v9",
+		SemanticInputSchema:      "etcdraft-agentic-input-v1",
+		SemanticInputDigest:      testFormalDigest("agentic-semantic-input"),
+		ScenarioSemanticExposure: controlexperiment.ScenarioSemanticExposureFull,
+		SourceExposure: controlexperiment.AgenticSourceExposureSpec{
+			Mode: controlexperiment.AgenticSourceExposureNone,
+		},
+		EpisodeLimits: controlexperiment.AgenticEpisodeLimits{
+			MaxRiskCalls: 3, MaxScenarioCalls: 3, MaxTotalCalls: episodeBudget.MaxModelCalls,
+			MaxObservedTokens: episodeBudget.MaxModelTokens, MaxScenarioPlanSteps: 4,
+			MaxRuntimeDecisions: episodeBudget.MaxPrimarySchedulerDecisions,
+			SessionWallClockMS:  600_000,
+		},
+		InvestigationEpisodes: episodes, EpisodeBudget: episodeBudget, InvestigationBudget: total,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return spec
 }
 
 func agenticHoldoutTestBundle(

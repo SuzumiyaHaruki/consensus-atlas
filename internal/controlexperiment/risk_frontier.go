@@ -50,16 +50,20 @@ type RiskFrontierView struct {
 }
 
 type FrontierActionSelector struct {
-	ActionID      control.ActionID        `json:"action_id,omitempty"`
-	Kind          control.ActionKind      `json:"kind,omitempty"`
-	Node          control.NodeID          `json:"node,omitempty"`
-	ItemKind      control.ItemKind        `json:"item_kind,omitempty"`
-	Owner         control.NodeID          `json:"owner,omitempty"`
-	MessageSource control.NodeID          `json:"message_source,omitempty"`
-	MessageTarget control.NodeID          `json:"message_target,omitempty"`
-	TemporalKind  control.TemporalKind    `json:"temporal_kind,omitempty"`
-	EffectKind    string                  `json:"effect_kind,omitempty"`
-	Durability    control.DurabilityClass `json:"durability,omitempty"`
+	ActionID       control.ActionID        `json:"action_id,omitempty"`
+	Kind           control.ActionKind      `json:"kind,omitempty"`
+	Node           control.NodeID          `json:"node,omitempty"`
+	ItemKind       control.ItemKind        `json:"item_kind,omitempty"`
+	Owner          control.NodeID          `json:"owner,omitempty"`
+	MessageSource  control.NodeID          `json:"message_source,omitempty"`
+	MessageTarget  control.NodeID          `json:"message_target,omitempty"`
+	TemporalKind   control.TemporalKind    `json:"temporal_kind,omitempty"`
+	EffectKind     string                  `json:"effect_kind,omitempty"`
+	Durability     control.DurabilityClass `json:"durability,omitempty"`
+	ActorRole      string                  `json:"actor_role,omitempty"`
+	MessageClass   string                  `json:"message_class,omitempty"`
+	EpochRelation  string                  `json:"epoch_relation,omitempty"`
+	OperationState string                  `json:"operation_state,omitempty"`
 }
 
 type FrontierChoice struct {
@@ -302,7 +306,8 @@ func (selector FrontierActionSelector) validate() error {
 	if selector.ActionID != "" {
 		if selector.Kind != "" || selector.Node != "" || selector.ItemKind != "" || selector.Owner != "" ||
 			selector.MessageSource != "" || selector.MessageTarget != "" || selector.TemporalKind != "" ||
-			selector.EffectKind != "" || selector.Durability != "" {
+			selector.EffectKind != "" || selector.Durability != "" || selector.ActorRole != "" ||
+			selector.MessageClass != "" || selector.EpochRelation != "" || selector.OperationState != "" {
 			return errors.New("EXPERIMENT_FRONTIER_SELECTOR_EXACT_MIXED")
 		}
 		return nil
@@ -321,14 +326,24 @@ func (selector FrontierActionSelector) validate() error {
 		selector.Durability != control.DurabilityApplied {
 		return errors.New("EXPERIMENT_FRONTIER_SELECTOR_DURABILITY_INVALID")
 	}
+	if selector.ActorRole != "" && (selector.ActorRole == ConsensusSemanticUnknown ||
+		!validConsensusActorRole(selector.ActorRole)) ||
+		selector.MessageClass != "" && (selector.MessageClass == ConsensusSemanticUnknown ||
+			!validConsensusMessageClass(selector.MessageClass)) ||
+		selector.EpochRelation != "" && (selector.EpochRelation == ConsensusSemanticUnknown ||
+			!validConsensusEpochRelation(selector.EpochRelation)) ||
+		selector.OperationState != "" && (selector.OperationState == ConsensusSemanticUnknown ||
+			!validConsensusOperationState(selector.OperationState)) {
+		return errors.New("EXPERIMENT_FRONTIER_SELECTOR_SEMANTICS_INVALID")
+	}
 	return nil
 }
 
-func (selector FrontierActionSelector) matches(action FrontierActionRef) bool {
+func (selector FrontierActionSelector) matches(action FrontierActionRef, hints ...ConsensusActionHint) bool {
 	if selector.ActionID != "" {
 		return selector.ActionID == action.ActionID
 	}
-	return selector.Kind == action.Kind &&
+	matched := selector.Kind == action.Kind &&
 		(selector.Node == "" || selector.Node == action.Node.Node) &&
 		(selector.ItemKind == "" || selector.ItemKind == action.ItemKind) &&
 		(selector.Owner == "" || selector.Owner == action.Owner.Node) &&
@@ -337,6 +352,19 @@ func (selector FrontierActionSelector) matches(action FrontierActionRef) bool {
 		(selector.TemporalKind == "" || selector.TemporalKind == action.TemporalKind) &&
 		(selector.EffectKind == "" || selector.EffectKind == action.EffectKind) &&
 		(selector.Durability == "" || selector.Durability == action.Durability)
+	if !matched || selector.ActorRole == "" && selector.MessageClass == "" &&
+		selector.EpochRelation == "" && selector.OperationState == "" {
+		return matched
+	}
+	if len(hints) != 1 || hints[0].ActionID != action.ActionID ||
+		hints[0].ActionDigest != action.ActionDigest {
+		return false
+	}
+	hint := hints[0]
+	return (selector.ActorRole == "" || selector.ActorRole == hint.ActorRole) &&
+		(selector.MessageClass == "" || selector.MessageClass == hint.MessageClass) &&
+		(selector.EpochRelation == "" || selector.EpochRelation == hint.EpochRelation) &&
+		(selector.OperationState == "" || selector.OperationState == hint.OperationState)
 }
 
 func NewFrontierChoice(

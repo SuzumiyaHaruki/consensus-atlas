@@ -9,7 +9,8 @@ func TestPlanningAgentCallIntentAndContentReadyRemainSchemaNeutral(t *testing.T)
 	requestDigest := strings.Repeat("3", 64)
 	transport := AgentTransportFreeze{
 		Provider: "fixture", Endpoint: "https://example.invalid/v1", Model: "fixture-model",
-		Thinking: "disabled", MaxOutputTokens: 200, MaxCallsPerArm: 1, MaxRetries: 0,
+		Thinking: "disabled", StructuredOutputMode: "json-object", RequestTimeoutMS: 1_000,
+		RoutingPolicy: "fixture-fixed", MaxOutputTokens: 200, MaxCallsPerArm: 1, MaxRetries: 0,
 	}
 	intent, err := NewPlanningAgentCallIntent(
 		"semantic-call-1", 1, "semantic-root", requestDigest, transport,

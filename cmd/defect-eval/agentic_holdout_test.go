@@ -11,16 +11,16 @@ import (
 )
 
 func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *testing.T) {
-	spec, _, bundle := formalCLITestExecution(t)
+	episodeBudget := controlexperiment.AgenticLogicalBudget{
+		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 32, MaxPrimaryWorkUnits: 34,
+		MaxReplayWorkUnits: 68, MaxModelCalls: 6, MaxModelTokens: 50_000,
+	}
+	methodSpec := agenticHoldoutCLIMethodSpec(t, 1, episodeBudget)
+	spec, _, bundle := formalCLITestExecutionWithDigest(t, methodSpec.Digest)
 	root := t.TempDir()
 	contract, _, _ := writeFormalCLIFixture(t, root, spec, bundle)
-	agenticBudget := controlexperiment.AgenticLogicalBudget{
-		MaxAttempts: 2, MaxPrimarySchedulerDecisions: contract.Budget.MaxDecisions,
-		MaxPrimaryWorkUnits: contract.Budget.MaxPrimaryWorkUnits,
-		MaxReplayWorkUnits:  2 * bundle.Work.Replay.WorkUnits,
-		MaxModelCalls:       6, MaxModelTokens: 50_000,
-	}
-	contract.AgenticBudget = &agenticBudget
+	contract.MethodSpecDigest = methodSpec.Digest
+	contract.AgenticBudget = &methodSpec.InvestigationBudget
 	contract, err := contract.Seal()
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +53,9 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 			}
 			summary := agenticHoldoutTestSummary(contract, bundle, false)
 			if err := writeJSON(filepath.Join(directory, "summary.json"), summary); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeJSON(filepath.Join(directory, "method-spec.json"), methodSpec); err != nil {
 				t.Fatal(err)
 			}
 			if err := writeJSON(filepath.Join(directory, "bundle.json"), bundle); err != nil {
@@ -137,6 +140,23 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	if err := writeJSON(filepath.Join(replacedDirectory, "bundle.json"), bundle); err != nil {
 		t.Fatal(err)
 	}
+	driftSummary := agenticHoldoutTestSummary(contract, bundle, false)
+	driftBudget := driftSummary["budget"].(map[string]any)
+	driftBudget["max_scenario_plan_steps"] = 3
+	if err := writeJSON(filepath.Join(replacedDirectory, "summary.json"), driftSummary); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAgenticHoldoutEvaluation(
+		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"), inputsPath,
+		filepath.Join(root, "agentic-method-limit-drift.json"),
+	); err == nil || !strings.Contains(err.Error(), "SUMMARY_INVALID") {
+		t.Fatalf("Episode limits drift was accepted: %v", err)
+	}
+	if err := writeJSON(
+		filepath.Join(replacedDirectory, "summary.json"), agenticHoldoutTestSummary(contract, bundle, false),
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := runAgenticHoldoutEvaluation(
 		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"), inputsPath, output,
 	); err == nil || !os.IsExist(err) {
@@ -190,6 +210,157 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	}
 }
 
+func TestAgenticHoldoutCLIRequiresCompleteInvestigationAndAggregatesPriorEpisodes(t *testing.T) {
+	episodeBudget := controlexperiment.AgenticLogicalBudget{
+		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 32, MaxPrimaryWorkUnits: 34,
+		MaxReplayWorkUnits: 68, MaxModelCalls: 6, MaxModelTokens: 50_000,
+	}
+	methodSpec := agenticHoldoutCLIMethodSpec(t, 2, episodeBudget)
+	carrier, _, bundle := formalCLITestExecutionWithDigest(t, methodSpec.Digest)
+	root := t.TempDir()
+	contract, _, _ := writeFormalCLIFixture(t, root, carrier, bundle)
+	contract.MethodSpecDigest = methodSpec.Digest
+	contract.AgenticBudget = &methodSpec.InvestigationBudget
+	contract.Budget.MaxDecisions = methodSpec.InvestigationBudget.MaxPrimarySchedulerDecisions
+	contract.Budget.MaxPrimaryWorkUnits = methodSpec.InvestigationBudget.MaxPrimaryWorkUnits
+	contract, err := contract.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := contract.OpaqueView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, err := defectbench.AuditFormalExposure(
+		contract, view, []defectbench.FormalPublicArtifact{{Bytes: []byte(`{"trial_id":"opaque-01"}`)}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(root, "contract.json"), contract); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(root, "exposure.json"), exposure); err != nil {
+		t.Fatal(err)
+	}
+	inputs := agenticHoldoutInputs{SchemaVersion: agenticHoldoutInputsSchemaVersion}
+	var firstInvestigation string
+	for _, pair := range contract.Pairs {
+		for _, trialID := range []string{pair.Control.TrialID, pair.Candidate.TrialID} {
+			relative := "investigation-" + trialID
+			if firstInvestigation == "" {
+				firstInvestigation = relative
+			}
+			for episode := 1; episode <= methodSpec.InvestigationEpisodes; episode++ {
+				directory := filepath.Join(root, relative, "episode-000"+string(rune('0'+episode)))
+				if err := os.MkdirAll(directory, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := writeJSON(filepath.Join(directory, "method-spec.json"), methodSpec); err != nil {
+					t.Fatal(err)
+				}
+				if episode == 1 {
+					summary := map[string]any{
+						"target_id": "etcdraft-v2", "method_spec_digest": methodSpec.Digest,
+						"status":        defectbench.AgenticEpisodeRiskStopped,
+						"risk_attempts": 1, "budget": agenticHoldoutTestBudgetForLogical(episodeBudget),
+						"work": map[string]any{
+							"model":             controlexperiment.ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5},
+							"scenario_frontier": controlexperiment.PhaseWork{SetupAttempts: 1, WorkUnits: 1},
+						},
+						"evidence_assessment": map[string]any{"status": "risk-near-miss"},
+					}
+					if err := writeJSON(filepath.Join(directory, "summary.json"), summary); err != nil {
+						t.Fatal(err)
+					}
+					continue
+				}
+				summary := agenticHoldoutTestSummary(contract, bundle, false)
+				summary["budget"] = agenticHoldoutTestBudgetForLogical(episodeBudget)
+				if err := writeJSON(filepath.Join(directory, "summary.json"), summary); err != nil {
+					t.Fatal(err)
+				}
+				if err := writeJSON(filepath.Join(directory, "bundle.json"), bundle); err != nil {
+					t.Fatal(err)
+				}
+			}
+			inputs.Trials = append(inputs.Trials, agenticHoldoutTrialInput{
+				TrialID: trialID, InvestigationDir: relative,
+			})
+		}
+	}
+	inputsPath := filepath.Join(root, "investigation-inputs.json")
+	if err := writeJSON(inputsPath, inputs); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(root, "investigation-evaluation.json")
+	if err := runAgenticHoldoutEvaluation(
+		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"), inputsPath, output,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var evaluation defectbench.AgenticHoldoutEvaluation
+	if err := readStrictJSON(output, &evaluation); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range evaluation.Results {
+		if result.ModelWork.Calls != 1 || result.ModelWork.TotalTokens != 5 ||
+			result.Result.PrimaryWork != bundle.Work.Primary.WorkUnits+1 {
+			t.Fatalf("prior Episode work was not aggregated: %#v", result)
+		}
+	}
+	inputs.Trials[0].InvestigationDir = ""
+	inputs.Trials[0].EpisodeDir = filepath.Join(firstInvestigation, "episode-0002")
+	directPath := filepath.Join(root, "cherry-pick-inputs.json")
+	if err := writeJSON(directPath, inputs); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAgenticHoldoutEvaluation(
+		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"), directPath,
+		filepath.Join(root, "cherry-pick-evaluation.json"),
+	); err == nil || !strings.Contains(err.Error(), "SINGLE_EPISODE_METHOD_INVALID") {
+		t.Fatalf("final Episode cherry-pick was accepted: %v", err)
+	}
+}
+
+func agenticHoldoutCLIMethodSpec(
+	t *testing.T,
+	episodes int,
+	episodeBudget controlexperiment.AgenticLogicalBudget,
+) controlexperiment.AgenticMethodSpec {
+	t.Helper()
+	total, err := controlexperiment.ScaleAgenticLogicalBudget(episodeBudget, episodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := controlexperiment.NewAgenticMethodSpec(controlexperiment.AgenticMethodSpec{
+		TargetID: "etcdraft-v2",
+		Transport: controlexperiment.AgentTransportFreeze{
+			Provider: "openrouter", Endpoint: "https://openrouter.ai/api/v1/chat/completions",
+			Model: "fixture/agentic-model", Thinking: "low", ExcludeReasoning: true,
+			StructuredOutputMode: "json-schema", RequestTimeoutMS: 900_000,
+			RoutingPolicy: "openrouter-default", AllowProviderFallback: true,
+			MaxOutputTokens: 32000, MaxCallsPerArm: 1,
+		},
+		RiskPromptVersion: "risk-agent-navigation-v2", ScenarioPromptVersion: "scenario-agent-investigation-v9",
+		SemanticInputSchema:      "etcdraft-agentic-input-v1",
+		SemanticInputDigest:      digestBytes([]byte("agentic-cli-semantic-input")),
+		ScenarioSemanticExposure: controlexperiment.ScenarioSemanticExposureFull,
+		SourceExposure:           controlexperiment.AgenticSourceExposureSpec{Mode: controlexperiment.AgenticSourceExposureNone},
+		EpisodeLimits: controlexperiment.AgenticEpisodeLimits{
+			MaxRiskCalls: 3, MaxScenarioCalls: 3, MaxTotalCalls: episodeBudget.MaxModelCalls,
+			MaxObservedTokens: episodeBudget.MaxModelTokens, MaxScenarioPlanSteps: 4,
+			MaxRuntimeDecisions: episodeBudget.MaxPrimarySchedulerDecisions,
+			SessionWallClockMS:  600_000,
+		},
+		InvestigationEpisodes: episodes, EpisodeBudget: episodeBudget, InvestigationBudget: total,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return spec
+}
+
 func TestAgenticHoldoutModeRejectsRunnerFlags(t *testing.T) {
 	err := run([]string{
 		"-formal-contract", "contract.json", "-formal-exposure-audit", "exposure.json",
@@ -204,13 +375,19 @@ func TestAgenticHoldoutModeRejectsRunnerFlags(t *testing.T) {
 func agenticHoldoutTestBudget(
 	contract defectbench.FormalBenchmarkContract,
 ) map[string]any {
+	return agenticHoldoutTestBudgetForLogical(*contract.AgenticBudget)
+}
+
+func agenticHoldoutTestBudgetForLogical(
+	logical controlexperiment.AgenticLogicalBudget,
+) map[string]any {
 	return map[string]any{
 		"max_risk_calls": 3, "max_scenario_calls": 3,
-		"max_total_calls":         contract.AgenticBudget.MaxModelCalls,
-		"max_observed_tokens":     contract.AgenticBudget.MaxModelTokens,
+		"max_total_calls":         logical.MaxModelCalls,
+		"max_observed_tokens":     logical.MaxModelTokens,
 		"max_scenario_plan_steps": 4,
-		"max_runtime_decisions":   contract.AgenticBudget.MaxPrimarySchedulerDecisions,
-		"logical_budget":          *contract.AgenticBudget,
+		"max_runtime_decisions":   logical.MaxPrimarySchedulerDecisions,
+		"logical_budget":          logical,
 	}
 }
 

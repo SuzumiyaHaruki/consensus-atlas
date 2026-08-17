@@ -32,6 +32,14 @@ func fixtureOpenRouterStructuredOutput() openRouterStructuredOutput {
 	}
 }
 
+func TestOpenRouterProviderAllowsLongReasoningWithoutRetrying(t *testing.T) {
+	client := newOpenRouterIntentClient(openRouterFixtureModel)
+	httpClient, ok := client.HTTP.(*http.Client)
+	if !ok || httpClient.Timeout != 900*time.Second || client.MaxRetries != 0 {
+		t.Fatalf("unexpected long-reasoning transport: %#v", client)
+	}
+}
+
 func fixtureOpenRouterResponse(t *testing.T, ordinal int, content []byte) []byte {
 	t.Helper()
 	encoded, err := json.Marshal(map[string]any{

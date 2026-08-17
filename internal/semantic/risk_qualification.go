@@ -26,6 +26,15 @@ type ObservationCapability struct {
 	Values     map[ObservationField][]string             `json:"values,omitempty"`
 }
 
+// ObservationBindingDomain describes which fields may safely reuse one
+// bind_as token. It is derived from an existing capability declaration; a
+// Target does not maintain a second binding schema.
+type ObservationBindingDomain struct {
+	Kind   ObservationKind  `json:"kind"`
+	Field  ObservationField `json:"field"`
+	Domain string           `json:"domain"`
+}
+
 // RiskRequirements is mechanically compiled from ordered predicates. Actions
 // are implied only when an Observation kind is defined by one Runtime Action.
 type RiskRequirements struct {
@@ -198,6 +207,103 @@ func QualifyRisk(
 func ValidateObservationCapabilities(capabilities []ObservationCapability) error {
 	_, err := indexObservationCapabilities(capabilities)
 	return err
+}
+
+// ObservationBindingDomains exposes the mechanically derived domains used by
+// Risk validation. Node-ID target attributes intentionally share a domain
+// with participant-node; other target-local fields remain separate.
+func ObservationBindingDomains(capabilities []ObservationCapability) ([]ObservationBindingDomain, error) {
+	indexed, err := indexObservationCapabilities(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ObservationBindingDomain, 0)
+	for _, capability := range capabilities {
+		for _, field := range capability.Fields {
+			domain, ok := observationBindingDomain(field, indexed[capability.Kind].fieldTypes[field])
+			if !ok {
+				return nil, errors.New("RISK_OBSERVATION_BINDING_DOMAIN_INVALID")
+			}
+			result = append(result, ObservationBindingDomain{
+				Kind: capability.Kind, Field: field, Domain: domain,
+			})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Kind != result[j].Kind {
+			return result[i].Kind < result[j].Kind
+		}
+		return result[i].Field < result[j].Field
+	})
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
+}
+
+// ValidateObservationPredicateBindings rejects a bind_as token reused across
+// incompatible value domains before a Scenario is planned. Missing fields are
+// left to the existing qualification report so its precise issue is retained.
+func ValidateObservationPredicateBindings(
+	predicates []ObservationPredicate,
+	capabilities []ObservationCapability,
+) error {
+	if err := validateObservationPredicates(predicates); err != nil {
+		return err
+	}
+	domains, err := ObservationBindingDomains(capabilities)
+	if err != nil {
+		return err
+	}
+	byField := make(map[ObservationKind]map[ObservationField]string)
+	for _, value := range domains {
+		if byField[value.Kind] == nil {
+			byField[value.Kind] = make(map[ObservationField]string)
+		}
+		byField[value.Kind][value.Field] = value.Domain
+	}
+	bindings := make(map[string]string)
+	for _, predicate := range predicates {
+		for _, constraint := range predicate.Constraints {
+			if constraint.BindAs == "" {
+				continue
+			}
+			domain := byField[predicate.Kind][constraint.Field]
+			if domain == "" {
+				continue
+			}
+			if previous := bindings[constraint.BindAs]; previous != "" && previous != domain {
+				return errors.New("RISK_OBSERVATION_BINDING_DOMAIN_MISMATCH")
+			}
+			bindings[constraint.BindAs] = domain
+		}
+	}
+	return nil
+}
+
+func observationBindingDomain(field ObservationField, valueType ObservationValueType) (string, bool) {
+	switch field {
+	case ObservationFieldParticipant, ObservationFieldRelatedParticipant:
+		return "node-incarnation", true
+	case ObservationFieldParticipantNode, ObservationFieldRelatedNode:
+		return "node-id", true
+	case ObservationFieldRequestID:
+		return "request-id", true
+	case ObservationFieldParticipantRole:
+		return "participant-role", true
+	case ObservationFieldMessageRole:
+		return "message-role", true
+	case ObservationFieldOperationStage:
+		return "operation-stage", true
+	default:
+		if !validTargetObservationField(field) || !validObservationValueType(valueType) {
+			return "", false
+		}
+		if valueType == ObservationValueNodeID {
+			return "node-id", true
+		}
+		return "target-field:" + string(field) + ":" + string(valueType), true
+	}
 }
 
 func indexObservationCapabilities(

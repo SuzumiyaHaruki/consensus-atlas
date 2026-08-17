@@ -154,6 +154,21 @@ func formalCLITestExecutionForMethod(
 	t *testing.T,
 	methodID string,
 ) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {
+	return formalCLITestExecutionForIdentity(t, methodID, "")
+}
+
+func formalCLITestExecutionWithDigest(
+	t *testing.T,
+	methodSpecDigest string,
+) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {
+	return formalCLITestExecutionForIdentity(t, "agentic-fixture-carrier", methodSpecDigest)
+}
+
+func formalCLITestExecutionForIdentity(
+	t *testing.T,
+	methodID string,
+	methodSpecDigest string,
+) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {
 	t.Helper()
 	qualified, err := qualification.Run(context.Background())
 	if err != nil {
@@ -219,12 +234,15 @@ func formalCLITestExecutionForMethod(
 	if err != nil {
 		t.Fatal(err)
 	}
+	if methodSpecDigest == "" {
+		methodSpecDigest = spec.Digest
+	}
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
 	}
 	report, bundle, err := controlexperiment.ExecuteQualifiedBundleV3(
 		context.Background(), config, qualified, factory, etcdraftv2.CorePSSMapper{},
-		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, spec.Digest,
+		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, methodSpecDigest,
 	)
 	if err != nil {
 		t.Fatal(err)

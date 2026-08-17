@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
-const agenticEpisodeStrategy = "agentic-episode-v1"
+const agenticEpisodeStrategy = controlexperiment.AgenticMethodStrategyID
 
 func runAgenticEpisodeCLI(
 	ctx context.Context,
@@ -48,6 +50,9 @@ func runAgenticEpisodeCLI(
 			result.Summary.Metrics.UniquePSSStates, result.Summary.Metrics.CorePSSSamples,
 			result.Summary.Metrics.OracleFindings,
 		)
+	} else if result.UnreconciledModelCalls > 0 {
+		fmt.Fprintf(stdout, "episode=%s unreconciled_model_calls=%d\n",
+			options.CampaignDirectory, result.UnreconciledModelCalls)
 	}
 	return err
 }
@@ -77,9 +82,10 @@ func runAgenticInvestigationCLI(
 		},
 	})
 	fmt.Fprintf(stdout,
-		"investigation=%s target=%s episodes=%d stop=%s model_calls=%d model_tokens=%d runtime_decision_allowance=%d\n",
+		"investigation=%s target=%s episodes=%d stop=%s model_calls=%d model_tokens=%d runtime_decision_allowance=%d unreconciled_model_calls=%d\n",
 		options.CampaignDirectory, options.Target, len(result.Episodes), result.StopReason,
 		result.ModelWork.Calls, result.ModelWork.TotalTokens, result.RuntimeDecisionAllowance,
+		result.UnreconciledModelCalls,
 	)
 	return err
 }
@@ -128,7 +134,14 @@ func prepareAgenticEpisodeComposition(
 	if err != nil {
 		return agenticEpisodeComposition{}, err
 	}
-	client := newOpenRouterIntentClient(options.AgentModel)
+	client, err := newAgentIntentTransport(options.AgentProvider, options.AgentModel)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	scenarioClient, err := newScenarioAgentIntentTransport(options.AgentProvider, options.AgentModel)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
 	switch options.Target {
 	case "etcdraft-v2":
 		if options.WorkerPath != "" {
@@ -144,15 +157,29 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		target.MethodSpecDigest = options.MethodSpecDigest
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.experiment.ScenarioMaxCalls, inputs.experiment.ScenarioMaxSteps,
 			inputs.experiment.ScenarioMaxDecisions, inputs.experiment.SessionBudget,
 		)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
+		spec, err := buildAgenticMethodSpec(
+			options, target, budget, inputs.client, scenarioClient, etcdraftSemanticInputSchema,
+			inputs.experiment.ScenarioSemanticExposure, inputs.experiment.SessionWallClockMS,
+			knowledgeSourceMounts,
+		)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
+		target.MethodSpecDigest = spec.Digest
 		return agenticEpisodeComposition{
-			Target: target, Budget: budget, KnowledgeSourceMounts: knowledgeSourceMounts,
-			Client: inputs.client,
-		}, err
+			Target: target, Budget: budget, MethodSpec: spec,
+			KnowledgeSourceMounts: knowledgeSourceMounts,
+			Client:                inputs.client,
+			ScenarioClient:        scenarioClient,
+			SessionWallClockMS:    inputs.experiment.SessionWallClockMS,
+		}, nil
 	case "omnipaxos-v2":
 		if options.WorkerPath == "" {
 			return agenticEpisodeComposition{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_WORKER_REQUIRED")
@@ -165,14 +192,28 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		target.MethodSpecDigest = options.MethodSpecDigest
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
 			inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,
 		)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
+		spec, err := buildAgenticMethodSpec(
+			options, target, budget, client, scenarioClient, omnipaxosSemanticInputSchema,
+			inputs.Experiment.ScenarioSemanticExposure, inputs.Experiment.SessionWallClockMS,
+			knowledgeSourceMounts,
+		)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
+		target.MethodSpecDigest = spec.Digest
 		return agenticEpisodeComposition{
-			Target: target, Budget: budget, KnowledgeSourceMounts: knowledgeSourceMounts, Client: client,
-		}, err
+			Target: target, Budget: budget, MethodSpec: spec,
+			KnowledgeSourceMounts: knowledgeSourceMounts, Client: client,
+			ScenarioClient:     scenarioClient,
+			SessionWallClockMS: inputs.Experiment.SessionWallClockMS,
+		}, nil
 	default:
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")
 	}

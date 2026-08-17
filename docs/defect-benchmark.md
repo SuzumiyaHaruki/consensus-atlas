@@ -140,11 +140,19 @@ summary 中的方法状态和 model work，并对 `bundle.json` 及 `branch-evid
 重新执行 contract 选定的 projector/monitor。任一合法候选命中 Oracle 都会进入 trial 结果；
 Agent 自报的 finding 和分支选择不能创建或隐藏结论。
 评估器在查看 finding 前先汇总 Scenario frontier/search work 和所有候选的
-decisions/qualified primary work；Replay 单独汇总。模型 calls/tokens 与完整执行工作一起
+decisions/qualified primary work；其中 fresh child verification 计入 Replay，不计入 primary。
+模型 calls/tokens 与完整执行工作一起
 对照 formal contract 复用的 `AgenticLogicalBudget`，任一超限都使整个 trial 为 invalid。
 分支数同时受 Scenario Agent 调用上限约束。正式 Agentic Bundle 为 V3 evidence，summary、
 branch evidence 和 formal contract 使用同一 `MethodSpecDigest`，并交叉校验 Trace/work，
 防止跨方法 Bundle 替换。
+活动 CLI 从真实 transport/model、prompt 版本、semantic input digest、源码暴露、Episode 数和预算
+构造 typed `AgenticMethodSpec`。多轮 trial 的输入是完整 Investigation，必须含连续且方法一致的
+`episode-0001..N`，评估器汇总每轮成本；只提交最后成功 Episode 会被拒绝。单 Episode 兼容入口只适用于
+方法明确声明一轮的情况。
+完整 Investigation 中，前序 Risk/Scenario 停止但未生成 Bundle 的 Episode 属于已计费搜索过程，不会仅因此
+使后续已产生可信候选的整个 trial 失效；其模型与搜索成本仍全部聚合。若整个 Investigation 没有任何候选
+Bundle，仍按缺失正式 evidence 处理。
 
 当前仓库仍没有真实 private holdout，因而还不能计算 Agent 方法的 root-cause kill rate，
 也不能与 Agora、deterministic search 比较召回。现有 holdout bridge 证明的是“活动 Agentic 证据可被

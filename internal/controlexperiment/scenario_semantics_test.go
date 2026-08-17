@@ -1,6 +1,10 @@
 package controlexperiment
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+)
 
 func TestScenarioSemanticExposureBindsActionsAndMasksOnlySemanticValues(t *testing.T) {
 	frontier := RiskFrontierView{
@@ -48,5 +52,38 @@ func TestScenarioSemanticExposureBindsActionsAndMasksOnlySemanticValues(t *testi
 	tampered.ActionHints[0].ActionDigest = "another-action"
 	if err := tampered.Validate(frontier); err == nil {
 		t.Fatal("semantic hint detached from current Action was accepted")
+	}
+}
+
+func TestScenarioSemanticSelectorUsesAllGenericHintFields(t *testing.T) {
+	actions := []FrontierActionRef{
+		{ActionID: "action-1", ActionDigest: "digest-1", Kind: control.ActionDeliverMessage},
+		{ActionID: "action-2", ActionDigest: "digest-2", Kind: control.ActionDeliverMessage},
+	}
+	semantics := ScenarioSemanticExposure{ActionHints: []ConsensusActionHint{
+		{ActionID: "action-1", ActionDigest: "digest-1", ActorRole: ConsensusActorLeader,
+			MessageClass: ConsensusMessageReplication, EpochRelation: ConsensusEpochCurrent,
+			OperationState: ConsensusOperationInflight},
+		{ActionID: "action-2", ActionDigest: "digest-2", ActorRole: ConsensusActorReplica,
+			MessageClass: ConsensusMessageVote, EpochRelation: ConsensusEpochFuture,
+			OperationState: ConsensusOperationNone},
+	}}
+	selector := FrontierActionSelector{
+		Kind: control.ActionDeliverMessage, ActorRole: ConsensusActorLeader,
+		MessageClass: ConsensusMessageReplication, EpochRelation: ConsensusEpochCurrent,
+		OperationState: ConsensusOperationInflight,
+	}
+	matches := scenarioMatches(actions, semantics, selector)
+	if selector.validate() != nil || len(matches) != 1 || matches[0].ActionID != "action-1" {
+		t.Fatalf("generic semantic selector did not bind one Action: %#v", matches)
+	}
+	trace := scenarioSelectorTrace(actions, semantics, selector)
+	if len(trace) != 5 || trace[0].CandidateCount != 2 ||
+		trace[len(trace)-1].Field != "operation_state" || trace[len(trace)-1].CandidateCount != 1 {
+		t.Fatalf("semantic selector narrowing was not explained: %#v", trace)
+	}
+	selector.MessageClass = ConsensusSemanticUnknown
+	if selector.validate() == nil {
+		t.Fatal("unknown semantic absence was accepted as a selector value")
 	}
 }

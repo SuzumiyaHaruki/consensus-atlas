@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v9"
-	scenarioInvestigationStructuredOutputName = "scenario_investigation_v3"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v14"
+	scenarioInvestigationStructuredOutputName = "scenario_investigation_v5"
 )
 
 type scenarioAgentCallJournal struct {
@@ -22,7 +22,7 @@ type scenarioAgentCallJournal struct {
 
 func newScenarioAgentCallJournal(
 	directory string,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 	key string,
 ) (*scenarioAgentCallJournal, error) {
 	core, err := newStatelessAgentCallJournal(directory, client, key)
@@ -34,7 +34,7 @@ func newScenarioAgentCallJournal(
 
 func recoverScenarioAgentCallJournal(
 	directory string,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 ) (*scenarioAgentCallJournal, error) {
 	core, err := recoverStatelessAgentCallJournal(directory, client)
 	if err != nil {
@@ -134,6 +134,23 @@ func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentV
 					"owner": stringField, "message_source": stringField,
 					"message_target": stringField, "temporal_kind": stringField,
 					"effect_kind": stringField, "durability": stringField,
+					"actor_role": map[string]any{"type": "string", "enum": []string{
+						controlexperiment.ConsensusActorLeader, controlexperiment.ConsensusActorReplica,
+						controlexperiment.ConsensusActorContender,
+					}},
+					"message_class": map[string]any{"type": "string", "enum": []string{
+						controlexperiment.ConsensusMessageVote, controlexperiment.ConsensusMessageProposal,
+						controlexperiment.ConsensusMessageReplication, controlexperiment.ConsensusMessageHeartbeat,
+						controlexperiment.ConsensusMessageRecovery,
+					}},
+					"epoch_relation": map[string]any{"type": "string", "enum": []string{
+						controlexperiment.ConsensusEpochStale, controlexperiment.ConsensusEpochCurrent,
+						controlexperiment.ConsensusEpochFuture,
+					}},
+					"operation_state": map[string]any{"type": "string", "enum": []string{
+						controlexperiment.ConsensusOperationNone, controlexperiment.ConsensusOperationInflight,
+						controlexperiment.ConsensusOperationDecidedNotApplied,
+					}},
 				},
 				"required": []string{"kind"},
 			},
@@ -156,18 +173,31 @@ func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentV
 		},
 		"required": []string{"id", "steps"},
 	}
+	properties := map[string]any{
+		"intent": map[string]any{"type": "string", "enum": view.AvailableIntents},
+		"plan":   plan,
+	}
+	required := []string{"intent"}
+	minimalPathPlan := len(view.AvailableIntents) == 1 &&
+		(view.AvailableIntents[0] == controlexperiment.ScenarioIntentContinue ||
+			view.AvailableIntents[0] == controlexperiment.ScenarioIntentRevise)
+	if minimalPathPlan {
+		required = append(required, "plan")
+	} else {
+		properties["branch_id"] = stringField
+		properties["from_branch_id"] = stringField
+		properties["reference_branch_id"] = stringField
+		properties["omitted_step_ids"] = map[string]any{
+			"type": "array", "minItems": 1, "items": stringField,
+		}
+	}
 	schema := map[string]any{
 		"type": "object", "additionalProperties": false,
-		"properties": map[string]any{
-			"intent":    map[string]any{"type": "string", "enum": view.AvailableIntents},
-			"branch_id": stringField, "from_branch_id": stringField,
-			"reference_branch_id": stringField,
-			"omitted_step_ids": map[string]any{
-				"type": "array", "minItems": 1, "items": stringField,
-			},
-			"plan": plan,
-		},
-		"required": []string{"intent", "plan"},
+		"properties": properties,
+		// A single continue/revise phase uses the exact minimal shape above.
+		// Multi-intent phases keep plan conditional in the trusted parser to
+		// avoid provider-specific root oneOf behavior.
+		"required": required,
 	}
 	encoded, err := json.Marshal(schema)
 	if err != nil {
@@ -239,7 +269,8 @@ func scenarioAgentPrompt(
 		PromptVersion: scenarioAgentPromptVersion,
 		SelectorFields: []string{
 			"action_id", "kind", "node", "item_kind", "owner", "message_source",
-			"message_target", "temporal_kind", "effect_kind", "durability",
+			"message_target", "temporal_kind", "effect_kind", "durability", "actor_role",
+			"message_class", "epoch_relation", "operation_state",
 		},
 		AgentView: agentView,
 	}
@@ -256,38 +287,59 @@ func scenarioAgentPrompt(
 		return system, user, nil
 	}
 	system := "Return exactly one ScenarioInvestigationProposal JSON object and no prose. Choose intent only from " +
-		"available_intents. Except for select, the nested plan may use only id, steps, and selector_fields listed in the input. " +
+		"available_intents. Except for select and abandon, the nested plan may use only id, steps, and selector_fields listed in the input. " +
 		"select is a zero-Action final choice: provide only intent=select and from_branch_id, and omit plan. " +
+		"abandon is a zero-Action hypothesis choice: provide only intent=abandon and omit plan. " +
 		"action_id is valid only for an Action in the supplied current root_frontier or a branch's available_actions when " +
 		"continuing from that branch. control and ablate execute from an earlier root checkpoint and must use semantic selectors. " +
 		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
+		"The optional actor_role, message_class, epoch_relation, and operation_state selector fields may use only non-unknown " +
+		"values present in action_semantics for the same Action; they narrow the current frontier but do not create an Action. " +
+		"Selector node, owner, message_source, and message_target values are node ID JSON strings such as n1, never " +
+		"identity objects with node/incarnation fields. A stopped prior_feedback must be answered with intent=revise, not continue. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
+	if len(view.AvailableIntents) == 1 &&
+		(view.AvailableIntents[0] == controlexperiment.ScenarioIntentContinue ||
+			view.AvailableIntents[0] == controlexperiment.ScenarioIntentRevise) {
+		system += " This phase permits only intent=" + view.AvailableIntents[0] +
+			" with plan; omit branch_id, from_branch_id, reference_branch_id, and omitted_step_ids."
+	}
 	user := "Create one complete but bounded investigation proposal of at most max_steps that advances the supplied hypothesis. " +
 		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. " +
 		implementationContext +
 		"A later step may use after_milestone only with an ID listed in ordered_milestones; the trusted " +
 		"executor will advance ordinary effects, messages, and naturally due timers until that milestone is observed. " +
+		"after_milestone is checked before its step: never attach a milestone whose observation requires that same step " +
+		"or any later step. " +
 		"A trusted concretizer requires " +
 		"each selector to match exactly one current admissible Action. A completed prior_feedback means the trusted root has " +
 		"advanced and this plan must continue from the supplied current frontier. A stopped prior_feedback includes the complete " +
-		"previous_proposal and failed_step; use revise with a complete repaired plan from the current frontier. " +
+		"previous_proposal and failed_step; use revise with a complete repaired plan from the current frontier. For selector " +
+		"no-match or ambiguous feedback, match_count is the final candidate count and selector_trace shows the count after each " +
+		"field is applied. The first zero-count field is a concrete conflict; a final count above one requires another stable " +
+		"field from available_actions. " +
 		"Use branch with a new branch_id to retain an intervention result. Use control with a new branch_id and an existing " +
 		"reference_branch_id; it will execute from the referenced branch's root checkpoint. Use ablate only when available, name " +
 		"the omitted_step_ids from the reference branch's applied_interventions, and supply a shorter plan. Branch metadata reports " +
 		"the strategic Actions actually applied, not merely proposed plan text. Use select with from_branch_id to finalize a stored path " +
 		"without executing another Action; use from_branch_id with continue to promote and extend a path, or with branch to fork " +
-		"another candidate. revise repairs only the current selected path. minimize is intentionally " +
+		"another candidate. revise repairs only the current selected path. When abandon is available, use it only when the mechanical " +
+		"progress_delta shows that this hypothesis is no longer worth the remaining budget; abandon is not a correctness or defect verdict. " +
+		"minimize is intentionally " +
 		"unavailable until a trusted finding exists. " +
 		"When present, prior_feedback.progress_delta is the compact trusted account of decisions, new milestones, the first missing " +
-		"milestone, transition novelty, repeated scheduling-pattern depth, and recent Action kinds. Use it to continue, revise, or " +
-		"change the intervention; repetition is search feedback and is not itself a protocol verdict. " +
+		"milestone, newly observed milestone evidence, transition novelty, Action counts, temporal callbacks versus actual logical-clock " +
+		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available non-closure interventions, and recent " +
+		"Action kinds. milestone_progress=milestone-stalled means selectors executed but no new milestone appeared; " +
+		"natural_progress_stop distinguishes a returned client operation from a frontier with no closure Action. Use these mechanical " +
+		"facts to continue, revise, change the intervention, or abandon; repetition and a missing milestone are not protocol verdicts. " +
 		"decision_allowance bounds this proposal plus its deterministic natural-progress slice; remaining_decisions is the " +
 		"episode-wide successful Action budget still available. " +
 		"Frozen input JSON:\n" + string(encoded)
 	if view.MaxSteps == 1 {
-		system += " For every non-select intent, the nested plan must contain exactly one step."
+		system += " For every intent other than select or abandon, the nested plan must contain exactly one step."
 	} else {
-		system += " For every non-select intent and every step after the first, omit action_id and use stable semantic selector " +
+		system += " For every intent other than select or abandon and every step after the first, omit action_id and use stable semantic selector " +
 			"fields because executing an " +
 			"earlier step rebuilds the frontier and may invalidate every current ActionID."
 	}

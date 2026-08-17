@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
@@ -23,9 +24,12 @@ const (
 type agenticEpisodeComposition struct {
 	Target                agenticEpisodeTarget
 	Budget                agenticEpisodeBudget
+	MethodSpec            controlexperiment.AgenticMethodSpec
 	Memory                []controlexperiment.RiskExplorationMemoryEntry
 	KnowledgeSourceMounts []controlexperiment.KnowledgeSourceMount
-	Client                openRouterIntentClient
+	Client                agentIntentTransport
+	ScenarioClient        agentIntentTransport
+	SessionWallClockMS    int64
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -60,6 +64,7 @@ type agenticInvestigationResult struct {
 	ExplorationMemory        []controlexperiment.RiskExplorationMemoryEntry
 	ModelWork                controlexperiment.ModelWork
 	RuntimeDecisionAllowance int
+	UnreconciledModelCalls   int
 }
 
 func (budget agenticInvestigationBudget) validate() error {
@@ -94,12 +99,18 @@ func runAgenticInvestigation(
 	for _, episode := range existing {
 		addAgentModelWork(&result.ModelWork, episode.Summary.Work.Model)
 		result.RuntimeDecisionAllowance += episode.Summary.Budget.MaxRuntimeDecisions
+		if episode.Summary.Status == agenticEpisodeTokenStopped {
+			result.StopReason = agenticInvestigationTokenLimit
+		}
 	}
 	startOrdinal := len(existing) + 1
 	if startOrdinal > options.Budget.MaxEpisodes {
 		result.StopReason = agenticInvestigationEpisodeLimit
 	}
 	for ordinal := startOrdinal; ordinal <= options.Budget.MaxEpisodes; ordinal++ {
+		if result.StopReason != "" {
+			break
+		}
 		memory, err := deriveAgenticExplorationMemory(result.Episodes)
 		if err != nil {
 			return result, err
@@ -108,6 +119,13 @@ func runAgenticInvestigation(
 		if err != nil || composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 			composition.Target.ID != options.Recovery.TargetID {
 			return result, errors.New("AGENTIC_INVESTIGATION_COMPOSITION_INVALID")
+		}
+		if composition.MethodSpec.Digest != "" {
+			for _, recovered := range result.Episodes {
+				if recovered.MethodSpec == nil || recovered.MethodSpec.Digest != composition.MethodSpec.Digest {
+					return result, errors.New("AGENTIC_INVESTIGATION_METHOD_SPEC_DRIFT")
+				}
+			}
 		}
 		remainingCalls := options.Budget.MaxModelCalls - result.ModelWork.Calls
 		remainingTokens := options.Budget.MaxModelTokens - result.ModelWork.TotalTokens
@@ -127,7 +145,7 @@ func runAgenticInvestigation(
 		composition.Memory = memory
 		directory := filepath.Join(clean, fmt.Sprintf("episode-%04d", ordinal))
 		resumeEpisode := partial && ordinal == startOrdinal
-		_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
+		partialEpisode, runErr := runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
 			Directory: directory, Resume: resumeEpisode,
 			AgentKeyFile: options.AgentKeyFile, ReadKey: options.ReadKey,
 			Recovery: options.Recovery,
@@ -135,8 +153,9 @@ func runAgenticInvestigation(
 				return composition, nil
 			},
 		})
-		if err != nil {
-			return result, err
+		if runErr != nil {
+			result.UnreconciledModelCalls += partialEpisode.UnreconciledModelCalls
+			return result, runErr
 		}
 		recovered, terminal, err := recoverAgenticEpisodeArtifacts(directory, options.Recovery)
 		if err != nil || !terminal {
@@ -146,6 +165,10 @@ func runAgenticInvestigation(
 		partial = false
 		addAgentModelWork(&result.ModelWork, recovered.Summary.Work.Model)
 		result.RuntimeDecisionAllowance += composition.Budget.MaxRuntimeDecisions
+		if recovered.Summary.Status == agenticEpisodeTokenStopped {
+			result.StopReason = agenticInvestigationTokenLimit
+			break
+		}
 		if result.ModelWork.Calls >= options.Budget.MaxModelCalls {
 			result.StopReason = agenticInvestigationCallLimit
 			break
@@ -236,12 +259,22 @@ func runAgenticEpisodeDirectory(
 	if err != nil {
 		return recoveredAgenticEpisode{}, err
 	}
+	methodBound := composition.MethodSpec.Digest != ""
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
+		methodBound && (composition.MethodSpec.Validate() != nil ||
+			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest) ||
+		!methodBound && composition.Target.MethodSpecDigest != "" ||
 		len(composition.KnowledgeSourceMounts) > 0 &&
 			controlexperiment.ValidateKnowledgeSourceMounts(composition.KnowledgeSourceMounts) != nil ||
-		composition.Client.HTTP == nil || openRouterTransportFreeze(composition.Client).Validate() != nil ||
+		composition.Client == nil || !composition.Client.ready() || composition.SessionWallClockMS <= 0 ||
+		composition.Client.freeze().Validate() != nil ||
 		composition.Target.ID != options.Recovery.TargetID {
 		return recoveredAgenticEpisode{}, errors.New("AGENTIC_EPISODE_COMPOSITION_INVALID")
+	}
+	if methodBound {
+		if err := bindAgenticMethodSpec(clean, options.Resume, composition.MethodSpec); err != nil {
+			return recoveredAgenticEpisode{}, err
+		}
 	}
 	riskJournal, err := openAgenticRiskJournal(
 		filepath.Join(clean, agenticEpisodeRiskJournal), options.Resume, composition.Client,
@@ -249,8 +282,15 @@ func runAgenticEpisodeDirectory(
 	if err != nil {
 		return recoveredAgenticEpisode{}, err
 	}
+	scenarioClient := composition.ScenarioClient
+	if scenarioClient == nil {
+		scenarioClient = composition.Client
+	}
+	if !scenarioClient.ready() || scenarioClient.freeze().Validate() != nil {
+		return recoveredAgenticEpisode{}, errors.New("AGENTIC_EPISODE_SCENARIO_TRANSPORT_INVALID")
+	}
 	scenarioJournal, err := openAgenticScenarioJournal(
-		filepath.Join(clean, agenticEpisodeScenarioJournal), options.Resume, composition.Client,
+		filepath.Join(clean, agenticEpisodeScenarioJournal), options.Resume, scenarioClient,
 	)
 	if err != nil {
 		return recoveredAgenticEpisode{}, err
@@ -283,13 +323,20 @@ func runAgenticEpisodeDirectory(
 			)
 		}
 	}
+	sessionCtx, cancelSession, err := agenticSessionContext(ctx, composition.SessionWallClockMS)
+	if err != nil {
+		return recoveredAgenticEpisode{}, err
+	}
+	defer cancelSession()
 	result, err := runAgenticEpisode(
-		ctx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
+		sessionCtx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
 		composition.Memory, knowledgeReader,
 		activateRiskKey, activateScenarioKey,
 	)
 	if err != nil {
-		return recoveredAgenticEpisode{}, err
+		return recoveredAgenticEpisode{UnreconciledModelCalls: countUnreconciledProviderCalls(
+			riskJournal, scenarioJournal,
+		)}, err
 	}
 	artifact, err := persistAgenticEpisodeArtifacts(
 		clean, composition.Target.ID, composition.Budget, result,
@@ -298,6 +345,10 @@ func runAgenticEpisodeDirectory(
 		return recoveredAgenticEpisode{}, err
 	}
 	recovered := recoveredAgenticEpisode{Summary: artifact}
+	if methodBound {
+		spec := composition.MethodSpec
+		recovered.MethodSpec = &spec
+	}
 	if result.Testing != nil {
 		testing := *result.Testing
 		recovered.Testing = &testing
@@ -308,10 +359,45 @@ func runAgenticEpisodeDirectory(
 	return recovered, nil
 }
 
+func countUnreconciledProviderCalls(
+	risk *statelessAgentCallJournal,
+	scenario *scenarioAgentCallJournal,
+) int {
+	var audits []controlexperiment.StatelessAgentCallAudit
+	if risk != nil {
+		if current, err := risk.Audits(); err == nil {
+			audits = append(audits, current...)
+		}
+	}
+	if scenario != nil {
+		if current, err := scenario.Audits(); err == nil {
+			audits = append(audits, current...)
+		}
+	}
+	count := 0
+	for _, audit := range audits {
+		if audit.Work.Calls == 1 && audit.ProviderUsageStatus != agentProviderUsageObserved {
+			count++
+		}
+	}
+	return count
+}
+
+func agenticSessionContext(
+	parent context.Context,
+	wallClockMS int64,
+) (context.Context, context.CancelFunc, error) {
+	if parent == nil || wallClockMS <= 0 {
+		return nil, nil, errors.New("AGENTIC_EPISODE_SESSION_DEADLINE_INVALID")
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(wallClockMS)*time.Millisecond)
+	return ctx, cancel, nil
+}
+
 func openAgenticRiskJournal(
 	directory string,
 	resume bool,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 ) (*statelessAgentCallJournal, error) {
 	info, err := os.Lstat(directory)
 	if os.IsNotExist(err) {
@@ -326,7 +412,7 @@ func openAgenticRiskJournal(
 func openAgenticScenarioJournal(
 	directory string,
 	resume bool,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 ) (*scenarioAgentCallJournal, error) {
 	info, err := os.Lstat(directory)
 	if os.IsNotExist(err) {

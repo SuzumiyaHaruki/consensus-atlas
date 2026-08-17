@@ -174,6 +174,120 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 	}
 }
 
+func TestRiskAgentContinuesAcrossBoundedDeclaredSourceWindows(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	catalog, err := KnowledgeSourceCatalog(knowledge)
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("fixture source catalog invalid: %#v/%v", catalog, err)
+	}
+	readerCalls := 0
+	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
+		readerCalls++
+		if request.Reference != catalog[0].Reference || request.MaxLines != 3 {
+			t.Fatalf("reader received unrelated request: %#v", request)
+		}
+		if readerCalls == 1 {
+			if request.StartLine != 0 {
+				t.Fatalf("first read did not use the declared locator: %#v", request)
+			}
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 4, EndLine: 6,
+				TotalLines: 20, Text: "func round() {\n  retryLostMessage()\n}", Truncated: true,
+			}, nil
+		}
+		if request.StartLine != 7 {
+			t.Fatalf("second read did not continue after the first window: %#v", request)
+		}
+		return KnowledgeReadResult{
+			Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 7, EndLine: 9,
+			TotalLines: 20, Text: "func retryLostMessage() {\n  sendAgain()\n}", Truncated: true,
+		}, nil
+	}
+	calls := 0
+	planner := func(_ context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
+		calls++
+		if err := view.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if calls <= 2 {
+			start := 0
+			if calls == 2 {
+				start = 7
+				if len(view.KnowledgeResults) != 1 || view.KnowledgeResults[0].EndLine != 6 ||
+					view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall {
+					t.Fatalf("first window did not enable bounded continuation: %#v", view)
+				}
+			}
+			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
+				KnowledgeRequests: []KnowledgeReadRequest{{
+					Reference: catalog[0].Reference, StartLine: start, MaxLines: 3,
+				}},
+			})
+			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+		}
+		if len(view.KnowledgeResults) != 2 || view.KnowledgeResults[1].StartLine != 7 ||
+			view.MaxKnowledgeRequests != 0 ||
+			!slices.Contains(view.AvailableSupportRefs, "source/"+catalog[0].Reference) {
+			t.Fatalf("continued windows did not return to the portfolio call: %#v", view)
+		}
+		candidate := RiskCandidate{
+			ID: "decision-after-source-continuation", PropertyRef: "bounded-progress",
+			InspirationRef: "message-loss-progress", Summary: "Exercise retry after reading its continuation.",
+			MechanismSteps: []RiskMechanismStep{
+				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start an operation."},
+				{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped, Rationale: "Exercise the retry path."},
+				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe progress."},
+			},
+			Predicates: []semantic.ObservationPredicate{
+				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+				{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
+				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+			},
+		}
+		candidate = riskCandidateWithSupport(candidate, "source/"+catalog[0].Reference)
+		encoded, marshalErr := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
+		return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+	}
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 3, MaxTokens: 20}, knowledge,
+		[]semantic.ObservationCapability{
+			{Kind: semantic.ObservationWorkloadInvoked},
+			{Kind: semantic.ObservationMessageDropped},
+			{Kind: semantic.ObservationDecisionAdvanced},
+		},
+		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage}, nil, nil, reader, planner,
+	)
+	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
+		calls != 3 || readerCalls != 2 || len(result.Attempts[1].KnowledgeResults) != 1 {
+		t.Fatalf("iterative source navigation failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
+	}
+}
+
+func TestRiskKnowledgeNavigationRejectsOverlappingCompletedWindow(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	catalog, err := KnowledgeSourceCatalog(knowledge)
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("fixture source catalog invalid: %#v/%v", catalog, err)
+	}
+	results := []KnowledgeReadResult{{
+		Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 10, EndLine: 19,
+		TotalLines: 40, Text: "bounded excerpt", Truncated: true,
+	}}
+	if validRiskKnowledgeRequests(
+		[]KnowledgeReadRequest{{Reference: catalog[0].Reference, StartLine: 15, MaxLines: 10}},
+		catalog, results, map[string]bool{},
+	) {
+		t.Fatal("overlapping source window was accepted")
+	}
+	if !validRiskKnowledgeRequests(
+		[]KnowledgeReadRequest{{Reference: catalog[0].Reference, StartLine: 20, MaxLines: 10}},
+		catalog, results, map[string]bool{},
+	) {
+		t.Fatal("adjacent source continuation was rejected")
+	}
+}
+
 func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	knowledge.TargetDossier = cloneTargetDossier(knowledge.TargetDossier)
@@ -224,7 +338,7 @@ func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
 				locator = "retry"
 				if len(view.KnowledgeResults) != 1 ||
 					view.KnowledgeResults[0].ReasonCode != KnowledgeDiscoveryLocatorNotFound ||
-					view.MaxKnowledgeRequests != 1 || view.Prior == nil ||
+					view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall || view.Prior == nil ||
 					view.Prior.ReasonCode != RiskAgentReasonKnowledgeReadStopped {
 					t.Fatalf("stopped result did not preserve one remaining choice: %#v", view)
 				}
@@ -239,7 +353,7 @@ func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
 		}
 		if view.MaxKnowledgeRequests != 0 || len(view.KnowledgeResults) != 2 ||
 			view.KnowledgeResults[1].Status != KnowledgeDiscoveryCompleted {
-			t.Fatalf("completed result did not close source discovery: %#v", view)
+			t.Fatalf("final Risk call did not reserve the portfolio response: %#v", view)
 		}
 		candidate := RiskCandidate{
 			ID: "decision-after-alternate-source", PropertyRef: "bounded-progress",
@@ -480,6 +594,90 @@ func TestRiskCandidateRejectsExistingRiskAndMeaninglessBinding(t *testing.T) {
 	if err != nil || len(result.Attempts) != 1 ||
 		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonBinding {
 		t.Fatalf("single-use binding feedback was not precise: %#v err=%v", result, err)
+	}
+}
+
+func TestM4eRiskCandidateRejectsMixedParticipantBindingDomains(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	ballotNode := semantic.ObservationField("omnipaxos/ballot-node")
+	capabilities := []semantic.ObservationCapability{
+		{Kind: semantic.ObservationWorkloadInvoked, Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
+			semantic.ObservationFieldParticipantRole,
+		}},
+		{Kind: semantic.ObservationMessageDropped, Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
+			semantic.ObservationFieldOperationStage,
+		}},
+		{Kind: semantic.ObservationTemporalFired, Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
+		}},
+		{Kind: semantic.ObservationKind("omnipaxos/promise-raised"), Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode, ballotNode,
+		}, FieldTypes: map[semantic.ObservationField]semantic.ObservationValueType{
+			ballotNode: semantic.ObservationValueNodeID,
+		}},
+		{Kind: semantic.ObservationCoordinatorChange, Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
+			semantic.ObservationFieldRelatedParticipant, semantic.ObservationFieldRelatedNode,
+		}},
+	}
+	predicates := []semantic.ObservationPredicate{
+		{MilestoneID: "client-invoked", Kind: semantic.ObservationWorkloadInvoked, Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldParticipant, BindAs: "n1"},
+			{Field: semantic.ObservationFieldParticipantNode, BindAs: "n1"},
+		}},
+		{MilestoneID: "follower-silenced", Kind: semantic.ObservationMessageDropped, Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldParticipant, BindAs: "n2"},
+			{Field: semantic.ObservationFieldParticipantNode, BindAs: "n2"},
+		}},
+		{MilestoneID: "follower-pulse", Kind: semantic.ObservationTemporalFired, Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldParticipant, BindAs: "n2"},
+			{Field: semantic.ObservationFieldParticipantNode, BindAs: "n2"},
+		}},
+		{MilestoneID: "old-leader-promise", Kind: semantic.ObservationKind("omnipaxos/promise-raised"), Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldParticipant, BindAs: "n1"},
+			{Field: semantic.ObservationFieldParticipantNode, BindAs: "n1"},
+			{Field: ballotNode, BindAs: "n2"},
+		}},
+		{MilestoneID: "leadership-handoff", Kind: semantic.ObservationCoordinatorChange, Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldParticipant, BindAs: "n2"},
+			{Field: semantic.ObservationFieldParticipantNode, BindAs: "n2"},
+			{Field: semantic.ObservationFieldRelatedParticipant, BindAs: "n1"},
+			{Field: semantic.ObservationFieldRelatedNode, BindAs: "n1"},
+		}},
+		{MilestoneID: "old-leader-reclaim", Kind: semantic.ObservationTemporalFired, Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldParticipant, BindAs: "n1"},
+			{Field: semantic.ObservationFieldParticipantNode, BindAs: "n1"},
+		}},
+	}
+	candidate := RiskCandidate{
+		ID: "timer-symmetry-recovery-lapse", PropertyRef: "bounded-progress", InspirationRef: "original",
+		Summary:    "M4e candidate must be rejected before Scenario planning when bindings mix domains.",
+		Predicates: predicates,
+	}
+	for _, predicate := range predicates {
+		candidate.MechanismSteps = append(candidate.MechanismSteps, RiskMechanismStep{
+			MilestoneID: predicate.MilestoneID, Kind: predicate.Kind,
+			Rationale:   "Retain the actual M4e ordered milestone for binding regression.",
+			SupportRefs: []string{"primer/rounds"},
+		})
+	}
+	candidate.SuspectedMechanism, _ = deriveRiskMechanism(candidate.Predicates, candidate.MechanismSteps)
+	encoded, err := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 1, MaxTokens: 20}, knowledge, capabilities,
+		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage, control.ActionFireTemporal},
+		nil, nil, nil, func(context.Context, RiskAgentView) ([]byte, ModelWork, error) {
+			return encoded, ModelWork{Calls: 1, InputTokens: 2, OutputTokens: 2, TotalTokens: 4}, nil
+		},
+	)
+	if err != nil || len(result.Attempts) != 1 ||
+		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonBindingDomain {
+		t.Fatalf("M4e mixed-domain Risk was not rejected precisely: %#v err=%v", result, err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
@@ -46,21 +47,24 @@ const (
 	ScenarioAgentStopDecisionBudget         = "decision-budget-exhausted"
 	ScenarioAgentStopCallBudget             = "call-budget-exhausted"
 	ScenarioAgentStopFinalSelectionRequired = "final-selection-required"
+	ScenarioAgentStopHypothesisAbandoned    = "hypothesis-abandoned"
 )
 
 type ScenarioAgentFeedback struct {
-	Attempt             int                            `json:"attempt"`
-	Intent              string                         `json:"intent,omitempty"`
-	BranchID            string                         `json:"branch_id,omitempty"`
-	ReferenceBranchID   string                         `json:"reference_branch_id,omitempty"`
-	Outcome             string                         `json:"outcome"`
-	ReasonCode          string                         `json:"reason_code,omitempty"`
-	PreviousProposal    *ScenarioInvestigationProposal `json:"previous_proposal,omitempty"`
-	FailedStep          *ScenarioStep                  `json:"failed_step,omitempty"`
-	Steps               []ScenarioStepFeedback         `json:"steps,omitempty"`
-	NaturalProgress     []ScenarioStepFeedback         `json:"natural_progress,omitempty"`
-	NaturalProgressStop string                         `json:"natural_progress_stop,omitempty"`
-	ProgressDelta       *ScenarioProgressDelta         `json:"progress_delta,omitempty"`
+	Attempt             int                               `json:"attempt"`
+	Intent              string                            `json:"intent,omitempty"`
+	BranchID            string                            `json:"branch_id,omitempty"`
+	ReferenceBranchID   string                            `json:"reference_branch_id,omitempty"`
+	Outcome             string                            `json:"outcome"`
+	ReasonCode          string                            `json:"reason_code,omitempty"`
+	ValidationIssues    []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	AllowedIntents      []string                          `json:"allowed_intents,omitempty"`
+	PreviousProposal    *ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
+	FailedStep          *ScenarioStep                     `json:"failed_step,omitempty"`
+	Steps               []ScenarioStepFeedback            `json:"steps,omitempty"`
+	NaturalProgress     []ScenarioStepFeedback            `json:"natural_progress,omitempty"`
+	NaturalProgressStop string                            `json:"natural_progress_stop,omitempty"`
+	ProgressDelta       *ScenarioProgressDelta            `json:"progress_delta,omitempty"`
 }
 
 type ScenarioAgentView struct {
@@ -225,16 +229,52 @@ func ExploreScenarioWithPlanner(
 		attempt := ScenarioAgentAttempt{
 			Ordinal: ordinal, ResponseBytes: append([]byte(nil), response...), ModelWork: work,
 		}
-		proposal, parseErr := ParseScenarioInvestigationProposal(response)
-		if parseErr != nil || !containsScenarioIntent(view.AvailableIntents, proposal.Intent) {
+		proposal, validationIssue := InspectScenarioInvestigationProposal(response)
+		if validationIssue != nil {
 			attempt.Feedback = ScenarioAgentFeedback{
 				Attempt: ordinal, Outcome: ScenarioAgentStopped, ReasonCode: ScenarioAgentProposalInvalid,
+				ValidationIssues: []ScenarioProposalValidationIssue{*validationIssue},
+				AllowedIntents:   append([]string(nil), view.AvailableIntents...),
+			}
+			if validationIssue.Code != ScenarioProposalIssueJSONInvalid {
+				attempt.Proposal = cloneScenarioProposal(&proposal)
+				attempt.Feedback.Intent = proposal.Intent
+				attempt.Feedback.BranchID = proposal.BranchID
+				attempt.Feedback.ReferenceBranchID = proposal.ReferenceBranchID
+				attempt.Feedback.PreviousProposal = cloneScenarioProposal(&proposal)
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			prior = &result.Attempts[len(result.Attempts)-1].Feedback
+			continue
+		}
+		if !containsScenarioIntent(view.AvailableIntents, proposal.Intent) {
+			attempt.Proposal = cloneScenarioProposal(&proposal)
+			attempt.Feedback = ScenarioAgentFeedback{
+				Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
+				ReferenceBranchID: proposal.ReferenceBranchID,
+				Outcome:           ScenarioAgentStopped, ReasonCode: ScenarioAgentProposalInvalid,
+				ValidationIssues: []ScenarioProposalValidationIssue{{
+					Code: ScenarioProposalIssueIntentUnavailable, Field: "intent",
+				}},
+				AllowedIntents:   append([]string(nil), view.AvailableIntents...),
+				PreviousProposal: cloneScenarioProposal(&proposal),
 			}
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
 		}
 		attempt.Proposal = cloneScenarioProposal(&proposal)
+		if proposal.Intent == ScenarioIntentAbandon {
+			attempt.Feedback = ScenarioAgentFeedback{
+				Attempt: ordinal, Intent: proposal.Intent, Outcome: ScenarioAgentStopped,
+				ReasonCode:       ScenarioAgentStopHypothesisAbandoned,
+				PreviousProposal: cloneScenarioProposal(&proposal),
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			return finishScenarioAgentResult(
+				result, root, ScenarioAgentStopHypothesisAbandoned,
+			), nil
+		}
 		plan := proposal.Plan
 		selected, reason := selectScenarioProposalRoot(
 			proposal, currentTrace, currentRisk, currentFrontier, result.Execution, prior, branches,
@@ -274,9 +314,10 @@ func ExploreScenarioWithPlanner(
 		if attemptAllowance < naturalProgressAllowance {
 			naturalProgressAllowance = attemptAllowance
 		}
-		execution, err := ExecuteBoundedScenarioPlan(
+		execution, err := ExecuteSemanticBoundedScenarioPlan(
 			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, spec, selected.risk, selected.trace,
-			runtimeConfig, faultEnvelope, newAdapter, projector, naturalProgressAllowance, preparer...,
+			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
+			naturalProgressAllowance, preparer...,
 		)
 		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		if err != nil {
@@ -312,6 +353,9 @@ func ExploreScenarioWithPlanner(
 			if deltaErr != nil {
 				return result, deltaErr
 			}
+			enrichScenarioProgressDelta(
+				&delta, execution.NaturalProgressStop, faultEnvelope, execution.FinalTrace, nil,
+			)
 			attempt.Feedback.ProgressDelta = &delta
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
@@ -333,7 +377,6 @@ func ExploreScenarioWithPlanner(
 		if deltaErr != nil {
 			return result, deltaErr
 		}
-		attempt.Feedback.ProgressDelta = &delta
 		if execution.continuationFrontier == nil || execution.continuationSnapshot == nil {
 			return result, errors.New("EXPERIMENT_SCENARIO_CONTINUATION_FRONTIER_MISSING")
 		}
@@ -346,6 +389,10 @@ func ExploreScenarioWithPlanner(
 		if err := semantics.Validate(frontier); err != nil {
 			return result, fmt.Errorf("EXPERIMENT_SCENARIO_CONTINUATION_SEMANTICS_INVALID: %w", err)
 		}
+		enrichScenarioProgressDelta(
+			&delta, execution.NaturalProgressStop, faultEnvelope, finalTrace, frontier.Actions,
+		)
+		attempt.Feedback.ProgressDelta = &delta
 		if promote {
 			currentTrace, currentRisk = finalTrace, finalRisk
 			currentFrontier, currentSemantics = frontier, semantics
@@ -422,9 +469,19 @@ func scenarioAvailableIntents(
 	prior *ScenarioAgentFeedback,
 	branches []ScenarioInvestigationBranch,
 ) []string {
+	if prior == nil {
+		return []string{ScenarioIntentContinue}
+	}
+	if prior.Outcome == ScenarioAgentStopped {
+		result := []string{ScenarioIntentRevise}
+		if prior.ProgressDelta != nil {
+			result = append(result, ScenarioIntentAbandon)
+		}
+		return result
+	}
 	result := []string{ScenarioIntentContinue, ScenarioIntentBranch}
-	if prior != nil {
-		result = append(result, ScenarioIntentRevise)
+	if prior.ProgressDelta != nil {
+		result = append(result, ScenarioIntentAbandon)
 	}
 	if len(branches) > 0 {
 		result = append(result, ScenarioIntentControl)
@@ -440,9 +497,15 @@ func scenarioAvailableIntents(
 }
 
 func scenarioFinalExplorationIntents(prior *ScenarioAgentFeedback) []string {
+	if prior == nil {
+		return []string{ScenarioIntentContinue}
+	}
 	result := []string{ScenarioIntentContinue}
-	if prior != nil {
-		result = append(result, ScenarioIntentRevise)
+	if prior.Outcome == ScenarioAgentStopped {
+		result = []string{ScenarioIntentRevise}
+	}
+	if prior.ProgressDelta != nil {
+		result = append(result, ScenarioIntentAbandon)
 	}
 	return result
 }
@@ -630,6 +693,8 @@ func cloneScenarioFeedback(feedback *ScenarioAgentFeedback) *ScenarioAgentFeedba
 		return nil
 	}
 	value := *feedback
+	value.ValidationIssues = append([]ScenarioProposalValidationIssue(nil), feedback.ValidationIssues...)
+	value.AllowedIntents = append([]string(nil), feedback.AllowedIntents...)
 	value.PreviousProposal = cloneScenarioProposal(feedback.PreviousProposal)
 	if feedback.FailedStep != nil {
 		step := *feedback.FailedStep
@@ -690,7 +755,22 @@ func cloneScenarioProgressDelta(delta *ScenarioProgressDelta) *ScenarioProgressD
 	}
 	value := *delta
 	value.NewMilestones = append([]string(nil), delta.NewMilestones...)
+	value.NewMilestoneEvidence = append([]ScenarioMilestoneEvidence(nil), delta.NewMilestoneEvidence...)
+	value.ActionCounts = append([]ScenarioActionCount(nil), delta.ActionCounts...)
+	value.AvailableInterventions = append([]control.ActionKind(nil), delta.AvailableInterventions...)
 	value.RecentActions = append([]ScenarioRecentAction(nil), delta.RecentActions...)
+	if delta.FaultAllowance != nil {
+		allowance := *delta.FaultAllowance
+		value.FaultAllowance = &allowance
+	}
+	if delta.FaultUsage != nil {
+		usage := *delta.FaultUsage
+		value.FaultUsage = &usage
+	}
+	if delta.FaultRemaining != nil {
+		remaining := *delta.FaultRemaining
+		value.FaultRemaining = &remaining
+	}
 	return &value
 }
 
@@ -707,6 +787,9 @@ func cloneScenarioStepFeedback(feedback []ScenarioStepFeedback) []ScenarioStepFe
 	result := append([]ScenarioStepFeedback(nil), feedback...)
 	for index := range result {
 		result[index].Available = append([]FrontierActionRef(nil), feedback[index].Available...)
+		result[index].SelectorTrace = append(
+			[]ScenarioSelectorFilter(nil), feedback[index].SelectorTrace...,
+		)
 		result[index].RiskProgress = cloneRiskProgress(feedback[index].RiskProgress)
 		if feedback[index].Choice != nil {
 			choice := *feedback[index].Choice

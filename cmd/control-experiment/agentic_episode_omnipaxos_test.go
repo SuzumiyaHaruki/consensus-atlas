@@ -24,6 +24,46 @@ type failAfterInitialYieldAdapter struct {
 	runCalls int
 }
 
+func TestAgenticArtifactAccountsChargedScenarioCallRejectedByTokenThreshold(t *testing.T) {
+	artifact := agenticEpisodeArtifact{
+		Status:            agenticEpisodeTokenStopped,
+		Budget:            agenticEpisodeBudget{MaxObservedTokens: 10},
+		RiskAttempts:      1,
+		RiskProviderCalls: []controlexperiment.StatelessAgentCallAudit{{}},
+		ScenarioAttempts:  0,
+		ScenarioProviderCalls: []controlexperiment.StatelessAgentCallAudit{{
+			Status: controlexperiment.StatelessAgentCallContentReady,
+			Work:   controlexperiment.ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7},
+		}},
+		Work: agenticEpisodeWork{Model: controlexperiment.ModelWork{
+			Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14,
+		}},
+		Assessment: agenticEvidenceAssessment{ReasonCode: "model-token-threshold-reached"},
+	}
+	if !agenticProviderAttemptAccountingValid(artifact) {
+		t.Fatal("charged provider response rejected at the token boundary was lost")
+	}
+	artifact.Status = agenticEpisodeScenarioStopped
+	if agenticProviderAttemptAccountingValid(artifact) {
+		t.Fatal("non-token terminal state acquired an unmatched provider call")
+	}
+}
+
+func TestAgenticArtifactDoesNotTreatUnknownProviderUsageAsZeroCost(t *testing.T) {
+	observed := []controlexperiment.StatelessAgentCallAudit{{
+		Work:                controlexperiment.ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7},
+		ProviderUsageStatus: agentProviderUsageObserved,
+	}}
+	if !agenticProviderUsageReconciled(observed) {
+		t.Fatal("observed provider usage was rejected")
+	}
+	observed[0].Work = controlexperiment.ModelWork{Calls: 1}
+	observed[0].ProviderUsageStatus = agentProviderUsageUnknown
+	if agenticProviderUsageReconciled(observed) {
+		t.Fatal("unknown provider usage was accepted as zero-token formal cost")
+	}
+}
+
 func (adapter *failAfterInitialYieldAdapter) RunUntilYield(
 	ctx context.Context,
 ) (control.Yield, error) {
@@ -99,7 +139,16 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			if view.AcceptedHypothesis == nil ||
 				view.AcceptedHypothesis.Candidate.ID != omnipaxosDiscoveredRiskCandidate().ID ||
 				view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
-				len(view.TargetSurface.Workload.Invocations) != 1 {
+				len(view.TargetSurface.Workload.Invocations) != 1 ||
+				!reflect.DeepEqual(view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue}) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"required":["intent","plan"]`)) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"message_class"`)) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"replication"`)) ||
+				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"branch_id"`)) ||
+				!strings.Contains(payload.Messages[1].Content, "selector_trace") ||
+				!strings.Contains(payload.Messages[1].Content, "milestone-stalled") ||
+				!strings.Contains(payload.Messages[1].Content, "logical-clock") ||
+				!strings.Contains(payload.Messages[1].Content, "fault allowance/usage/remaining") {
 				t.Fatalf("Scenario Agent did not receive compact accepted context: %#v", view)
 			}
 			if strings.Contains(payload.Messages[1].Content, `"knowledge":`) ||
@@ -114,7 +163,8 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 						Plan: controlexperiment.ScenarioPlan{
 							ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{{
 								ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
-									ActionID: action.ActionID,
+									Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
+									MessageClass: controlexperiment.ConsensusMessageReplication,
 								},
 							}},
 						},
@@ -162,6 +212,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	)
 	if err != nil || result.Status != agenticEpisodeCompleted || result.Testing == nil ||
 		!result.Metrics.CandidateAccepted || !result.Metrics.RiskReached ||
+		result.Scenario == nil || result.Scenario.Agent.DecisionsUsed == 0 ||
 		result.Metrics.CorePSSSamples == 0 || result.Metrics.UniquePSSStates == 0 ||
 		result.Metrics.ProtocolPSSStates == 0 || result.Metrics.ControlPSSStates == 0 ||
 		result.Metrics.ProtocolPSSStates > result.Metrics.UniquePSSStates ||
@@ -169,6 +220,8 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		result.Work.Model != (controlexperiment.ModelWork{
 			Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14,
 		}) || result.Work.ScenarioSearch.TotalWorkUnits == 0 ||
+		result.Work.QualifiedExecution.Primary.WorkUnits == 0 ||
+		result.Work.QualifiedExecution.Replay.WorkUnits == 0 ||
 		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 1 ||
 		providerCalls != 2 || keyActivations != 2 ||
 		result.Assessment.Status != agenticEvidenceRiskUnverified ||
@@ -182,14 +235,18 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	artifact, err := persistAgenticEpisodeArtifacts(
 		artifactDirectory, "omnipaxos-v2", budget, result,
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(artifact.ScenarioAttemptFeedback) != artifact.ScenarioAttempts ||
+		len(artifact.ScenarioAttemptFeedback) != 1 ||
+		!artifact.ScenarioAttemptFeedback[0].EnteredExecution ||
+		artifact.ScenarioAttemptFeedback[0].Outcome != controlexperiment.ScenarioStatusCompleted {
+		t.Fatalf("compact Scenario attempt evidence missing: %#v err=%v", artifact.ScenarioAttemptFeedback, err)
 	}
 	recoveredArtifact, terminal, err := recoverAgenticEpisodeArtifacts(
 		artifactDirectory, omnipaxosAgenticEpisodeRecoveryBinding(),
 	)
 	if err != nil || !terminal || recoveredArtifact.Testing == nil ||
 		recoveredArtifact.Summary.Metrics != artifact.Metrics ||
+		!reflect.DeepEqual(recoveredArtifact.Summary.ScenarioAttemptFeedback, artifact.ScenarioAttemptFeedback) ||
 		recoveredArtifact.Testing.Bundle.Trace.Digest != result.Testing.Bundle.Trace.Digest ||
 		recoveredArtifact.Testing.Risk.Digest != result.Testing.Risk.Digest ||
 		!reflect.DeepEqual(recoveredArtifact.Testing.Oracle, result.Testing.Oracle) {
@@ -253,6 +310,15 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	if agenticMemoryEpisodeOutcome(oracleLabel, memory[0].RiskStatus) !=
 		agenticMemoryEpisodeOutcome(mechanicalLabel, memory[0].RiskStatus) {
 		t.Fatal("Oracle-derived assessment changed Agent-facing episode outcome")
+	}
+	abandonedEpisode := recoveredArtifact
+	abandonedEpisode.Summary.ScenarioStopReason = controlexperiment.ScenarioAgentStopHypothesisAbandoned
+	abandonedMemory, err := deriveAgenticExplorationMemory([]recoveredAgenticEpisode{abandonedEpisode})
+	if err != nil || len(abandonedMemory) != 1 ||
+		abandonedMemory[0].EpisodeOutcome != controlexperiment.RiskMemoryOutcomeHypothesisAbandoned ||
+		len(abandonedMemory[0].MechanicalReasonCodes) != 2 ||
+		abandonedMemory[0].MechanicalReasonCodes[1] != controlexperiment.ScenarioAgentStopHypothesisAbandoned {
+		t.Fatalf("hypothesis abandonment was not exposed as mechanical Memory: %#v/%v", abandonedMemory, err)
 	}
 	if _, terminal, err := recoverAgenticEpisodeArtifacts(
 		t.TempDir(), omnipaxosAgenticEpisodeRecoveryBinding(),
@@ -348,6 +414,40 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		t.Fatalf("token threshold did not stop before execution: %#v calls=%d keys=%d err=%v",
 			limited, providerCalls, keyActivations, err)
 	}
+	tokenInvestigationDirectory := t.TempDir()
+	tokenEpisodeDirectory := filepath.Join(tokenInvestigationDirectory, "episode-0001")
+	if err := os.Mkdir(tokenEpisodeDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	limitedArtifact, err := persistAgenticEpisodeArtifacts(
+		tokenEpisodeDirectory, "omnipaxos-v2", limitedBudget, limited,
+	)
+	if err != nil || limitedArtifact.ScenarioAttempts != 0 ||
+		len(limitedArtifact.ScenarioProviderCalls) != 1 {
+		t.Fatalf("charged token-boundary call was not persisted: %#v err=%v", limitedArtifact, err)
+	}
+	tokenPrepareCalls := 0
+	tokenStoppedInvestigation, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
+		Directory: tokenInvestigationDirectory, Resume: true,
+		AgentKeyFile: "fixture-key.txt", ReadKey: func(string) (string, error) {
+			t.Fatal("token-stopped Investigation attempted another provider call")
+			return "", nil
+		},
+		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
+		Budget: agenticInvestigationBudget{
+			MaxEpisodes: 2, MaxModelCalls: 4, MaxModelTokens: 40,
+			MaxRuntimeDecisionAllowance: 2 * limitedBudget.MaxRuntimeDecisions,
+		},
+		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+			tokenPrepareCalls++
+			return agenticEpisodeComposition{}, nil
+		},
+	})
+	if err != nil || tokenStoppedInvestigation.StopReason != agenticInvestigationTokenLimit ||
+		len(tokenStoppedInvestigation.Episodes) != 1 || tokenPrepareCalls != 0 {
+		t.Fatalf("token-stopped Investigation continued: %#v prepare=%d err=%v",
+			tokenStoppedInvestigation, tokenPrepareCalls, err)
+	}
 	runnerTarget, err := newOmnipaxosAgenticEpisodeTarget(inputs)
 	if err != nil {
 		t.Fatal(err)
@@ -365,7 +465,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
 			prepareCalls++
 			return agenticEpisodeComposition{
-				Target: runnerTarget, Budget: budget, Client: client,
+				Target: runnerTarget, Budget: budget, Client: client, SessionWallClockMS: 60_000,
 			}, nil
 		},
 	})
@@ -413,7 +513,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
 			investigationPrepareCalls++
 			return agenticEpisodeComposition{
-				Target: runnerTarget, Budget: budget, Client: client,
+				Target: runnerTarget, Budget: budget, Client: client, SessionWallClockMS: 60_000,
 			}, nil
 		},
 	})
@@ -443,7 +543,9 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		},
 		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
 			resumePrepareCalls++
-			return agenticEpisodeComposition{Target: runnerTarget, Budget: budget, Client: client}, nil
+			return agenticEpisodeComposition{
+				Target: runnerTarget, Budget: budget, Client: client, SessionWallClockMS: 60_000,
+			}, nil
 		},
 	})
 	if err != nil || resumedInvestigation.StopReason != agenticInvestigationEpisodeLimit ||
@@ -469,7 +571,9 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			MaxRuntimeDecisionAllowance: budget.MaxRuntimeDecisions,
 		},
 		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
-			return agenticEpisodeComposition{Target: runnerTarget, Budget: budget, Client: client}, nil
+			return agenticEpisodeComposition{
+				Target: runnerTarget, Budget: budget, Client: client, SessionWallClockMS: 60_000,
+			}, nil
 		},
 	})
 	if err != nil || budgetStopped.StopReason != agenticInvestigationCallLimit ||

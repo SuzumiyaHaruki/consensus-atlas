@@ -22,7 +22,7 @@ var errStatelessAgentCallKeyRequired = errors.New("STATELESS_AGENT_CALL_KEY_REQU
 type statelessAgentCallJournal struct {
 	directory string
 	rootID    string
-	client    openRouterIntentClient
+	client    agentIntentTransport
 	key       string
 	transport controlexperiment.AgentTransportFreeze
 	next      int
@@ -74,13 +74,16 @@ func (plan planningAgentCallPlan) validate() error {
 
 func newStatelessAgentCallJournal(
 	directory string,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 	key string,
 ) (*statelessAgentCallJournal, error) {
 	clean := filepath.Clean(directory)
-	transport := openRouterTransportFreeze(client)
+	if client == nil {
+		return nil, errors.New("STATELESS_AGENT_CALL_JOURNAL_INPUT_INVALID")
+	}
+	transport := client.freeze()
 	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
-		client.HTTP == nil || transport.Validate() != nil {
+		!client.ready() || transport.Validate() != nil {
 		return nil, errors.New("STATELESS_AGENT_CALL_JOURNAL_INPUT_INVALID")
 	}
 	if err := os.MkdirAll(filepath.Dir(clean), 0o700); err != nil {
@@ -109,12 +112,15 @@ func newStatelessAgentCallJournal(
 
 func recoverStatelessAgentCallJournal(
 	directory string,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 ) (*statelessAgentCallJournal, error) {
 	clean := filepath.Clean(directory)
-	transport := openRouterTransportFreeze(client)
+	if client == nil {
+		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_INPUT_INVALID")
+	}
+	transport := client.freeze()
 	if directory == "" || clean == "." || clean == string(filepath.Separator) ||
-		client.HTTP == nil || transport.Validate() != nil {
+		!client.ready() || transport.Validate() != nil {
 		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_INPUT_INVALID")
 	}
 	info, err := os.Lstat(clean)
@@ -154,12 +160,7 @@ func recoverStatelessAgentCallJournal(
 }
 
 func openRouterTransportFreeze(client openRouterIntentClient) controlexperiment.AgentTransportFreeze {
-	return controlexperiment.AgentTransportFreeze{
-		Provider: openRouterProvider, Endpoint: client.Endpoint, Model: client.Model,
-		Thinking: client.ReasoningEffort, ExcludeReasoning: client.ExcludeReasoning,
-		Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
-		MaxCallsPerArm: 1, MaxRetries: client.MaxRetries,
-	}
+	return client.freeze()
 }
 
 func statelessAgentCallCanContinue(status string) bool {

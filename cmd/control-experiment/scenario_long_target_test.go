@@ -216,12 +216,14 @@ func runLongTargetScenario(
 				}
 			}
 			var selected controlexperiment.FrontierActionRef
+			selectedIndex := -1
 			for _, kind := range []control.ActionKind{
-				control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal,
+				control.ActionFireTemporal, control.ActionCompleteEffect, control.ActionDeliverMessage,
 			} {
-				for _, action := range view.Frontier.Actions {
+				for index, action := range view.Frontier.Actions {
 					if action.Kind == kind {
 						selected = action
+						selectedIndex = index
 						break
 					}
 				}
@@ -229,8 +231,18 @@ func runLongTargetScenario(
 					break
 				}
 			}
-			if selected.ActionID == "" {
+			if selected.ActionID == "" || selectedIndex < 0 {
 				t.Fatalf("real Target frontier has no natural-progress Action at call %d", calls+1)
+			}
+			hint := view.Semantics.ActionHints[selectedIndex]
+			selector := controlexperiment.FrontierActionSelector{
+				Kind: selected.Kind, Node: selected.Node.Node, TemporalKind: selected.TemporalKind,
+			}
+			if hint.ActorRole != controlexperiment.ConsensusSemanticUnknown {
+				selector.ActorRole = hint.ActorRole
+			}
+			if hint.OperationState != controlexperiment.ConsensusSemanticUnknown {
+				selector.OperationState = hint.OperationState
 			}
 			calls++
 			encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
@@ -239,7 +251,7 @@ func runLongTargetScenario(
 					ID: "long-natural-plan-" + string(selected.Node.Node),
 					Steps: []controlexperiment.ScenarioStep{{
 						ID:       "advance-natural-progress",
-						Selector: controlexperiment.FrontierActionSelector{ActionID: selected.ActionID},
+						Selector: selector,
 					}},
 				},
 			})

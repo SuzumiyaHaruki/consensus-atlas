@@ -24,11 +24,13 @@ const (
 	ScenarioStepApplied  = "applied"
 	ScenarioStepRejected = "rejected"
 
-	ScenarioReasonNoMatch              = "no-match"
-	ScenarioReasonAmbiguous            = "ambiguous"
-	ScenarioReasonBudgetExhausted      = "budget-exhausted"
-	ScenarioReasonMilestoneUnknown     = "milestone-unknown"
-	ScenarioReasonMilestoneUnreachable = "milestone-unreachable"
+	ScenarioReasonNoMatch                     = "no-match"
+	ScenarioReasonAmbiguous                   = "ambiguous"
+	ScenarioReasonBudgetExhausted             = "budget-exhausted"
+	ScenarioReasonMilestoneUnknown            = "milestone-unknown"
+	ScenarioReasonMilestoneUnreachable        = "milestone-unreachable"
+	ScenarioReasonMilestoneWaitClientTerminal = "milestone-wait-client-terminal"
+	ScenarioReasonMilestoneWaitQuiescent      = "milestone-wait-quiescent"
 )
 
 // ScenarioPlan is an untrusted complete but bounded test intent. Later steps
@@ -45,16 +47,26 @@ type ScenarioStep struct {
 	Selector       FrontierActionSelector `json:"selector"`
 }
 
+// ScenarioSelectorFilter is a deterministic explanation of selector
+// narrowing. The first entry whose CandidateCount becomes zero identifies a
+// concrete conflict; a final count above one shows that more fields are needed.
+type ScenarioSelectorFilter struct {
+	Field          string `json:"field"`
+	Requested      string `json:"requested"`
+	CandidateCount int    `json:"candidate_count"`
+}
+
 type ScenarioStepFeedback struct {
-	StepID       string                       `json:"step_id"`
-	Outcome      string                       `json:"outcome"`
-	ReasonCode   string                       `json:"reason_code,omitempty"`
-	Decision     int                          `json:"decision"`
-	ViewDigest   string                       `json:"view_digest,omitempty"`
-	MatchCount   int                          `json:"match_count"`
-	Choice       *FrontierChoice              `json:"choice,omitempty"`
-	Available    []FrontierActionRef          `json:"available_actions,omitempty"`
-	RiskProgress semantic.RiskWitnessProgress `json:"risk_progress"`
+	StepID        string                       `json:"step_id"`
+	Outcome       string                       `json:"outcome"`
+	ReasonCode    string                       `json:"reason_code,omitempty"`
+	Decision      int                          `json:"decision"`
+	ViewDigest    string                       `json:"view_digest,omitempty"`
+	MatchCount    int                          `json:"match_count"`
+	Choice        *FrontierChoice              `json:"choice,omitempty"`
+	Available     []FrontierActionRef          `json:"available_actions,omitempty"`
+	SelectorTrace []ScenarioSelectorFilter     `json:"selector_trace,omitempty"`
+	RiskProgress  semantic.RiskWitnessProgress `json:"risk_progress"`
 }
 
 // ScenarioExecution is a composition result, not a persistence contract. The
@@ -140,6 +152,59 @@ func ExecuteBoundedScenarioPlan(
 	naturalProgressLimit int,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
+	return executeBoundedScenarioPlan(
+		ctx, executionID, plan, maxSteps, maxDecisions, spec, rootRisk, root,
+		runtimeConfig, faultEnvelope, newAdapter, projector, nil, naturalProgressLimit, preparers...,
+	)
+}
+
+// ExecuteSemanticBoundedScenarioPlan is the Agent path. Semantic selectors
+// are resolved only against target-projected hints bound to the exact current
+// frontier; the older entry point remains available for Action-only callers.
+func ExecuteSemanticBoundedScenarioPlan(
+	ctx context.Context,
+	executionID string,
+	plan ScenarioPlan,
+	maxSteps int,
+	maxDecisions int,
+	spec semantic.RiskWitnessSpec,
+	rootRisk semantic.RiskWitnessResult,
+	root controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	newAdapter AdapterFactory,
+	projector SemanticPrefixProjector,
+	semanticProjector ScenarioSemanticProjector,
+	naturalProgressLimit int,
+	preparers ...ScenarioActionPreparer,
+) (ScenarioExecution, error) {
+	if semanticProjector == nil {
+		return ScenarioExecution{}, errors.New("EXPERIMENT_SCENARIO_SEMANTIC_PROJECTOR_REQUIRED")
+	}
+	return executeBoundedScenarioPlan(
+		ctx, executionID, plan, maxSteps, maxDecisions, spec, rootRisk, root,
+		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
+		naturalProgressLimit, preparers...,
+	)
+}
+
+func executeBoundedScenarioPlan(
+	ctx context.Context,
+	executionID string,
+	plan ScenarioPlan,
+	maxSteps int,
+	maxDecisions int,
+	spec semantic.RiskWitnessSpec,
+	rootRisk semantic.RiskWitnessResult,
+	root controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	newAdapter AdapterFactory,
+	projector SemanticPrefixProjector,
+	semanticProjector ScenarioSemanticProjector,
+	naturalProgressLimit int,
+	preparers ...ScenarioActionPreparer,
+) (ScenarioExecution, error) {
 	if !validMethodToken(executionID) || plan.Validate() != nil || maxSteps <= 0 ||
 		maxSteps > ScenarioPlanMaxSteps || spec.Validate() != nil || root.Validate() != nil ||
 		maxDecisions <= 0 || maxDecisions > ScenarioAgentMaxDecisions ||
@@ -165,6 +230,12 @@ func ExecuteBoundedScenarioPlan(
 	if err != nil {
 		return ScenarioExecution{}, err
 	}
+	semantics, err := scenarioSemanticsForFrontier(
+		semanticProjector, result.FinalTrace, view, snapshot,
+	)
+	if err != nil {
+		return ScenarioExecution{}, errors.Join(err, runtime.Close())
+	}
 	closeWith := func(cause error) error {
 		return errors.Join(cause, runtime.Close())
 	}
@@ -173,6 +244,11 @@ func ExecuteBoundedScenarioPlan(
 		view, snapshot, refreshErr = projectRiskFrontierFromLiveRuntime(
 			ctx, id, spec, result.FinalRisk, result.FinalTrace, faultEnvelope, runtime,
 		)
+		if refreshErr == nil {
+			semantics, refreshErr = scenarioSemanticsForFrontier(
+				semanticProjector, result.FinalTrace, view, snapshot,
+			)
+		}
 		return refreshErr
 	}
 	projectChild := func(id string, child controlruntime.Trace) error {
@@ -212,6 +288,7 @@ func ExecuteBoundedScenarioPlan(
 			}
 			for !scenarioRiskHasMilestone(result.FinalRisk, step.AfterMilestone) {
 				if len(result.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+					result.NaturalProgressStop = ScenarioProgressBudget
 					result.Status = ScenarioStatusStopped
 					result.Steps = append(result.Steps, ScenarioStepFeedback{
 						StepID: step.ID, Outcome: ScenarioStepRejected,
@@ -221,20 +298,22 @@ func ExecuteBoundedScenarioPlan(
 					break
 				}
 				if scenarioClientTerminal(snapshot) {
+					result.NaturalProgressStop = ScenarioProgressClientTerminal
 					result.Status = ScenarioStatusStopped
 					result.Steps = append(result.Steps, ScenarioStepFeedback{
 						StepID: step.ID, Outcome: ScenarioStepRejected,
-						ReasonCode: ScenarioReasonMilestoneUnreachable,
+						ReasonCode: ScenarioReasonMilestoneWaitClientTerminal,
 						Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
 					})
 					break
 				}
 				action, ok := scenarioNaturalProgressAction(view.Actions)
 				if !ok {
+					result.NaturalProgressStop = ScenarioProgressQuiescent
 					result.Status = ScenarioStatusStopped
 					result.Steps = append(result.Steps, ScenarioStepFeedback{
 						StepID: step.ID, Outcome: ScenarioStepRejected,
-						ReasonCode: ScenarioReasonMilestoneUnreachable,
+						ReasonCode: ScenarioReasonMilestoneWaitQuiescent,
 						Decision:   len(result.FinalTrace.Records) + 1, RiskProgress: progress,
 					})
 					break
@@ -294,7 +373,7 @@ func ExecuteBoundedScenarioPlan(
 			})
 			break
 		}
-		matches := scenarioMatches(view.Actions, step.Selector)
+		matches := scenarioMatches(view.Actions, semantics, step.Selector)
 		preparedAction := false
 		if len(matches) == 0 && preparer != nil {
 			preparedID, prepared, prepareErr := preparer(
@@ -324,7 +403,13 @@ func ExecuteBoundedScenarioPlan(
 				if frontierErr != nil {
 					return ScenarioExecution{}, closeWith(frontierErr)
 				}
-				matches = scenarioMatches(view.Actions, step.Selector)
+				semantics, frontierErr = scenarioSemanticsForFrontier(
+					semanticProjector, result.FinalTrace, view, runtime.Snapshot(),
+				)
+				if frontierErr != nil {
+					return ScenarioExecution{}, closeWith(frontierErr)
+				}
+				matches = scenarioMatches(view.Actions, semantics, step.Selector)
 				if preparedID == "" || len(matches) != 1 || matches[0].ActionID != preparedID {
 					return ScenarioExecution{}, closeWith(
 						errors.New("EXPERIMENT_SCENARIO_PREPARED_ACTION_MISMATCH"),
@@ -338,6 +423,7 @@ func ExecuteBoundedScenarioPlan(
 		}
 		if len(matches) != 1 {
 			result.Status = ScenarioStatusStopped
+			feedback.SelectorTrace = scenarioSelectorTrace(view.Actions, semantics, step.Selector)
 			feedback.ReasonCode = ScenarioReasonNoMatch
 			if len(matches) > 1 {
 				feedback.ReasonCode = ScenarioReasonAmbiguous
@@ -545,12 +631,138 @@ func scenarioTraceHasPrefix(trace controlruntime.Trace, prefix controlruntime.Tr
 	return true
 }
 
-func scenarioMatches(actions []FrontierActionRef, selector FrontierActionSelector) []FrontierActionRef {
+func scenarioSemanticsForFrontier(
+	projector ScenarioSemanticProjector,
+	trace controlruntime.Trace,
+	frontier RiskFrontierView,
+	snapshot controlruntime.Snapshot,
+) (ScenarioSemanticExposure, error) {
+	if projector != nil {
+		exposure, err := projector(trace, frontier, snapshot)
+		if err != nil || exposure.Validate(frontier) != nil {
+			return ScenarioSemanticExposure{}, errors.Join(
+				errors.New("EXPERIMENT_SCENARIO_SEMANTICS_PROJECTION_INVALID"), err,
+			)
+		}
+		return exposure, nil
+	}
+	hints := make([]ConsensusActionHint, len(frontier.Actions))
+	for index, action := range frontier.Actions {
+		hints[index] = ConsensusActionHint{
+			ActionID: action.ActionID, ActionDigest: action.ActionDigest,
+			ActorRole: ConsensusSemanticUnknown, MessageClass: ConsensusSemanticUnknown,
+			EpochRelation: ConsensusSemanticUnknown, OperationState: ConsensusSemanticUnknown,
+		}
+	}
+	return NewScenarioSemanticExposure(ScenarioSemanticExposureMasked, frontier, hints)
+}
+
+func scenarioMatches(
+	actions []FrontierActionRef,
+	semantics ScenarioSemanticExposure,
+	selector FrontierActionSelector,
+) []FrontierActionRef {
 	result := make([]FrontierActionRef, 0, 1)
-	for _, action := range actions {
-		if selector.matches(action) {
+	for index, action := range actions {
+		if index < len(semantics.ActionHints) && selector.matches(action, semantics.ActionHints[index]) {
 			result = append(result, action)
 		}
+	}
+	return result
+}
+
+func scenarioSelectorTrace(
+	actions []FrontierActionRef,
+	semantics ScenarioSemanticExposure,
+	selector FrontierActionSelector,
+) []ScenarioSelectorFilter {
+	type candidate struct {
+		action FrontierActionRef
+		hint   ConsensusActionHint
+	}
+	type filter struct {
+		field     string
+		requested string
+		matches   func(candidate) bool
+	}
+	filters := make([]filter, 0, 10)
+	if selector.ActionID != "" {
+		filters = append(filters, filter{
+			field: "action_id", requested: string(selector.ActionID),
+			matches: func(value candidate) bool { return value.action.ActionID == selector.ActionID },
+		})
+	} else {
+		filters = append(filters, filter{
+			field: "kind", requested: string(selector.Kind),
+			matches: func(value candidate) bool { return value.action.Kind == selector.Kind },
+		})
+		if selector.Node != "" {
+			filters = append(filters, filter{field: "node", requested: string(selector.Node),
+				matches: func(value candidate) bool { return value.action.Node.Node == selector.Node }})
+		}
+		if selector.ItemKind != "" {
+			filters = append(filters, filter{field: "item_kind", requested: string(selector.ItemKind),
+				matches: func(value candidate) bool { return value.action.ItemKind == selector.ItemKind }})
+		}
+		if selector.Owner != "" {
+			filters = append(filters, filter{field: "owner", requested: string(selector.Owner),
+				matches: func(value candidate) bool { return value.action.Owner.Node == selector.Owner }})
+		}
+		if selector.MessageSource != "" {
+			filters = append(filters, filter{field: "message_source", requested: string(selector.MessageSource),
+				matches: func(value candidate) bool { return value.action.MessageSource.Node == selector.MessageSource }})
+		}
+		if selector.MessageTarget != "" {
+			filters = append(filters, filter{field: "message_target", requested: string(selector.MessageTarget),
+				matches: func(value candidate) bool { return value.action.MessageTarget == selector.MessageTarget }})
+		}
+		if selector.TemporalKind != "" {
+			filters = append(filters, filter{field: "temporal_kind", requested: string(selector.TemporalKind),
+				matches: func(value candidate) bool { return value.action.TemporalKind == selector.TemporalKind }})
+		}
+		if selector.EffectKind != "" {
+			filters = append(filters, filter{field: "effect_kind", requested: selector.EffectKind,
+				matches: func(value candidate) bool { return value.action.EffectKind == selector.EffectKind }})
+		}
+		if selector.Durability != "" {
+			filters = append(filters, filter{field: "durability", requested: string(selector.Durability),
+				matches: func(value candidate) bool { return value.action.Durability == selector.Durability }})
+		}
+		if selector.ActorRole != "" {
+			filters = append(filters, filter{field: "actor_role", requested: selector.ActorRole,
+				matches: func(value candidate) bool { return value.hint.ActorRole == selector.ActorRole }})
+		}
+		if selector.MessageClass != "" {
+			filters = append(filters, filter{field: "message_class", requested: selector.MessageClass,
+				matches: func(value candidate) bool { return value.hint.MessageClass == selector.MessageClass }})
+		}
+		if selector.EpochRelation != "" {
+			filters = append(filters, filter{field: "epoch_relation", requested: selector.EpochRelation,
+				matches: func(value candidate) bool { return value.hint.EpochRelation == selector.EpochRelation }})
+		}
+		if selector.OperationState != "" {
+			filters = append(filters, filter{field: "operation_state", requested: selector.OperationState,
+				matches: func(value candidate) bool { return value.hint.OperationState == selector.OperationState }})
+		}
+	}
+	candidates := make([]candidate, 0, len(actions))
+	for index, action := range actions {
+		if index < len(semantics.ActionHints) {
+			candidates = append(candidates, candidate{action: action, hint: semantics.ActionHints[index]})
+		}
+	}
+	result := make([]ScenarioSelectorFilter, 0, len(filters))
+	for _, current := range filters {
+		matched := candidates[:0]
+		for _, value := range candidates {
+			if current.matches(value) {
+				matched = append(matched, value)
+			}
+		}
+		candidates = matched
+		result = append(result, ScenarioSelectorFilter{
+			Field: current.field, Requested: current.requested, CandidateCount: len(candidates),
+		})
 	}
 	return result
 }

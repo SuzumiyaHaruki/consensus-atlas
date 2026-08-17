@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/psscore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
@@ -31,6 +32,20 @@ type agenticBranchEvidenceArtifact struct {
 	Work              controlexperiment.WorkLedger `json:"work"`
 }
 
+type agenticScenarioAttemptArtifact struct {
+	Ordinal          int                                                 `json:"ordinal"`
+	Intent           string                                              `json:"intent,omitempty"`
+	Outcome          string                                              `json:"outcome"`
+	ReasonCode       string                                              `json:"reason_code,omitempty"`
+	ValidationIssues []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	AllowedIntents   []string                                            `json:"allowed_intents,omitempty"`
+	FailedStepID     string                                              `json:"failed_step_id,omitempty"`
+	MatchCount       int                                                 `json:"match_count,omitempty"`
+	SelectorTrace    []controlexperiment.ScenarioSelectorFilter          `json:"selector_trace,omitempty"`
+	EnteredExecution bool                                                `json:"entered_execution"`
+	ProgressDelta    *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+}
+
 // agenticEpisodeArtifact is deliberately compact. Exact prompts and provider
 // responses remain in the two journals; full Traces remain in the selected
 // Bundle and optional branch evidence. This summary keeps only navigation and
@@ -46,6 +61,7 @@ type agenticEpisodeArtifact struct {
 	ScenarioStatus             string                                      `json:"scenario_status,omitempty"`
 	ScenarioStopReason         string                                      `json:"scenario_stop_reason,omitempty"`
 	ScenarioAttempts           int                                         `json:"scenario_attempts"`
+	ScenarioAttemptFeedback    []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
 	ScenarioDecisionsUsed      int                                         `json:"scenario_decisions_used"`
 	SelectedPathDecisions      int                                         `json:"selected_path_decisions"`
 	BranchExplorationDecisions int                                         `json:"branch_exploration_decisions"`
@@ -74,9 +90,11 @@ type agenticEpisodeRecoveryBinding struct {
 }
 
 type recoveredAgenticEpisode struct {
-	Summary       agenticEpisodeArtifact
-	Testing       *scenarioTestingResult
-	BranchTesting []agenticBranchTestingResult
+	Summary                agenticEpisodeArtifact
+	MethodSpec             *controlexperiment.AgenticMethodSpec
+	Testing                *scenarioTestingResult
+	BranchTesting          []agenticBranchTestingResult
+	UnreconciledModelCalls int
 }
 
 func newAgenticEpisodeArtifact(
@@ -110,6 +128,32 @@ func newAgenticEpisodeArtifact(
 		artifact.ScenarioDecisionsUsed = result.Scenario.Agent.DecisionsUsed
 		artifact.SelectedPathDecisions = result.Scenario.Agent.SelectedPathDecisions
 		artifact.BranchExplorationDecisions = result.Scenario.Agent.BranchExplorationDecisions
+		for _, attempt := range result.Scenario.Agent.Attempts {
+			compact := agenticScenarioAttemptArtifact{
+				Ordinal: attempt.Ordinal, Intent: attempt.Feedback.Intent,
+				Outcome: attempt.Feedback.Outcome, ReasonCode: attempt.Feedback.ReasonCode,
+				ValidationIssues: append(
+					[]controlexperiment.ScenarioProposalValidationIssue(nil),
+					attempt.Feedback.ValidationIssues...,
+				),
+				AllowedIntents:   append([]string(nil), attempt.Feedback.AllowedIntents...),
+				EnteredExecution: attempt.Execution != nil,
+				ProgressDelta:    attempt.Feedback.ProgressDelta,
+			}
+			for index := len(attempt.Feedback.Steps) - 1; index >= 0; index-- {
+				step := attempt.Feedback.Steps[index]
+				if step.Outcome != controlexperiment.ScenarioStepRejected {
+					continue
+				}
+				compact.FailedStepID = step.StepID
+				compact.MatchCount = step.MatchCount
+				compact.SelectorTrace = append(
+					[]controlexperiment.ScenarioSelectorFilter(nil), step.SelectorTrace...,
+				)
+				break
+			}
+			artifact.ScenarioAttemptFeedback = append(artifact.ScenarioAttemptFeedback, compact)
+		}
 	}
 	if result.Testing != nil {
 		artifact.PlanID = result.Testing.PlanID
@@ -201,6 +245,15 @@ func recoverAgenticEpisodeArtifacts(
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_SUMMARY_INVALID")
 	}
 	recovered := recoveredAgenticEpisode{Summary: artifact}
+	if artifact.MethodSpecDigest != "" {
+		spec, err := readAgenticMethodSpec(clean, artifact.MethodSpecDigest)
+		if err != nil {
+			return recoveredAgenticEpisode{}, false, err
+		}
+		recovered.MethodSpec = &spec
+	} else if _, err := os.Lstat(filepath.Join(clean, agenticMethodSpecFile)); !os.IsNotExist(err) {
+		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_METHOD_SPEC")
+	}
 	if artifact.Status != agenticEpisodeCompleted {
 		if _, err := os.Lstat(filepath.Join(clean, agenticEpisodeBundleFile)); !os.IsNotExist(err) {
 			return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BUNDLE")
@@ -343,8 +396,11 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.SelectedPathDecisions > artifact.ScenarioDecisionsUsed ||
 		artifact.BranchExplorationDecisions < 0 ||
 		artifact.BranchExplorationDecisions > artifact.ScenarioDecisionsUsed ||
-		artifact.RiskAttempts != len(artifact.RiskProviderCalls) ||
-		artifact.ScenarioAttempts != len(artifact.ScenarioProviderCalls) ||
+		!agenticProviderAttemptAccountingValid(artifact) ||
+		!agenticProviderUsageReconciled(append(
+			append([]controlexperiment.StatelessAgentCallAudit(nil), artifact.RiskProviderCalls...),
+			artifact.ScenarioProviderCalls...,
+		)) ||
 		artifact.Work.Model != modelWorkFromAgentAudits(append(
 			append([]controlexperiment.StatelessAgentCallAudit(nil), artifact.RiskProviderCalls...),
 			artifact.ScenarioProviderCalls...,
@@ -360,6 +416,37 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		len(artifact.BranchEvidence) > artifact.ScenarioAttempts ||
 		len(artifact.BranchEvidence) > controlexperiment.ScenarioAgentMaxCalls {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_BRANCH_ACCOUNTING_INVALID")
+	}
+	if len(artifact.ScenarioAttemptFeedback) != 0 &&
+		len(artifact.ScenarioAttemptFeedback) != artifact.ScenarioAttempts {
+		return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+	}
+	for index, attempt := range artifact.ScenarioAttemptFeedback {
+		if attempt.Ordinal != index+1 || attempt.Outcome == "" ||
+			attempt.MatchCount < 0 ||
+			!validAgenticScenarioAttemptIntents(attempt.AllowedIntents) {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+		}
+		previous := int(^uint(0) >> 1)
+		for _, filter := range attempt.SelectorTrace {
+			if filter.Field == "" || filter.Requested == "" || filter.CandidateCount < 0 ||
+				filter.CandidateCount > previous {
+				return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+			}
+			previous = filter.CandidateCount
+		}
+		for _, issue := range attempt.ValidationIssues {
+			if issue.Validate() != nil {
+				return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+			}
+		}
+		if attempt.ReasonCode == controlexperiment.ScenarioAgentProposalInvalid &&
+			(len(attempt.ValidationIssues) == 0 || len(attempt.AllowedIntents) == 0) {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+		}
+		if attempt.ProgressDelta != nil && !validAgenticScenarioProgress(*attempt.ProgressDelta) {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+		}
 	}
 	seenBranches := make(map[string]bool, len(artifact.BranchEvidence))
 	for index, branch := range artifact.BranchEvidence {
@@ -425,6 +512,92 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_STATUS_INVALID")
 	}
 	return nil
+}
+
+func validAgenticScenarioProgress(delta controlexperiment.ScenarioProgressDelta) bool {
+	if delta.Decisions < 0 || delta.UniqueStateTransitions < 0 ||
+		delta.RepeatedStateTransitions < 0 || delta.RepeatedPatternDepth < 0 ||
+		delta.TemporalCallbacks < 0 || delta.LogicalClockAdvances < 0 ||
+		delta.LogicalClockAdvances > delta.TemporalCallbacks {
+		return false
+	}
+	switch delta.MilestoneProgress {
+	case controlexperiment.ScenarioMilestoneProgressUnchanged,
+		controlexperiment.ScenarioMilestoneProgressAdvanced,
+		controlexperiment.ScenarioMilestoneProgressRepeated,
+		controlexperiment.ScenarioMilestoneProgressStalled,
+		controlexperiment.ScenarioMilestoneProgressReached:
+	default:
+		return false
+	}
+	seenCounts := make(map[control.ActionKind]bool, len(delta.ActionCounts))
+	for _, count := range delta.ActionCounts {
+		if count.Kind.Validate() != nil || count.Count <= 0 || seenCounts[count.Kind] {
+			return false
+		}
+		seenCounts[count.Kind] = true
+	}
+	for _, kind := range delta.AvailableInterventions {
+		if kind.Validate() != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func validAgenticScenarioAttemptIntents(values []string) bool {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		switch value {
+		case controlexperiment.ScenarioIntentContinue,
+			controlexperiment.ScenarioIntentRevise,
+			controlexperiment.ScenarioIntentBranch,
+			controlexperiment.ScenarioIntentControl,
+			controlexperiment.ScenarioIntentAblate,
+			controlexperiment.ScenarioIntentSelect,
+			controlexperiment.ScenarioIntentAbandon,
+			controlexperiment.ScenarioIntentMinimize:
+		default:
+			return false
+		}
+		if seen[value] {
+			return false
+		}
+		seen[value] = true
+	}
+	return true
+}
+
+func agenticProviderUsageReconciled(
+	audits []controlexperiment.StatelessAgentCallAudit,
+) bool {
+	for _, audit := range audits {
+		if audit.Work.Calls == 1 && audit.ProviderUsageStatus != agentProviderUsageObserved {
+			return false
+		}
+	}
+	return true
+}
+
+// A provider response that crosses the observed-token threshold is already
+// charged and durable, but it is deliberately withheld from the typed
+// Scenario planner. Consequently it has an audit entry without a
+// ScenarioAgentAttempt. No other terminal state may use that exception.
+func agenticProviderAttemptAccountingValid(artifact agenticEpisodeArtifact) bool {
+	if artifact.RiskAttempts != len(artifact.RiskProviderCalls) {
+		return false
+	}
+	if artifact.ScenarioAttempts == len(artifact.ScenarioProviderCalls) {
+		return true
+	}
+	if artifact.Status != agenticEpisodeTokenStopped ||
+		artifact.Assessment.ReasonCode != "model-token-threshold-reached" ||
+		len(artifact.ScenarioProviderCalls) != artifact.ScenarioAttempts+1 ||
+		artifact.Work.Model.TotalTokens <= artifact.Budget.MaxObservedTokens {
+		return false
+	}
+	last := artifact.ScenarioProviderCalls[len(artifact.ScenarioProviderCalls)-1]
+	return last.Status == controlexperiment.StatelessAgentCallContentReady && last.Work.Calls == 1
 }
 
 func boolInt(value bool) int {
@@ -686,6 +859,10 @@ func deriveAgenticExplorationMemory(
 				(episode.Testing != nil || len(episode.BranchTesting) > 0) {
 			return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EPISODE_INVALID")
 		}
+		reasons := agenticExplorationReasonCodes(episode.Summary.RiskFeedback)
+		if episode.Summary.ScenarioStopReason == controlexperiment.ScenarioAgentStopHypothesisAbandoned {
+			reasons = append(reasons, controlexperiment.ScenarioAgentStopHypothesisAbandoned)
+		}
 		entry := controlexperiment.RiskExplorationMemoryEntry{
 			Episode:     index + 1,
 			ModelCalls:  episode.Summary.Work.Model.Calls,
@@ -693,7 +870,7 @@ func deriveAgenticExplorationMemory(
 			SearchWorkUnits: episode.Summary.Work.ScenarioFrontier.WorkUnits +
 				episode.Summary.Work.ScenarioSearch.TotalWorkUnits,
 			ExecutionWorkUnits:    agenticEvidenceExecutionWorkUnits(episode.Summary.Work),
-			MechanicalReasonCodes: agenticExplorationReasonCodes(episode.Summary.RiskFeedback),
+			MechanicalReasonCodes: reasons,
 		}
 		if episode.Summary.Accepted != nil {
 			candidate := episode.Summary.Accepted.Candidate
@@ -782,6 +959,9 @@ func agenticMemoryEpisodeOutcome(
 ) string {
 	if summary.Status == agenticEpisodeExecutionFailed {
 		return controlexperiment.RiskMemoryOutcomeExecutionFailed
+	}
+	if summary.ScenarioStopReason == controlexperiment.ScenarioAgentStopHypothesisAbandoned {
+		return controlexperiment.RiskMemoryOutcomeHypothesisAbandoned
 	}
 	if summary.Status == agenticEpisodeTokenStopped ||
 		summary.ScenarioDecisionsUsed >= summary.Budget.MaxRuntimeDecisions ||

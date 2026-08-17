@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T) {
+func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
 	workerPath := buildOmnipaxosScenarioWorker(t)
@@ -73,7 +74,8 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 	}, 1, 1, inputs.Experiment.ScenarioMaxDecisions,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) ([]byte, controlexperiment.ModelWork, error) {
 			if view.Hypothesis.RiskID != candidate.ID || view.Knowledge.Digest != scenarioRisk.Knowledge.Digest ||
-				view.AcceptedHypothesis == nil || view.AcceptedHypothesis.Candidate.ID != candidate.ID {
+				view.AcceptedHypothesis == nil || view.AcceptedHypothesis.Candidate.ID != candidate.ID ||
+				!reflect.DeepEqual(view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue}) {
 				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
 			for index, action := range view.Frontier.Actions {
@@ -84,7 +86,8 @@ func TestRiskAgentCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.
 						Plan: controlexperiment.ScenarioPlan{
 							ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
 								ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
-									ActionID: action.ActionID,
+									Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
+									MessageClass: controlexperiment.ConsensusMessageReplication,
 								},
 							}},
 						},

@@ -21,7 +21,8 @@ const (
 	openRouterDefaultTokens          = 32000
 	openRouterMaxOutputTokens        = 32000
 	openRouterDefaultReasoningEffort = "high"
-	openRouterDefaultTimeout         = 120 * time.Second
+	openRouterDefaultTimeout         = 900 * time.Second
+	scenarioAgentMaxOutputTokens     = 32000
 	agentFailureTransport            = "AGENT_TRANSPORT_FAILED"
 	agentFailureHTTP                 = "AGENT_HTTP_STATUS_REJECTED"
 	agentFailureResponse             = "AGENT_RESPONSE_REJECTED"
@@ -39,9 +40,15 @@ type agentHTTPDoer interface {
 
 type agentKeyReader func(string) (string, error)
 
-// openRouterIntentClient is the only model transport used by active Agent
-// paths. Different model families are selected through Model rather than by
-// adding provider-specific clients.
+// agentIntentTransport is the narrow provider boundary used by durable Agent
+// journals. Provider-specific request and response formats stay behind it.
+type agentIntentTransport interface {
+	prepare(string, string, openRouterStructuredOutput) (agentPreparedRequest, error)
+	invokePrepared(context.Context, string, agentPreparedRequest) (agentCall, error)
+	freeze() controlexperiment.AgentTransportFreeze
+	ready() bool
+}
+
 type openRouterIntentClient struct {
 	Endpoint         string
 	Model            string
@@ -49,8 +56,29 @@ type openRouterIntentClient struct {
 	ExcludeReasoning bool
 	MaxOutputTokens  int
 	MaxRetries       int
+	RequestTimeout   time.Duration
 	HTTP             agentHTTPDoer
 	Now              func() time.Time
+}
+
+func (client openRouterIntentClient) ready() bool {
+	return client.HTTP != nil && client.freeze().Validate() == nil
+}
+
+func (client openRouterIntentClient) freeze() controlexperiment.AgentTransportFreeze {
+	requestTimeout := client.RequestTimeout
+	if requestTimeout == 0 {
+		requestTimeout = openRouterDefaultTimeout
+	}
+	return controlexperiment.AgentTransportFreeze{
+		Provider: openRouterProvider, Endpoint: client.Endpoint, Model: client.Model,
+		Thinking: client.ReasoningEffort, ExcludeReasoning: client.ExcludeReasoning,
+		StructuredOutputMode: "json-schema", Stream: false,
+		RequestTimeoutMS: requestTimeout.Milliseconds(),
+		RoutingPolicy:    "openrouter-default", AllowProviderFallback: true,
+		Temperature: 0, MaxOutputTokens: client.MaxOutputTokens,
+		MaxCallsPerArm: 1, MaxRetries: client.MaxRetries,
+	}
 }
 
 type openRouterMessage struct {
@@ -132,7 +160,67 @@ func newOpenRouterIntentClient(model string) openRouterIntentClient {
 		Endpoint: openRouterChatEndpoint, Model: strings.TrimSpace(model),
 		ReasoningEffort: openRouterDefaultReasoningEffort, ExcludeReasoning: true,
 		MaxOutputTokens: openRouterDefaultTokens, MaxRetries: 0,
-		HTTP: &http.Client{Timeout: openRouterDefaultTimeout},
+		RequestTimeout: openRouterDefaultTimeout,
+		HTTP:           &http.Client{Timeout: openRouterDefaultTimeout},
+	}
+}
+
+func newAgentIntentTransport(provider string, model string) (agentIntentTransport, error) {
+	switch strings.TrimSpace(provider) {
+	case "", openRouterProvider:
+		client := newOpenRouterIntentClient(model)
+		if !client.ready() {
+			return nil, errors.New("AGENT_CLIENT_CONFIG_INVALID")
+		}
+		return client, nil
+	case deepSeekProvider:
+		client := newDeepSeekIntentClient(model)
+		if !client.ready() {
+			return nil, errors.New("AGENT_CLIENT_CONFIG_INVALID")
+		}
+		return client, nil
+	default:
+		return nil, errors.New("AGENT_CLIENT_PROVIDER_UNSUPPORTED")
+	}
+}
+
+func newScenarioAgentIntentTransport(provider string, model string) (agentIntentTransport, error) {
+	transport, err := newAgentIntentTransport(provider, model)
+	if err != nil {
+		return nil, err
+	}
+	return configureAgentIntentTransport(
+		transport, "high", false, scenarioAgentMaxOutputTokens, 0,
+	)
+}
+
+func configureAgentIntentTransport(
+	transport agentIntentTransport,
+	reasoning string,
+	excludeReasoning bool,
+	maxOutputTokens int,
+	maxRetries int,
+) (agentIntentTransport, error) {
+	switch client := transport.(type) {
+	case openRouterIntentClient:
+		client.ReasoningEffort = reasoning
+		client.ExcludeReasoning = excludeReasoning
+		client.MaxOutputTokens = maxOutputTokens
+		client.MaxRetries = maxRetries
+		if !client.ready() {
+			return nil, errors.New("AGENT_CLIENT_CONFIG_INVALID")
+		}
+		return client, nil
+	case deepSeekIntentClient:
+		client.ReasoningEffort = reasoning
+		client.MaxOutputTokens = maxOutputTokens
+		client.MaxRetries = maxRetries
+		if !client.ready() {
+			return nil, errors.New("AGENT_CLIENT_CONFIG_INVALID")
+		}
+		return client, nil
+	default:
+		return nil, errors.New("AGENT_CLIENT_PROVIDER_UNSUPPORTED")
 	}
 }
 

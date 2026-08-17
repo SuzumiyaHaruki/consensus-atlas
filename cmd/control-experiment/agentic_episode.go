@@ -28,6 +28,7 @@ const (
 	agenticEvidenceRiskUnverified       = "risk-reached-unverified"
 	agenticEvidenceOracleFinding        = "oracle-finding"
 	agenticEvidenceHypothesisNotReached = "hypothesis-not-reached"
+	agenticEvidenceHypothesisAbandoned  = "hypothesis-abandoned"
 )
 
 func addAgentModelWork(total *controlexperiment.ModelWork, value controlexperiment.ModelWork) {
@@ -361,6 +362,9 @@ func runAgenticEpisode(
 		case controlexperiment.ScenarioAgentStopFinalSelectionRequired:
 			result.Assessment.Status = agenticEvidenceInconclusive
 			result.Assessment.ReasonCode = "scenario-final-selection-required"
+		case controlexperiment.ScenarioAgentStopHypothesisAbandoned:
+			result.Assessment.Status = agenticEvidenceInconclusive
+			result.Assessment.ReasonCode = agenticEvidenceHypothesisAbandoned
 		default:
 			result.Assessment.Status = agenticEvidencePlanningFailed
 			result.Assessment.ReasonCode = "scenario-planning-failed"
@@ -540,6 +544,8 @@ func assessTestingEvidence(
 		assessment.FirstMissingMilestone = testing.Risk.MissingMilestones[0]
 	}
 	switch scenario.StopReason {
+	case controlexperiment.ScenarioAgentStopHypothesisAbandoned:
+		assessment.ReasonCode = agenticEvidenceHypothesisAbandoned
 	case controlexperiment.ScenarioAgentStopDecisionBudget:
 		assessment.Status = agenticEvidenceBudgetExhausted
 		assessment.ReasonCode = "runtime-decision-budget-exhausted"

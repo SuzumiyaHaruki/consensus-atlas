@@ -47,6 +47,39 @@ func TestKnowledgeDiscoveryReadsOnlyDeclaredBoundedRepositorySources(t *testing.
 	}
 }
 
+func TestKnowledgeDiscoveryContinuesFromExplicitDeclaredLine(t *testing.T) {
+	root := t.TempDir()
+	content := strings.Join([]string{
+		"package source", "", "func Round() {", "  prepare()", "  retry()", "}",
+		"", "func retry() {", "  sendAgain()", "}",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "node.go"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := knowledgeDiscoveryFixture(t, []string{"node.go:Round"})
+	first, err := ReadDeclaredKnowledgeSource(root, pack, KnowledgeReadRequest{
+		Reference: "node.go:Round", MaxLines: 4,
+	})
+	if err != nil || first.Validate() != nil || first.Status != KnowledgeDiscoveryCompleted ||
+		first.StartLine != 1 || first.EndLine != 4 {
+		t.Fatalf("initial locator window failed: %#v/%v", first, err)
+	}
+	continued, err := ReadDeclaredKnowledgeSource(root, pack, KnowledgeReadRequest{
+		Reference: "node.go:Round", StartLine: first.EndLine + 1, MaxLines: 4,
+	})
+	if err != nil || continued.Validate() != nil || continued.Status != KnowledgeDiscoveryCompleted ||
+		continued.StartLine != 5 || continued.EndLine != 8 || !strings.Contains(continued.Text, "func retry") {
+		t.Fatalf("explicit continuation window failed: %#v/%v", continued, err)
+	}
+	outOfRange, err := ReadDeclaredKnowledgeSource(root, pack, KnowledgeReadRequest{
+		Reference: "node.go:Round", StartLine: 100, MaxLines: 4,
+	})
+	if err != nil || outOfRange.Validate() != nil ||
+		outOfRange.ReasonCode != KnowledgeDiscoveryRangeInvalid {
+		t.Fatalf("out-of-range continuation did not stop mechanically: %#v/%v", outOfRange, err)
+	}
+}
+
 func TestKnowledgeDiscoveryRejectsSymlinkEscapeAndMissingLocator(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.go")

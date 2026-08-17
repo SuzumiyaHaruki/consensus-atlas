@@ -79,3 +79,44 @@ func TestQualifyRiskAcceptsMechanicallyCoveredRequirements(t *testing.T) {
 		t.Fatalf("unexpected rejection: %#v", result)
 	}
 }
+
+func TestObservationBindingDomainsRejectNodeIncarnationAsNodeID(t *testing.T) {
+	capabilities := []ObservationCapability{
+		{Kind: ObservationWorkloadInvoked, Fields: []ObservationField{
+			ObservationFieldParticipant, ObservationFieldParticipantNode,
+		}},
+		{Kind: ObservationCoordinatorChange, Fields: []ObservationField{
+			ObservationFieldParticipantNode,
+		}},
+	}
+	domains, err := ObservationBindingDomains(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ObservationBindingDomain{
+		{Kind: ObservationCoordinatorChange, Field: ObservationFieldParticipantNode, Domain: "node-id"},
+		{Kind: ObservationWorkloadInvoked, Field: ObservationFieldParticipant, Domain: "node-incarnation"},
+		{Kind: ObservationWorkloadInvoked, Field: ObservationFieldParticipantNode, Domain: "node-id"},
+	}
+	if !reflect.DeepEqual(domains, want) {
+		t.Fatalf("unexpected binding domains: %#v", domains)
+	}
+	incompatible := []ObservationPredicate{
+		{MilestoneID: "invoke", Kind: ObservationWorkloadInvoked, Constraints: []ObservationConstraint{{
+			Field: ObservationFieldParticipant, BindAs: "n1",
+		}}},
+		{MilestoneID: "change", Kind: ObservationCoordinatorChange, Constraints: []ObservationConstraint{{
+			Field: ObservationFieldParticipantNode, BindAs: "n1",
+		}}},
+	}
+	if err := ValidateObservationPredicateBindings(incompatible, capabilities); err == nil {
+		t.Fatal("node incarnation and node ID reused one binding domain")
+	}
+	compatible := incompatible
+	compatible[0].Constraints = []ObservationConstraint{{
+		Field: ObservationFieldParticipantNode, BindAs: "n1",
+	}}
+	if err := ValidateObservationPredicateBindings(compatible, capabilities); err != nil {
+		t.Fatalf("same node-ID domain was rejected: %v", err)
+	}
+}

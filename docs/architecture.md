@@ -120,18 +120,34 @@ Risk Agent 接收协议知识、Property、issue pattern、Target surface、历�
 
 - 返回 1–3 个候选的 portfolio；
 - 请求 Dossier 已声明的精确源码 reference；
+- 在总片段、单次行数和模型调用预算内继续同一 reference 的非重叠行窗口，或转向另一个声明 reference；
 - 根据机械拒绝原因修正或更换候选。
 
 可信代码验证 property reference、机制步骤、predicate、binding、Observation 字段、Action 能力和 fidelity 声明。
-通过验证只表示“当前 Target 可以调查”，不表示性质正确或缺陷存在。
+binding domain 由 Observation capability 机械派生并与字段一起暴露；同一 `bind_as` 不能跨节点实例、
+节点 ID 或不相关的 Target-local 域复用。
+源码读取同样由可信代码校验 catalog、只读 mount、路径、文本类型、行窗口和重复范围；本地路径及未声明文件
+不会暴露给 Agent。通过验证只表示“当前 Target 可以调查”，不表示性质正确或缺陷存在。
 
 ### 5.2 Scenario Agent
 
 Scenario Agent 接收当前 frontier、共识语义提示、Risk milestone 进度、上次 proposal、紧凑 branch 反馈和
 `ProgressDelta`，输出完整但有界的 Investigation Proposal。其嵌套 `ScenarioPlan` 的 selector 会在执行时绑定当前
 enabled Action：零匹配、多匹配、陈旧 ID 和越界计划都会形成机械反馈。
+selector 的 `selector_trace` 还会记录每个字段过滤后的候选数，供下一次 `revise` 定位冲突或补足歧义字段。
+`actor_role`、`message_class`、`epoch_relation`、`operation_state` 也可作为通用收窄字段。
+它们不存入 Action，而是在每次 live frontier 刷新后由 Target projector 重新产生，并通过 Action ID/digest
+与候选绑定；Core 只理解这四个闭集词汇，不理解 Raft term、Paxos ballot 或具体消息名称。
 
 一个合法计划执行完并不自动结束调查。只要 Risk 未达到且调用/决策预算仍存在，coordinator 会继续 Agent 循环。
+收到可信 `ProgressDelta` 后，Agent 还可返回无计划的 `abandon`，结束当前低收益假设并把机械停止原因交给
+下一 Episode。该意图不执行 Runtime Action，也没有 verdict 权限；首次调用不会提供它。
+
+`ProgressDelta` 进一步区分 selector 已执行但没有新增 milestone、重复调度模式、客户端已返回和自然闭包静止；
+它同时报告 Action kind 计数、Timer callback 与真实逻辑时钟推进、fault allowance/usage/remaining，以及当前仍
+可用的非闭包干预 Action kind。等待 `after_milestone` 时，客户端返回和无自然 Action 分别使用
+`milestone-wait-client-terminal` 与 `milestone-wait-quiescent`，不再压成笼统的 `milestone-unreachable`。
+这些都是机械搜索反馈，不是可达性证明或协议 verdict。
 
 ### 5.3 Journal 与恢复
 
@@ -184,6 +200,7 @@ selector 绑定。Agent 只看到根/终点 decision、最终可用 Action、计
 - `risk-reached`：目标 witness 达成；
 - `quiescent`：没有可自动推进 Action；
 - `budget`：决策、模型调用或 token 预算到达；
+- `hypothesis-abandoned`：Agent 在机械进展反馈后主动把剩余调查预算交还给下一 Episode；
 - `stopped`：计划被机械拒绝或执行失败。
 
 不存在按计划步数改变终止含义的 compatibility checkpoint。
@@ -242,7 +259,7 @@ Agentic Episode 保存紧凑 `summary.json`、可选主路径 `bundle.json` 和�
 重新派生；终态恢复不访问 SUT、provider 或 key。
 
 `cmd/defect-eval` 支持保存 Bundle/MethodSpec 的旧评测，也能通过 `-agentic-inputs` 直接消费
-当前 Agentic Episode 目录。私有 contract 提供 pair、SUT 身份、预算和 monitor composition；
+单 Episode 或完整 Agentic Investigation 目录。私有 contract 提供 pair、SUT 身份、预算和 monitor composition；
 summary 只提供方法状态/成本，独立 evaluator 从主路径及所有分支 Bundle 重算 verdict。
 对一个 trial，任一合法候选的独立 monitor finding 都会进入可信结果；方法自报的 Risk/Oracle 字段不参与判定。
 在检查 finding 前，evaluator 先汇总 Scenario frontier/search work、所有候选的 Trace decisions、
@@ -251,6 +268,10 @@ qualified primary work 和 replay work；decisions/primary work 任一超过 for
 正式 Agentic 路径只接受 V3 Bundle；summary 必须声明主路径和每个 branch evidence，而且
 Plan/Risk ID、Trace digest、work 与 `MethodSpecDigest` 都要与文件和 formal contract 交叉一致。
 因此未声明分支和其他方法生成的 Bundle 不能借 Agentic Episode 目录获得 finding credit。
+活动 CLI 根据真实 transport/model、prompt 版本、semantic input、源码暴露、Episode 数和预算派生
+typed `AgenticMethodSpec`；调用者提供的 digest 只能作为预期值。多 Episode formal trial 必须包含连续
+`episode-0001..N` 并聚合每轮成本；单 Episode 入口只兼容明确声明一轮的方法。搜索中的
+child verification 是 fresh replay，和最终 Bundle replay 一起受 Replay 预算约束。
 旧 A8 paired launcher/session 不参与此路径。
 
 评价面保持分离：

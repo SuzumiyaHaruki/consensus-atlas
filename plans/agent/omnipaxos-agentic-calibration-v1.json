@@ -229,8 +229,8 @@
       "max_primary_work_units": 8192,
       "max_replay_work_units": 4096,
       "max_model_calls": 6,
-      "max_model_tokens": 50000
+      "max_model_tokens": 120000
     },
-    "session_wall_clock_ms": 300000
+    "session_wall_clock_ms": 1200000
   }
 }

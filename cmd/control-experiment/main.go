@@ -28,6 +28,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		Decisions:             96,
 		PolicySeed:            1,
 		InvestigationEpisodes: 1,
+		AgentProvider:         openRouterProvider,
 	}
 	flags := flag.NewFlagSet("control-experiment", flag.ContinueOnError)
 	flags.StringVar(&options.Out, "out", "", "report output path")
@@ -35,7 +36,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.IntVar(&options.BundleEvidenceVersion, "bundle-evidence-version", 0, "optional trusted bundle evidence version")
 	flags.StringVar(&options.MethodSpecDigest, "method-spec-digest", "", "MethodSpec digest required by bundle evidence v3")
 	flags.StringVar(&options.AgentKeyFile, "agent-key-file", "", "key file for an explicit opt-in Agent strategy")
-	flags.StringVar(&options.AgentModel, "agent-model", "", "OpenRouter model ID for an explicit opt-in Agent strategy")
+	flags.StringVar(&options.AgentProvider, "agent-provider", options.AgentProvider, "Agent provider: openrouter or deepseek")
+	flags.StringVar(&options.AgentModel, "agent-model", "", "provider model ID for an explicit opt-in Agent strategy")
 	flags.StringVar(&options.WorkerPath, "worker", "", "target worker executable for a worker-backed Agent strategy")
 	flags.StringVar(&options.Target, "target", "", "target composition for an Agentic Episode")
 	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol and Agent-planning JSON")

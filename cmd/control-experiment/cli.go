@@ -17,6 +17,7 @@ type controlExperimentOptions struct {
 	BundleEvidenceVersion int
 	MethodSpecDigest      string
 	AgentKeyFile          string
+	AgentProvider         string
 	AgentModel            string
 	WorkerPath            string
 	Target                string
@@ -83,6 +84,7 @@ func validateQualifiedCLIOptions(options controlExperimentOptions) error {
 		return errors.New("Agentic Episode flags require -strategy agentic-episode-v1")
 	}
 	if options.AgentKeyFile != "" || options.AgentModel != "" || options.SemanticInput != "" ||
+		options.AgentProvider != "" && options.AgentProvider != openRouterProvider ||
 		options.WorkerPath != "" || options.Target != "" || len(options.KnowledgeSourceMounts) != 0 ||
 		options.InvestigationEpisodes != 1 {
 		return errors.New("Agent flags require -strategy agentic-episode-v1")

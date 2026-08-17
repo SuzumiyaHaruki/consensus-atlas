@@ -38,11 +38,13 @@ func TestEtcdraftOfficialSourceIsReadableThroughExplicitMount(t *testing.T) {
 		t.Fatalf("official etcd/raft Ready contract was not readable: %#v/%v", result, err)
 	}
 	composition, err := prepareAgenticEpisodeComposition(t.Context(), controlExperimentOptions{
-		Target: "etcdraft-v2", SemanticInput: etcdraftAgenticTestInputPath,
+		Target: "etcdraft-v2", InvestigationEpisodes: 1, SemanticInput: etcdraftAgenticTestInputPath,
 		AgentKeyFile: "fixture-key.txt", AgentModel: openRouterFixtureModel,
 		KnowledgeSourceMounts: mountValues,
 	})
 	if err != nil || len(composition.KnowledgeSourceMounts) != 2 ||
+		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureDossierV2 ||
+		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 2 ||
 		composition.KnowledgeSourceMounts[1].Directory != moduleDirectory {
 		t.Fatalf("Agentic composition lost explicit source mounts: %#v/%v",
 			composition.KnowledgeSourceMounts, err)

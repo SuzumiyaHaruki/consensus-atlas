@@ -138,11 +138,16 @@ The retained `internal/defectbench` substrate defines the intended method-level 
 
 The current Agentic artifact is wired into the holdout evaluator. The evaluator recomputes registered Oracle monitors from
 the selected Bundle and every retained branch Bundle, and requires identity, aggregate trial budget, Replay and conformance
-evidence. Scenario frontier/search work and all qualified primary work are summed before any finding receives credit;
-Replay remains separately reported. Model calls/tokens are checked against the same declared `AgenticLogicalBudget`.
+evidence. Scenario frontier, search reconstruction/materialization and all qualified primary work are summed before any
+finding receives credit. Fresh search child verification is charged to Replay together with final Bundle replay. Model
+calls/tokens are checked against the same declared `AgenticLogicalBudget` across every Episode in the Investigation.
 Formal Agentic evidence uses Bundle v3, and summary/branch trace and work declarations must agree with the Bundle and the
-contract's `MethodSpecDigest`. Branch count is bounded by the Scenario call limit. Coverage and PSS discoveries remain
+contract's mechanically derived typed `AgenticMethodSpec`. A multi-Episode trial must submit its complete contiguous
+Investigation; a final successful Episode cannot be evaluated alone. Branch count is bounded by the Scenario call limit.
+Coverage and PSS discoveries remain
 explanatory covariates and cannot create finding credit. See `docs/defect-benchmark.md`.
+An earlier Episode that stops without a Bundle remains charged search work; it does not invalidate a later qualified
+candidate in the same complete Investigation. An Investigation with no qualified candidate evidence remains invalid.
 
 ## 6. Known limitations and safeguards
 

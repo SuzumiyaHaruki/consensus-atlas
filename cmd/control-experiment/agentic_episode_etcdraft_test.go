@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -43,23 +44,54 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		len(target.Surface.Capabilities.FidelityBoundaries) != 1 {
 		t.Fatalf("etcd/raft dynamic Agent surface was not derived from active inputs: %#v", target.Surface)
 	}
-	methodSpecDigest := formalTestStringDigest("agentic-etcdraft-method")
 	composition, err := prepareAgenticEpisodeComposition(ctx, controlExperimentOptions{
-		Target:        "etcdraft-v2",
+		Target: "etcdraft-v2", InvestigationEpisodes: 1,
 		SemanticInput: "../../plans/agent/etcdraft-agentic-calibration-v1.json",
 		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
-		MethodSpecDigest: methodSpecDigest,
 	})
-	if err != nil || composition.Target.ID != "etcdraft-v2" ||
-		composition.Target.MethodSpecDigest != methodSpecDigest || composition.Budget.Logical == nil ||
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := composition.Client.freeze()
+	if composition.Target.ID != "etcdraft-v2" ||
+		composition.MethodSpec.Validate() != nil ||
+		composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
+		composition.MethodSpec.InvestigationEpisodes != 1 ||
+		composition.MethodSpec.Transport.Model != openRouterFixtureModel ||
+		composition.MethodSpec.SemanticInputSchema != etcdraftSemanticInputSchema ||
+		composition.MethodSpec.EpisodeLimits.MaxRiskCalls != composition.Budget.MaxRiskCalls ||
+		composition.MethodSpec.EpisodeLimits.MaxScenarioCalls != composition.Budget.MaxScenarioCalls ||
+		composition.MethodSpec.EpisodeLimits.MaxScenarioPlanSteps != composition.Budget.MaxScenarioPlanSteps ||
+		composition.Budget.Logical == nil ||
 		*composition.Budget.Logical != inputs.experiment.SessionBudget ||
 		composition.Budget.MaxRiskCalls != 3 || composition.Budget.MaxScenarioCalls != 3 ||
 		composition.Budget.MaxScenarioPlanSteps != 4 ||
 		composition.Budget.MaxTotalCalls != 6 || composition.Budget.MaxObservedTokens != 50000 ||
-		composition.Client.Model != openRouterFixtureModel ||
-		composition.Client.ReasoningEffort != "low" || composition.Client.MaxOutputTokens != 32000 ||
-		composition.Client.MaxRetries != inputs.experiment.ModelMaxRetries {
+		transport.Model != openRouterFixtureModel || transport.Thinking != "low" ||
+		transport.MaxOutputTokens != 32000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {
 		t.Fatalf("etcd/raft registry composition drifted: %#v err=%v", composition, err)
+	}
+	mismatchOptions := controlExperimentOptions{
+		Target: "etcdraft-v2", InvestigationEpisodes: 1,
+		SemanticInput: "../../plans/agent/etcdraft-agentic-calibration-v1.json",
+		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
+		MethodSpecDigest: formalTestStringDigest("wrong-agentic-method"),
+	}
+	if _, err := prepareAgenticEpisodeComposition(ctx, mismatchOptions); err == nil {
+		t.Fatal("caller-supplied method digest replaced the derived method identity")
+	}
+	methodDirectory := filepath.Join(t.TempDir(), "episode")
+	if err := bindAgenticMethodSpec(methodDirectory, false, composition.MethodSpec); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := readAgenticMethodSpec(methodDirectory, composition.MethodSpec.Digest)
+	if err != nil || stored.Digest != composition.MethodSpec.Digest {
+		t.Fatalf("persisted method identity = %#v/%v", stored, err)
+	}
+	tampered := composition.MethodSpec
+	tampered.EpisodeLimits.MaxScenarioPlanSteps++
+	if err := bindAgenticMethodSpec(methodDirectory, true, tampered); err == nil {
+		t.Fatal("resume accepted changed method limits")
 	}
 	investigation, err := agenticInvestigationBudgetFromEpisode(3, composition.Budget)
 	if err != nil || investigation.MaxEpisodes != 3 ||
@@ -235,6 +267,12 @@ func TestAgenticEvidenceUsesGlobalScenarioDecisionAccounting(t *testing.T) {
 	if result.Status != agenticEvidenceBudgetExhausted ||
 		result.ReasonCode != "scenario-call-budget-exhausted" {
 		t.Fatalf("an executed investigation that exhausted planner calls was misclassified: %#v", result)
+	}
+	scenario.StopReason = controlexperiment.ScenarioAgentStopHypothesisAbandoned
+	result = assessTestingEvidence(assessment, testing, scenario)
+	if result.Status != agenticEvidenceInconclusive ||
+		result.ReasonCode != agenticEvidenceHypothesisAbandoned {
+		t.Fatalf("Agent-directed hypothesis abandonment became a verdict: %#v", result)
 	}
 }
 

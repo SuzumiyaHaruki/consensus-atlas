@@ -47,7 +47,9 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	capabilities := []semantic.ObservationCapability{
-		{Kind: semantic.ObservationWorkloadInvoked},
+		{Kind: semantic.ObservationWorkloadInvoked, Fields: []semantic.ObservationField{
+			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
+		}},
 		{Kind: semantic.ObservationMessageDropped},
 		{Kind: semantic.ObservationDecisionAdvanced},
 	}
@@ -94,6 +96,8 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil ||
 			payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio" ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observation_capabilities")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("binding_domains")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("node-incarnation")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("issue_patterns")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("target_dossier")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observable-only")) ||
@@ -156,6 +160,30 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		bytes.Contains(selectionOutput.Schema, []byte(`"plan"`)) {
 		t.Fatalf("final selection schema can still request Runtime work: %s/%v", selectionOutput.Schema, err)
 	}
+	abandonOutput, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
+		MaxSteps: 2, DecisionAllowance: 4, RemainingDecisions: 8,
+		AvailableIntents: []string{
+			controlexperiment.ScenarioIntentContinue, controlexperiment.ScenarioIntentAbandon,
+		},
+	})
+	if err != nil || !bytes.Contains(abandonOutput.Schema, []byte(`"abandon"`)) ||
+		!bytes.Contains(abandonOutput.Schema, []byte(`"required":["intent"]`)) {
+		t.Fatalf("hypothesis abandonment schema is not a zero-Action alternative: %s/%v", abandonOutput.Schema, err)
+	}
+	for _, intent := range []string{
+		controlexperiment.ScenarioIntentContinue, controlexperiment.ScenarioIntentRevise,
+	} {
+		minimal, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
+			MaxSteps: 2, DecisionAllowance: 4, RemainingDecisions: 8,
+			AvailableIntents: []string{intent},
+		})
+		if err != nil || !bytes.Contains(minimal.Schema, []byte(`"required":["intent","plan"]`)) ||
+			bytes.Contains(minimal.Schema, []byte(`"branch_id"`)) ||
+			bytes.Contains(minimal.Schema, []byte(`"from_branch_id"`)) ||
+			bytes.Contains(minimal.Schema, []byte(`"reference_branch_id"`)) {
+			t.Fatalf("%s phase did not receive a minimal path schema: %s/%v", intent, minimal.Schema, err)
+		}
+	}
 }
 
 func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
@@ -190,6 +218,10 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 		KnowledgeSources:     sources,
 		MaxKnowledgeRequests: controlexperiment.RiskKnowledgeRequestsPerCall,
 	}
+	view.BindingDomains, err = semantic.ObservationBindingDomains(view.ObservationCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
 	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
 		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
 	)
@@ -209,7 +241,6 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 		!bytes.Contains(output.Schema, []byte("response_kind")) {
 		t.Fatalf("knowledge-assisted Risk contract incomplete: %s\n%s\n%s\n%v", system, user, output.Schema, err)
 	}
-	view.MaxKnowledgeRequests = 0
 	view.KnowledgeResults = []controlexperiment.KnowledgeReadResult{{
 		Status: controlexperiment.KnowledgeDiscoveryCompleted, Source: selected,
 		StartLine: 10, EndLine: 12, TotalLines: 100,
@@ -220,6 +251,17 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 	)
 	system, user, err = riskAgentPrompt(view)
 	output, outputErr := riskAgentStructuredOutput(view)
+	if err != nil || outputErr != nil || output.Name != "risk_grounding_or_portfolio" ||
+		!strings.Contains(user, "end_line plus one") ||
+		!bytes.Contains([]byte(user), []byte("func (adapter *Adapter) Check")) ||
+		!bytes.Contains(output.Schema, []byte("start_line")) ||
+		!bytes.Contains(output.Schema, []byte("knowledge_requests")) {
+		t.Fatalf("completed source window did not preserve bounded navigation: %s\n%s\n%s\n%v/%v",
+			system, user, output.Schema, err, outputErr)
+	}
+	view.MaxKnowledgeRequests = 0
+	system, user, err = riskAgentPrompt(view)
+	output, outputErr = riskAgentStructuredOutput(view)
 	var portfolioSchema struct {
 		Properties struct {
 			Candidates struct {

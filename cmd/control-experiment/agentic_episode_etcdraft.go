@@ -23,7 +23,7 @@ type etcdraftAgenticEpisodeInputs struct {
 	root       controlruntime.Trace
 	knowledge  controlexperiment.ProtocolKnowledgePack
 	experiment etcdraftAgentExperimentConfig
-	client     openRouterIntentClient
+	client     agentIntentTransport
 }
 
 func prepareEtcdraftAgenticExecutionInputs(
@@ -91,7 +91,7 @@ func prepareEtcdraftAgenticEpisode(
 	ctx context.Context,
 	corpusPath string,
 	semanticInputPath string,
-	client openRouterIntentClient,
+	client agentIntentTransport,
 ) (etcdraftAgenticEpisodeInputs, error) {
 	knowledge, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(semanticInputPath)
 	if err != nil {
@@ -104,11 +104,11 @@ func prepareEtcdraftAgenticEpisode(
 	if err != nil {
 		return etcdraftAgenticEpisodeInputs{}, err
 	}
-	client.ReasoningEffort = experiment.ModelReasoningEffort
-	client.ExcludeReasoning = experiment.ModelExcludeReasoning
-	client.MaxOutputTokens = experiment.ModelMaxOutputTokens
-	client.MaxRetries = experiment.ModelMaxRetries
-	if openRouterTransportFreeze(client).Validate() != nil {
+	client, err = configureAgentIntentTransport(
+		client, experiment.ModelReasoningEffort, experiment.ModelExcludeReasoning,
+		experiment.ModelMaxOutputTokens, experiment.ModelMaxRetries,
+	)
+	if err != nil || !client.ready() {
 		return etcdraftAgenticEpisodeInputs{}, errors.New("ETCDRAFT_AGENTIC_TRANSPORT_CONFIG_INVALID")
 	}
 	return etcdraftAgenticEpisodeInputs{
