@@ -626,7 +626,7 @@ continue/revise/abandon 决策，不能把 stalled/repeated 当成协议 verdict
 Timer callback/clock advance 分离。每轮紧凑 `summary.json` 也持久化同一 ProgressDelta，便于恢复后审计
 Agent 实际收到的机械反馈。M4i 未修改公共 ActionKind、具体协议、Adapter、PSS 或 Oracle，也未调用模型。
 
-### M4j：生成共识可测试性接口（M4j1 最小公共闭环完成）
+### M4j：生成共识可测试性接口（M4j2 意图—能力反馈闭环完成）
 
 非冻结草案位于 `docs/generated-consensus-testability.md`。它把接入接口分为公共原因型控制动词、受控资源/HostEffect、
 Target-local 类型与语义投影、当前 FaultEnvelope 四层，并按 T1 算法级确定性、T2 持久化恢复、T3 协议扩展分级。
@@ -637,7 +637,13 @@ M4j1 已在现有 Manifest 上增加可选的消息 type hint/metadata key 与 H
 协议无关 described fixture 同时覆盖 effect complete/fail 和超声明拒绝；旧 fixture identity/Trace 不变，
 没有新增平行 contract、hash、baseline 或 gate。
 
-下一步不立即给每个真实 Target 填满新字段。先使用 M4j1 作为接入扩展缝：若恢复具体 Target 改造，按真实
+M4j2 复用这份能力表对 Scenario 计划做最小机械预检：非 composable Action，以及富声明明确排除的消息/effect
+取值，会在执行前作为 `missing-action`/`missing-control-capability` 返回给 Agent 修订，不消耗 Runtime decision。
+精确 ActionID 由可信当前 frontier 反查 kind，不能绕过能力边界。缺少可选富声明的旧 Target 保持未评估，Core
+不把它自动判成不支持；实际可达性仍由 enabled frontier、Trace 与 Replay 决定。这样闭合的是“测试需求 → 能力判断
+→ revise”循环，而不是预先枚举所有协议语义。
+
+下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。
 在用户明确恢复具体 Target 改造前，不修改 etcd/raft、OmniPaxos 或 Hashicorp Raft 实现。
 

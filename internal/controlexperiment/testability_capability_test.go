@@ -2,6 +2,7 @@ package controlexperiment
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"testing"
 
@@ -56,6 +57,54 @@ func TestDescribedFixtureCapabilitiesReachFrontierTraceAndReplay(t *testing.T) {
 		surface.Capabilities.HostEffects[0].Phases[0] != "storage" ||
 		surface.Capabilities.HostEffects[0].AllowedFailures[0] != "io-error" {
 		t.Fatalf("capability projection incomplete: %#v", surface.Capabilities)
+	}
+
+	validPlan := ScenarioPlan{ID: "valid-rich-control", Steps: []ScenarioStep{{
+		ID: "complete-persist", Selector: FrontierActionSelector{
+			Kind: control.ActionCompleteEffect, EffectKind: "persist", EffectPhase: "storage",
+			EffectOutcome: "ok", Durability: control.DurabilityDurable,
+		},
+	}}}
+	if gaps, err := surface.ScenarioCapabilityGaps(validPlan, nil); err != nil || len(gaps) != 0 {
+		t.Fatalf("valid rich control was rejected: %#v/%v", gaps, err)
+	}
+	wrongPhase := validPlan
+	wrongPhase.ID = "invalid-rich-control"
+	wrongPhase.Steps = append([]ScenarioStep(nil), validPlan.Steps...)
+	wrongPhase.Steps[0].Selector.EffectPhase = "network"
+	if gaps, err := surface.ScenarioCapabilityGaps(wrongPhase, nil); err != nil || len(gaps) != 1 ||
+		gaps[0].Code != AgentCapabilityGapMissingControl || gaps[0].Reference != "complete-persist" {
+		t.Fatalf("undeclared effect phase was not identified: %#v/%v", gaps, err)
+	}
+	missingActionSurface := *cloneAgentTargetSurface(&surface)
+	missingActionSurface.Capabilities.ComposableActions = []control.ActionKind{
+		control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionInvoke,
+	}
+	missingActionPlan := ScenarioPlan{ID: "missing-action", Steps: []ScenarioStep{{
+		ID: "fail-persist", Selector: FrontierActionSelector{Kind: control.ActionFailEffect},
+	}}}
+	if gaps, err := missingActionSurface.ScenarioCapabilityGaps(missingActionPlan, nil); err != nil ||
+		len(gaps) != 1 || gaps[0].Code != AgentCapabilityGapMissingAction {
+		t.Fatalf("non-composable Action was not identified: %#v/%v", gaps, err)
+	}
+	exactMissingActionPlan := ScenarioPlan{ID: "exact-missing-action", Steps: []ScenarioStep{{
+		ID: "exact-failure", Selector: FrontierActionSelector{ActionID: "enabled-failure"},
+	}}}
+	if gaps, err := missingActionSurface.ScenarioCapabilityGaps(exactMissingActionPlan, []FrontierActionRef{{
+		ActionID: "enabled-failure", Kind: control.ActionFailEffect,
+	}}); err != nil || len(gaps) != 1 || gaps[0].Code != AgentCapabilityGapMissingAction {
+		t.Fatalf("exact ActionID bypassed composable capability: %#v/%v", gaps, err)
+	}
+	legacySurface := *cloneAgentTargetSurface(&surface)
+	legacySurface.Capabilities.Message = nil
+	legacySurface.Capabilities.HostEffects = nil
+	unassessedPlan := ScenarioPlan{ID: "legacy-unassessed", Steps: []ScenarioStep{{
+		ID: "opaque-message", Selector: FrontierActionSelector{
+			Kind: control.ActionDeliverMessage, MessageTypeHint: "target-local-unknown",
+		},
+	}}}
+	if gaps, err := legacySurface.ScenarioCapabilityGaps(unassessedPlan, nil); err != nil || len(gaps) != 0 {
+		t.Fatalf("legacy undeclared detail must remain unassessed: %#v/%v", gaps, err)
 	}
 
 	for _, outcome := range []struct {
@@ -134,6 +183,118 @@ func TestDescribedFixtureCapabilitiesReachFrontierTraceAndReplay(t *testing.T) {
 				t.Fatalf("Replay() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestScenarioAgentRevisesMechanicalCapabilityGapWithoutRuntimeWork(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "6d346a322d6361706162696c697479", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	envelope := &FaultEnvelope{MaxCrashes: 1, MaxConcurrentCrashes: 1}
+	factory := func() (control.Adapter, error) { return fixture.New(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-capability-repair-risk", "fixture-cft", "capability-repair",
+		[]string{"crash-prefix"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := actionKindSemanticProjector{}
+	rootRisk, err := projector.Project("fixture-capability-repair-root", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, _, _, err := ReconstructRiskFrontierState(
+		ctx, "fixture-capability-repair-frontier", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, envelope, factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := fixture.New().Manifest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpEmitMessage, Target: "n2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	surface, err := NewAgentTargetSurface(
+		"fixture-capability-repair", manifest,
+		WorkloadPlan{
+			SchemaVersion: WorkloadPlanVersion, ID: "fixture-capability-repair-workload",
+			TargetSelector: TargetSingleCoordinatingMember,
+			Invocations: []WorkloadInvocation{{
+				ID: "request-1", Input: payload, ExpectedStatus: "ok",
+			}},
+		},
+		runtimeConfig, *envelope,
+		AgentTargetExtensions{
+			ComposableActions: []control.ActionKind{control.ActionCrash},
+			ObservationCapabilities: []semantic.ObservationCapability{{
+				Kind: semantic.ObservationWorkloadInvoked,
+			}},
+			OracleCapabilities: []AgentOracleCapability{{
+				ID: "trace-integrity", Scope: AgentOracleScopeGeneric,
+			}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
+		ID: "fixture-capability-repair-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
+		Knowledge: []KnowledgeStatement{{ID: "repair", Text: "Revise controls that the Target cannot compose."}},
+		Risks: []ProtocolRisk{{
+			ID: spec.RiskID, Summary: "Reach a crash prefix after mechanical plan repair.",
+			RequiredCapabilities: []string{"lifecycle-control"},
+			RequiredActions:      []control.ActionKind{control.ActionCrash},
+			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hypothesis, err := NewTestHypothesis(
+		"fixture-capability-repair-hypothesis", knowledge, spec,
+		"Use trusted capability feedback before executing a crash.", ScenarioPlanningBackendID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	result, err := ExploreScenarioWithPlanner(
+		ctx, 2, 1, 1, knowledge, hypothesis, spec, frontier,
+		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
+		&surface, nil, factory, projector,
+		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
+			return unknownScenarioSemantics(t, next), nil
+		},
+		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
+			calls++
+			plan := ScenarioPlan{ID: "unsupported-control", Steps: []ScenarioStep{{
+				ID: "unsupported-failure", Selector: FrontierActionSelector{Kind: control.ActionFailEffect},
+			}}}
+			intent := ScenarioIntentContinue
+			if calls == 2 {
+				if view.Prior == nil || view.Prior.ReasonCode != AgentCapabilityGapMissingAction ||
+					len(view.Prior.CapabilityGaps) != 1 || view.Prior.FailedStep == nil ||
+					view.Prior.FailedStep.ID != "unsupported-failure" || view.RemainingDecisions != 1 {
+					t.Fatalf("capability repair feedback incomplete: %#v", view.Prior)
+				}
+				plan = ScenarioPlan{ID: "supported-control", Steps: []ScenarioStep{{
+					ID: "crash", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"},
+				}}}
+				intent = ScenarioIntentRevise
+			}
+			encoded, marshalErr := json.Marshal(ScenarioInvestigationProposal{Intent: intent, Plan: plan})
+			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+		},
+	)
+	if err != nil || calls != 2 || result.StopReason != ScenarioAgentStopRiskReached ||
+		result.DecisionsUsed != 1 || result.Execution == nil || len(result.Attempts) != 2 ||
+		result.Attempts[0].Execution != nil || result.Attempts[0].Feedback.CapabilityGaps[0].Code != AgentCapabilityGapMissingAction {
+		t.Fatalf("capability repair did not preserve Runtime budget: %#v calls=%d err=%v", result, calls, err)
 	}
 }
 

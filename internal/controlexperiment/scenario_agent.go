@@ -58,6 +58,7 @@ type ScenarioAgentFeedback struct {
 	Outcome             string                            `json:"outcome"`
 	ReasonCode          string                            `json:"reason_code,omitempty"`
 	ValidationIssues    []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	CapabilityGaps      []AgentCapabilityGap              `json:"capability_gaps,omitempty"`
 	AllowedIntents      []string                          `json:"allowed_intents,omitempty"`
 	PreviousProposal    *ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
 	FailedStep          *ScenarioStep                     `json:"failed_step,omitempty"`
@@ -308,6 +309,25 @@ func ExploreScenarioWithPlanner(
 				return finishScenarioAgentResult(result, root, ScenarioAgentStopRiskReached), nil
 			}
 			return finishScenarioAgentResult(result, root, ScenarioAgentStopPathSelected), nil
+		}
+		if targetSurface != nil {
+			gaps, gapErr := targetSurface.ScenarioCapabilityGaps(plan, selected.frontier.Actions)
+			if gapErr != nil {
+				return result, gapErr
+			}
+			if len(gaps) > 0 {
+				attempt.Feedback = ScenarioAgentFeedback{
+					Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
+					ReferenceBranchID: proposal.ReferenceBranchID,
+					Outcome:           ScenarioAgentStopped, ReasonCode: gaps[0].Code,
+					CapabilityGaps:   cloneAgentCapabilityGaps(gaps),
+					PreviousProposal: cloneScenarioProposal(&proposal),
+					FailedStep:       scenarioPlanStepByID(plan, gaps[0].Reference),
+				}
+				result.Attempts = append(result.Attempts, attempt)
+				prior = &result.Attempts[len(result.Attempts)-1].Feedback
+				continue
+			}
 		}
 		attemptRootTrace, attemptRootRisk := selected.trace, selected.risk
 		naturalProgressAllowance := progressQuantum
@@ -694,6 +714,7 @@ func cloneScenarioFeedback(feedback *ScenarioAgentFeedback) *ScenarioAgentFeedba
 	}
 	value := *feedback
 	value.ValidationIssues = append([]ScenarioProposalValidationIssue(nil), feedback.ValidationIssues...)
+	value.CapabilityGaps = cloneAgentCapabilityGaps(feedback.CapabilityGaps)
 	value.AllowedIntents = append([]string(nil), feedback.AllowedIntents...)
 	value.PreviousProposal = cloneScenarioProposal(feedback.PreviousProposal)
 	if feedback.FailedStep != nil {
@@ -719,9 +740,7 @@ func cloneScenarioProposal(proposal *ScenarioInvestigationProposal) *ScenarioInv
 func cloneScenarioBranches(branches []ScenarioInvestigationBranch) []ScenarioInvestigationBranch {
 	result := append([]ScenarioInvestigationBranch(nil), branches...)
 	for index := range result {
-		result[index].AvailableActions = append(
-			[]FrontierActionRef(nil), branches[index].AvailableActions...,
-		)
+		result[index].AvailableActions = cloneFrontierActionRefs(branches[index].AvailableActions)
 		result[index].Plan = *cloneScenarioPlan(&branches[index].Plan)
 		result[index].AppliedInterventions = append(
 			[]ScenarioAppliedIntervention(nil), branches[index].AppliedInterventions...,

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v15"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v16"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
@@ -302,6 +302,8 @@ func scenarioAgentPrompt(
 		"frontier; use only values present on an enabled Action. " +
 		"Selector node, owner, message_source, and message_target values are node ID JSON strings such as n1, never " +
 		"identity objects with node/incarnation fields. A stopped prior_feedback must be answered with intent=revise, not continue. " +
+		"When prior_feedback.capability_gaps is present, the trusted Target surface proves those requested controls unavailable; " +
+		"revise the plan using declared composable Actions and capability values, or abandon when allowed. A capability gap is not a verdict. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
 	if len(view.AvailableIntents) == 1 &&
 		(view.AvailableIntents[0] == controlexperiment.ScenarioIntentContinue ||

@@ -38,6 +38,7 @@ type agenticScenarioAttemptArtifact struct {
 	Outcome          string                                              `json:"outcome"`
 	ReasonCode       string                                              `json:"reason_code,omitempty"`
 	ValidationIssues []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	CapabilityGaps   []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
 	AllowedIntents   []string                                            `json:"allowed_intents,omitempty"`
 	FailedStepID     string                                              `json:"failed_step_id,omitempty"`
 	MatchCount       int                                                 `json:"match_count,omitempty"`
@@ -136,9 +137,16 @@ func newAgenticEpisodeArtifact(
 					[]controlexperiment.ScenarioProposalValidationIssue(nil),
 					attempt.Feedback.ValidationIssues...,
 				),
+				CapabilityGaps: append(
+					[]controlexperiment.AgentCapabilityGap(nil),
+					attempt.Feedback.CapabilityGaps...,
+				),
 				AllowedIntents:   append([]string(nil), attempt.Feedback.AllowedIntents...),
 				EnteredExecution: attempt.Execution != nil,
 				ProgressDelta:    attempt.Feedback.ProgressDelta,
+			}
+			if attempt.Feedback.FailedStep != nil {
+				compact.FailedStepID = attempt.Feedback.FailedStep.ID
 			}
 			for index := len(attempt.Feedback.Steps) - 1; index >= 0; index-- {
 				step := attempt.Feedback.Steps[index]
@@ -437,6 +445,13 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		}
 		for _, issue := range attempt.ValidationIssues {
 			if issue.Validate() != nil {
+				return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+			}
+		}
+		for _, gap := range attempt.CapabilityGaps {
+			if (gap.Code != controlexperiment.AgentCapabilityGapMissingAction &&
+				gap.Code != controlexperiment.AgentCapabilityGapMissingControl) ||
+				gap.Reference == "" || gap.Summary == "" {
 				return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
 			}
 		}

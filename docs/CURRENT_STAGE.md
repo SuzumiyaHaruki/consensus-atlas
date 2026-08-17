@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4j1 协议无关可测试性能力闭环（实现完成）。
+阶段：M4j2 测试意图—Target 能力反馈闭环（实现完成）。
 
 ## 一句话状态
 
@@ -178,6 +178,14 @@ fresh Replay`，并另有超出消息声明即进入 terminal failure 的负向�
 因此没有更新旧 digest 或 baseline。本阶段没有修改 etcd/raft、OmniPaxos、Hashicorp Raft、公共 ActionKind、PSS
 或 Oracle，也没有调用模型。Scenario prompt 升为 v15，structured output 升为 v6，新的 MethodSpec 会与 M4h
 工件自然区分。
+
+M4j2 没有增加新的测试 DSL 或资格 contract，而是把现有 Scenario selector 与同一份
+`AgentTargetSurface` 做机械预检。若计划请求非 composable Action，或请求可选富能力声明明确排除的消息 type hint、
+HostEffect phase/durability/outcome，本轮在执行前返回 `missing-action` 或 `missing-control-capability`；失败 step、完整
+proposal 和 capability gaps 会进入下一轮 `revise`，且不消耗 Runtime decision。当前 frontier 的精确 ActionID 也会先
+反查 Action kind，因此不能绕过 composable 边界。若旧 Target 没有可选消息/HostEffect 细节声明，Core 不猜测其能力，
+仍交给真实 frontier 匹配，避免把“未评估”误写成“不支持”。协议无关回归已证明错误计划不产生 Runtime work、修订后
+计划正常执行并 fresh Replay；Scenario prompt 升为 v16。本阶段仍未修改任何具体共识实现，也未调用模型。
 
 ## 当前输入
 

@@ -69,6 +69,10 @@ Action kind 是公共词汇，但可达性是 Target-local 事实。Manifest 的
 `ComposableActions` 进一步说明活动测试路径会把该动作放入 frontier。普通组合测试必须证明每项 composable Action
 至少存在一条 offered → selected → executed → replayed 路径。
 
+Scenario 计划在执行前只检查可机械证明的能力矛盾：非 composable Action，或 Target 可选富声明明确排除的
+消息/HostEffect 取值。缺口作为 `missing-action`/`missing-control-capability` 返回 Agent 修订且不消耗 Runtime
+decision；当前 frontier 的精确 ActionID 也要反查 kind。没有富声明只表示未评估，不能据此拒绝计划。
+
 ### 3.2 Item 与消息所有权
 
 目标实现产生消息或 effect，Runtime 为其分配稳定 Item ID 并保存。Agent 只能引用当前 view 中的 ID 或语义 selector；

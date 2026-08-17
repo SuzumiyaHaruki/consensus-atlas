@@ -70,6 +70,8 @@ type AgentFidelityBoundary struct {
 
 const (
 	AgentCapabilityGapTargetFidelity        = "target-fidelity-gap"
+	AgentCapabilityGapMissingAction         = "missing-action"
+	AgentCapabilityGapMissingControl        = "missing-control-capability"
 	AgentCapabilityNoticeFidelityUnassessed = "fidelity-unassessed"
 	AgentFidelityNotApplicable              = "not-applicable"
 	AgentFidelityUnassessed                 = "fidelity-unassessed"
@@ -325,6 +327,98 @@ func (surface AgentTargetSurface) FidelityGaps(required []string) ([]AgentCapabi
 		})
 	}
 	return result, nil
+}
+
+// ScenarioCapabilityGaps rejects only controls that the validated Target
+// surface can prove unavailable. Optional rich declarations are deliberately
+// not required: an older Target without them remains unassessed and the real
+// frontier is still authoritative.
+func (surface AgentTargetSurface) ScenarioCapabilityGaps(
+	plan ScenarioPlan,
+	frontier []FrontierActionRef,
+) ([]AgentCapabilityGap, error) {
+	if surface.Validate() != nil || plan.Validate() != nil {
+		return nil, errors.New("EXPERIMENT_AGENT_TARGET_SCENARIO_CAPABILITY_INPUT_INVALID")
+	}
+	composable := actionKindSet(surface.Capabilities.ComposableActions)
+	var gaps []AgentCapabilityGap
+	for _, step := range plan.Steps {
+		selector := step.Selector
+		if selector.ActionID != "" {
+			for _, action := range frontier {
+				if action.ActionID == selector.ActionID {
+					selector.Kind = action.Kind
+					break
+				}
+			}
+			if selector.Kind == "" {
+				continue
+			}
+		}
+		if !composable[selector.Kind] {
+			gaps = append(gaps, AgentCapabilityGap{
+				Code: AgentCapabilityGapMissingAction, Reference: step.ID,
+				Summary: "step requests a non-composable Action: " + string(selector.Kind),
+			})
+			continue
+		}
+		if selector.MessageTypeHint != "" && surface.Capabilities.Message != nil &&
+			!containsAgentString(surface.Capabilities.Message.TypeHints, selector.MessageTypeHint) {
+			gaps = append(gaps, AgentCapabilityGap{
+				Code: AgentCapabilityGapMissingControl, Reference: step.ID,
+				Summary: "step requests an undeclared message type hint: " + selector.MessageTypeHint,
+			})
+			continue
+		}
+		if (selector.Kind == control.ActionCompleteEffect || selector.Kind == control.ActionFailEffect) &&
+			len(surface.Capabilities.HostEffects) > 0 &&
+			!surface.surfaceSupportsEffectSelector(selector) {
+			gaps = append(gaps, AgentCapabilityGap{
+				Code: AgentCapabilityGapMissingControl, Reference: step.ID,
+				Summary: "step requests an effect control outside the declared Target capability",
+			})
+		}
+	}
+	return gaps, nil
+}
+
+func (surface AgentTargetSurface) surfaceSupportsEffectSelector(
+	selector FrontierActionSelector,
+) bool {
+	for _, capability := range surface.Capabilities.HostEffects {
+		if selector.EffectKind != "" && selector.EffectKind != capability.Kind ||
+			selector.EffectPhase != "" && !containsAgentString(capability.Phases, selector.EffectPhase) ||
+			selector.Durability != "" && !containsAgentDurability(capability.Durabilities, selector.Durability) {
+			continue
+		}
+		outcomes := capability.AllowedResults
+		if selector.Kind == control.ActionFailEffect {
+			outcomes = capability.AllowedFailures
+		}
+		if len(outcomes) > 0 &&
+			(selector.EffectOutcome == "" || containsAgentString(outcomes, selector.EffectOutcome)) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAgentString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAgentDurability(values []control.DurabilityClass, target control.DurabilityClass) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // FidelityAssessmentForProperty reports relevant disclosed boundaries when an
