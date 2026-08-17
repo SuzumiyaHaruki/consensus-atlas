@@ -296,26 +296,43 @@ func TestScenarioAgentRevisesMechanicalCapabilityGapWithoutRuntimeWork(t *testin
 		result.Attempts[0].Execution != nil || result.Attempts[0].Feedback.CapabilityGaps[0].Code != AgentCapabilityGapMissingAction {
 		t.Fatalf("capability repair did not preserve Runtime budget: %#v calls=%d err=%v", result, calls, err)
 	}
+	baselineCalls := 0
 	stopped, err := ExploreScenarioWithPlanner(
-		ctx, 1, 1, 1, knowledge, hypothesis, spec, frontier,
+		ctx, 2, 1, 1, knowledge, hypothesis, spec, frontier,
 		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
 		&surface, nil, factory, projector,
 		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
 			return unknownScenarioSemantics(t, next), nil
 		},
-		func(context.Context, ScenarioAgentView) ([]byte, ModelWork, error) {
+		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
+			baselineCalls++
+			intent := ScenarioIntentContinue
+			stepID := "unsupported-failure"
+			planID := "terminal-gap"
+			if baselineCalls == 2 {
+				if view.Prior == nil || len(view.Prior.CapabilityGaps) != 1 {
+					t.Fatalf("baseline did not receive the same structured feedback: %#v", view.Prior)
+				}
+				intent = ScenarioIntentRevise
+				stepID = "renamed-unsupported-failure"
+				planID = "repeated-terminal-gap"
+			}
 			encoded, marshalErr := json.Marshal(ScenarioInvestigationProposal{
-				Intent: ScenarioIntentContinue,
-				Plan: ScenarioPlan{ID: "terminal-gap", Steps: []ScenarioStep{{
-					ID: "unsupported-failure", Selector: FrontierActionSelector{Kind: control.ActionFailEffect},
+				Intent: intent,
+				Plan: ScenarioPlan{ID: planID, Steps: []ScenarioStep{{
+					ID: stepID, Selector: FrontierActionSelector{Kind: control.ActionFailEffect},
 				}}},
 			})
 			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
 		},
 	)
-	if err != nil || stopped.StopReason != ScenarioAgentStopCapabilityGap ||
-		stopped.DecisionsUsed != 0 || stopped.Execution != nil {
-		t.Fatalf("terminal capability gap was misclassified: %#v/%v", stopped, err)
+	if err != nil || baselineCalls != 2 || stopped.StopReason != ScenarioAgentStopCapabilityGap ||
+		stopped.DecisionsUsed != 0 || stopped.Execution != nil || len(stopped.Attempts) != 2 ||
+		len(stopped.Attempts[0].Feedback.CapabilityGaps) != 1 ||
+		len(stopped.Attempts[1].Feedback.CapabilityGaps) != 1 ||
+		stopped.Attempts[0].Feedback.CapabilityGaps[0].Summary !=
+			stopped.Attempts[1].Feedback.CapabilityGaps[0].Summary {
+		t.Fatalf("code-only baseline did not repeat the unavailable control: %#v/%v", stopped, err)
 	}
 }
 

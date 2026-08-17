@@ -330,6 +330,16 @@ func TestAgenticCapabilityAdaptationMetricsUseDurableAttemptOrder(t *testing.T) 
 		metrics.RepairAttempts != 2 || metrics.RepairExecutions != 1 {
 		t.Fatalf("capability adaptation metrics drifted: %#v", metrics)
 	}
+	baseline := agenticCapabilityAdaptationFromAttempts(attempts[:2])
+	treatment := agenticCapabilityAdaptationFromAttempts([]agenticScenarioAttemptArtifact{
+		attempts[0], attempts[2],
+	})
+	if baseline.GapAttempts != 2 || baseline.RepeatedGapAttempts != 1 ||
+		baseline.RepairAttempts != 1 || baseline.RepairExecutions != 0 ||
+		treatment.GapAttempts != 1 || treatment.RepeatedGapAttempts != 0 ||
+		treatment.RepairAttempts != 1 || treatment.RepairExecutions != 1 {
+		t.Fatalf("scripted feedback ablation was not separated: baseline=%#v treatment=%#v", baseline, treatment)
+	}
 	episodes := []recoveredAgenticEpisode{
 		{Summary: agenticEpisodeArtifact{ScenarioAttemptFeedback: attempts[:1]}},
 		{Summary: agenticEpisodeArtifact{ScenarioAttemptFeedback: attempts[1:]}},

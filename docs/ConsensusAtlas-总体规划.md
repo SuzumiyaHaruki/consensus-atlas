@@ -647,7 +647,7 @@ M4j3 将同一机械缺口贯通到最终停止、Episode assessment、compact a
 Memory。最后一轮 capability gap 不再被覆盖成 call-budget/planning failure；Memory 只携带缺口 reason code，
 不携带 Oracle finding。这使“Agent 假设失败”和“当前 Target 无法执行”保持可区分，同时不引入第二套状态模型。
 
-### M4k：释放 Agent 的调查与自我修订能力（M4k2 完成）
+### M4k：释放 Agent 的调查与自我修订能力（M4k3 完成）
 
 M4k 不再横向扩公共控制面，而是在现有可信边界内增加 Agent 的有效反馈。M4k1 将 Scenario 机械产生的
 capability gap 以 `code/reference/summary` 结构化形式带入下一 Episode；Risk Agent 能区分同属
@@ -662,6 +662,11 @@ M4k2 已为第一个问题增加可重算的机械计数：gap attempt、重复 
 下一次计划真正进入可信执行的 repair execution。重复签名忽略 step ID，只比较 gap code 与包含具体请求控制的摘要；
 Episode 保存局部统计，Investigation 按完整 Episode 顺序重算跨轮结果。报告时同时给出原始分子/分母，可派生
 `repair execution / repair attempt` 与 `repeated gap / gap attempt`，但不得把它们解释为测试覆盖率或缺陷发现率。
+
+M4k3 用同一 fixture root、TargetSurface 和预算完成本地 scripted 消融：忽略结构化反馈的脚本重复不可用
+`fail-effect`，得到 `2/1/1/0`；使用反馈的脚本改为可组合 `crash`，得到 `1/0/1/1` 并进入 Runtime、达到 Risk。
+四元组依次为 gap、repeated、repair opportunity、repair execution。该结果仅校准接线和指标区分能力；正式比较仍需
+把“是否暴露结构化 gap”写入 MethodSpec 后，在同模型、同输入、同预算的真实多 seed 实验中完成。
 
 下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。

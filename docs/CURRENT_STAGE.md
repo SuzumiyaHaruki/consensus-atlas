@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4k2 Agent 能力修订机械指标（实现完成）。
+阶段：M4k3 本地结构化反馈消融（实现完成）。
 
 ## 一句话状态
 
@@ -204,6 +204,12 @@ M4k2 从现有 durable Scenario attempt 顺序机械计算四个计数：`capabi
 gap code + 请求摘要而忽略可被 Agent 重命名的 step ID；repair success 只在 gap 后的下一次计划没有新 gap 且真实进入
 可信执行时计数。Episode summary 保存局部计数，Investigation CLI 按所有 Episode 的连续 attempt 顺序重算，因此能观察
 跨 Episode 修订。它们只衡量 Agent 是否利用能力反馈，不创建 coverage、finding 或协议 verdict。
+
+M4k3 使用同一个协议无关 fixture Target、相同 root Trace、一次 Runtime decision 额度和两次 Scenario 调用做了本地
+scripted 消融。忽略结构化 gap 的基线连续两次请求同一非 composable `fail-effect`，结果为 gap attempts=2、
+repeated=1、repair attempts=1、repair executions=0、Runtime decisions=0；读取 gap 的处理组第二次改用 `crash`，
+结果为 1/0/1/1、Runtime decisions=1，并达到同一可信 Risk milestone。两组均经过真实 Scenario preflight，处理组
+进入 Runtime/fresh Replay；这只证明反馈与指标接线有效，不证明真实 LLM 会采用反馈，也不属于缺陷发现实验。
 
 ## 当前输入
 

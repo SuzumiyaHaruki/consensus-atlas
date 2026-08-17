@@ -163,6 +163,10 @@ The complete Investigation recomputes the same counts across Episode boundaries.
 derived ratios are repair executions per repair attempt and repeated gaps per gap attempt. These measure whether Agent feedback is
 being used. They are not state coverage, defect findings, or evidence that a protocol property holds.
 
+The M4k3 scripted wiring calibration produced baseline `2/1/1/0` and structured-feedback `1/0/1/1` for
+gap/repeated/repair-attempt/repair-execution. Both used the same protocol-neutral fixture root and budgets. This is a deterministic
+metric calibration, not evidence about a real model; a model-level ablation must declare the feedback exposure in its MethodSpec.
+
 ## 7. Known limitations and safeguards
 
 - A state key can over-merge if the PSS omits a safety-relevant relation, or over-split if it retains an irrelevant one. Invariance and separation tests are therefore part of the Family Pack.
