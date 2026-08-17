@@ -59,6 +59,8 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		composition.MethodSpec.InvestigationEpisodes != 1 ||
 		composition.MethodSpec.Transport.Model != openRouterFixtureModel ||
 		composition.MethodSpec.SemanticInputSchema != etcdraftSemanticInputSchema ||
+		composition.MethodSpec.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
+		composition.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
 		composition.MethodSpec.EpisodeLimits.MaxRiskCalls != composition.Budget.MaxRiskCalls ||
 		composition.MethodSpec.EpisodeLimits.MaxScenarioCalls != composition.Budget.MaxScenarioCalls ||
 		composition.MethodSpec.EpisodeLimits.MaxScenarioPlanSteps != composition.Budget.MaxScenarioPlanSteps ||
@@ -79,6 +81,15 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	}
 	if _, err := prepareAgenticEpisodeComposition(ctx, mismatchOptions); err == nil {
 		t.Fatal("caller-supplied method digest replaced the derived method identity")
+	}
+	reasonOptions := mismatchOptions
+	reasonOptions.MethodSpecDigest = ""
+	reasonOptions.CapabilityFeedbackMode = controlexperiment.AgenticCapabilityFeedbackReasonCodes
+	reasonComposition, err := prepareAgenticEpisodeComposition(ctx, reasonOptions)
+	if err != nil || reasonComposition.MethodSpec.CapabilityFeedbackMode !=
+		controlexperiment.AgenticCapabilityFeedbackReasonCodes ||
+		reasonComposition.MethodSpec.Digest == composition.MethodSpec.Digest {
+		t.Fatalf("feedback mode was not bound to actual method identity: %#v/%v", reasonComposition.MethodSpec, err)
 	}
 	methodDirectory := filepath.Join(t.TempDir(), "episode")
 	if err := bindAgenticMethodSpec(methodDirectory, false, composition.MethodSpec); err != nil {
@@ -309,6 +320,32 @@ func TestScenarioCapabilityGapRemainsMechanicalEpisodeEvidence(t *testing.T) {
 	}
 	if !agenticAssessmentMatchesSummary(summary) {
 		t.Fatal("Scenario capability-gap assessment was rejected as planning failure")
+	}
+}
+
+func TestCapabilityFeedbackProjectionMatchesMethodMode(t *testing.T) {
+	memory := []controlexperiment.RiskExplorationMemoryEntry{{
+		Episode: 1, EpisodeOutcome: controlexperiment.RiskMemoryOutcomePlanningStopped,
+		CapabilityGaps: []controlexperiment.AgentCapabilityGap{{
+			Code: controlexperiment.AgentCapabilityGapMissingAction, Reference: "failure-step",
+			Summary: "fail-effect is unavailable",
+		}},
+	}}
+	structured := projectAgenticCapabilityFeedbackMemory(
+		memory, controlexperiment.AgenticCapabilityFeedbackStructuredGaps,
+	)
+	reasonOnly := projectAgenticCapabilityFeedbackMemory(
+		memory, controlexperiment.AgenticCapabilityFeedbackReasonCodes,
+	)
+	legacy := projectAgenticCapabilityFeedbackMemory(memory, "")
+	if len(structured[0].CapabilityGaps) != 1 || len(reasonOnly[0].CapabilityGaps) != 0 ||
+		len(legacy[0].CapabilityGaps) != 0 || len(memory[0].CapabilityGaps) != 1 {
+		t.Fatalf("feedback mode projection drifted: structured=%#v reason=%#v legacy=%#v input=%#v",
+			structured, reasonOnly, legacy, memory)
+	}
+	structured[0].CapabilityGaps[0].Summary = "mutated"
+	if memory[0].CapabilityGaps[0].Summary != "fail-effect is unavailable" {
+		t.Fatal("feedback projection mutated durable Memory")
 	}
 }
 

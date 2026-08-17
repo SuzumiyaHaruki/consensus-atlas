@@ -647,7 +647,7 @@ M4j3 将同一机械缺口贯通到最终停止、Episode assessment、compact a
 Memory。最后一轮 capability gap 不再被覆盖成 call-budget/planning failure；Memory 只携带缺口 reason code，
 不携带 Oracle finding。这使“Agent 假设失败”和“当前 Target 无法执行”保持可区分，同时不引入第二套状态模型。
 
-### M4k：释放 Agent 的调查与自我修订能力（M4k3 完成）
+### M4k：释放 Agent 的调查与自我修订能力（M4k4 完成）
 
 M4k 不再横向扩公共控制面，而是在现有可信边界内增加 Agent 的有效反馈。M4k1 将 Scenario 机械产生的
 capability gap 以 `code/reference/summary` 结构化形式带入下一 Episode；Risk Agent 能区分同属
@@ -667,6 +667,16 @@ M4k3 用同一 fixture root、TargetSurface 和预算完成本地 scripted 消�
 `fail-effect`，得到 `2/1/1/0`；使用反馈的脚本改为可组合 `crash`，得到 `1/0/1/1` 并进入 Runtime、达到 Risk。
 四元组依次为 gap、repeated、repair opportunity、repair execution。该结果仅校准接线和指标区分能力；正式比较仍需
 把“是否暴露结构化 gap”写入 MethodSpec 后，在同模型、同输入、同预算的真实多 seed 实验中完成。
+
+M4k4 已完成上述方法归属：活动 CLI 的 `-capability-feedback` 明确选择 `reason-codes` 或
+`structured-gaps`，默认使用后者；同一值既控制 Risk Agent 实际收到的 Memory 投影，也进入现有 typed
+`AgenticMethodSpec`。因此两组不能共享方法 digest，执行组合也不能把一种 MethodSpec 与另一种输入视图混用。
+字段使用 `omitempty` 保持历史工件字节投影：缺少字段的旧 MethodSpec 仍按旧 reason-code 输入语义校验，
+不需要增加新 hash、冻结 contract 或兼容 baseline。
+
+下一步 M4k5 是真实模型公开校准：固定模型、Target、输入材料、预算与 seed 配对运行两种反馈模式，比较上述四项
+adaptation 计数、进入可信执行的候选数及完整成本。该实验需要新的明确外部调用授权；在授权前只做本地预检和
+实验清单，不把 M4k3 scripted 差异外推为 LLM 效果。
 
 下一步不立即给每个真实 Target 填满新字段。先使用 M4j1/M4j2 作为接入扩展缝：若恢复具体 Target 改造，按真实
 Agent hypothesis 暴露的缺口逐项声明并做组合测试；无法由 wrapper/host 接管的行为继续作为 fidelity boundary。

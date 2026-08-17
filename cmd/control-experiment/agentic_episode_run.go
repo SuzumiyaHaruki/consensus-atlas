@@ -22,14 +22,15 @@ const (
 )
 
 type agenticEpisodeComposition struct {
-	Target                agenticEpisodeTarget
-	Budget                agenticEpisodeBudget
-	MethodSpec            controlexperiment.AgenticMethodSpec
-	Memory                []controlexperiment.RiskExplorationMemoryEntry
-	KnowledgeSourceMounts []controlexperiment.KnowledgeSourceMount
-	Client                agentIntentTransport
-	ScenarioClient        agentIntentTransport
-	SessionWallClockMS    int64
+	Target                 agenticEpisodeTarget
+	Budget                 agenticEpisodeBudget
+	MethodSpec             controlexperiment.AgenticMethodSpec
+	Memory                 []controlexperiment.RiskExplorationMemoryEntry
+	KnowledgeSourceMounts  []controlexperiment.KnowledgeSourceMount
+	Client                 agentIntentTransport
+	ScenarioClient         agentIntentTransport
+	SessionWallClockMS     int64
+	CapabilityFeedbackMode controlexperiment.AgenticCapabilityFeedbackMode
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -274,8 +275,10 @@ func runAgenticEpisodeDirectory(
 	methodBound := composition.MethodSpec.Digest != ""
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 		methodBound && (composition.MethodSpec.Validate() != nil ||
-			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest) ||
+			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
+			composition.MethodSpec.CapabilityFeedbackMode != composition.CapabilityFeedbackMode) ||
 		!methodBound && composition.Target.MethodSpecDigest != "" ||
+		composition.CapabilityFeedbackMode.Validate() != nil ||
 		len(composition.KnowledgeSourceMounts) > 0 &&
 			controlexperiment.ValidateKnowledgeSourceMounts(composition.KnowledgeSourceMounts) != nil ||
 		composition.Client == nil || !composition.Client.ready() || composition.SessionWallClockMS <= 0 ||
@@ -342,7 +345,9 @@ func runAgenticEpisodeDirectory(
 	defer cancelSession()
 	result, err := runAgenticEpisode(
 		sessionCtx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
-		composition.Memory, knowledgeReader,
+		projectAgenticCapabilityFeedbackMemory(
+			composition.Memory, composition.CapabilityFeedbackMode,
+		), knowledgeReader,
 		activateRiskKey, activateScenarioKey,
 	)
 	if err != nil {
@@ -369,6 +374,22 @@ func runAgenticEpisodeDirectory(
 		[]agenticBranchTestingResult(nil), result.BranchTesting...,
 	)
 	return recovered, nil
+}
+
+func projectAgenticCapabilityFeedbackMemory(
+	memory []controlexperiment.RiskExplorationMemoryEntry,
+	mode controlexperiment.AgenticCapabilityFeedbackMode,
+) []controlexperiment.RiskExplorationMemoryEntry {
+	projected := append([]controlexperiment.RiskExplorationMemoryEntry(nil), memory...)
+	for index := range projected {
+		projected[index].CapabilityGaps = append(
+			[]controlexperiment.AgentCapabilityGap(nil), memory[index].CapabilityGaps...,
+		)
+		if mode == "" || mode == controlexperiment.AgenticCapabilityFeedbackReasonCodes {
+			projected[index].CapabilityGaps = nil
+		}
+	}
+	return projected
 }
 
 func countUnreconciledProviderCalls(

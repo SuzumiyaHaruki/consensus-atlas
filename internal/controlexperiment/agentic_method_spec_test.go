@@ -47,6 +47,26 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		spec.SourceExposure.ReferencePrefixes[0] != "repo" {
 		t.Fatalf("Agentic MethodSpec invalid: %#v/%v", spec, err)
 	}
+	structuredInput := spec
+	structuredInput.CapabilityFeedbackMode = AgenticCapabilityFeedbackStructuredGaps
+	structuredInput.Digest = ""
+	structured, err := NewAgenticMethodSpec(structuredInput)
+	if err != nil || structured.Validate() != nil || structured.Digest == spec.Digest {
+		t.Fatalf("structured feedback did not acquire distinct method identity: %#v/%v", structured, err)
+	}
+	reasonInput := spec
+	reasonInput.CapabilityFeedbackMode = AgenticCapabilityFeedbackReasonCodes
+	reasonInput.Digest = ""
+	reasonOnly, err := NewAgenticMethodSpec(reasonInput)
+	if err != nil || reasonOnly.Validate() != nil || reasonOnly.Digest == structured.Digest ||
+		reasonOnly.Digest == spec.Digest {
+		t.Fatalf("reason-code feedback did not acquire distinct method identity: %#v/%v", reasonOnly, err)
+	}
+	tamperedFeedback := structured
+	tamperedFeedback.CapabilityFeedbackMode = AgenticCapabilityFeedbackReasonCodes
+	if tamperedFeedback.Validate() == nil {
+		t.Fatal("changed feedback exposure retained the old method identity")
+	}
 	tampered := spec
 	tampered.Transport.Model = "openai/gpt-5"
 	if tampered.Validate() == nil {

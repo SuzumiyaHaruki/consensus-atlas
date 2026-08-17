@@ -9,14 +9,16 @@ import (
 )
 
 const (
-	AgenticMethodSpecSchemaVersion = "consensus-atlas/agentic-method-spec/v1"
-	AgenticMethodExecutorID        = "consensus-atlas/agentic-episode-cli/v1"
-	AgenticMethodStrategyID        = "agentic-episode-v1"
-	AgenticMethodImplementationID  = "consensus-atlas/agentic-method/m4d-v1"
-	AgenticSourceExposureNone      = "none"
-	AgenticSourceExposureDossierV1 = "dossier-declared-readonly-v1"
-	AgenticSourceExposureDossierV2 = "dossier-declared-readonly-navigation-v2"
-	agenticMethodMaxInvestigation  = 1_000
+	AgenticMethodSpecSchemaVersion          = "consensus-atlas/agentic-method-spec/v1"
+	AgenticMethodExecutorID                 = "consensus-atlas/agentic-episode-cli/v1"
+	AgenticMethodStrategyID                 = "agentic-episode-v1"
+	AgenticMethodImplementationID           = "consensus-atlas/agentic-method/m4d-v1"
+	AgenticSourceExposureNone               = "none"
+	AgenticSourceExposureDossierV1          = "dossier-declared-readonly-v1"
+	AgenticSourceExposureDossierV2          = "dossier-declared-readonly-navigation-v2"
+	AgenticCapabilityFeedbackReasonCodes    = "reason-codes"
+	AgenticCapabilityFeedbackStructuredGaps = "structured-gaps"
+	agenticMethodMaxInvestigation           = 1_000
 )
 
 // AgenticSourceExposureSpec identifies the source surface available to the
@@ -41,29 +43,43 @@ type AgenticEpisodeLimits struct {
 	SessionWallClockMS   int64 `json:"session_wall_clock_ms"`
 }
 
+type AgenticCapabilityFeedbackMode string
+
+// Empty is the legacy projection used by historical MethodSpec artifacts.
+// New CLI runs always resolve to one of the two explicit modes.
+func (mode AgenticCapabilityFeedbackMode) Validate() error {
+	switch mode {
+	case "", AgenticCapabilityFeedbackReasonCodes, AgenticCapabilityFeedbackStructuredGaps:
+		return nil
+	default:
+		return errors.New("EXPERIMENT_AGENTIC_CAPABILITY_FEEDBACK_MODE_INVALID")
+	}
+}
+
 // AgenticMethodSpec is the typed, protocol-neutral projection of the actual
 // Agent invocation configuration. SUT/build identity remains in the formal
 // benchmark contract and qualified Bundle; this spec binds the method knobs
 // that can vary for the same SUT.
 type AgenticMethodSpec struct {
-	SchemaVersion            string                       `json:"schema_version"`
-	ExecutorID               string                       `json:"executor_id"`
-	Strategy                 string                       `json:"strategy"`
-	ImplementationID         string                       `json:"implementation_id"`
-	TargetID                 string                       `json:"target_id"`
-	Transport                AgentTransportFreeze         `json:"transport"`
-	ScenarioTransport        *AgentTransportFreeze        `json:"scenario_transport,omitempty"`
-	RiskPromptVersion        string                       `json:"risk_prompt_version"`
-	ScenarioPromptVersion    string                       `json:"scenario_prompt_version"`
-	SemanticInputSchema      string                       `json:"semantic_input_schema"`
-	SemanticInputDigest      string                       `json:"semantic_input_digest"`
-	ScenarioSemanticExposure ScenarioSemanticExposureMode `json:"scenario_semantic_exposure"`
-	SourceExposure           AgenticSourceExposureSpec    `json:"source_exposure"`
-	EpisodeLimits            AgenticEpisodeLimits         `json:"episode_limits"`
-	InvestigationEpisodes    int                          `json:"investigation_episodes"`
-	EpisodeBudget            AgenticLogicalBudget         `json:"episode_budget"`
-	InvestigationBudget      AgenticLogicalBudget         `json:"investigation_budget"`
-	Digest                   string                       `json:"digest"`
+	SchemaVersion            string                        `json:"schema_version"`
+	ExecutorID               string                        `json:"executor_id"`
+	Strategy                 string                        `json:"strategy"`
+	ImplementationID         string                        `json:"implementation_id"`
+	TargetID                 string                        `json:"target_id"`
+	Transport                AgentTransportFreeze          `json:"transport"`
+	ScenarioTransport        *AgentTransportFreeze         `json:"scenario_transport,omitempty"`
+	RiskPromptVersion        string                        `json:"risk_prompt_version"`
+	ScenarioPromptVersion    string                        `json:"scenario_prompt_version"`
+	SemanticInputSchema      string                        `json:"semantic_input_schema"`
+	SemanticInputDigest      string                        `json:"semantic_input_digest"`
+	ScenarioSemanticExposure ScenarioSemanticExposureMode  `json:"scenario_semantic_exposure"`
+	CapabilityFeedbackMode   AgenticCapabilityFeedbackMode `json:"capability_feedback_mode,omitempty"`
+	SourceExposure           AgenticSourceExposureSpec     `json:"source_exposure"`
+	EpisodeLimits            AgenticEpisodeLimits          `json:"episode_limits"`
+	InvestigationEpisodes    int                           `json:"investigation_episodes"`
+	EpisodeBudget            AgenticLogicalBudget          `json:"episode_budget"`
+	InvestigationBudget      AgenticLogicalBudget          `json:"investigation_budget"`
+	Digest                   string                        `json:"digest"`
 }
 
 func NewAgenticMethodSpec(spec AgenticMethodSpec) (AgenticMethodSpec, error) {
@@ -100,6 +116,7 @@ func (spec AgenticMethodSpec) Validate() error {
 		!validMethodToken(spec.RiskPromptVersion) ||
 		!validMethodToken(spec.ScenarioPromptVersion) || !validMethodToken(spec.SemanticInputSchema) ||
 		!validSHA256(spec.SemanticInputDigest) || spec.ScenarioSemanticExposure.Validate() != nil ||
+		spec.CapabilityFeedbackMode.Validate() != nil ||
 		spec.InvestigationEpisodes <= 0 || spec.InvestigationEpisodes > agenticMethodMaxInvestigation ||
 		spec.EpisodeBudget.Validate() != nil || spec.InvestigationBudget.Validate() != nil ||
 		!validAgenticSourceExposure(spec.SourceExposure) ||

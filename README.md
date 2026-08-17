@@ -114,7 +114,8 @@ go run ./cmd/control-experiment \
   -semantic-input plans/agent/etcdraft-agentic-calibration-v1.json \
   -agent-key-file /path/to/deepseek-key.txt \
   -agent-provider deepseek \
-  -agent-model deepseek-v4-flash
+  -agent-model deepseek-v4-flash \
+  -capability-feedback structured-gaps
 ```
 
 OmniPaxos 另需 worker：
@@ -146,6 +147,8 @@ M4e fresh 单 Episode 校准使用新的空 `-campaign-dir`，不要加 `-invest
 Agent 只能读取 Dossier 已声明的精确 reference；本地路径不会进入 prompt 或 verdict。一次 Risk 调查最多读取
 4 个片段、每次调用最多 2 个、每个最多 80 行。成功片段不会关闭入口：Agent 可以用前一结果的
 `end_line + 1` 继续非重叠窗口，也可以查看另一个声明 reference；重复或重叠窗口由可信代码拒绝。
+`-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
+MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
 
 ## 验证与研究边界
 

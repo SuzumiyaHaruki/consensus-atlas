@@ -75,6 +75,9 @@ decision；当前 frontier 的精确 ActionID 也要反查 kind。没有富声�
 若调查最终停在该缺口，Episode 与后续 Agent Memory 保留机械原因，不把它覆盖成预算耗尽或协议 verdict。
 后续 Risk Agent 同时获得该缺口的结构化 step reference 与请求摘要，用于切换到当前 Target 可执行的机制；这些字段
 来自可信预检，不包含 Oracle finding，也不会创建新的 enabled Action。
+能力反馈暴露是方法配置而非 Agent 自报字段。活动 CLI 可选择只提供机械 reason codes，或额外提供结构化
+`code/reference/summary`；实际 Memory 投影与同一个 typed `AgenticMethodSpec` 字段机械绑定。这样可在不改变
+Runtime、Target 或 Oracle 的情况下做配对消融，同时拒绝“合同声明结构化反馈、实际却使用旧视图”的方法漂移。
 
 ### 3.2 Item 与消息所有权
 

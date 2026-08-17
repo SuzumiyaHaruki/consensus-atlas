@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4k3 本地结构化反馈消融（实现完成）。
+阶段：M4k4 能力反馈方法归属（实现完成）。
 
 ## 一句话状态
 
@@ -210,6 +210,13 @@ scripted 消融。忽略结构化 gap 的基线连续两次请求同一非 compo
 repeated=1、repair attempts=1、repair executions=0、Runtime decisions=0；读取 gap 的处理组第二次改用 `crash`，
 结果为 1/0/1/1、Runtime decisions=1，并达到同一可信 Risk milestone。两组均经过真实 Scenario preflight，处理组
 进入 Runtime/fresh Replay；这只证明反馈与指标接线有效，不证明真实 LLM 会采用反馈，也不属于缺陷发现实验。
+
+M4k4 将这项消融从脚本自报变成活动运行配置。Agentic CLI 新增
+`-capability-feedback reason-codes|structured-gaps`，新运行默认使用 `structured-gaps`；Risk Agent 实际收到的
+跨 Episode Memory 由同一字段机械投影。`reason-codes` 仅保留既有机械 reason codes，`structured-gaps` 额外保留
+可信 `code/reference/summary`。该字段进入现有 typed `AgenticMethodSpec`，因此改变暴露方式必然改变方法 digest，
+Episode 组合也会拒绝 MethodSpec 与实际投影不一致。历史 MethodSpec 缺少该可选字段时仍按旧的 reason-code 视图
+验证原 digest，不重写历史工件。本阶段未增加第二套 hash、gate 或 baseline，也未调用模型。
 
 ## 当前输入
 
@@ -459,6 +466,10 @@ M4c 的首个有效样本证明源码查询和 portfolio 路径可用，默认 O
 fixture 持续选择自然进展只能作为执行校准，不能作为 Agent
 有效性的实验结果。
 
+M4k4 已把结构化能力反馈变成可配对的方法变量。下一步 M4k5 在获得明确外部调用授权后，固定其他
+MethodSpec 字段运行 `reason-codes`/`structured-gaps` 公开配对校准；在此之前不调用 provider，也不把本地脚本
+差异解释为模型收益。
+
 `minimize` 仍留到可信 Oracle finding 已存在时实现，不恢复旧 A8 paired session，也不因为长轨迹新增
 hash、冻结 contract、baseline 或 gate。
 
@@ -483,3 +494,5 @@ Timer callback/clock advance 分离。`go test ./... -count=1 -timeout=360s`、`
 包含 256-Action 长调查的聚焦 race 在 240 秒上限仍停留于 Replay/前缀重建，未报告 race；按既有约定记录后
 不再重复。Python discovery 成功但当前 `agents/` 下为 0 tests。
 256 Action 协议无关 fixture 继续只作为成本校准。
+M4k4 的全仓普通测试、vet、`audit-no-v1`、`audit-race-shards`、格式和 diff 检查通过；MethodSpec 身份和
+Memory 投影的两个聚焦 race 用例通过。本阶段未读取 key、未调用 provider，历史实验目录未纳入改动。

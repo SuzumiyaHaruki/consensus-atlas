@@ -165,7 +165,11 @@ being used. They are not state coverage, defect findings, or evidence that a pro
 
 The M4k3 scripted wiring calibration produced baseline `2/1/1/0` and structured-feedback `1/0/1/1` for
 gap/repeated/repair-attempt/repair-execution. Both used the same protocol-neutral fixture root and budgets. This is a deterministic
-metric calibration, not evidence about a real model; a model-level ablation must declare the feedback exposure in its MethodSpec.
+metric calibration, not evidence about a real model. M4k4 adds the actual method knob
+`capability_feedback_mode=reason-codes|structured-gaps`: it controls the Memory projection presented to the Risk Agent and is
+included in the existing typed MethodSpec digest. Historical specs with the field absent retain the legacy reason-code projection
+and their original digest. A real-model comparison must keep every other MethodSpec input fixed and report complete Investigation
+cost; the scripted fixture cannot supply an LLM-effect claim.
 
 ## 7. Known limitations and safeguards
 

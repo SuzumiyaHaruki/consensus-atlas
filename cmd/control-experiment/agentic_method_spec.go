@@ -56,6 +56,9 @@ func buildAgenticMethodSpec(
 		SemanticInputSchema:      semanticInputSchema,
 		SemanticInputDigest:      controlexperiment.AgentInvocationDigest(semanticBytes),
 		ScenarioSemanticExposure: semanticExposure, SourceExposure: source,
+		CapabilityFeedbackMode: controlexperiment.AgenticCapabilityFeedbackMode(
+			normalizedCapabilityFeedbackMode(options.CapabilityFeedbackMode),
+		),
 		EpisodeLimits: controlexperiment.AgenticEpisodeLimits{
 			MaxRiskCalls: budget.MaxRiskCalls, MaxScenarioCalls: budget.MaxScenarioCalls,
 			MaxTotalCalls: budget.MaxTotalCalls, MaxObservedTokens: budget.MaxObservedTokens,
@@ -73,6 +76,13 @@ func buildAgenticMethodSpec(
 		return controlexperiment.AgenticMethodSpec{}, errors.New("AGENTIC_METHOD_SPEC_EXPECTED_DIGEST_MISMATCH")
 	}
 	return spec, nil
+}
+
+func normalizedCapabilityFeedbackMode(value string) string {
+	if value == "" {
+		return controlexperiment.AgenticCapabilityFeedbackStructuredGaps
+	}
+	return value
 }
 
 func agenticSourceExposureSpec(
