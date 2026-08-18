@@ -68,8 +68,8 @@
         "id": "message-loss-progress-coupling",
         "summary": "Selective message loss interacts with coordinator or replication progress.",
         "mechanism": "The implementation may retain stale per-peer or per-operation state when normal progress changes direction after a lost message.",
-        "applicability": "Use when the selected message has a known semantic class and later coordinator, promise or decision progress is observable.",
-        "boundary": "The current target cannot attribute every opaque message to a specific client operation; causal claims must stay within exposed fields."
+        "applicability": "Use when the selected message has a declared leaf type such as prepare, promise, accept-sync, accept-decide, accepted or decide and later coordinator, promise or decision progress is observable.",
+        "boundary": "Only messages carrying a single exposed entry have request_id metadata; other causal claims must stay within leaf type and exposed ballot, sequence and index fields."
       },
       {
         "id": "promise-recovery-regression",
@@ -129,6 +129,11 @@
           "evidence_refs": ["adapters/omnipaxosv2/adapter.go:capture", "adapters/omnipaxosv2/worker/src/main.rs:take_messages"]
         },
         {
+          "id": "target-local-message-semantics",
+          "summary": "Each stored message exposes a leaf type within the BLE or Sequence Paxos family plus read-only ballot, sequence, index, entry-count and single-request metadata when those fields exist. Payload bytes remain the sole delivery input.",
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:describe_message", "adapters/omnipaxosv2/adapter.go:messageItem", "adapters/omnipaxosv2/adapter.go:Manifest"]
+        },
+        {
           "id": "decision-prefix-evidence",
           "summary": "The worker reports a cumulative digest for every decided prefix position so the shared Agreement Oracle can compare common positions without requiring equal frontier lengths.",
           "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:decided_prefixes", "adapters/omnipaxosv2/model.go:workerDecisionPrefix"]
@@ -182,8 +187,8 @@
           "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Node", "adapters/omnipaxosv2/adapter.go:Manifest"]
         },
         {
-          "id": "coarse-message-type-hints",
-          "summary": "The worker exposes a message type hint but not every internal phase field or client-operation relationship, so some causal distinctions remain unavailable to the Agent and Oracle.",
+          "id": "bounded-message-metadata",
+          "summary": "Leaf message types and selected scalar metadata are exposed, but full entry values, snapshots, stop-sign contents and inferred labels such as stale or current remain unavailable; the Agent must not infer them from absent fields.",
           "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:MessageView", "adapters/omnipaxosv2/model.go:workerMessage"]
         },
         {

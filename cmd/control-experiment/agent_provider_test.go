@@ -66,10 +66,11 @@ func buildOmnipaxosScenarioWorker(t *testing.T) string {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build OmniPaxos worker: %v\n%s", err, output)
 	}
-	path, err := filepath.Abs(filepath.Join(
-		"..", "..", "adapters", "omnipaxosv2", "worker", "target", "debug",
-		"consensus-atlas-omnipaxos-worker",
-	))
+	targetDir := filepath.Join("..", "..", "adapters", "omnipaxosv2", "worker", "target")
+	if configured := os.Getenv("CARGO_TARGET_DIR"); configured != "" {
+		targetDir = configured
+	}
+	path, err := filepath.Abs(filepath.Join(targetDir, "debug", "consensus-atlas-omnipaxos-worker"))
 	if err != nil {
 		t.Fatal(err)
 	}

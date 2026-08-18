@@ -80,7 +80,7 @@ type ScenarioExecution struct {
 	NaturalProgressStop  string                     `json:"natural_progress_stop,omitempty"`
 	FinalTrace           controlruntime.Trace       `json:"final_trace"`
 	FinalRisk            semantic.RiskWitnessResult `json:"final_risk"`
-	Work                 StatelessDFSWork           `json:"work"`
+	Work                 ScenarioExecutionWork      `json:"work"`
 	continuationFrontier *RiskFrontierView
 	continuationSnapshot *controlruntime.Snapshot
 }
@@ -226,7 +226,7 @@ func executeBoundedScenarioPlan(
 		ctx, executionID+"-frontier-01", spec, rootRisk, root, len(root.Records),
 		runtimeConfig, faultEnvelope, newAdapter,
 	)
-	addDFSPhase(&result.Work.FrontierReconstruction, reconstruction)
+	addScenarioPhase(&result.Work.FrontierReconstruction, reconstruction)
 	if err != nil {
 		return ScenarioExecution{}, err
 	}
@@ -329,12 +329,12 @@ func executeBoundedScenarioPlan(
 				if frontierErr != nil {
 					return ScenarioExecution{}, closeWith(frontierErr)
 				}
-				child, materialization, executeErr := executeDFSChildOnLiveRuntime(
+				child, materialization, executeErr := executeScenarioChildOnLiveRuntime(
 					ctx, frontier, choice.Action, runtime,
 				)
-				addDFSPhase(&result.Work.ChildMaterialization, materialization)
+				addScenarioPhase(&result.Work.ChildMaterialization, materialization)
 				if executeErr != nil {
-					return result, &StatelessDFSExecutionError{
+					return result, &ScenarioExecutionError{
 						Work: result.Work, cause: closeWith(executeErr),
 					}
 				}
@@ -446,14 +446,14 @@ func executeBoundedScenarioPlan(
 		if preparedAction {
 			preparedPrefixes = append(preparedPrefixes, result.FinalTrace)
 		}
-		child, materialization, err := executeDFSChildOnLiveRuntime(
+		child, materialization, err := executeScenarioChildOnLiveRuntime(
 			ctx, frontier, choice.Action, runtime, preparedPrefixes...,
 		)
-		addDFSPhase(&result.Work.ChildMaterialization, materialization)
+		addScenarioPhase(&result.Work.ChildMaterialization, materialization)
 		if err != nil {
 			result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
 				result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
-			return result, &StatelessDFSExecutionError{Work: result.Work, cause: closeWith(err)}
+			return result, &ScenarioExecutionError{Work: result.Work, cause: closeWith(err)}
 		}
 		if projectErr := projectChild(
 			fmt.Sprintf("%s-risk-%02d", executionID, index+1), child,
@@ -489,12 +489,12 @@ func executeBoundedScenarioPlan(
 				ctx, executionID+"-natural", remaining, spec, result.FinalRisk,
 				result.FinalTrace, view, snapshot, faultEnvelope, runtime, projector,
 			)
-			addDFSPhase(&result.Work.ChildMaterialization, live.Work.ChildMaterialization)
+			addScenarioPhase(&result.Work.ChildMaterialization, live.Work.ChildMaterialization)
 			result.NaturalProgressStop = live.StopReason
 			result.AutomaticProgress = append(result.AutomaticProgress, live.Steps...)
 			result.FinalTrace, result.FinalRisk = live.FinalTrace, live.FinalRisk
 			if liveErr != nil {
-				return result, &StatelessDFSExecutionError{
+				return result, &ScenarioExecutionError{
 					Work: result.Work, cause: closeWith(liveErr),
 				}
 			}
@@ -504,17 +504,17 @@ func executeBoundedScenarioPlan(
 		return ScenarioExecution{}, err
 	}
 	if len(result.FinalTrace.Records) > len(root.Records) {
-		verificationRuntime, verification, verifyErr := verifyDFSChildRuntime(
+		verificationRuntime, verification, verifyErr := verifyScenarioChildRuntime(
 			ctx, result.FinalTrace, runtimeConfig, newAdapter,
 		)
-		addDFSPhase(&result.Work.ChildVerification, verification)
+		addScenarioPhase(&result.Work.ChildVerification, verification)
 		if verifyErr != nil {
 			if verificationRuntime != nil {
 				verifyErr = errors.Join(verifyErr, verificationRuntime.Close())
 			}
 			result.Work.TotalWorkUnits = result.Work.FrontierReconstruction.WorkUnits +
 				result.Work.ChildMaterialization.WorkUnits + result.Work.ChildVerification.WorkUnits
-			return result, &StatelessDFSExecutionError{Work: result.Work, cause: verifyErr}
+			return result, &ScenarioExecutionError{Work: result.Work, cause: verifyErr}
 		}
 		if verificationRuntime == nil {
 			return result, errors.New("EXPERIMENT_SCENARIO_VERIFICATION_RUNTIME_MISSING")

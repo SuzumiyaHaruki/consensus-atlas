@@ -1,0 +1,14 @@
+{
+  "root_trace_digest": "55155bcdd743a22d15938938393f8c3041148f392e231779fedd76a93c2e11da",
+  "source": "n2",
+  "target": "n1",
+  "family_type": "replication",
+  "leaf_type": "MsgAppResp",
+  "target_item_id": "etcdraft-v2-item-4913d3b1752c21a642d5ff34f36f68efa9d051be97900a2d3cbece2e41462683",
+  "target_action_id": "action-f680af03f218145facfa6a49e7a010cde94f1201a527a0bead017a2ac2ee59eb",
+  "contrast_item_id": "etcdraft-v2-item-95ac51f9d0412fc258555d9f6f69c2d62c8ebb835b537a020b738a80a7262d9d",
+  "coarse_matches": 2,
+  "leaf_matches": 1,
+  "root_decisions": 32,
+  "setup_duplicates": 0
+}

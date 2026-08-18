@@ -1,8 +1,10 @@
 package omnipaxosv2
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -225,6 +227,11 @@ func TestManifestKeepsM521wBoundary(t *testing.T) {
 		len(manifest.Capabilities.EffectKinds) != 0 {
 		t.Fatalf("unexpected item/effect capabilities: %+v", manifest.Capabilities)
 	}
+	if manifest.Capabilities.Message == nil ||
+		len(manifest.Capabilities.Message.TypeHints) != len(messageTypeHints) ||
+		len(manifest.Capabilities.Message.MetadataKeys) != len(messageMetadataKeys) {
+		t.Fatalf("unexpected message capability: %+v", manifest.Capabilities.Message)
+	}
 	risk, err := semantic.QualifyRisk([]semantic.ObservationPredicate{{
 		MilestoneID: "restart", Kind: semantic.ObservationNodeRestarted,
 	}}, (ObservationProjector{}).Capabilities(), manifest.Capabilities.Actions)
@@ -238,6 +245,183 @@ func TestManifestKeepsM521wBoundary(t *testing.T) {
 		risk.Issues[1].Kind != semantic.ObservationNodeRestarted {
 		t.Fatalf("unsupported restart Risk was not rejected mechanically: %#v", risk)
 	}
+}
+
+func TestLeafMessageSemanticsDisambiguateSameRouteWithoutChangingPayloadOrReplay(t *testing.T) {
+	workerPath := buildWorker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	seed := []byte("omnipaxos-leaf-message-semantics-v1")
+	config := controlruntime.Config{Seed: seed, MaxClones: 1}
+	adapter, err := New(Config{WorkerPath: workerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := controlruntime.New(ctx, adapter, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var preserved controlruntime.ItemSnapshot
+	for decisions := 0; decisions < 256 && preserved.ID == ""; decisions++ {
+		actions, enabledErr := runtime.EnabledActions(ctx)
+		if enabledErr != nil {
+			t.Fatal(enabledErr)
+		}
+		for _, action := range actions {
+			item, ok := snapshotItem(runtime.Snapshot(), action.Item)
+			if action.Kind != control.ActionDuplicateMessage || !ok || item.Value.Message == nil ||
+				item.Value.Message.TypeHint != "sequence-paxos/prepare" {
+				continue
+			}
+			preserved = item
+			originalBytes := append([]byte(nil), item.Value.Message.Payload.Bytes...)
+			if _, err := runtime.Select(ctx, action.ID); err != nil {
+				t.Fatal(err)
+			}
+			clone, ok := cloneOf(runtime.Snapshot(), item.Value.Message.ID)
+			if !ok || clone.Value.Message == nil ||
+				!bytes.Equal(clone.Value.Message.Payload.Bytes, originalBytes) {
+				t.Fatalf("duplicated Prepare changed payload: %#v", clone)
+			}
+			actions, enabledErr = runtime.EnabledActions(ctx)
+			if enabledErr != nil {
+				t.Fatal(enabledErr)
+			}
+			deliver, ok := actionForItem(actions, control.ActionDeliverMessage, clone.ID)
+			if !ok {
+				t.Fatalf("deliver action missing for Prepare clone %s", clone.ID)
+			}
+			if _, err := runtime.Select(ctx, deliver.ID); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+		if preserved.ID != "" {
+			break
+		}
+		selected, ok := progressAction(actions)
+		if !ok {
+			t.Fatalf("no action can reach Prepare: %+v", actions)
+		}
+		if _, err := runtime.Select(ctx, selected.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if preserved.ID == "" || preserved.Value.Message == nil {
+		t.Fatal("no Sequence Paxos Prepare was preserved")
+	}
+	for decisions := 0; decisions < 256 && consensusLeader(adapter) != "n1"; decisions++ {
+		actions, enabledErr := runtime.EnabledActions(ctx)
+		if enabledErr != nil {
+			t.Fatal(enabledErr)
+		}
+		selected, ok := progressActionExcept(actions, preserved.ID)
+		if !ok {
+			t.Fatalf("no action can complete election while preserving %s", preserved.ID)
+		}
+		if _, err := runtime.Select(ctx, selected.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if consensusLeader(adapter) != "n1" {
+		t.Fatal("n1 did not become the common leader")
+	}
+	payload, err := InputPayload(Input{RequestID: "leaf-semantics-request", Value: []byte("value")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke, err := runtime.OfferInvoke(ctx, "n1", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Select(ctx, invoke); err != nil {
+		t.Fatal(err)
+	}
+
+	var selectedMessage controlruntime.ItemSnapshot
+	coarseMatches, exactMatches := 0, 0
+	for decisions := 0; decisions < 256; decisions++ {
+		snapshot := runtime.Snapshot()
+		coarseMatches, exactMatches = 0, 0
+		for _, item := range snapshot.Items {
+			if item.State != control.ItemEnabled || item.Value.Message == nil ||
+				item.Value.Message.Source != preserved.Value.Message.Source ||
+				item.Value.Message.Target != preserved.Value.Message.Target ||
+				!strings.HasPrefix(item.Value.Message.TypeHint, "sequence-paxos/") {
+				continue
+			}
+			coarseMatches++
+			if item.Value.Message.TypeHint == "sequence-paxos/accept-decide" {
+				exactMatches++
+				selectedMessage = item
+			}
+		}
+		if coarseMatches > 1 && exactMatches == 1 {
+			break
+		}
+		actions, enabledErr := runtime.EnabledActions(ctx)
+		if enabledErr != nil {
+			t.Fatal(enabledErr)
+		}
+		selected, ok := progressActionExcept(actions, preserved.ID)
+		if !ok {
+			t.Fatalf("no action can reach same-route AcceptDecide: %+v", actions)
+		}
+		if _, err := runtime.Select(ctx, selected.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if coarseMatches <= 1 || exactMatches != 1 || selectedMessage.Value.Message == nil {
+		t.Fatalf("selector contrast not established: coarse=%d exact=%d", coarseMatches, exactMatches)
+	}
+	metadata := selectedMessage.Value.Message.Metadata
+	if metadata["request_id"] != "leaf-semantics-request" || metadata["entry_count"] != "1" ||
+		metadata["ballot_number"] == "" || metadata["sequence_counter"] == "" {
+		t.Fatalf("AcceptDecide metadata incomplete: %#v", metadata)
+	}
+	preservedNow, ok := snapshotItem(runtime.Snapshot(), preserved.ID)
+	if !ok || preservedNow.State != control.ItemEnabled || preservedNow.Value.Message == nil ||
+		!bytes.Equal(preservedNow.Value.Message.Payload.Bytes, preserved.Value.Message.Payload.Bytes) {
+		t.Fatal("descriptive semantics changed the preserved Prepare")
+	}
+	actions, err := runtime.EnabledActions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver, ok := actionForItem(actions, control.ActionDeliverMessage, selectedMessage.ID)
+	if !ok {
+		t.Fatalf("exact AcceptDecide is not deliverable: %s", selectedMessage.ID)
+	}
+	if _, err := runtime.Select(ctx, deliver.ID); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	replayAdapter, err := New(Config{WorkerPath: workerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := controlruntime.Replay(ctx, replayAdapter, config, trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedTrace, err := replayed.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayedTrace.Digest != trace.Digest {
+		t.Fatalf("replay digest mismatch: %s != %s", replayedTrace.Digest, trace.Digest)
+	}
+	if err := replayed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("coarse_matches=%d exact_matches=%d decisions=%d trace=%s", coarseMatches, exactMatches, len(trace.Records), trace.Digest)
 }
 
 func TestWorkerRejectsUnsupportedOperation(t *testing.T) {
@@ -371,7 +555,11 @@ func buildWorker(t *testing.T) string {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build OmniPaxos worker: %v\n%s", err, output)
 	}
-	path, err := filepath.Abs(filepath.Join("worker", "target", "debug", "consensus-atlas-omnipaxos-worker"))
+	targetDir := filepath.Join("worker", "target")
+	if configured := os.Getenv("CARGO_TARGET_DIR"); configured != "" {
+		targetDir = configured
+	}
+	path, err := filepath.Abs(filepath.Join(targetDir, "debug", "consensus-atlas-omnipaxos-worker"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,6 +570,17 @@ func progressAction(actions []control.Action) (control.Action, bool) {
 	for _, kind := range []control.ActionKind{control.ActionDeliverMessage, control.ActionFireTemporal} {
 		if action, ok := firstAction(actions, kind); ok {
 			return action, true
+		}
+	}
+	return control.Action{}, false
+}
+
+func progressActionExcept(actions []control.Action, excluded control.ItemID) (control.Action, bool) {
+	for _, kind := range []control.ActionKind{control.ActionDeliverMessage, control.ActionFireTemporal} {
+		for _, action := range actions {
+			if action.Kind == kind && action.Item != excluded {
+				return action, true
+			}
 		}
 	}
 	return control.Action{}, false

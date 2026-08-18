@@ -25,6 +25,18 @@ const (
 	effectReadyAdvance = "raft-ready-advance"
 )
 
+// These are the official raftpb MessageType names for the pinned etcd/raft
+// version. Core treats them as opaque target-authored labels.
+var messageTypeHints = []string{
+	"MsgApp", "MsgAppResp", "MsgBeat", "MsgCheckQuorum", "MsgForgetLeader",
+	"MsgHeartbeat", "MsgHeartbeatResp", "MsgHup", "MsgPreVote", "MsgPreVoteResp",
+	"MsgProp", "MsgReadIndex", "MsgReadIndexResp", "MsgSnap", "MsgSnapStatus",
+	"MsgStorageAppend", "MsgStorageAppendResp", "MsgStorageApply", "MsgStorageApplyResp",
+	"MsgTimeoutNow", "MsgTransferLeader", "MsgUnreachable", "MsgVote", "MsgVoteResp",
+}
+
+var messageMetadataKeys = []string{"commit", "index", "term"}
+
 // SUTBuildIdentity is replaced only by the audited source-variation builder.
 // The official in-process control retains defaultBuildID byte-for-byte.
 var SUTBuildIdentity = defaultBuildID

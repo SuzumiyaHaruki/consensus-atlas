@@ -2,6 +2,7 @@ package etcdraftv2
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -10,7 +11,7 @@ import (
 )
 
 const (
-	ObservationProjectionID                               = "official-etcdraft-v2/observations-v2"
+	ObservationProjectionID                               = "official-etcdraft-v2/observations-v3"
 	ObservationRaftTermAdvanced semantic.ObservationKind  = "raft/term-advanced"
 	ObservationFieldRaftTerm    semantic.ObservationField = "raft/term"
 )
@@ -32,8 +33,16 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 			Values: map[semantic.ObservationField][]string{
 				semantic.ObservationFieldParticipantRole: {"coordinator"},
 			}},
-		{Kind: semantic.ObservationMessageDropped, Fields: append([]semantic.ObservationField{}, node...)},
-		{Kind: semantic.ObservationMessageDelivered, Fields: append([]semantic.ObservationField{}, node...)},
+		{Kind: semantic.ObservationMessageDropped,
+			Fields: append(append([]semantic.ObservationField{}, node...), semantic.ObservationFieldMessageRole),
+			Values: map[semantic.ObservationField][]string{
+				semantic.ObservationFieldMessageRole: append([]string(nil), messageTypeHints...),
+			}},
+		{Kind: semantic.ObservationMessageDelivered,
+			Fields: append(append([]semantic.ObservationField{}, node...), semantic.ObservationFieldMessageRole),
+			Values: map[semantic.ObservationField][]string{
+				semantic.ObservationFieldMessageRole: append([]string(nil), messageTypeHints...),
+			}},
 		{Kind: semantic.ObservationTemporalFired, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationNodeCrashed, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationNodeRestarted, Fields: append([]semantic.ObservationField{}, node...)},
@@ -55,8 +64,8 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 }
 
 // Project translates etcd/raft Evidence into the compact common observation
-// vocabulary. Raft terms, roles and application counters do not escape this
-// Adapter-owned boundary.
+// vocabulary. Message roles remain opaque target labels; internal Raft state
+// and application counters do not escape this Adapter-owned boundary.
 func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.ObservationHistory, error) {
 	events, err := semantic.ProjectRuntimeObservations(trace)
 	if err != nil {
@@ -76,6 +85,20 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 		digest, err := control.CanonicalDigest(record)
 		if err != nil {
 			return semantic.ObservationHistory{}, err
+		}
+		if record.Action.Kind == control.ActionDropMessage || record.Action.Kind == control.ActionDeliverMessage {
+			role, err := etcdraftObservationMessageRole(record)
+			if err != nil {
+				return semantic.ObservationHistory{}, err
+			}
+			for index := range events {
+				if events[index].Step == record.Step &&
+					(events[index].Kind == semantic.ObservationMessageDropped ||
+						events[index].Kind == semantic.ObservationMessageDelivered) {
+					events[index].MessageRole = role
+					break
+				}
+			}
 		}
 		if record.Action.Kind == control.ActionInvoke {
 			input, err := etcdraftObservationInput(record.Action.Parameters)
@@ -155,6 +178,22 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 	return semantic.NewObservationHistoryWithCapabilities(
 		ObservationProjectionID, trace, events, (ObservationProjector{}).Capabilities(),
 	)
+}
+
+func etcdraftObservationMessageRole(record controlruntime.ActionRecord) (string, error) {
+	if record.Command == nil {
+		return "", fmt.Errorf("ETCDRAFT_OBSERVATION_MESSAGE_COMMAND_REQUIRED")
+	}
+	envelope, err := control.DecodeAdapterCommand(*record.Command)
+	if err != nil {
+		return "", err
+	}
+	if envelope.Item == nil || envelope.Item.ID != record.Action.Item ||
+		envelope.Item.Kind != control.ItemMessage || envelope.Item.Message == nil ||
+		envelope.Item.Message.TypeHint == "" {
+		return "", fmt.Errorf("ETCDRAFT_OBSERVATION_MESSAGE_ITEM_INVALID")
+	}
+	return envelope.Item.Message.TypeHint, nil
 }
 
 func etcdraftObservationInput(parameters json.RawMessage) (Input, error) {

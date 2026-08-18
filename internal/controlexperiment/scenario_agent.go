@@ -107,7 +107,7 @@ type ScenarioAgentResult struct {
 	Branches                   []ScenarioInvestigationBranch `json:"branches,omitempty"`
 	CandidateExecutions        []ScenarioCandidateExecution  `json:"candidate_executions,omitempty"`
 	Execution                  *ScenarioExecution            `json:"execution,omitempty"`
-	ExecutionWork              StatelessDFSWork              `json:"execution_work"`
+	ExecutionWork              ScenarioExecutionWork         `json:"execution_work"`
 	ModelWork                  ModelWork                     `json:"model_work"`
 }
 
@@ -567,9 +567,6 @@ func selectScenarioProposalRoot(
 			return scenarioProposalRootSelection{}, ScenarioReasonBranchDuplicate
 		}
 	}
-	if proposal.Intent == ScenarioIntentMinimize {
-		return scenarioProposalRootSelection{}, ScenarioReasonTrustedFindingRequired
-	}
 	if proposal.Intent == ScenarioIntentRevise && prior == nil {
 		return scenarioProposalRootSelection{}, ScenarioReasonRevisionUnavailable
 	}
@@ -833,10 +830,10 @@ func addScenarioModelWork(total *ModelWork, value ModelWork) {
 	total.TotalTokens += value.TotalTokens
 }
 
-func addScenarioExecutionWork(total *StatelessDFSWork, value StatelessDFSWork) {
-	addDFSPhase(&total.FrontierReconstruction, value.FrontierReconstruction)
-	addDFSPhase(&total.ChildMaterialization, value.ChildMaterialization)
-	addDFSPhase(&total.ChildVerification, value.ChildVerification)
+func addScenarioExecutionWork(total *ScenarioExecutionWork, value ScenarioExecutionWork) {
+	addScenarioPhase(&total.FrontierReconstruction, value.FrontierReconstruction)
+	addScenarioPhase(&total.ChildMaterialization, value.ChildMaterialization)
+	addScenarioPhase(&total.ChildVerification, value.ChildVerification)
 	total.TotalWorkUnits = total.FrontierReconstruction.WorkUnits +
 		total.ChildMaterialization.WorkUnits + total.ChildVerification.WorkUnits
 }

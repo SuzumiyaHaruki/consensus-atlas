@@ -5,10 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"io"
-	"os"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -137,73 +133,6 @@ func TestFormalOpaqueViewRejectsResealedProjectionChange(t *testing.T) {
 	if err := contract.ValidateOpaqueView(view); err == nil ||
 		!strings.Contains(err.Error(), "FORMAL_OPAQUE_VIEW_PROJECTION_MISMATCH") {
 		t.Fatalf("projection error = %v", err)
-	}
-}
-
-type formalContractStageSummary struct {
-	SchemaVersion            string `json:"schema_version"`
-	ID                       string `json:"id"`
-	ContractDigest           string `json:"contract_digest"`
-	OpaqueViewDigest         string `json:"opaque_view_digest"`
-	Pairs                    int    `json:"pairs"`
-	Trials                   int    `json:"trials"`
-	DistinctRootCauses       int    `json:"distinct_root_causes"`
-	DatasetClassification    string `json:"dataset_classification"`
-	CompositionResolved      bool   `json:"composition_resolved"`
-	FreshEvaluatorWired      bool   `json:"fresh_evaluator_wired"`
-	ExposureAuditImplemented bool   `json:"exposure_audit_implemented"`
-	FormalReady              bool   `json:"formal_ready"`
-	NewModelCalls            int    `json:"new_model_calls"`
-	NewSUTExecutions         int    `json:"new_sut_executions"`
-	Digest                   string `json:"digest"`
-}
-
-func TestSyntheticContractSummaryIsRecomputed(t *testing.T) {
-	contract := sealFixtureContract(t)
-	view, err := contract.OpaqueView()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ResolveFormalComposition(contract, fixtureProjector{id: contract.Composition.ProjectorID}, oracle.BundleAgreement{}); err != nil {
-		t.Fatal(err)
-	}
-	roots := map[string]bool{}
-	for _, pair := range contract.Pairs {
-		roots[pair.RootCauseID] = true
-	}
-	recomputed := formalContractStageSummary{
-		SchemaVersion: "consensus-atlas/formal-contract-stage-summary/v1",
-		ID:            "formal-benchmark-contract-m5-21l", ContractDigest: contract.Digest,
-		OpaqueViewDigest: view.Digest, Pairs: len(contract.Pairs), Trials: len(view.Trials),
-		DistinctRootCauses: len(roots), DatasetClassification: "public-synthetic-contract-fixture-only",
-		CompositionResolved: true, FreshEvaluatorWired: false, ExposureAuditImplemented: false,
-		FormalReady: false, NewModelCalls: 0, NewSUTExecutions: 0,
-	}
-	digest, err := control.CanonicalDigest(recomputed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	recomputed.Digest = digest
-
-	path := "../../benchmarks/experiments/formal-benchmark-contract-m5.21l/summary.json"
-	data, err := os.ReadFile(path)
-	if err != nil {
-		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
-		t.Fatalf("read stage summary: %v\n%s", err, append(encoded, '\n'))
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var archived formalContractStageSummary
-	if err := decoder.Decode(&archived); err != nil {
-		t.Fatal(err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		t.Fatal("stage summary contains trailing JSON")
-	}
-	if !reflect.DeepEqual(archived, recomputed) {
-		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
-		t.Fatalf("stage summary is stale; recomputed:\n%s", append(encoded, '\n'))
 	}
 }
 

@@ -1,0 +1,21 @@
+[
+  {
+    "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+    "ordinal": 1,
+    "root_id": "7251611f3020533d8177aa7f372c98e5ca99bb33eb3687c0b6da276314257629",
+    "search_request_digest": "774bb6965007ddd6eff85cf5f854a83a428e718dfb2753c5f04d1118d9cad4e9",
+    "intent_digest": "56be0bb8ce733b6048f733adee260ee6b6c1b70f4fc8d682bbd07c74a2071deb",
+    "dispatch_digest": "deace4cda678fbaed26c6fc90f3d243da9ce4d6a5fa352227f713886f6823547",
+    "result_digest": "6760ad276f724990a5054caccfda92b055e5e94327462100ff74b91e25f7ef23",
+    "status": "content-ready",
+    "work": {
+      "calls": 1,
+      "input_tokens": 8530,
+      "output_tokens": 2123,
+      "total_tokens": 10653
+    },
+    "transport_attempts": 1,
+    "provider_usage_status": "observed",
+    "digest": "fe68362312bb4f73afc176bf0ed3452e1181b4547bc6b7114be3ccf20d479d7a"
+  }
+]

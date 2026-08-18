@@ -57,7 +57,7 @@ func ExecuteScenarioNaturalProgress(
 		ctx, id+"-frontier-01", spec, rootRisk, root, len(root.Records),
 		runtimeConfig, faultEnvelope, newAdapter,
 	)
-	addDFSPhase(&result.Execution.Work.FrontierReconstruction, reconstruction)
+	addScenarioPhase(&result.Execution.Work.FrontierReconstruction, reconstruction)
 	if err != nil {
 		return ScenarioProgressResult{}, err
 	}
@@ -68,7 +68,7 @@ func ExecuteScenarioNaturalProgress(
 		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
 		faultEnvelope, runtime, projector,
 	)
-	addDFSPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
+	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
 	result.Execution.Steps = live.Steps
 	result.Execution.FinalTrace, result.Execution.FinalRisk = live.FinalTrace, live.FinalRisk
@@ -76,7 +76,7 @@ func ExecuteScenarioNaturalProgress(
 		result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
 			result.Execution.Work.ChildMaterialization.WorkUnits +
 			result.Execution.Work.ChildVerification.WorkUnits
-		return result, &StatelessDFSExecutionError{
+		return result, &ScenarioExecutionError{
 			Work: result.Execution.Work, cause: closeWith(liveErr),
 		}
 	}
@@ -84,12 +84,12 @@ func ExecuteScenarioNaturalProgress(
 		return ScenarioProgressResult{}, err
 	}
 	if len(result.Execution.Steps) > 0 {
-		verification, err := verifyDFSChild(
+		verification, err := verifyScenarioChild(
 			ctx, result.Execution.FinalTrace, runtimeConfig, newAdapter,
 		)
-		addDFSPhase(&result.Execution.Work.ChildVerification, verification)
+		addScenarioPhase(&result.Execution.Work.ChildVerification, verification)
 		if err != nil {
-			return result, &StatelessDFSExecutionError{Work: result.Execution.Work, cause: err}
+			return result, &ScenarioExecutionError{Work: result.Execution.Work, cause: err}
 		}
 	}
 	result.Execution.Work.TotalWorkUnits = result.Execution.Work.FrontierReconstruction.WorkUnits +
@@ -103,7 +103,7 @@ type scenarioLiveProgressResult struct {
 	Steps      []ScenarioStepFeedback
 	FinalTrace controlruntime.Trace
 	FinalRisk  semantic.RiskWitnessResult
-	Work       StatelessDFSWork
+	Work       ScenarioExecutionWork
 }
 
 func executeScenarioNaturalProgressOnLiveRuntime(
@@ -140,10 +140,10 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 		if err != nil {
 			return result, err
 		}
-		child, materialization, err := executeDFSChildOnLiveRuntime(
+		child, materialization, err := executeScenarioChildOnLiveRuntime(
 			ctx, frontier, choice.Action, runtime,
 		)
-		addDFSPhase(&result.Work.ChildMaterialization, materialization)
+		addScenarioPhase(&result.Work.ChildMaterialization, materialization)
 		if err != nil {
 			return result, err
 		}

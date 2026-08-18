@@ -581,8 +581,7 @@ func validAgenticScenarioAttemptIntents(values []string) bool {
 			controlexperiment.ScenarioIntentControl,
 			controlexperiment.ScenarioIntentAblate,
 			controlexperiment.ScenarioIntentSelect,
-			controlexperiment.ScenarioIntentAbandon,
-			controlexperiment.ScenarioIntentMinimize:
+			controlexperiment.ScenarioIntentAbandon:
 		default:
 			return false
 		}

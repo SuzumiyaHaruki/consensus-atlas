@@ -1,0 +1,9 @@
+{
+  "family_classification": "ambiguous",
+  "leaf_classification": "correct-unique",
+  "family_target_drop_executed": false,
+  "leaf_target_drop_executed": true,
+  "leaf_scenario_risk_reached": true,
+  "leaf_bundle_produced": true,
+  "leaf_fresh_replay_stable": true
+}

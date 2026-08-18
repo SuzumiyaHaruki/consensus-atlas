@@ -23,7 +23,7 @@ func checkFormalFreshEvaluation(
 ) {
 	t.Helper()
 	var baseAudit sutbuild.Audit
-	auditBytes, err := os.ReadFile("../../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/control.json")
+	auditBytes, err := os.ReadFile("../../testdata/sutbuild-audit-v4.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -41,7 +41,7 @@ type AgenticTrialEvidence struct {
 	ScenarioDecisionsUsed int
 	ModelWork             controlexperiment.ModelWork
 	ScenarioFrontier      controlexperiment.PhaseWork
-	ScenarioSearch        controlexperiment.StatelessDFSWork
+	ScenarioSearch        controlexperiment.ScenarioExecutionWork
 	Bundle                *controlexperiment.ExecutionBundle
 	CandidateBundles      []controlexperiment.ExecutionBundle
 }

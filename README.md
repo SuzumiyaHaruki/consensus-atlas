@@ -8,8 +8,9 @@ ConsensusAtlas 是一个“利用 Agent 测试分布式共识实现”的研究�
 - fresh Replay、PSS 投影和独立 Oracle 从真实执行结果生成证据；
 - Agent 不能制造 Action、Observation、覆盖率或缺陷结论。
 
-当前活动入口是 `agentic-episode-v1`。旧 A2 Semantic Explorer、A8 session/paired wrapper、stateless Campaign
-和通用 Campaign store 已删除；它们不再与当前方法并存。
+当前活动 Agent 方法入口是 `agentic-episode-v1`；`workload` 只保留为确定性执行/评测 fixture。
+旧 A2 Semantic Explorer、A8 session/paired wrapper、独立 DFS、stateless Campaign 和通用 Campaign store
+已删除；它们不再与当前方法并存。
 
 ## 活动流程
 
@@ -25,7 +26,7 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
                          │
                          ▼
                   Scenario Agent
- continue / revise / branch / control / ablate / select / abandon
+              continue / revise / abandon
                          │
                          ▼
        Target composition → Control Runtime → Trace
@@ -43,10 +44,9 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
 共享同一 live Runtime；形成候选后再做一次 fresh Replay。
 `ProgressDelta` 区分 milestone 停滞/推进、客户端返回、自然闭包静止和重复调度，并分别统计 Timer callback 与
 真实逻辑时钟推进；它还报告 fault 配额消耗和当前可用干预，不把这些机械事实解释成协议 verdict。
-分支候选不会隐式覆盖主路径；Agent 可以用零 Runtime Action 的 `select` 选择已有分支。
-即使没有选择，每个唯一且 fresh-Replay 稳定的分支仍会独立运行 Target Oracle。
-最后 select-only 调用不消耗 Runtime decision，但正常计入模型调用/token。跨 Episode Memory
-不包含 Oracle finding 或 Oracle 派生 outcome。
+高级 branch/control/ablate 仍可用于受控实验，但不是默认调查主线。已有分支候选不会隐式覆盖主路径；
+每个唯一且 fresh-Replay 稳定的候选仍会独立运行 Target Oracle。跨 Episode Memory 不包含 Oracle finding
+或 Oracle 派生 outcome。
 
 ## 当前 Target
 
@@ -132,10 +132,9 @@ go run ./cmd/control-experiment \
   -agent-model deepseek-v4-flash
 ```
 
-M4e fresh 单 Episode 校准使用新的空 `-campaign-dir`，不要加 `-investigation-episodes` 或
-`-campaign-resume`。最低成功条件不是 finding，而是终态 `summary.json` 中
-`scenario_decisions_used > 0`，同时生成 `bundle.json` 且 Replay stable。`planning-failed` 必须结合
-`scenario_attempt_feedback` 的字段级 issue 判断，不能单独视为模型或协议结论。
+fresh 单 Episode 校准使用新的空 `-campaign-dir`。最低闭环条件不是 finding，而是实际执行非零 Action、
+生成 `bundle.json` 并通过 fresh Replay。`planning-failed` 必须结合字段级 feedback 分析，不能单独视为
+模型或协议结论。
 
 连续 Investigation 增加 `-investigation-episodes N`；中断后使用相同参数和 `-campaign-resume`。源码查询需显式增加：
 
@@ -149,8 +148,8 @@ Agent 只能读取 Dossier 已声明的精确 reference；本地路径不会进�
 `end_line + 1` 继续非重叠窗口，也可以查看另一个声明 reference；重复或重叠窗口由可信代码拒绝。
 `-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
-公开反馈校准还可指定 `-capability-feedback-probe plans/agent/omnipaxos-capability-feedback-probe-v1.json`。
-探针只由真实 TargetSurface 预检，不执行 Action；当前格式固定最多一次 Scenario 调用，并完整进入 MethodSpec。
+公开反馈校准可指定 `-capability-feedback-probe`；探针只由真实 TargetSurface 预检，不执行 Action，并进入
+MethodSpec。
 
 ## 验证与研究边界
 

@@ -5,7 +5,7 @@ import "github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 const (
 	adapterID      = "omnipaxos-v2alpha1"
 	implementation = "crates.io/omnipaxos@0.2.2"
-	workerSchema   = "consensus-atlas/omnipaxos-worker/v2"
+	workerSchema   = "consensus-atlas/omnipaxos-worker/v3"
 	evidenceSchema = "consensus-atlas/omnipaxos-v2-evidence/v2"
 	messageSchema  = "consensus-atlas/omnipaxos-v2-message/v1"
 	callbackSchema = "consensus-atlas/omnipaxos-v2-callback/v1"
@@ -14,6 +14,39 @@ const (
 )
 
 var nodeNames = map[uint64]control.NodeID{1: "n1", 2: "n2", 3: "n3"}
+
+var messageTypeHints = []string{
+	"ble/heartbeat-reply",
+	"ble/heartbeat-request",
+	"sequence-paxos/accept-decide",
+	"sequence-paxos/accept-stop-sign",
+	"sequence-paxos/accept-sync",
+	"sequence-paxos/accepted",
+	"sequence-paxos/compaction-snapshot",
+	"sequence-paxos/compaction-trim",
+	"sequence-paxos/decide",
+	"sequence-paxos/forward-stop-sign",
+	"sequence-paxos/not-accepted",
+	"sequence-paxos/prepare",
+	"sequence-paxos/prepare-req",
+	"sequence-paxos/promise",
+	"sequence-paxos/proposal-forward",
+}
+
+var messageMetadataKeys = []string{
+	"accepted_index",
+	"ballot_config_id",
+	"ballot_number",
+	"ballot_pid",
+	"ballot_priority",
+	"decided_index",
+	"entry_count",
+	"heartbeat_round",
+	"request_id",
+	"sequence_counter",
+	"sequence_session",
+	"sync_index",
+}
 
 type Config struct {
 	WorkerPath string
@@ -53,10 +86,12 @@ type workerDecisionPrefix struct {
 }
 
 type workerMessage struct {
-	From     uint64 `json:"from"`
-	To       uint64 `json:"to"`
-	TypeHint string `json:"type_hint"`
-	Bytes    []byte `json:"bytes"`
+	From     uint64            `json:"from"`
+	To       uint64            `json:"to"`
+	Family   string            `json:"family"`
+	TypeHint string            `json:"type_hint"`
+	Metadata map[string]string `json:"metadata"`
+	Bytes    []byte            `json:"bytes"`
 }
 
 type workerDecision struct {

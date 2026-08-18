@@ -78,6 +78,10 @@ func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, erro
 				Algorithm: controlentropy.Algorithm, DomainPolicy: "no-harness-draws",
 				ResetPolicy: "fresh-worker-process", StrictReplay: false,
 			},
+			Message: &control.MessageCapability{
+				TypeHints:    append([]string(nil), messageTypeHints...),
+				MetadataKeys: append([]string(nil), messageMetadataKeys...),
+			},
 			StrictYield: true, StrictReplay: true,
 		},
 		EvidenceSchemas: []string{evidenceSchema},
@@ -376,11 +380,15 @@ func (adapter *Adapter) messageItem(
 		dependencies = []control.ItemID{dependency}
 	}
 	owner := control.NodeRef{Node: source, Incarnation: 1}
+	metadata := make(map[string]string, len(message.Metadata))
+	for key, value := range message.Metadata {
+		metadata[key] = value
+	}
 	return control.ProducedItem{
 		ID: itemID, Kind: control.ItemMessage, Owner: owner, Dependencies: dependencies,
 		Message: &control.MessageEnvelope{
 			ID: control.MessageID(typedID), Source: owner, Target: target,
-			TypeHint: message.TypeHint, Payload: payload,
+			TypeHint: message.TypeHint, Metadata: metadata, Payload: payload,
 		},
 	}, nil
 }
@@ -474,7 +482,7 @@ func (adapter *Adapter) validateResponse(response workerResponse) error {
 	}
 	for _, message := range response.Messages {
 		if nodeNames[message.From] == "" || nodeNames[message.To] == "" || len(message.Bytes) == 0 ||
-			(message.TypeHint != "ble" && message.TypeHint != "sequence-paxos") {
+			!validWorkerMessageDescription(message) {
 			return errors.New("OMNIPAXOS_WORKER_MESSAGE_INVALID")
 		}
 	}
@@ -485,6 +493,31 @@ func (adapter *Adapter) validateResponse(response workerResponse) error {
 		}
 	}
 	return nil
+}
+
+func validWorkerMessageDescription(message workerMessage) bool {
+	if message.Family != "ble" && message.Family != "sequence-paxos" {
+		return false
+	}
+	if !containsString(messageTypeHints, message.TypeHint) ||
+		(message.Family == "ble") != (len(message.TypeHint) > 4 && message.TypeHint[:4] == "ble/") {
+		return false
+	}
+	for key, value := range message.Metadata {
+		if value == "" || !containsString(messageMetadataKeys, key) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validMessageItem(command control.AdapterCommand, item *control.ProducedItem) bool {

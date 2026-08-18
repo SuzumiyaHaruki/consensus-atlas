@@ -93,7 +93,7 @@ type agenticEpisodeMetrics struct {
 type agenticEpisodeWork struct {
 	Model                     controlexperiment.ModelWork        `json:"model"`
 	ScenarioFrontier          controlexperiment.PhaseWork        `json:"scenario_frontier"`
-	ScenarioSearch            controlexperiment.StatelessDFSWork `json:"scenario_search"`
+	ScenarioSearch            controlexperiment.ScenarioExecutionWork `json:"scenario_search"`
 	QualifiedExecution        controlexperiment.WorkLedger       `json:"qualified_execution"`
 	BranchQualifiedExecutions []agenticBranchExecutionWork       `json:"branch_qualified_executions,omitempty"`
 }

@@ -1,0 +1,14 @@
+{
+  "root_trace_digest": "843d2a36c5837ee549bd48c05c9d9932b16af1195ea90920def13212355c93ea",
+  "source": "n1",
+  "target": "n2",
+  "family_type": "sequence-paxos",
+  "leaf_type": "sequence-paxos/prepare",
+  "target_item_id": "omnipaxos-v2-item-0cb0904108113555768a590c9390976c46859eca16cafbae4fd50994bbdff554",
+  "target_action_id": "action-7aa63ca911cfb7928180f252099b0d17a5af7d85bc905bcf22b800d0fb16bb25",
+  "contrast_item_id": "omnipaxos-v2-item-dca529f4e334da9707151a847bfd8dd2358b364dfacae7c9221a1236edda5d62",
+  "coarse_matches": 2,
+  "leaf_matches": 1,
+  "root_decisions": 23,
+  "setup_duplicates": 0
+}

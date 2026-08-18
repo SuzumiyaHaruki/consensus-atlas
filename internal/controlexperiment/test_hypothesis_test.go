@@ -36,12 +36,13 @@ func TestHypothesisRequiresExplicitAllowedBackend(t *testing.T) {
 	if err != nil || hypothesis.Validate(knowledge, riskSpec, ScenarioPlanningBackendID) != nil {
 		t.Fatalf("allowed backend rejected: %#v/%v", hypothesis, err)
 	}
-	if hypothesis.Validate(knowledge, riskSpec, StatelessSearchBoundedDepthFirst) == nil {
+	const retiredBackend = "retired-bounded-dfs-v1"
+	if hypothesis.Validate(knowledge, riskSpec, retiredBackend) == nil {
 		t.Fatal("implicit DFS compatibility was accepted")
 	}
 	if _, err := NewTestHypothesis(
 		"unsupported-backend-hypothesis", knowledge, riskSpec,
-		"Reject a backend that the knowledge pack does not allow.", StatelessSearchBoundedDepthFirst,
+		"Reject a backend that the knowledge pack does not allow.", retiredBackend,
 	); err == nil {
 		t.Fatal("constructor accepted an unsupported backend")
 	}

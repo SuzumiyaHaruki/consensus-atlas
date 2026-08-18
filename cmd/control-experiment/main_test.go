@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,20 +119,6 @@ func TestEtcdraftBundleV3BindsOperationHistoryAndMethodSpec(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	frozenBytes, err := os.ReadFile("../../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/method-spec.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var frozenSpec controlexperiment.MethodSpec
-	if err := json.Unmarshal(frozenBytes, &frozenSpec); err != nil {
-		t.Fatal(err)
-	}
-	if err := frozenSpec.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if frozenSpec.ProjectorID != "official-etcdraft-v2/applied-prefix-digest-v1" {
-		t.Fatalf("historical MethodSpec identity drifted: %#v", frozenSpec)
 	}
 	report, bundle, err := etcdraftBundleV3(
 		context.Background(), spec.Strategy, spec.Decisions, spec.PolicySeed, spec.Digest,

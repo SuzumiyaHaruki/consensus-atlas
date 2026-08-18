@@ -9,8 +9,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 )
 
-const omnipaxosScenarioSemanticProjectorID = "omnipaxos-v2-scenario-semantics-v1"
-
 func projectOmnipaxosScenarioSemantics(
 	mode controlexperiment.ScenarioSemanticExposureMode,
 	trace controlruntime.Trace,
@@ -67,12 +65,7 @@ func projectOmnipaxosScenarioSemantics(
 			}
 		}
 		if item, ok := items[action.ItemID]; ok && item.Value.Message != nil {
-			switch item.Value.Message.TypeHint {
-			case "ble":
-				hint.MessageClass = controlexperiment.ConsensusMessageVote
-			case "sequence-paxos":
-				hint.MessageClass = controlexperiment.ConsensusMessageReplication
-			}
+			hint.MessageClass = omnipaxosScenarioMessageClass(item.Value.Message.TypeHint)
 		}
 		hints = append(hints, hint)
 	}
@@ -86,4 +79,19 @@ func projectOmnipaxosScenarioSemantics(
 		return controlexperiment.MaskScenarioSemanticExposure(exposure, frontier)
 	}
 	return exposure, nil
+}
+
+func omnipaxosScenarioMessageClass(messageType string) string {
+	switch messageType {
+	case "ble/heartbeat-request", "ble/heartbeat-reply":
+		return controlexperiment.ConsensusMessageHeartbeat
+	case "sequence-paxos/proposal-forward":
+		return controlexperiment.ConsensusMessageProposal
+	case "sequence-paxos/accept-decide", "sequence-paxos/accepted", "sequence-paxos/decide":
+		return controlexperiment.ConsensusMessageReplication
+	case "sequence-paxos/prepare-req", "sequence-paxos/accept-sync":
+		return controlexperiment.ConsensusMessageRecovery
+	default:
+		return controlexperiment.ConsensusSemanticUnknown
+	}
 }

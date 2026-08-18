@@ -1,8 +1,11 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use omnipaxos::ballot_leader_election::Ballot;
 use omnipaxos::macros::Entry;
+use omnipaxos::messages::ballot_leader_election::HeartbeatMsg;
+use omnipaxos::messages::sequence_paxos::{Compaction, PaxosMsg};
 use omnipaxos::messages::Message;
-use omnipaxos::util::LogEntry;
+use omnipaxos::util::{LogEntry, SequenceNumber};
 use omnipaxos::{ClusterConfig, OmniPaxos, OmniPaxosConfig, ServerConfig};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use serde::{Deserialize, Serialize};
@@ -10,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
 
-const SCHEMA: &str = "consensus-atlas/omnipaxos-worker/v2";
+const SCHEMA: &str = "consensus-atlas/omnipaxos-worker/v3";
 
 #[derive(Entry, Clone, Debug, Serialize, Deserialize)]
 struct WorkerEntry {
@@ -70,7 +73,9 @@ struct DecisionPrefixView {
 struct MessageView {
     from: u64,
     to: u64,
+    family: &'static str,
     type_hint: &'static str,
+    metadata: BTreeMap<String, String>,
     bytes: String,
 }
 
@@ -236,10 +241,10 @@ impl Cluster {
             }
         }
         messages.sort_by(|left, right| {
-            (&left.from, &left.to, &left.type_hint, &left.bytes).cmp(&(
+            (&left.from, &left.to, &left.family, &left.bytes).cmp(&(
                 &right.from,
                 &right.to,
-                &right.type_hint,
+                &right.family,
                 &right.bytes,
             ))
         });
@@ -316,14 +321,121 @@ fn digest_field(digest: &mut Sha256, value: &[u8]) {
 }
 
 fn message_view(message: Message<WorkerEntry>) -> Result<MessageView, Box<dyn std::error::Error>> {
-    let type_hint = match &message {
-        Message::BLE(_) => "ble",
-        Message::SequencePaxos(_) => "sequence-paxos",
-    };
+    let (family, type_hint, metadata) = describe_message(&message);
     Ok(MessageView {
         from: message.get_sender(),
         to: message.get_receiver(),
+        family,
         type_hint,
+        metadata,
         bytes: BASE64.encode(serde_json::to_vec(&message)?),
     })
+}
+
+fn describe_message(
+    message: &Message<WorkerEntry>,
+) -> (&'static str, &'static str, BTreeMap<String, String>) {
+    let mut metadata = BTreeMap::new();
+    let type_hint = match message {
+        Message::BLE(message) => match &message.msg {
+            HeartbeatMsg::Request(request) => {
+                metadata.insert("heartbeat_round".into(), request.round.to_string());
+                "ble/heartbeat-request"
+            }
+            HeartbeatMsg::Reply(reply) => {
+                metadata.insert("heartbeat_round".into(), reply.round.to_string());
+                insert_ballot(&mut metadata, reply.ballot);
+                "ble/heartbeat-reply"
+            }
+        },
+        Message::SequencePaxos(message) => match &message.msg {
+            PaxosMsg::PrepareReq(request) => {
+                insert_ballot(&mut metadata, request.n);
+                "sequence-paxos/prepare-req"
+            }
+            PaxosMsg::Prepare(prepare) => {
+                insert_ballot(&mut metadata, prepare.n);
+                metadata.insert("decided_index".into(), prepare.decided_idx.to_string());
+                metadata.insert("accepted_index".into(), prepare.accepted_idx.to_string());
+                "sequence-paxos/prepare"
+            }
+            PaxosMsg::Promise(promise) => {
+                insert_ballot(&mut metadata, promise.n);
+                metadata.insert("decided_index".into(), promise.decided_idx.to_string());
+                metadata.insert("accepted_index".into(), promise.accepted_idx.to_string());
+                metadata.insert("entry_count".into(), promise.suffix.len().to_string());
+                insert_single_request(&mut metadata, &promise.suffix);
+                "sequence-paxos/promise"
+            }
+            PaxosMsg::AcceptSync(accept) => {
+                insert_ballot(&mut metadata, accept.n);
+                insert_sequence(&mut metadata, accept.seq_num);
+                metadata.insert("decided_index".into(), accept.decided_idx.to_string());
+                metadata.insert("sync_index".into(), accept.sync_idx.to_string());
+                metadata.insert("entry_count".into(), accept.suffix.len().to_string());
+                insert_single_request(&mut metadata, &accept.suffix);
+                "sequence-paxos/accept-sync"
+            }
+            PaxosMsg::AcceptDecide(accept) => {
+                insert_ballot(&mut metadata, accept.n);
+                insert_sequence(&mut metadata, accept.seq_num);
+                metadata.insert("decided_index".into(), accept.decided_idx.to_string());
+                metadata.insert("entry_count".into(), accept.entries.len().to_string());
+                insert_single_request(&mut metadata, &accept.entries);
+                "sequence-paxos/accept-decide"
+            }
+            PaxosMsg::Accepted(accepted) => {
+                insert_ballot(&mut metadata, accepted.n);
+                metadata.insert("accepted_index".into(), accepted.accepted_idx.to_string());
+                "sequence-paxos/accepted"
+            }
+            PaxosMsg::NotAccepted(rejected) => {
+                insert_ballot(&mut metadata, rejected.n);
+                "sequence-paxos/not-accepted"
+            }
+            PaxosMsg::Decide(decide) => {
+                insert_ballot(&mut metadata, decide.n);
+                insert_sequence(&mut metadata, decide.seq_num);
+                metadata.insert("decided_index".into(), decide.decided_idx.to_string());
+                "sequence-paxos/decide"
+            }
+            PaxosMsg::ProposalForward(entries) => {
+                metadata.insert("entry_count".into(), entries.len().to_string());
+                insert_single_request(&mut metadata, entries);
+                "sequence-paxos/proposal-forward"
+            }
+            PaxosMsg::Compaction(Compaction::Trim(_)) => "sequence-paxos/compaction-trim",
+            PaxosMsg::Compaction(Compaction::Snapshot(_)) => "sequence-paxos/compaction-snapshot",
+            PaxosMsg::AcceptStopSign(stop) => {
+                insert_ballot(&mut metadata, stop.n);
+                insert_sequence(&mut metadata, stop.seq_num);
+                "sequence-paxos/accept-stop-sign"
+            }
+            PaxosMsg::ForwardStopSign(_) => "sequence-paxos/forward-stop-sign",
+        },
+    };
+    let family = if matches!(message, Message::BLE(_)) {
+        "ble"
+    } else {
+        "sequence-paxos"
+    };
+    (family, type_hint, metadata)
+}
+
+fn insert_ballot(metadata: &mut BTreeMap<String, String>, ballot: Ballot) {
+    metadata.insert("ballot_config_id".into(), ballot.config_id.to_string());
+    metadata.insert("ballot_number".into(), ballot.n.to_string());
+    metadata.insert("ballot_priority".into(), ballot.priority.to_string());
+    metadata.insert("ballot_pid".into(), ballot.pid.to_string());
+}
+
+fn insert_sequence(metadata: &mut BTreeMap<String, String>, sequence: SequenceNumber) {
+    metadata.insert("sequence_session".into(), sequence.session.to_string());
+    metadata.insert("sequence_counter".into(), sequence.counter.to_string());
+}
+
+fn insert_single_request(metadata: &mut BTreeMap<String, String>, entries: &[WorkerEntry]) {
+    if let [entry] = entries {
+        metadata.insert("request_id".into(), entry.request_id.clone());
+    }
 }

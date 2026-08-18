@@ -684,6 +684,21 @@ func TestThreeNodeMessageControlAndReplay(t *testing.T) {
 		!traceHasKind(trace, control.ActionDeliverMessage) {
 		t.Fatal("trace is missing a required message-control action")
 	}
+	history, err := (etcdraftv2.ObservationProjector{}).Project(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropRoleBound := false
+	for _, event := range history.Events {
+		if event.Kind == semantic.ObservationMessageDropped &&
+			event.MessageRole == original.Value.Message.TypeHint {
+			dropRoleBound = true
+			break
+		}
+	}
+	if !dropRoleBound {
+		t.Fatalf("dropped message observation lost leaf type %q", original.Value.Message.TypeHint)
+	}
 	if _, err := controlruntime.Replay(ctx, mustAdapter(t, etcdraftv2.ThreeNodeConfig()), clusterRuntimeConfig(), trace); err != nil {
 		t.Fatalf("Replay() error = %v", err)
 	}

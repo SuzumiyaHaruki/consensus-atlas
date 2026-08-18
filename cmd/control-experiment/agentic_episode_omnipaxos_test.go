@@ -207,22 +207,31 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				strings.Contains(payload.Messages[1].Content, `"hypothesis":`) {
 				t.Fatal("Scenario provider prompt retained the full knowledge/hypothesis contracts")
 			}
+			var selector controlexperiment.FrontierActionSelector
 			for index, action := range view.Frontier.Actions {
-				if action.Kind == control.ActionDropMessage &&
-					view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
-					content, err = json.Marshal(controlexperiment.ScenarioInvestigationProposal{
-						Intent: controlexperiment.ScenarioIntentContinue,
-						Plan: controlexperiment.ScenarioPlan{
-							ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{{
-								ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
-									Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
-									MessageClass: controlexperiment.ConsensusMessageReplication,
-								},
-							}},
-						},
-					})
+				if action.Kind != control.ActionDropMessage {
+					continue
+				}
+				if selector.ActionID == "" {
+					selector.ActionID = action.ActionID
+				}
+				if view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
+					selector = controlexperiment.FrontierActionSelector{
+						Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
+						MessageClass: controlexperiment.ConsensusMessageReplication,
+					}
 					break
 				}
+			}
+			if selector.ActionID != "" || selector.Kind != "" {
+				content, err = json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+					Intent: controlexperiment.ScenarioIntentContinue,
+					Plan: controlexperiment.ScenarioPlan{
+						ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{{
+							ID: "drop-replication", Selector: selector,
+						}},
+					},
+				})
 			}
 			if len(content) == 0 {
 				t.Fatal("Scenario Agent prompt had no replication message")

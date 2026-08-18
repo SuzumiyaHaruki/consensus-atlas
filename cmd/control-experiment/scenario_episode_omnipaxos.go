@@ -129,7 +129,42 @@ func executeOmnipaxosScenarioQualifiedRisk(
 	projector controlexperiment.SemanticPrefixProjector,
 	methodSpecDigest string,
 ) (scenarioTestingResult, error) {
-	if workerPath == "" || experiment.validate() != nil || workload.Validate() != nil ||
+	return executeOmnipaxosScenarioQualifiedRiskWithWorkload(
+		ctx, workerPath, experiment, &workload, qualification, root, execution,
+		spec, projector, methodSpecDigest,
+	)
+}
+
+func executeOmnipaxosScenarioQualifiedRiskWithoutWorkload(
+	ctx context.Context,
+	workerPath string,
+	experiment omnipaxosScenarioExperimentConfig,
+	qualification omnipaxosScenarioQualification,
+	root controlruntime.Trace,
+	execution controlexperiment.ScenarioExecution,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+) (scenarioTestingResult, error) {
+	return executeOmnipaxosScenarioQualifiedRiskWithWorkload(
+		ctx, workerPath, experiment, nil, qualification, root, execution,
+		spec, projector, "",
+	)
+}
+
+func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
+	ctx context.Context,
+	workerPath string,
+	experiment omnipaxosScenarioExperimentConfig,
+	workload *controlexperiment.WorkloadPlan,
+	qualification omnipaxosScenarioQualification,
+	root controlruntime.Trace,
+	execution controlexperiment.ScenarioExecution,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+	methodSpecDigest string,
+) (scenarioTestingResult, error) {
+	if workerPath == "" || experiment.validate() != nil ||
+		workload != nil && workload.Validate() != nil ||
 		qualification.Bundle.Validate() != nil || qualification.Admission.Validate() != nil ||
 		qualification.Admission.VerifyQualification(qualification.Bundle.Qualification) != nil ||
 		spec.Validate() != nil || projector == nil || root.Validate() != nil || execution.FinalTrace.Validate() != nil ||
@@ -148,18 +183,20 @@ func executeOmnipaxosScenarioQualifiedRisk(
 		return scenarioTestingResult{}, err
 	}
 	config := controlexperiment.Config{
-		SchemaVersion:    controlexperiment.SchemaVersionV2,
-		ID:               "omnipaxos-scenario-qualified-testing",
-		PSSID:            omnipaxosv2.CorePSSMappingID,
-		Runtime:          experiment.Runtime,
-		Admission:        &qualification.Admission,
-		FaultEnvelope:    experiment.faultEnvelope(),
-		WorkloadRouterID: omnipaxosv2.WorkloadRouterID,
-		DecisionsPerRun:  len(execution.FinalTrace.Records),
-		RequireReplay:    true,
+		SchemaVersion:   controlexperiment.SchemaVersionV2,
+		ID:              "omnipaxos-scenario-qualified-testing",
+		PSSID:           omnipaxosv2.CorePSSMappingID,
+		Runtime:         experiment.Runtime,
+		Admission:       &qualification.Admission,
+		FaultEnvelope:   experiment.faultEnvelope(),
+		DecisionsPerRun: len(execution.FinalTrace.Records),
+		RequireReplay:   true,
 		Runs: []controlexperiment.RunPlan{{
-			Run: 1, Policy: policy, Workload: &workload,
+			Run: 1, Policy: policy, Workload: workload,
 		}},
+	}
+	if workload != nil {
+		config.WorkloadRouterID = omnipaxosv2.WorkloadRouterID
 	}
 	factory := func() (control.Adapter, error) {
 		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})

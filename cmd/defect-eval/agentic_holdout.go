@@ -57,7 +57,7 @@ type agenticEpisodeSummaryProjection struct {
 	Work           struct {
 		Model                     controlexperiment.ModelWork        `json:"model"`
 		ScenarioFrontier          controlexperiment.PhaseWork        `json:"scenario_frontier"`
-		ScenarioSearch            controlexperiment.StatelessDFSWork `json:"scenario_search"`
+		ScenarioSearch            controlexperiment.ScenarioExecutionWork `json:"scenario_search"`
 		QualifiedExecution        controlexperiment.WorkLedger       `json:"qualified_execution"`
 		BranchQualifiedExecutions []agenticBranchWorkProjection      `json:"branch_qualified_executions"`
 	} `json:"work"`
@@ -432,8 +432,8 @@ func mergeAgenticPhaseWork(total *controlexperiment.PhaseWork, current controlex
 }
 
 func mergeAgenticSearchWork(
-	total *controlexperiment.StatelessDFSWork,
-	current controlexperiment.StatelessDFSWork,
+	total *controlexperiment.ScenarioExecutionWork,
+	current controlexperiment.ScenarioExecutionWork,
 ) bool {
 	return mergeAgenticPhaseWork(&total.FrontierReconstruction, current.FrontierReconstruction) &&
 		mergeAgenticPhaseWork(&total.ChildMaterialization, current.ChildMaterialization) &&

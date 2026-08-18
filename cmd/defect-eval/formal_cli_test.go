@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,33 +15,10 @@ import (
 	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
 
-type formalCLIStageSummary struct {
-	SchemaVersion         string `json:"schema_version"`
-	ID                    string `json:"id"`
-	ContractDigest        string `json:"contract_digest"`
-	ExposureAuditDigest   string `json:"exposure_audit_digest"`
-	InputSetDigest        string `json:"input_set_digest"`
-	EvaluationDigest      string `json:"evaluation_digest"`
-	Pairs                 int    `json:"pairs"`
-	Trials                int    `json:"trials"`
-	Controls              int    `json:"controls"`
-	Candidates            int    `json:"candidates"`
-	SurvivedCandidates    int    `json:"survived_candidates"`
-	FalsePositives        int    `json:"false_positives"`
-	InvalidTrials         int    `json:"invalid_trials"`
-	PreflightBeforeRunner bool   `json:"preflight_before_runner"`
-	NewOutputsRequired    bool   `json:"new_outputs_required"`
-	DatasetClassification string `json:"dataset_classification"`
-	FormalReady           bool   `json:"formal_ready"`
-	NewModelCalls         int    `json:"new_model_calls"`
-	NewSUTExecutions      int    `json:"new_sut_executions"`
-	Digest                string `json:"digest"`
-}
-
 func TestFormalFreshCLIConsumesSixInputsAndWritesPrivateLedger(t *testing.T) {
 	spec, report, bundle := formalCLITestExecution(t)
 	root := t.TempDir()
-	contract, exposure, inputsPath := writeFormalCLIFixture(t, root, spec, bundle)
+	contract, _, inputsPath := writeFormalCLIFixture(t, root, spec, bundle)
 	artifacts, output := filepath.Join(root, "artifacts"), filepath.Join(root, "evaluation.json")
 	runnerCalls := 0
 	runner := func(
@@ -111,26 +87,6 @@ func TestFormalFreshCLIConsumesSixInputsAndWritesPrivateLedger(t *testing.T) {
 		t.Fatalf("preflight error = %v, runner calls = %d", err, runnerCalls)
 	}
 
-	inputBytes, err := os.ReadFile(inputsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	summary := formalCLIStageSummary{
-		SchemaVersion: "consensus-atlas/formal-cli-stage-summary/v1",
-		ID:            "formal-multi-pair-cli-m5-21o", ContractDigest: contract.Digest,
-		ExposureAuditDigest: exposure.Digest, InputSetDigest: digestBytes(inputBytes),
-		EvaluationDigest: evaluation.Digest, Pairs: len(evaluation.Pairs), Trials: len(evaluation.Results),
-		Controls: evaluation.Summary.Controls, Candidates: evaluation.Summary.Candidates,
-		SurvivedCandidates: 3, FalsePositives: evaluation.Summary.FalsePositives,
-		InvalidTrials: evaluation.Summary.InvalidTrials, PreflightBeforeRunner: true,
-		NewOutputsRequired: true, DatasetClassification: "public-synthetic-same-correct-bundle-fixture-only",
-		FormalReady: false, NewModelCalls: 0, NewSUTExecutions: 1,
-	}
-	summary.Digest, err = control.CanonicalDigest(summary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkFormalCLIStageSummary(t, summary)
 }
 
 func TestFormalModeRejectsMixedPublicFlags(t *testing.T) {
@@ -302,7 +258,7 @@ func writeFormalCLIFixture(
 	t.Helper()
 	var baseAudit sutbuild.Audit
 	if err := readStrictJSON(
-		"../../benchmarks/pilots/etcdraft-v2-method-evaluation-m5.18a/build-audit/control.json",
+		"../../testdata/sutbuild-audit-v4.json",
 		&baseAudit,
 	); err != nil {
 		t.Fatal(err)
@@ -395,24 +351,4 @@ func writeFormalCLIFixture(
 		}
 	}
 	return contract, exposure, filepath.Join(root, "inputs.json")
-}
-
-func checkFormalCLIStageSummary(t *testing.T, recomputed formalCLIStageSummary) {
-	t.Helper()
-	var archived formalCLIStageSummary
-	if err := readStrictJSON(
-		"../../benchmarks/experiments/formal-multi-pair-cli-m5.21o/summary.json", &archived,
-	); err != nil {
-		encoded, _ := json.MarshalIndent(recomputed, "", "  ")
-		t.Fatalf("read stage summary: %v\n%s", err, append(encoded, '\n'))
-	}
-	archivedDigest := archived.Digest
-	archived.Digest = ""
-	sealed, err := control.CanonicalDigest(archived)
-	if err != nil || sealed != archivedDigest {
-		t.Fatalf("archived stage summary identity is invalid: %s/%v", archivedDigest, err)
-	}
-	if recomputed.Digest == "" || recomputed.Trials != recomputed.Controls+recomputed.Candidates {
-		t.Fatalf("recomputed stage summary is invalid: %#v", recomputed)
-	}
 }

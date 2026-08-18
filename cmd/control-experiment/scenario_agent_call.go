@@ -332,8 +332,6 @@ func scenarioAgentPrompt(
 		"without executing another Action; use from_branch_id with continue to promote and extend a path, or with branch to fork " +
 		"another candidate. revise repairs only the current selected path. When abandon is available, use it only when the mechanical " +
 		"progress_delta shows that this hypothesis is no longer worth the remaining budget; abandon is not a correctness or defect verdict. " +
-		"minimize is intentionally " +
-		"unavailable until a trusted finding exists. " +
 		"When present, prior_feedback.progress_delta is the compact trusted account of decisions, new milestones, the first missing " +
 		"milestone, newly observed milestone evidence, transition novelty, Action counts, temporal callbacks versus actual logical-clock " +
 		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available non-closure interventions, and recent " +

@@ -73,7 +73,8 @@ func (config omnipaxosScenarioExperimentConfig) validate() error {
 	if seedErr != nil || len(seed) == 0 || config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.FaultEnvelope.MaxMessageDrops <= 0 ||
 		config.FaultEnvelope.MaxCrashes != 0 || config.FaultEnvelope.MaxConcurrentCrashes != 0 ||
-		config.FaultEnvelope.MaxMessageDuplicates != 0 || config.FaultEnvelope.MaxPartitions != 0 ||
+		config.FaultEnvelope.MaxMessageDuplicates != 0 ||
+		config.FaultEnvelope.MaxPartitions != 0 ||
 		config.FaultEnvelope.MaxActivePartitions != 0 || config.ScenarioMaxCalls <= 0 ||
 		config.ScenarioMaxCalls > controlexperiment.ScenarioAgentMaxCalls ||
 		config.ScenarioMaxSteps <= 0 || config.ScenarioMaxSteps > controlexperiment.ScenarioPlanMaxSteps ||

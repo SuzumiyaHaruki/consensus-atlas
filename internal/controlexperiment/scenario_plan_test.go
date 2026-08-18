@@ -17,6 +17,24 @@ type fixtureSemanticPrefixProjector struct {
 	preferred control.ActionID
 }
 
+func fixtureInitialTrace(t *testing.T, ctx context.Context, config RuntimeConfig) controlruntime.Trace {
+	t.Helper()
+	runtimeConfig, err := config.runtimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := controlruntime.New(ctx, fixture.New(), runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return trace
+}
+
 func (fixtureSemanticPrefixProjector) ID() string { return "fixture-semantic-prefix-projector-v1" }
 
 func (projector fixtureSemanticPrefixProjector) Project(

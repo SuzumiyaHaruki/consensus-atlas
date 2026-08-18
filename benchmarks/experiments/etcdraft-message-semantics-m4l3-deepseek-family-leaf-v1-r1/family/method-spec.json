@@ -1,0 +1,74 @@
+{
+  "schema_version": "consensus-atlas/agentic-method-spec/v1",
+  "executor_id": "consensus-atlas/agentic-episode-cli/v1",
+  "strategy": "agentic-episode-v1",
+  "implementation_id": "consensus-atlas/agentic-method/m4d-v1",
+  "target_id": "etcdraft-v2",
+  "transport": {
+    "provider": "deepseek",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "thinking": "high",
+    "structured_output_mode": "json-object",
+    "stream": false,
+    "request_timeout_ms": 900000,
+    "routing_policy": "provider-fixed",
+    "allow_provider_fallback": false,
+    "temperature": 0,
+    "max_output_tokens": 32000,
+    "max_calls_per_arm": 1,
+    "max_retries": 0
+  },
+  "scenario_transport": {
+    "provider": "deepseek",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "thinking": "high",
+    "structured_output_mode": "json-object",
+    "stream": false,
+    "request_timeout_ms": 900000,
+    "routing_policy": "provider-fixed",
+    "allow_provider_fallback": false,
+    "temperature": 0,
+    "max_output_tokens": 32000,
+    "max_calls_per_arm": 1,
+    "max_retries": 0
+  },
+  "risk_prompt_version": "risk-agent-navigation-v5",
+  "scenario_prompt_version": "scenario-agent-investigation-v18-m4l3-etcdraft-family-leaf",
+  "semantic_input_schema": "etcdraft-agentic-input-v1",
+  "semantic_input_digest": "5a98e2bae50662f5988d9efa28d34998d4373a79d512cdee3f69a9f897ca7ced",
+  "scenario_semantic_exposure": "masked",
+  "scenario_message_view": "family",
+  "capability_feedback_mode": "structured-gaps",
+  "source_exposure": {
+    "mode": "none"
+  },
+  "episode_limits": {
+    "max_risk_calls": 3,
+    "max_scenario_calls": 3,
+    "max_total_calls": 6,
+    "max_observed_tokens": 50000,
+    "max_scenario_plan_steps": 1,
+    "max_runtime_decisions": 32,
+    "session_wall_clock_ms": 600000
+  },
+  "investigation_episodes": 1,
+  "episode_budget": {
+    "max_attempts": 1,
+    "max_primary_scheduler_decisions": 16384,
+    "max_primary_work_units": 32768,
+    "max_replay_work_units": 8192,
+    "max_model_calls": 6,
+    "max_model_tokens": 50000
+  },
+  "investigation_budget": {
+    "max_attempts": 1,
+    "max_primary_scheduler_decisions": 16384,
+    "max_primary_work_units": 32768,
+    "max_replay_work_units": 8192,
+    "max_model_calls": 6,
+    "max_model_tokens": 50000
+  },
+  "digest": "7251611f3020533d8177aa7f372c98e5ca99bb33eb3687c0b6da276314257629"
+}

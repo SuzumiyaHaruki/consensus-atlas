@@ -412,7 +412,7 @@ func agenticHoldoutTestSummary(
 	model := controlexperiment.ModelWork{}
 	work := map[string]any{
 		"model": model, "scenario_frontier": controlexperiment.PhaseWork{},
-		"scenario_search":     controlexperiment.StatelessDFSWork{},
+		"scenario_search":     controlexperiment.ScenarioExecutionWork{},
 		"qualified_execution": bundle.Work,
 	}
 	summary := map[string]any{

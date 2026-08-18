@@ -83,6 +83,13 @@ func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, erro
 		)
 		items = append(items, control.ItemMessage)
 	}
+	var messageCapability *control.MessageCapability
+	if len(adapter.config.Nodes) > 1 {
+		messageCapability = &control.MessageCapability{
+			TypeHints:    append([]string(nil), messageTypeHints...),
+			MetadataKeys: append([]string(nil), messageMetadataKeys...),
+		}
+	}
 	return control.AdapterManifest{
 		SchemaVersion: control.SchemaVersion,
 		AdapterID:     adapterID, ImplementationID: implementation + "@" + implementationV,
@@ -100,6 +107,7 @@ func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, erro
 			},
 			CrashModes:  []string{"power-loss"},
 			EffectKinds: []string{effectReadyPersist, effectReadyAdvance},
+			Message:     messageCapability,
 			StrictYield: true, StrictReplay: true,
 			DurableCheckpoints: true,
 		},
@@ -799,6 +807,13 @@ func (adapter *Adapter) validateMessage(item *control.ProducedItem, target *node
 	if source == nil || item.Message.Source.Node != source.config.Node || item.Message.Source.Incarnation == 0 ||
 		message.From != source.config.RaftID || message.To != target.config.RaftID {
 		return errors.New("ETCDRAFT_V2_MESSAGE_ROUTE_MISMATCH")
+	}
+	metadata := item.Message.Metadata
+	if item.Message.TypeHint != message.Type.String() || len(metadata) != len(messageMetadataKeys) ||
+		metadata["term"] != strconv.FormatUint(message.Term, 10) ||
+		metadata["index"] != strconv.FormatUint(message.Index, 10) ||
+		metadata["commit"] != strconv.FormatUint(message.Commit, 10) {
+		return errors.New("ETCDRAFT_V2_MESSAGE_DESCRIPTION_MISMATCH")
 	}
 	return nil
 }

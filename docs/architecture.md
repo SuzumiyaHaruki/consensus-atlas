@@ -93,6 +93,17 @@ Manifest 可以选择进一步声明消息 type hint 与 metadata key。它们�
 一旦声明，Runtime 会拒绝超出范围的 emission。Agent frontier 只展示已产生消息的实际提示、metadata 和依赖，
 因此这些字段可以用于收窄当前 Action，但不能伪造消息或修改 payload。
 
+OmniPaxos 的首个垂直切片验证了这条扩展缝：公共 Action 仍然只有 deliver/drop/duplicate，Target 将原来的
+`ble`/`sequence-paxos` 两个外观标签细化为 heartbeat、prepare、promise、accept-sync、accept-decide、accepted、
+decide 等 leaf type，并只投影 ballot、sequence、index、entry count 和单 entry request ID 等标量。worker 的
+原始序列化 bytes 仍是唯一投递 payload，leaf 描述不参与消息稳定排序，因此增强 Agent 视图不会改变 SUT 输入或
+调度 Item ID。公共 Core 不枚举也不解释这些 OmniPaxos 名字。
+
+配对校准可以只切换 planner-facing coarse/leaf 投影；可信 frontier、Action、root、执行器和 Oracle 不变，MethodSpec
+记录实际视图。semantic-selector calibration 禁止精确 ActionID 绕过语义变量。投影必须深拷贝 Agent view，不能反向
+修改可信状态。OmniPaxos 与 etcd/raft 的公开单样本均表明 leaf type 可以减少目标消息选择歧义；该结论不外推为
+finding 或总体方法优势。一次性配对 runner 已退役，活动系统只保留消息语义实现和小型回归。
+
 ### 3.3 虚拟时间
 
 Runtime 不提供“直接触发某个协议超时”。Adapter 暴露当前自然 temporal item，选择 `fire-temporal-event` 后调用目标
@@ -248,6 +259,10 @@ PSS 同时报告：
 
 RiskWitness 是有序 Observation predicate 的可达性证据。`ProgressDelta` 报告新 milestone、首个缺失 milestone、最近
 Action、transition novelty 和重复模式深度，供下一轮 Agent 使用。
+
+消息 Action 的通用 kind 只能证明“某条消息被投递或丢弃”。当 Risk 依赖具体协议消息时，Target projector 必须从
+Trace 绑定的 Adapter command item 投影其已声明的 opaque `message-role`，predicate 也必须约束该角色；否则其他
+消息上的同类 Action 不能作为该 milestone 的证据。Core 只校验字段声明与 Trace 来源，不解释 `MsgAppResp` 等值。
 
 ## 8. Oracle registry
 

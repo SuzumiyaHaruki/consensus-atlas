@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,16 +79,19 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 				!reflect.DeepEqual(view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue}) {
 				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
-			for index, action := range view.Frontier.Actions {
+			for _, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDropMessage &&
-					view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
+					strings.HasPrefix(action.MessageTypeHint, "sequence-paxos/") {
+					if action.MessageTypeHint == "" {
+						t.Fatal("Scenario Agent did not receive the target-local leaf message type")
+					}
 					plan, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 						Intent: controlexperiment.ScenarioIntentContinue,
 						Plan: controlexperiment.ScenarioPlan{
 							ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
-								ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
+								ID: "drop-protocol-message", Selector: controlexperiment.FrontierActionSelector{
 									Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
-									MessageClass: controlexperiment.ConsensusMessageReplication,
+									MessageTypeHint: action.MessageTypeHint,
 								},
 							}},
 						},
@@ -97,7 +101,7 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 					}, err
 				}
 			}
-			t.Fatal("Scenario Agent received no replication message to drop")
+			t.Fatalf("Scenario Agent received no Sequence Paxos message to drop: %#v", view.Frontier.Actions)
 			return nil, controlexperiment.ModelWork{}, nil
 		},
 	)

@@ -15,13 +15,11 @@ const (
 	ScenarioIntentAblate   = "ablate"
 	ScenarioIntentSelect   = "select"
 	ScenarioIntentAbandon  = "abandon"
-	ScenarioIntentMinimize = "minimize"
 
-	ScenarioReasonBranchUnknown          = "branch-unknown"
-	ScenarioReasonBranchDuplicate        = "branch-duplicate"
-	ScenarioReasonRevisionUnavailable    = "revision-unavailable"
-	ScenarioReasonAblationInvalid        = "ablation-invalid"
-	ScenarioReasonTrustedFindingRequired = "trusted-finding-required"
+	ScenarioReasonBranchUnknown       = "branch-unknown"
+	ScenarioReasonBranchDuplicate     = "branch-duplicate"
+	ScenarioReasonRevisionUnavailable = "revision-unavailable"
+	ScenarioReasonAblationInvalid     = "ablation-invalid"
 
 	ScenarioProposalIssueJSONInvalid        = "proposal-json-invalid"
 	ScenarioProposalIssueIntentInvalid      = "intent-invalid"
@@ -33,7 +31,6 @@ const (
 	ScenarioProposalIssueBranchFields       = "branch-fields-invalid"
 	ScenarioProposalIssueControlFields      = "control-fields-invalid"
 	ScenarioProposalIssueAblationFields     = "ablation-fields-invalid"
-	ScenarioProposalIssueMinimizeFields     = "minimize-fields-invalid"
 	ScenarioProposalIssueLaterExactActionID = "later-step-action-id-forbidden"
 	ScenarioProposalIssueIntentUnavailable  = "intent-not-currently-available"
 )
@@ -58,7 +55,6 @@ func (issue ScenarioProposalValidationIssue) Validate() error {
 		ScenarioProposalIssueBranchFields,
 		ScenarioProposalIssueControlFields,
 		ScenarioProposalIssueAblationFields,
-		ScenarioProposalIssueMinimizeFields,
 		ScenarioProposalIssueLaterExactActionID,
 		ScenarioProposalIssueIntentUnavailable:
 		if issue.Field == "" || !validScenarioProposalField(issue.Field) {
@@ -207,12 +203,6 @@ func (proposal ScenarioInvestigationProposal) validationIssue() *ScenarioProposa
 			proposal.BranchID == proposal.ReferenceBranchID || proposal.usesExactActionID() {
 			return issue(ScenarioProposalIssueAblationFields, "proposal")
 		}
-	case ScenarioIntentMinimize:
-		if proposal.BranchID == "" || proposal.FromBranchID != "" ||
-			proposal.ReferenceBranchID == "" || proposal.BranchID == proposal.ReferenceBranchID ||
-			len(proposal.OmittedStepIDs) != 0 {
-			return issue(ScenarioProposalIssueMinimizeFields, "proposal")
-		}
 	}
 	for index := 1; index < len(proposal.Plan.Steps); index++ {
 		if proposal.Plan.Steps[index].Selector.ActionID != "" {
@@ -235,7 +225,7 @@ func validScenarioIntent(intent string) bool {
 	switch intent {
 	case ScenarioIntentContinue, ScenarioIntentRevise, ScenarioIntentBranch,
 		ScenarioIntentControl, ScenarioIntentAblate, ScenarioIntentSelect,
-		ScenarioIntentAbandon, ScenarioIntentMinimize:
+		ScenarioIntentAbandon:
 		return true
 	default:
 		return false
