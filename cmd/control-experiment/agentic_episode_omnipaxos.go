@@ -89,7 +89,7 @@ func newOmnipaxosAgenticEpisodeTarget(
 	}
 	observationProjector := omnipaxosv2.ObservationProjector{}
 	oracleRegistry := omnipaxosAgenticOracleRegistry()
-	if oracleRegistry.validate() != nil {
+	if oracleRegistry.Validate() != nil {
 		return agenticEpisodeTarget{}, errors.New("OMNIPAXOS_AGENTIC_ORACLE_REGISTRY_INVALID")
 	}
 	actions := []control.ActionKind{

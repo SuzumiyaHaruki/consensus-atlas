@@ -157,7 +157,7 @@ func validateEtcdraftScenarioTestingRisk(
 		return errors.New("ETCDRAFT_SCENARIO_TESTING_RISK_INVALID")
 	}
 	registry := etcdraftAgenticOracleRegistry()
-	if registryErr := registry.validate(); registryErr != nil {
+	if registryErr := registry.Validate(); registryErr != nil {
 		return registryErr
 	}
 	verdict := registry.Check(result.Bundle)

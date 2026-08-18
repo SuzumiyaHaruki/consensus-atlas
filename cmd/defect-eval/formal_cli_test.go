@@ -144,6 +144,49 @@ func TestFormalModeRejectsMixedPublicFlags(t *testing.T) {
 	}
 }
 
+func TestFormalFreshCLIRejectsUnknownTargetMonitorBeforeExecution(t *testing.T) {
+	spec, report, bundle := formalCLITestExecution(t)
+	root := t.TempDir()
+	contract, _, inputsPath := writeFormalCLIFixture(t, root, spec, bundle)
+	contract.Composition.MonitorIDs = []string{"unregistered-target-monitor"}
+	contract, err := contract.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := contract.OpaqueView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, err := defectbench.AuditFormalExposure(
+		contract, view,
+		[]defectbench.FormalPublicArtifact{{Bytes: []byte(`{"trial_id":"opaque-01"}`)}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(root, "contract.json"), contract); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(root, "exposure.json"), exposure); err != nil {
+		t.Fatal(err)
+	}
+	runnerCalls := 0
+	runner := func(
+		_ string, _ []byte, _ controlexperiment.MethodSpec,
+	) (controlexperiment.Report, controlexperiment.ExecutionBundle, error) {
+		runnerCalls++
+		return report, bundle, nil
+	}
+	err = runFormalFreshEvaluation(
+		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"), inputsPath,
+		filepath.Join(root, "method-spec.json"), filepath.Join(root, "artifacts"),
+		filepath.Join(root, "evaluation.json"), runner,
+	)
+	if err == nil || !strings.Contains(err.Error(), "FORMAL_COMPOSITION_MONITOR_MISSING") || runnerCalls != 0 {
+		t.Fatalf("unknown target monitor error = %v, runner calls = %d", err, runnerCalls)
+	}
+}
+
 func formalCLITestExecution(
 	t *testing.T,
 ) (controlexperiment.MethodSpec, controlexperiment.Report, controlexperiment.ExecutionBundle) {

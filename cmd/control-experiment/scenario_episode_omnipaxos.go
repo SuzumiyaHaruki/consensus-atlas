@@ -229,7 +229,7 @@ func validateOmnipaxosScenarioTestingRisk(
 		return errors.New("OMNIPAXOS_SCENARIO_TESTING_RISK_INVALID")
 	}
 	registry := omnipaxosAgenticOracleRegistry()
-	if registryErr := registry.validate(); registryErr != nil {
+	if registryErr := registry.Validate(); registryErr != nil {
 		return registryErr
 	}
 	verdict := registry.Check(result.Bundle)

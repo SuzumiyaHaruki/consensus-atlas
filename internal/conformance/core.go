@@ -48,14 +48,10 @@ func EvaluateCore(ctx context.Context, factory Factory, plan CorePlan) (Report, 
 	if err != nil {
 		return Report{}, err
 	}
-	witness := WitnessPlan{
-		Seed:                         append([]byte(nil), plan.Seed...),
-		ExpectedInitialDeadlinePeers: append([]control.NodeID(nil), plan.ExpectedEntropyNodes...),
-	}
 	tests := []struct {
 		id         string
 		capability string
-		run        func(context.Context, Factory, WitnessPlan) error
+		run        func(context.Context, Factory, CorePlan) error
 	}{
 		{"collect-idempotent", "strict-yield", checkCollectIdempotent},
 		{"enabled-check-pure", "pure-enabled-check", checkEnabledPure},
@@ -64,7 +60,7 @@ func EvaluateCore(ctx context.Context, factory Factory, plan CorePlan) (Report, 
 	report := Report{SchemaVersion: ReportSchemaVersion, ManifestDigest: manifestDigest, Passed: true}
 	for _, test := range tests {
 		result := CaseResult{ID: test.id, Passed: true}
-		if err := test.run(ctx, factory, witness); err != nil {
+		if err := test.run(ctx, factory, plan); err != nil {
 			result.Passed = false
 			result.ReasonCode = stableReason(err)
 			report.Passed = false

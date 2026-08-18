@@ -257,7 +257,9 @@ Action、transition novelty 和重复模式深度，供下一轮 Agent 使用。
 - 实际执行的 monitor 列表。
 
 证据 assessment 不只检查声明存在，还要求对应 monitor ID 出现在 `Oracle.Checked`。通用 Agreement/Trace Integrity
-和 target-local monitor 分开实现、统一输出。Agent assertion 只能作为候选，不能进入 verdict。
+和 target-local monitor 分开实现、统一输出。活动 composition 位于 `targetoracles`：在线 Target 与正式 evaluator
+共享同一份 executable registry，formal contract 只按既有 `MonitorIDs` 选择子集。target/projector 不匹配或
+未注册 monitor 会被明确拒绝。Agent assertion 只能作为候选，不能进入 verdict。
 
 ## 9. 资格与 fidelity
 

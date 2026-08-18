@@ -13,6 +13,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
@@ -235,7 +236,7 @@ func TestAgenticOracleRegistryRejectsMetadataExecutionDrift(t *testing.T) {
 	}
 	assessment := agenticEvidenceAssessment{
 		Status: agenticEvidencePlanningFailed, PropertyID: "client-operation-continuity",
-		OracleIDs: []string{etcdraftClientApplicationBindingMonitorID},
+		OracleIDs: []string{targetoracles.ClientApplicationBindingMonitorID},
 	}
 	testing := scenarioTestingResult{
 		Risk:   semantic.RiskWitnessResult{Status: semantic.RiskWitnessReached},

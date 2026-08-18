@@ -128,7 +128,7 @@ func newEtcdraftAgenticEpisodeTarget(
 	}
 	observationProjector := etcdraftv2.ObservationProjector{}
 	oracleRegistry := etcdraftAgenticOracleRegistry()
-	if oracleRegistry.validate() != nil {
+	if oracleRegistry.Validate() != nil {
 		return agenticEpisodeTarget{}, errors.New("ETCDRAFT_AGENTIC_ORACLE_REGISTRY_INVALID")
 	}
 	actions := []control.ActionKind{

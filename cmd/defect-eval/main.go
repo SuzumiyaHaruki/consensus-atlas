@@ -19,8 +19,8 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 const formalFreshInputsSchemaVersion = "consensus-atlas/formal-fresh-inputs/v1"
@@ -237,12 +237,15 @@ func runFormalFreshEvaluation(
 	if err := readStrictJSON(methodSpecPath, &spec); err != nil {
 		return err
 	}
-	if contract.Composition.ProjectorID != etcdraftv2.DecisionProjectionID {
-		return errors.New("FORMAL_CLI_PROJECTOR_UNSUPPORTED")
+	projector, registry, err := targetoracles.Resolve(
+		targetoracles.EtcdraftV2TargetID, contract.Composition.ProjectorID,
+	)
+	if err != nil {
+		return errors.New("FORMAL_CLI_TARGET_ORACLE_COMPOSITION_UNSUPPORTED")
 	}
-	registeredMonitors := []oracle.BundleMonitor{oracle.BundleAgreement{}}
+	registeredMonitors := registry.EvaluationMonitors()
 	if err := defectbench.ValidateFormalFreshEvaluationAdmission(
-		contract, exposure, spec, etcdraftv2.DecisionProjector{}, registeredMonitors...,
+		contract, exposure, spec, projector, registeredMonitors...,
 	); err != nil {
 		return err
 	}
@@ -278,7 +281,7 @@ func runFormalFreshEvaluation(
 		return err
 	}
 	report, err := defectbench.EvaluateFormalFreshBundles(
-		contract, exposure, spec, evidence, etcdraftv2.DecisionProjector{}, registeredMonitors...,
+		contract, exposure, spec, evidence, projector, registeredMonitors...,
 	)
 	if err != nil {
 		return err

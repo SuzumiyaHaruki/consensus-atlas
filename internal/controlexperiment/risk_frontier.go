@@ -109,26 +109,6 @@ func ExecutionTracePrefix(
 	return sealed, sealed.Validate()
 }
 
-// ReconstructRiskFrontierView replays a trusted prefix using a fresh Adapter,
-// then observes the actual next enabled/admissible frontier. Returned work is
-// explicit reconstruction cost, not free planner computation.
-func ReconstructRiskFrontierView(
-	ctx context.Context,
-	id string,
-	spec semantic.RiskWitnessSpec,
-	result semantic.RiskWitnessResult,
-	trace controlruntime.Trace,
-	completedDecisions int,
-	runtimeConfig RuntimeConfig,
-	faultEnvelope *FaultEnvelope,
-	newAdapter AdapterFactory,
-) (RiskFrontierView, PhaseWork, error) {
-	view, _, work, err := ReconstructRiskFrontierState(
-		ctx, id, spec, result, trace, completedDecisions, runtimeConfig, faultEnvelope, newAdapter,
-	)
-	return view, work, err
-}
-
 // ReconstructRiskFrontierState additionally returns the trusted Runtime
 // snapshot for target-local semantic projection. The planner never receives
 // this raw snapshot.
@@ -157,8 +137,8 @@ func ReconstructRiskFrontierState(
 
 // reconstructRiskFrontierRuntime is the Scenario-only prepared form of
 // ReconstructRiskFrontierState. The caller must either consume the returned
-// Runtime with materializeDFSChildFromRuntime or close it without exposing
-// any state derived after this frontier.
+// Runtime with executeDFSChildOnRuntime or close it without exposing any state
+// derived after this frontier.
 func reconstructRiskFrontierRuntime(
 	ctx context.Context,
 	id string,
@@ -289,28 +269,6 @@ func (view RiskFrontierView) Validate(spec semantic.RiskWitnessSpec) error {
 	return nil
 }
 
-func ChooseFirstFrontierAction(
-	id string,
-	view RiskFrontierView,
-	spec semantic.RiskWitnessSpec,
-	selectors []FrontierActionSelector,
-) (FrontierChoice, error) {
-	if err := view.Validate(spec); err != nil || !validMethodToken(id) || len(selectors) == 0 {
-		return FrontierChoice{}, errors.New("EXPERIMENT_FRONTIER_SELECTOR_INVALID")
-	}
-	for _, selector := range selectors {
-		if err := selector.validate(); err != nil {
-			return FrontierChoice{}, err
-		}
-		for _, action := range view.Actions {
-			if selector.matches(action) {
-				return NewFrontierChoice(id, view, spec, action.ActionID)
-			}
-		}
-	}
-	return FrontierChoice{}, errors.New("EXPERIMENT_FRONTIER_SELECTOR_NO_MATCH")
-}
-
 func (selector FrontierActionSelector) validate() error {
 	if selector.ActionID != "" {
 		if selector.Kind != "" || selector.Node != "" || selector.ItemKind != "" || selector.Owner != "" ||
@@ -423,39 +381,6 @@ func (choice FrontierChoice) Validate(view RiskFrontierView, spec semantic.RiskW
 		return errors.New("EXPERIMENT_FRONTIER_CHOICE_DIGEST_MISMATCH")
 	}
 	return nil
-}
-
-func CompileFrontierChoices(
-	id string,
-	spec semantic.RiskWitnessSpec,
-	views []RiskFrontierView,
-	choices []FrontierChoice,
-	fallback []control.ActionKind,
-	decisionBudget int,
-) (Policy, error) {
-	if len(views) == 0 || len(views) != len(choices) {
-		return Policy{}, errors.New("EXPERIMENT_FRONTIER_COMPILE_INPUT_INVALID")
-	}
-	rules := make([]DecisionRule, len(choices))
-	lastDecision := 0
-	for index, choice := range choices {
-		if err := choice.Validate(views[index], spec); err != nil || choice.Decision <= lastDecision {
-			return Policy{}, errors.New("EXPERIMENT_FRONTIER_COMPILE_CHOICE_INVALID")
-		}
-		lastDecision = choice.Decision
-		rules[index] = DecisionRule{
-			Decision: choice.Decision, Kind: choice.Action.Kind,
-			Node: choice.Action.Node.Node, ActionID: choice.Action.ActionID,
-		}
-	}
-	policy := Policy{
-		Version: PolicyVersion, ID: id, Rules: rules,
-		Priority: append([]control.ActionKind(nil), fallback...),
-	}
-	if err := policy.Validate(decisionBudget); err != nil {
-		return Policy{}, err
-	}
-	return policy, nil
 }
 
 func (action FrontierActionRef) validate() error {

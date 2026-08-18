@@ -587,28 +587,6 @@ func materializeDFSChild(
 	return child, materialization, verification, err
 }
 
-// materializeDFSChildFromRuntime executes against the exact Runtime that
-// produced wantView. This removes a duplicate prefix replay while retaining
-// the independent fresh child verification.
-func materializeDFSChildFromRuntime(
-	ctx context.Context,
-	wantView ActionFrontierView,
-	action FrontierActionRef,
-	runtime *controlruntime.Runtime,
-	runtimeConfig RuntimeConfig,
-	newAdapter AdapterFactory,
-	preparedPrefixes ...controlruntime.Trace,
-) (controlruntime.Trace, PhaseWork, PhaseWork, error) {
-	child, materialization, err := executeDFSChildOnRuntime(
-		ctx, wantView, action, runtime, preparedPrefixes...,
-	)
-	if err != nil {
-		return controlruntime.Trace{}, materialization, PhaseWork{}, err
-	}
-	verification, err := verifyDFSChild(ctx, child, runtimeConfig, newAdapter)
-	return child, materialization, verification, err
-}
-
 func executeDFSChildOnRuntime(
 	ctx context.Context,
 	wantView ActionFrontierView,

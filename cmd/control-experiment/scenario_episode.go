@@ -34,48 +34,6 @@ type scenarioEpisodeCoreInputs struct {
 	SemanticProjector  controlexperiment.ScenarioSemanticProjector
 }
 
-func runScenarioAgentEpisodeCore(
-	ctx context.Context,
-	inputs scenarioEpisodeCoreInputs,
-	journal *scenarioAgentCallJournal,
-	maxCalls int,
-	maxPlanSteps int,
-	maxDecisions int,
-	activateKey func() error,
-) (scenarioAgentEpisodeResult, error) {
-	if journal == nil || journal.core == nil || activateKey == nil ||
-		journal.SetRoot(inputs.RootID) != nil {
-		return scenarioAgentEpisodeResult{}, errors.New("SCENARIO_EPISODE_INPUT_INVALID")
-	}
-	result, runErr := runScenarioEpisodeCore(
-		ctx, inputs, maxCalls, maxPlanSteps, maxDecisions,
-		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
-			[]byte, controlexperiment.ModelWork, error,
-		) {
-			content, work, callErr := journal.Planner(ctx, inputs.RiskSpec, view)
-			if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
-				return content, work, callErr
-			}
-			if err := activateKey(); err != nil {
-				return nil, work, err
-			}
-			return journal.Planner(ctx, inputs.RiskSpec, view)
-		},
-	)
-	audits, auditErr := journal.Audits()
-	result.ProviderCalls = audits
-	if auditErr != nil {
-		return result, auditErr
-	}
-	if runErr != nil {
-		return result, runErr
-	}
-	if len(audits) != len(result.Agent.Attempts) {
-		return scenarioAgentEpisodeResult{}, errors.New("SCENARIO_EPISODE_AUDIT_INVALID")
-	}
-	return result, nil
-}
-
 // runScenarioEpisodeCore is the shared trusted execution substrate used by
 // active Agentic target compositions. A planner supplies only an investigation
 // proposal with a bounded ScenarioPlan and model accounting; branch selection,

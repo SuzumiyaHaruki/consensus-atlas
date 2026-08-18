@@ -50,6 +50,22 @@ func TestDescribedFixtureCapabilitiesReachFrontierTraceAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	undeclaredManifest := manifest
+	undeclaredManifest.Capabilities.Actions = append(
+		[]control.ActionKind(nil), manifest.Capabilities.Actions[1:]...,
+	)
+	err = validateAgentTargetExtensions(AgentTargetExtensions{
+		ComposableActions: []control.ActionKind{control.ActionDropMessage},
+		ObservationCapabilities: []semantic.ObservationCapability{{
+			Kind: semantic.ObservationWorkloadInvoked,
+		}},
+		OracleCapabilities: []AgentOracleCapability{{
+			ID: "trace-integrity", Scope: AgentOracleScopeGeneric,
+		}},
+	}, undeclaredManifest, FaultEnvelope{MaxMessageDrops: 1})
+	if err == nil || err.Error() != "EXPERIMENT_AGENT_TARGET_ACTION_NOT_DECLARED" {
+		t.Fatalf("target extension self-awarded undeclared Action: %v", err)
+	}
 	if surface.Capabilities.Message == nil ||
 		len(surface.Capabilities.Message.TypeHints) != 1 ||
 		surface.Capabilities.Message.TypeHints[0] != "fixture-message" ||

@@ -33,65 +33,6 @@ type FormalEvaluationSummary struct {
 	InvalidTrials    int `json:"invalid_trials"`
 }
 
-// EvaluateFormalMethodBundlesInMemory applies the contract's SUT pairing,
-// composition, profile and budget to one method's bundle set. The caller owns
-// build-audit admission and supplies the method's actual bundle schema. The
-// returned existing trial result type is not sealed as a formal evaluation.
-func EvaluateFormalMethodBundlesInMemory(
-	contract FormalBenchmarkContract,
-	requiredBundleSchema string,
-	bundles map[string]controlexperiment.ExecutionBundle,
-	projector semantic.DecisionProjector,
-	registeredMonitors ...oracle.BundleMonitor,
-) ([]BundleTrialResult, FormalEvaluationSummary, error) {
-	if requiredBundleSchema != controlexperiment.ExecutionBundleSchemaVersion &&
-		requiredBundleSchema != controlexperiment.ExecutionBundleSchemaVersionV2 &&
-		requiredBundleSchema != controlexperiment.ExecutionBundleSchemaVersionV3 {
-		return nil, FormalEvaluationSummary{}, errors.New("FORMAL_METHOD_BUNDLE_SCHEMA_UNSUPPORTED")
-	}
-	monitors, err := ResolveFormalComposition(contract, projector, registeredMonitors...)
-	if err != nil {
-		return nil, FormalEvaluationSummary{}, err
-	}
-	if len(bundles) != len(contract.Pairs)*2 {
-		return nil, FormalEvaluationSummary{}, errors.New("FORMAL_METHOD_EVIDENCE_SET_MISMATCH")
-	}
-	benchmark := BundleBenchmark{Budget: contract.Budget}
-	results := make([]BundleTrialResult, 0, len(bundles))
-	for _, pair := range contract.Pairs {
-		for _, input := range []struct {
-			variant FormalVariant
-			kind    string
-			root    string
-		}{
-			{variant: pair.Control, kind: BundleKindControl},
-			{variant: pair.Candidate, kind: FormalBundleKindCandidate, root: pair.RootCauseID},
-		} {
-			bundle, ok := bundles[input.variant.TrialID]
-			if !ok {
-				return nil, FormalEvaluationSummary{}, fmt.Errorf(
-					"FORMAL_METHOD_TRIAL_MISSING: %s", input.variant.TrialID,
-				)
-			}
-			variant := formalBundleVariant(input.variant, input.kind, input.root)
-			if bundle.SchemaVersion != requiredBundleSchema ||
-				bundle.Qualification.Profile.Digest != contract.ProfileDigest {
-				results = append(results, BundleTrialResult{
-					TrialID: variant.TrialID, VariantID: variant.VariantID, Kind: variant.Kind,
-					RootCauseID: variant.RootCauseID, Status: BundleStatusInvalid,
-					InvalidReason: "FORMAL_METHOD_BUNDLE_CONTRACT_MISMATCH",
-					BundleDigest:  bundle.Digest, BuildID: bundle.Qualification.Manifest.BuildID,
-				})
-				continue
-			}
-			results = append(results, evaluateBundleVariantWithMonitors(
-				benchmark, variant, bundle, projector, monitors,
-			))
-		}
-	}
-	return results, summarizeFormalResults(results), nil
-}
-
 // FormalFreshEvaluation is private evaluator output. Pair/root/variant fields
 // never cross into FormalOpaqueView or Agent-facing artifacts.
 type FormalFreshEvaluation struct {

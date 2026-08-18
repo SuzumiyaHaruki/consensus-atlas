@@ -824,10 +824,6 @@ func jsonEquivalent(left any, right any) bool {
 	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
-func testingAgenticEpisodeMetrics(testing scenarioTestingResult) (agenticEpisodeMetrics, error) {
-	return agenticEpisodeMetricsFromEvidence(&testing, nil)
-}
-
 func agenticEpisodeMetricsFromEvidence(
 	selected *scenarioTestingResult,
 	branches []agenticBranchTestingResult,

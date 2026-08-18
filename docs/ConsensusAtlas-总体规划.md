@@ -361,9 +361,11 @@ Investigation 并汇总全部 Episode；禁止只提交最后一个成功 Episod
 - evaluator 从保存证据重算 Oracle，不启动第二套 A8 session；
 - 输出 killed/survived/false-positive/invalid 和成本。
 
-当前已完成 summary/bundle 到 private pair/exposure/Agreement 评测的端到端桥接，并分别用
-etcd/raft 和 OmniPaxos projector 验证。后续可按需注册 target-local monitor，但不在评估器中
-复制 Target 执行逻辑。
+当前已完成 summary/bundle 到 private pair/exposure/Oracle 评测的端到端桥接，并分别用
+etcd/raft 和 OmniPaxos projector 验证。在线执行、formal fresh evaluator 和 Agentic holdout 共用
+`targetoracles` registry；formal contract 根据 target/projector 和既有 `MonitorIDs` 选择 monitor，
+不在评估器中复制 Target 执行逻辑。etcd/raft 的已有 log-progress 与 client-application-binding monitor
+已经进入该共享路径；OmniPaxos 的新性质仍需先有足够 Evidence，不因 registry 存在而凭空增加 Oracle。
 
 不增加无具体失败场景的 frozen contract 或 gate；优先复用现有 Bundle/MethodSpec/defectbench 类型。
 

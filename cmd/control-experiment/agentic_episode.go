@@ -10,6 +10,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 const (
@@ -155,7 +156,7 @@ type agenticEpisodeTarget struct {
 	Knowledge            controlexperiment.ProtocolKnowledgePack
 	Surface              controlexperiment.AgentTargetSurface
 	ObservationProjector agenticEpisodeObservationProjector
-	OracleRegistry       agenticOracleRegistry
+	OracleRegistry       targetoracles.Registry
 	ScenarioInputs       func(
 		controlexperiment.ScenarioRiskHypothesis,
 		controlexperiment.SemanticPrefixProjector,
@@ -176,7 +177,8 @@ func (target agenticEpisodeTarget) validate() error {
 		target.Knowledge.ValidateAgentMaterials() != nil || target.ObservationProjector == nil ||
 		target.Surface.ValidateAgainstKnowledge(target.Knowledge) != nil ||
 		target.Surface.TargetID != target.ID ||
-		target.OracleRegistry.validate() != nil ||
+		target.OracleRegistry.Validate() != nil ||
+		target.OracleRegistry.TargetID() != target.ID ||
 		!target.OracleRegistry.MatchesCapabilities(target.Surface.Capabilities.OracleCapabilities) ||
 		reflect.ValueOf(target.ObservationProjector).Kind() == reflect.Pointer &&
 			reflect.ValueOf(target.ObservationProjector).IsNil() ||

@@ -1,4 +1,4 @@
-.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix audit-control-surfaces
+.PHONY: fmt test test-fast test-race-core test-race-full test-race-control-shards test-race-other audit-race-shards audit-no-v1 test-omnipaxos-binding test-omnipaxos-pss adapter-qualify-etcdraftv2 adapter-qualify-hashicorpraftv2 adapter-qualify-omnipaxosv2 audit-hashicorp-determinism audit-portable-cft-matrix
 
 fmt:
 	gofmt -w $$(find adapters cmd internal qualifications -type f -name '*.go')
@@ -108,7 +108,3 @@ audit-portable-cft-matrix:
 	go test ./qualifications/etcdraftv2 \
 		-run TestFrozenPortableCapabilityMatrixMatchesMechanicalQualification -count=1
 	go test ./qualifications/hashicorpraftv2 -count=1
-
-audit-control-surfaces:
-	go test ./qualifications/etcdraftv2 \
-		-run 'TestFrozenControlSurfaceComparisonMatchesFreshQualifications|TestSurfaceDeclarationCannotSelfAwardSchedulerControl' -count=1

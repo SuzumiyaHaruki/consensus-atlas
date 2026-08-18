@@ -487,6 +487,121 @@ func TestReleasedMessageSurvivesSourceAndTargetCrash(t *testing.T) {
 	}
 }
 
+func TestOneShotCompletesWithoutReenabling(t *testing.T) {
+	ctx := context.Background()
+	runtime := newRuntime(t)
+	payload, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpOneShot, Delay: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke, err := runtime.OfferInvoke(ctx, "n1", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Select(ctx, invoke); err != nil {
+		t.Fatal(err)
+	}
+	itemID := temporalItemOfKind(t, runtime, control.TemporalOneShotTimer)
+	for decision := 0; decision < 16; decision++ {
+		actions := mustEnabled(t, ctx, runtime)
+		if hasActionForItem(actions, control.ActionFireTemporal, itemID) {
+			fire := actionForItem(t, actions, control.ActionFireTemporal, itemID)
+			if _, err := runtime.Select(ctx, fire.ID); err != nil {
+				t.Fatal(err)
+			}
+			assertItemState(t, runtime.Snapshot(), itemID, control.ItemCompleted)
+			assertActionForItem(t, mustEnabled(t, ctx, runtime), control.ActionFireTemporal, itemID, false)
+			trace, err := runtime.Trace()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := controlruntime.Replay(ctx, fixture.New(), runtimeConfig(), trace); err != nil {
+				t.Fatalf("Replay() error = %v", err)
+			}
+			return
+		}
+		temporal := actionsOfKind(actions, control.ActionFireTemporal)
+		if len(temporal) == 0 {
+			t.Fatal("one-shot temporal item is unreachable")
+		}
+		if _, err := runtime.Select(ctx, temporal[0].ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("one-shot decision bound exceeded")
+}
+
+func TestCallbackCompletionIsRecordedAndReplayable(t *testing.T) {
+	ctx := context.Background()
+	runtime := newRuntime(t)
+	payload, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpCallback, Value: "callback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke, err := runtime.OfferInvoke(ctx, "n1", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Select(ctx, invoke); err != nil {
+		t.Fatal(err)
+	}
+	itemID := firstItemOfKind(t, runtime.Snapshot(), control.ItemCallback)
+	complete := actionForItem(t, mustEnabled(t, ctx, runtime), control.ActionCompleteCallback, itemID)
+	record, err := runtime.Select(ctx, complete.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertItemState(t, runtime.Snapshot(), itemID, control.ItemCompleted)
+	if record.EmissionDigest == "" || record.EvidenceDigest == "" {
+		t.Fatalf("callback completion record is incomplete: %+v", record)
+	}
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controlruntime.Replay(ctx, fixture.New(), runtimeConfig(), trace); err != nil {
+		t.Fatalf("Replay() error = %v", err)
+	}
+}
+
+func TestDuplicateMessagePreservesOriginalAndRecordsCloneLineage(t *testing.T) {
+	ctx := context.Background()
+	runtime := newRuntime(t)
+	messageID := invokeMessage(t, ctx, runtime, fixture.OpEmitMessage)
+	original := itemSnapshot(t, runtime.Snapshot(), messageID)
+	if original.Value.Message == nil {
+		t.Fatal("original message payload is missing")
+	}
+	duplicate := actionForItem(t, mustEnabled(t, ctx, runtime), control.ActionDuplicateMessage, messageID)
+	if _, err := runtime.Select(ctx, duplicate.ID); err != nil {
+		t.Fatal(err)
+	}
+	after := runtime.Snapshot()
+	unchanged := itemSnapshot(t, after, messageID)
+	if unchanged.Value.Message == nil || unchanged.Value.Message.ID != original.Value.Message.ID ||
+		unchanged.Value.Message.CloneOf != "" {
+		t.Fatalf("duplicate mutated original message: before=%+v after=%+v", original, unchanged)
+	}
+	cloneFound := false
+	for _, item := range after.Items {
+		if item.ID != messageID && item.Value.Message != nil &&
+			item.Value.Message.CloneOf == original.Value.Message.ID && item.State == control.ItemEnabled {
+			cloneFound = true
+			break
+		}
+	}
+	if !cloneFound {
+		t.Fatal("duplicate message clone lineage is missing")
+	}
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controlruntime.Replay(ctx, fixture.New(), runtimeConfig(), trace); err != nil {
+		t.Fatalf("Replay() error = %v", err)
+	}
+}
+
 func TestReplayWithProgressChargesCompletedDecisionBeforeDivergence(t *testing.T) {
 	ctx := context.Background()
 	runtime := newRuntime(t)
@@ -915,6 +1030,17 @@ func firstItemOfKind(t *testing.T, snapshot controlruntime.Snapshot, kind contro
 	}
 	t.Fatalf("no item of kind %s", kind)
 	return ""
+}
+
+func itemSnapshot(t *testing.T, snapshot controlruntime.Snapshot, id control.ItemID) controlruntime.ItemSnapshot {
+	t.Helper()
+	for _, item := range snapshot.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("item %s not found", id)
+	return controlruntime.ItemSnapshot{}
 }
 
 func assertItemState(t *testing.T, snapshot controlruntime.Snapshot, id control.ItemID, want control.ItemState) {

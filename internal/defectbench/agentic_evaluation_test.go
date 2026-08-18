@@ -9,6 +9,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 func TestAgenticHoldoutRecomputesVerdictsFromCompletedEpisodeBundles(t *testing.T) {
@@ -165,6 +166,7 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 		contract.Pairs[index].Control.ExpectedConfigDigest = ""
 		contract.Pairs[index].Candidate.ExpectedConfigDigest = ""
 	}
+	contract.Composition.MonitorIDs = []string{targetoracles.LogProgressMonitorID}
 	contract, err := contract.Seal()
 	if err != nil {
 		t.Fatal(err)
@@ -202,12 +204,14 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 		switch result.TrialID {
 		case branchOnlyID:
 			if result.Result.Status != BundleStatusFalsePositive ||
-				result.Result.BundleDigest != branchBundle.Digest {
+				result.Result.BundleDigest != branchBundle.Digest || result.Result.Finding == nil ||
+				result.Result.Finding.Monitor != targetoracles.LogProgressMonitorID {
 				t.Fatalf("branch-only control result = %#v", result.Result)
 			}
 		case findingID:
 			if result.Result.Status != BundleStatusKilled ||
-				result.Result.BundleDigest != branchBundle.Digest {
+				result.Result.BundleDigest != branchBundle.Digest || result.Result.Finding == nil ||
+				result.Result.Finding.Monitor != targetoracles.LogProgressMonitorID {
 				t.Fatalf("unselected finding result = %#v", result.Result)
 			}
 		}
@@ -244,7 +248,7 @@ type digestFindingMonitor struct {
 	digest string
 }
 
-func (digestFindingMonitor) Name() string { return "agreement" }
+func (digestFindingMonitor) Name() string { return targetoracles.LogProgressMonitorID }
 
 func (monitor digestFindingMonitor) CheckBundle(
 	bundle controlexperiment.ExecutionBundle,

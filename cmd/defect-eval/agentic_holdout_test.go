@@ -3,11 +3,13 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *testing.T) {
@@ -21,6 +23,10 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	contract, _, _ := writeFormalCLIFixture(t, root, spec, bundle)
 	contract.MethodSpecDigest = methodSpec.Digest
 	contract.AgenticBudget = &methodSpec.InvestigationBudget
+	contract.Composition.MonitorIDs = []string{
+		"agreement", targetoracles.ClientApplicationBindingMonitorID,
+		targetoracles.LogProgressMonitorID,
+	}
 	contract, err := contract.Seal()
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +114,13 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	want := defectbench.FormalEvaluationSummary{Controls: 3, Candidates: 3, RootCauses: 3}
 	if evaluation.Summary != want {
 		t.Fatalf("self-reported findings affected holdout verdict: %#v", evaluation.Summary)
+	}
+	wantOracle := targetoracles.EtcdraftV2Registry().Check(bundle)
+	for _, result := range evaluation.Results {
+		if !reflect.DeepEqual(result.Result.Oracle, wantOracle) {
+			t.Fatalf("online and holdout Oracle composition drifted: got=%#v want=%#v",
+				result.Result.Oracle, wantOracle)
+		}
 	}
 	undeclaredTrial := contract.Pairs[0].Control.TrialID
 	undeclaredDirectory := episodeByTrial[undeclaredTrial]

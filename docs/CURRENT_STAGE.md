@@ -2,7 +2,7 @@
 
 更新时间：2026-08-17
 分支：`feature/agentic-consensus-testing`
-阶段：M4k5c Risk 解释边界校准（实现完成，待重新运行配对）。
+阶段：M4k5c Risk 解释边界校准与冗余清理（公开配对及瘦身完成）。
 
 ## 一句话状态
 
@@ -27,6 +27,10 @@ Observation → Oracle 垂直回归。
 搜索中的 fresh child verification 归入 Replay，而不是 primary。活动 CLI 从实际模型 transport、
 prompt/semantic input、源码暴露、Episode 数与预算派生 typed `AgenticMethodSpec`。正式多轮 trial
 只能提交完整、连续的 Investigation；所有 Episode 的模型、搜索与候选执行成本一起核算。
+在线执行、formal fresh evaluator 与 Agentic holdout 现在共用 `targetoracles` registry。etcd/raft 的
+Agreement、log-progress 和 client-application-binding monitor 由同一 target-local 注册表提供，正式合同按
+`target + projector + MonitorIDs` 精确解析；未知 monitor 或 target/projector 不匹配会在执行 SUT 前拒绝。
+OmniPaxos 当前仍只注册已有的 Trace/Agreement，不借此 composition 修复虚构新的协议证据或 Oracle。
 Scenario Agent 在获得可信 `ProgressDelta` 后还可以用零 Runtime 成本的 `abandon` 主动结束低收益假设。
 它不是 verdict；停止原因只作为机械 Memory 交给下一 Episode 的 Risk Agent，已产生的证据和成本仍然保留。
 Risk Agent 的源码入口不再在首个成功片段后关闭：一次调查最多读取 4 个 Dossier 声明片段、每次调用最多
@@ -239,6 +243,13 @@ M4k5b reason-code arm 已证明探针接线有效，但仍未到 Scenario：首�
 M4k5c 因此把单步 rationale 上限放宽到 256，同时保留 2048 总上限，并在 prompt 明示字节边界。Risk prompt
 升为 v5，旧失败 MethodSpec 不会与新实验混淆。该调整不改变候选数量、Action、执行、Replay 或 verdict 边界。
 
+M4k5c 公开配对已完成。`reason-codes` 与 `structured-gaps` 各使用 1 次 Risk、1 次 Scenario 调用，分别消耗
+54,001 与 66,123 tokens，并执行 14 与 10 个 Action；两组都形成 fresh-Replay 稳定执行，但都没有达到 Risk，
+Oracle finding 均为 0。reason-code 组完成一次消息丢弃和一次自然 timer callback，得到 36 个唯一 PSS；
+structured 组完成一次消息丢弃、未触发 timer callback，得到 32 个唯一 PSS。两组实际 Scenario 都没有再次请求
+探针揭示的不支持 crash，因此本样本只证明两种反馈都能让 Agent 避开该缺口，不能证明 structured feedback 更有效。
+单次非确定模型配对也不足以把候选与轨迹差异归因于反馈模式。
+
 ## 当前输入
 
 每个活动 Target 提供：
@@ -338,6 +349,12 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 - stateless Campaign、root corpus、traversal/discovery wrapper；
 - etcd/raft 旧 stateless runner 和多代 random/uniform CLI；
 - 与上述路径一一对应的历史测试和兼容 checkpoint。
+- 未被生产或测试入口调用的 PSS 逆向重投影、旧 Scenario journal 包装、旧 frontier 编译包装、旧内存 formal
+  evaluator、无 capability 校验的 Observation 构造及其他孤立辅助函数；
+- 只在自身测试中运行的旧 control-surface/control-path 模型和 M5.5a 冻结工件；
+- 旧单体 fixture conformance runner 及十项 fixture 专用检查。Core、Lifecycle、IndependentControl 和
+  OpaqueInvoke 拆分入口继续保留；其中没有现行等价回归的 one-shot、callback 和 duplicate-lineage 三项已改写为
+  直接 Runtime 测试，其余语义由既有 Runtime/Lifecycle/Replay 测试覆盖。
 
 保留：
 
@@ -348,7 +365,12 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
 - etcd/raft、OmniPaxos 的协议特有 composition；
 - Bundle/MethodSpec evaluator 和 defectbench。
 
-当前 Go 代码约 32.7k 生产行、14.6k 测试行；审计前约为 41.5k/18.9k。
+现行 `AgentTargetSurface` 继续机械要求 composable Action 是 Manifest Action 的子集；两个真实 Target 的
+逐 Action frontier/执行/Replay 测试继续证明声明的可达性。因此删除旧 surface 模型没有放宽能力授予边界。
+
+本轮 Go 代码净减 1,626 行（200 增、1,826 删）；连同旧工件、孤立 Make 目标和文档更新，tracked diff 净减约 1,832 行。
+按 tracked Go 文件统计，当前约 35,673 行生产代码、17,795 行测试，共 53,468 行；清理前审计口径为
+37,188/17,906，共 55,094 行。未跟踪实验工件不计入代码统计。
 
 ### 5. Agentic holdout 桥接
 
@@ -370,8 +392,11 @@ coordinator 不理解 leader、term、ballot 或协议消息类型。
   MethodSpec 相同且无漏轮/额外条目；预算使用完整 Investigation 的聚合值；
 - search reconstruction/materialization 计入 primary，fresh child verification 计入 replay。
 
-当前 holdout composition 只注册两个 Target 共用的 Agreement monitor。Target-local monitor 还未转移到
-evaluator 可注册包；这是后续能力扩展，不影响本轮桥接语义。
+在线与正式评测的 Oracle composition 断点已经闭合。现有 etcd/raft target-local monitor 已从
+`cmd/control-experiment` 迁移到可复用的 `targetoracles` 包；online、formal fresh 和 Agentic holdout
+都从同一 registry 获得实现，formal contract 继续用既有 `MonitorIDs` 选择实际执行的子集。
+普通回归证明同一个合法 Bundle 在线与 holdout 得到相同 `Oracle.Result`，未知 monitor 在 runner 调用前被拒绝，
+target-local finding 能由 evaluator 计入，而 Agent 自报 `oracle-finding` 不能产生 finding。
 
 ### 6. 分支、对照与消融
 
@@ -487,9 +512,9 @@ M4c 的首个有效样本证明源码查询和 portfolio 路径可用，默认 O
 fixture 持续选择自然进展只能作为执行校准，不能作为 Agent
 有效性的实验结果。
 
-M4k4 已把结构化能力反馈变成可配对的方法变量。下一步 M4k5 在获得明确外部调用授权后，固定其他
-MethodSpec 字段运行 `reason-codes`/`structured-gaps` 公开配对校准；在此之前不调用 provider，也不把本地脚本
-差异解释为模型收益。
+M4k5c 已完成一次 `reason-codes`/`structured-gaps` 公开配对校准。单个样本未显示 structured feedback 的收益，
+也没有形成 finding；后续不应只为扩大样本而立即增加付费调用。下一步应先依据真实 M4k5c 轨迹决定 Agent 是否
+需要第二次 Scenario 修订机会，以及 Action/Target 可测试性重构的最小切片。
 
 `minimize` 仍留到可信 Oracle finding 已存在时实现，不恢复旧 A8 paired session，也不因为长轨迹新增
 hash、冻结 contract、baseline 或 gate。
@@ -517,3 +542,10 @@ Timer callback/clock advance 分离。`go test ./... -count=1 -timeout=360s`、`
 256 Action 协议无关 fixture 继续只作为成本校准。
 M4k4 的全仓普通测试、vet、`audit-no-v1`、`audit-race-shards`、格式和 diff 检查通过；MethodSpec 身份和
 Memory 投影的两个聚焦 race 用例通过。本阶段未读取 key、未调用 provider，历史实验目录未纳入改动。
+本轮瘦身后 `go test ./...`、`go vet ./...`、两项仓库审计、格式和 diff 检查通过；conformance、semantic、
+defectbench 的聚焦 race 通过，controlexperiment 中与 frontier、DFS、MethodSpec、capability 直接相关的聚焦 race
+以及迁移后的三个 Runtime 回归也通过。整包 controlexperiment race 在既有 360 秒上限停留于
+`TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback` 的长 Replay 路径并超时，期间没有 race 报告；
+按既有约定记录后不在本轮继续放宽时间或重复消耗。Python discovery 仍为 0 tests。
+Oracle composition 修复后的全仓 `go test ./...`、`go vet ./...`、两项仓库审计、格式和 diff 检查通过；
+`targetoracles`、formal/holdout composition 以及两个 etcd/raft target-local monitor 的聚焦 race 通过。

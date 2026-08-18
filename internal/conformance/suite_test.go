@@ -9,61 +9,55 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 )
 
-func TestFixturePassesExternalConformance(t *testing.T) {
-	report, err := conformance.Evaluate(context.Background(), func() control.Adapter {
+func TestFixturePassesCoreConformance(t *testing.T) {
+	report, err := conformance.EvaluateCore(context.Background(), func() control.Adapter {
 		return fixture.New()
-	}, witnessPlan(t))
+	}, corePlan())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.Passed {
-		t.Fatalf("conformance failed: %+v", report.Cases)
-	}
-	if len(report.Cases) != 13 || len(report.ValidatedCapabilities) != 13 {
-		t.Fatalf("cases/capabilities = %d/%d, want 13/13", len(report.Cases), len(report.ValidatedCapabilities))
+	if !report.Passed || len(report.Cases) != 3 || len(report.ValidatedCapabilities) != 3 {
+		t.Fatalf("core conformance failed: %+v", report)
 	}
 }
 
-func TestSuiteRejectsNonIdempotentCollect(t *testing.T) {
-	report, err := conformance.Evaluate(context.Background(), func() control.Adapter {
+func TestCoreRejectsNonIdempotentCollect(t *testing.T) {
+	report, err := conformance.EvaluateCore(context.Background(), func() control.Adapter {
 		return &unstableCollectAdapter{Adapter: fixture.New()}
-	}, witnessPlan(t))
+	}, corePlan())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Passed {
-		t.Fatal("non-idempotent Adapter passed conformance")
+	assertFailedCase(t, report, "collect-idempotent", "COLLECT_NOT_IDEMPOTENT")
+}
+
+func TestCoreRejectsCheckThatMutatesObservableState(t *testing.T) {
+	report, err := conformance.EvaluateCore(context.Background(), func() control.Adapter {
+		return &mutatingCheckAdapter{Adapter: fixture.New()}
+	}, corePlan())
+	if err != nil {
+		t.Fatal(err)
 	}
-	found := false
-	for _, result := range report.Cases {
-		if result.ID == "collect-idempotent" {
-			found = true
-			if result.Passed || result.ReasonCode != "COLLECT_NOT_IDEMPOTENT" {
-				t.Fatalf("collect result = %+v", result)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("collect-idempotent case missing")
+	assertFailedCase(t, report, "enabled-check-pure", "ADAPTER_CHECK_MUTATED_EVIDENCE")
+}
+
+func corePlan() conformance.CorePlan {
+	return conformance.CorePlan{
+		Seed: []byte("conformance-seed"), ExpectedEntropyNodes: []control.NodeID{"n1", "n2"},
 	}
 }
 
-func TestSuiteRejectsCheckThatMutatesObservableState(t *testing.T) {
-	report, err := conformance.Evaluate(context.Background(), func() control.Adapter {
-		return &mutatingCheckAdapter{Adapter: fixture.New()}
-	}, witnessPlan(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+func assertFailedCase(t *testing.T, report conformance.Report, id, reason string) {
+	t.Helper()
 	for _, result := range report.Cases {
-		if result.ID == "enabled-check-pure" {
-			if result.Passed || result.ReasonCode != "ADAPTER_CHECK_MUTATED_EVIDENCE" {
-				t.Fatalf("enabled-check result = %+v", result)
+		if result.ID == id {
+			if result.Passed || result.ReasonCode != reason {
+				t.Fatalf("case %s = %+v", id, result)
 			}
 			return
 		}
 	}
-	t.Fatal("enabled-check-pure case missing")
+	t.Fatalf("case %s missing", id)
 }
 
 type unstableCollectAdapter struct {
@@ -103,38 +97,4 @@ func (adapter *unstableCollectAdapter) Collect(ctx context.Context, yield contro
 		emission.Items[0].Temporal.Deadline++
 	}
 	return emission, nil
-}
-
-func witnessPlan(t *testing.T) conformance.WitnessPlan {
-	t.Helper()
-	message, err := fixture.InputPayload(fixture.Input{
-		Operation: fixture.OpEmitMessage, Target: "n2", Value: "message",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	durable, err := fixture.InputPayload(fixture.Input{
-		Operation: fixture.OpEmitDurableMessage, Target: "n2", Value: "durable",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sleep, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpSleep, Delay: 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-	oneShot, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpOneShot, Delay: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	callback, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpCallback, Value: "callback"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return conformance.WitnessPlan{
-		Seed: []byte("conformance-seed"), Source: "n1", Target: "n2",
-		MessageInput: message, DurableMessageInput: durable, SleepInput: sleep,
-		OneShotInput: oneShot, CallbackInput: callback,
-		ExpectedInitialDeadlinePeers: []control.NodeID{"n1", "n2"},
-	}
 }

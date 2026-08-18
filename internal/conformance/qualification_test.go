@@ -16,9 +16,11 @@ func TestQualificationIsMechanicalAndPartial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	witness, err := conformance.Evaluate(ctx, func() control.Adapter {
+	witness, err := conformance.EvaluateCore(ctx, func() control.Adapter {
 		return fixture.New()
-	}, witnessPlan(t))
+	}, conformance.CorePlan{
+		Seed: []byte("qualification-seed"), ExpectedEntropyNodes: []control.NodeID{"n1", "n2"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,10 +45,10 @@ func TestQualificationIsMechanicalAndPartial(t *testing.T) {
 		t.Fatalf("summary = %+v", report.Summary)
 	}
 	want := map[string]conformance.CapabilityStatus{
-		"message-retention": conformance.CapabilityValidated,
-		"natural-time":      conformance.CapabilityUnsupported,
-		"process-crash":     conformance.CapabilityUndeclared,
-		"opaque-invoke":     conformance.CapabilityUnvalidated,
+		"core-yield":    conformance.CapabilityValidated,
+		"natural-time":  conformance.CapabilityUnsupported,
+		"process-crash": conformance.CapabilityUndeclared,
+		"opaque-invoke": conformance.CapabilityUnvalidated,
 	}
 	for _, result := range report.Capabilities {
 		if result.Status != want[result.ID] {
@@ -64,9 +66,11 @@ func TestQualificationRejectsRewrittenConformance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	witness, err := conformance.Evaluate(ctx, func() control.Adapter {
+	witness, err := conformance.EvaluateCore(ctx, func() control.Adapter {
 		return fixture.New()
-	}, witnessPlan(t))
+	}, conformance.CorePlan{
+		Seed: []byte("qualification-seed"), ExpectedEntropyNodes: []control.NodeID{"n1", "n2"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +116,11 @@ func qualificationProfile(t *testing.T) conformance.QualificationProfile {
 		ID: "test-adapter-profile",
 		Capabilities: []conformance.CapabilityRequirement{
 			{
-				ID: "message-retention", Required: true,
+				ID: "core-yield", Required: true,
 				Manifest: conformance.ManifestRequirements{
-					MinNodes: 2,
-					Actions:  []control.ActionKind{control.ActionDeliverMessage, control.ActionDropMessage},
-					Items:    []control.ItemKind{control.ItemMessage},
+					MinNodes: 2, StrictYield: true,
 				},
-				ConformanceCases: []string{"message-crash-retention"},
+				ConformanceCases: []string{"collect-idempotent"},
 			},
 			{
 				ID: "natural-time", Required: true,

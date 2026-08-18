@@ -12,6 +12,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 func TestEtcdraftExecutionBundleClosesTrustedV2Boundary(t *testing.T) {
@@ -27,12 +28,12 @@ func TestEtcdraftExecutionBundleClosesTrustedV2Boundary(t *testing.T) {
 		t.Fatalf("incomplete execution bundle: %#v", bundle.Identity)
 	}
 	checked := oracle.CheckBundle(
-		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, etcdraftLogProgressMonitor{},
-		etcdraftClientApplicationBindingMonitor{},
+		bundle, oracle.BundleTraceIntegrity{}, oracle.BundleAgreement{}, targetoracles.LogProgressMonitor{},
+		targetoracles.ClientApplicationBindingMonitor{},
 	)
 	if len(checked.Violations) != 0 || len(checked.Checked) != 4 ||
-		checked.Checked[2] != etcdraftLogProgressMonitorID ||
-		checked.Checked[3] != etcdraftClientApplicationBindingMonitorID {
+		checked.Checked[2] != targetoracles.LogProgressMonitorID ||
+		checked.Checked[3] != targetoracles.ClientApplicationBindingMonitorID {
 		t.Fatalf("official bundle violations: %#v", checked.Violations)
 	}
 

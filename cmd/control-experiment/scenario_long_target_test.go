@@ -16,6 +16,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/psscore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 	raftfamily "github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic/raft"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 const (
@@ -314,7 +315,7 @@ func assertLongTargetEvidence(
 	riskProjector controlexperiment.SemanticPrefixProjector,
 	observationProjector longTargetObservationProjector,
 	targetProgressKind semantic.ObservationKind,
-	registry agenticOracleRegistry,
+	registry targetoracles.Registry,
 	duration time.Duration,
 ) {
 	t.Helper()
@@ -345,7 +346,7 @@ func assertLongTargetEvidence(
 	verdict := registry.Check(bundle)
 	if err != nil || views.Validate() != nil || views.Samples != realTargetLongDecisions+1 ||
 		views.ProtocolStates < 2 || views.ControlStates < 2 || views.JointStates < 2 ||
-		len(verdict.Checked) != len(registry.registrations) || len(verdict.Violations) != 0 {
+		len(verdict.Checked) != len(registry.Capabilities()) || len(verdict.Violations) != 0 {
 		t.Fatalf("%s long evidence incomplete: views=%#v oracle=%#v err=%v", target, views, verdict, err)
 	}
 	t.Logf("%s 128 actions: observations=%d target_progress=%d protocol_pss=%d control_pss=%d joint_pss=%d reconstruction=%d verification=%d verification_decisions=%d scenario_work=%d primary=%d replay=%d duration=%s",

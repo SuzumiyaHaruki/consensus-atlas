@@ -111,14 +111,6 @@ type ObservationHistory struct {
 	Events      []Observation `json:"events"`
 }
 
-func NewObservationHistory(
-	projectorID string,
-	trace controlruntime.Trace,
-	events []Observation,
-) (ObservationHistory, error) {
-	return newObservationHistory(projectorID, trace, events, nil, false)
-}
-
 // NewObservationHistoryWithCapabilities admits target-local facts only after
 // validating them against the projector's declared schemas.
 func NewObservationHistoryWithCapabilities(

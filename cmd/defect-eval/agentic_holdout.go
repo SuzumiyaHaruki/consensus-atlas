@@ -11,12 +11,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
-	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/defectbench"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 const agenticHoldoutInputsSchemaVersion = "consensus-atlas/agentic-holdout-inputs/v2"
@@ -124,12 +121,16 @@ func runAgenticHoldoutEvaluation(
 	if err != nil {
 		return err
 	}
-	projector, monitors, err := agenticHoldoutComposition(contract.Composition.ProjectorID)
+	targetID, err := agenticHoldoutTargetID(evidence)
 	if err != nil {
 		return err
 	}
+	projector, registry, err := targetoracles.Resolve(targetID, contract.Composition.ProjectorID)
+	if err != nil {
+		return errors.New("AGENTIC_HOLDOUT_CLI_TARGET_ORACLE_COMPOSITION_UNSUPPORTED")
+	}
 	report, err := defectbench.EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, projector, monitors...,
+		contract, exposure, evidence, projector, registry.EvaluationMonitors()...,
 	)
 	if err != nil {
 		return err
@@ -532,16 +533,19 @@ func readAgenticEpisodeSummary(path string) (agenticEpisodeSummaryProjection, er
 	return summary, nil
 }
 
-func agenticHoldoutComposition(
-	projectorID string,
-) (semantic.DecisionProjector, []oracle.BundleMonitor, error) {
-	monitors := []oracle.BundleMonitor{oracle.BundleAgreement{}}
-	switch projectorID {
-	case etcdraftv2.DecisionProjectionID:
-		return etcdraftv2.DecisionProjector{}, monitors, nil
-	case omnipaxosv2.DecisionProjectionID:
-		return omnipaxosv2.DecisionProjector{}, monitors, nil
-	default:
-		return nil, nil, errors.New("AGENTIC_HOLDOUT_CLI_PROJECTOR_UNSUPPORTED")
+func agenticHoldoutTargetID(
+	evidence map[string]defectbench.AgenticTrialEvidence,
+) (string, error) {
+	targetID := ""
+	for _, current := range evidence {
+		if strings.TrimSpace(current.TargetID) == "" ||
+			targetID != "" && current.TargetID != targetID {
+			return "", errors.New("AGENTIC_HOLDOUT_CLI_TARGET_SET_INVALID")
+		}
+		targetID = current.TargetID
 	}
+	if targetID == "" {
+		return "", errors.New("AGENTIC_HOLDOUT_CLI_TARGET_SET_INVALID")
+	}
+	return targetID, nil
 }

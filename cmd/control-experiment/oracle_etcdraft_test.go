@@ -9,13 +9,14 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 func TestEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t *testing.T) {
 	_, bundle := sharedEtcdraftWorkloadBundleFixture(t)
-	verdict := oracle.CheckBundle(bundle, etcdraftClientApplicationBindingMonitor{})
+	verdict := oracle.CheckBundle(bundle, targetoracles.ClientApplicationBindingMonitor{})
 	if len(verdict.Violations) != 0 || len(verdict.Checked) != 1 ||
-		verdict.Checked[0] != etcdraftClientApplicationBindingMonitorID {
+		verdict.Checked[0] != targetoracles.ClientApplicationBindingMonitorID {
 		t.Fatalf("real bundle binding verdict = %#v", verdict)
 	}
 
@@ -53,7 +54,7 @@ func TestEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t
 		entry.Response.Payload = payload
 		mutated.ClientHistory[committedIndex] = entry
 		violations := oracle.CheckBundle(
-			mutated, etcdraftClientApplicationBindingMonitor{},
+			mutated, targetoracles.ClientApplicationBindingMonitor{},
 		).Violations
 		assertEtcdraftClientApplicationBindingViolation(t, violations, "does not match its invoke")
 	})
@@ -67,7 +68,7 @@ func TestEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t
 			},
 		)
 		violations := oracle.CheckBundle(
-			mutated, etcdraftClientApplicationBindingMonitor{},
+			mutated, targetoracles.ClientApplicationBindingMonitor{},
 		).Violations
 		assertEtcdraftClientApplicationBindingViolation(t, violations, "exact applied-command witnesses")
 	})
@@ -82,7 +83,7 @@ func TestEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t
 		)
 		mutated.ClientHistory = nil
 		violations := oracle.CheckBundle(
-			mutated, etcdraftClientApplicationBindingMonitor{},
+			mutated, targetoracles.ClientApplicationBindingMonitor{},
 		).Violations
 		assertEtcdraftClientApplicationBindingViolation(t, violations, "has no prior invoke")
 	})
@@ -99,7 +100,7 @@ func TestEtcdraftClientApplicationBindingAcceptsRealBundleAndRejectsMismatches(t
 		)
 		mutated.ClientHistory = nil
 		violations := oracle.CheckBundle(
-			mutated, etcdraftClientApplicationBindingMonitor{},
+			mutated, targetoracles.ClientApplicationBindingMonitor{},
 		).Violations
 		assertEtcdraftClientApplicationBindingViolation(t, violations, "multiple log positions")
 	})
@@ -162,7 +163,7 @@ func assertEtcdraftClientApplicationBindingViolation(
 	want string,
 ) {
 	t.Helper()
-	if len(violations) != 1 || violations[0].Monitor != etcdraftClientApplicationBindingMonitorID ||
+	if len(violations) != 1 || violations[0].Monitor != targetoracles.ClientApplicationBindingMonitorID ||
 		violations[0].Step <= 0 || !strings.Contains(violations[0].Message, want) {
 		t.Fatalf("binding violations = %#v, want %q", violations, want)
 	}
@@ -178,9 +179,9 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 			{Step: 3, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 3, 3, 3, 2)},
 		},
 	}}
-	result := oracle.CheckBundle(monotonic, etcdraftLogProgressMonitor{})
+	result := oracle.CheckBundle(monotonic, targetoracles.LogProgressMonitor{})
 	if len(result.Violations) != 0 || len(result.Checked) != 1 ||
-		result.Checked[0] != etcdraftLogProgressMonitorID {
+		result.Checked[0] != targetoracles.LogProgressMonitorID {
 		t.Fatalf("monotonic evidence was rejected: %#v", result)
 	}
 
@@ -203,8 +204,8 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 			mutated.Trace.Records[test.step-1].Evidence = etcdraftLogProgressFixtureEvidencePointer(
 				t, uint64(test.step), test.commit, test.applied, test.incarnation,
 			)
-			violations := oracle.CheckBundle(mutated, etcdraftLogProgressMonitor{}).Violations
-			if len(violations) != 1 || violations[0].Monitor != etcdraftLogProgressMonitorID ||
+			violations := oracle.CheckBundle(mutated, targetoracles.LogProgressMonitor{}).Violations
+			if len(violations) != 1 || violations[0].Monitor != targetoracles.LogProgressMonitorID ||
 				violations[0].Step != test.step || !strings.Contains(violations[0].Message, test.want) {
 				t.Fatalf("mutation was not detected: %#v", violations)
 			}
