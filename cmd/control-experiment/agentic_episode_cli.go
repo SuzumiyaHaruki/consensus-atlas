@@ -22,7 +22,7 @@ func runAgenticEpisodeCLI(
 	withoutTarget.InvestigationEpisodes = 1
 	withoutTarget.KnowledgeSourceMounts = nil
 	withoutTarget.ClosureMode = ""
-	withoutTarget.FixedRiskInput = ""
+	withoutTarget.RiskInput = ""
 	if options.CampaignDirectory == "" || options.Target == "" ||
 		options.InvestigationEpisodes <= 0 || withoutTarget.hasNonSessionFlags() {
 		return errors.New("Agentic Episode requires -campaign-dir, -target, target inputs, Agent inputs, optional -investigation-episodes, and optional -campaign-resume")
@@ -133,10 +133,6 @@ func prepareAgenticEpisodeComposition(
 	if options.AgentModel == "" || options.AgentKeyFile == "" || options.SemanticInput == "" {
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_ACTIVE_INPUT_REQUIRED")
 	}
-	if options.FixedRiskInput != "" &&
-		(options.InvestigationEpisodes != 1 || options.CapabilityFeedbackProbe != "") {
-		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_FIXED_RISK_REQUIRES_SINGLE_EPISODE")
-	}
 	if options.MethodSpecDigest != "" && !validAgenticSHA256(options.MethodSpecDigest) {
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_METHOD_SPEC_INVALID")
 	}
@@ -181,7 +177,7 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		fixedRisk, fixedRiskDigest, err := loadFixedRiskInput(options.FixedRiskInput, target)
+		existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
@@ -203,7 +199,7 @@ func prepareAgenticEpisodeComposition(
 		spec, err := buildAgenticMethodSpec(
 			options, target, budget, inputs.client, scenarioClient, etcdraftSemanticInputSchema,
 			inputs.experiment.ScenarioSemanticExposure, inputs.experiment.SessionWallClockMS,
-			knowledgeSourceMounts, feedbackProbe, fixedRiskDigest,
+			knowledgeSourceMounts, feedbackProbe, riskInputDigest,
 		)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
@@ -217,8 +213,8 @@ func prepareAgenticEpisodeComposition(
 			SessionWallClockMS:      inputs.experiment.SessionWallClockMS,
 			CapabilityFeedbackMode:  feedbackMode,
 			CapabilityFeedbackProbe: feedbackProbe,
-			FixedRisk:               fixedRisk,
-			FixedRiskInputDigest:    fixedRiskDigest,
+			ExistingRisk:            existingRisk,
+			RiskInputDigest:         riskInputDigest,
 			Memory:                  memory,
 		}, nil
 	case "omnipaxos-v2":
@@ -237,7 +233,7 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		fixedRisk, fixedRiskDigest, err := loadFixedRiskInput(options.FixedRiskInput, target)
+		existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
@@ -259,7 +255,7 @@ func prepareAgenticEpisodeComposition(
 		spec, err := buildAgenticMethodSpec(
 			options, target, budget, client, scenarioClient, omnipaxosSemanticInputSchema,
 			inputs.Experiment.ScenarioSemanticExposure, inputs.Experiment.SessionWallClockMS,
-			knowledgeSourceMounts, feedbackProbe, fixedRiskDigest,
+			knowledgeSourceMounts, feedbackProbe, riskInputDigest,
 		)
 		if err != nil {
 			return agenticEpisodeComposition{}, err
@@ -272,8 +268,8 @@ func prepareAgenticEpisodeComposition(
 			SessionWallClockMS:      inputs.Experiment.SessionWallClockMS,
 			CapabilityFeedbackMode:  feedbackMode,
 			CapabilityFeedbackProbe: feedbackProbe,
-			FixedRisk:               fixedRisk,
-			FixedRiskInputDigest:    fixedRiskDigest,
+			ExistingRisk:            existingRisk,
+			RiskInputDigest:         riskInputDigest,
 			Memory:                  memory,
 		}, nil
 	default:

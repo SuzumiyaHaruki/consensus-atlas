@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：M4l6R 固定已接受 Risk 的 Scenario-only 配对 pilot
+阶段：M4l7 正式 Risk 输入与 post-intervention closure handoff
 
 ## 一句话状态
 
@@ -53,9 +53,9 @@ Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共�
 转换为 `closure-underdetermined`，不再作为执行错误。
 
 当前新运行的 MethodSpec implementation identity 已更新为
-`consensus-atlas/agentic-method/m4l5-closure-v1`，因此接入 closure 前后的方法 digest
-不同。旧 `m4d-v1` 仅保留只读工件验证；新建和恢复运行仍必须与当前完整 MethodSpec
-严格一致，不能把旧 Investigation 混入新实现。
+`consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1`。旧
+`m4l5-closure-v1` 与 `m4d-v1` 仅保留只读工件验证；新建和恢复运行仍必须与当前完整
+MethodSpec 严格一致，不能把旧 Investigation 混入新实现。
 
 M4l6 已在同一个活动 CLI 中加入两个窄实验臂：`public-fixed` 与
 `target-local`。它们不是调用方自报标签：`public-fixed` 会从实际 Target
@@ -85,11 +85,13 @@ Scenario 调用、111,234 tokens 且 Risk 未到达；`target-local-v2` 使用 1
 但 Risk Agent 实际生成了不同的 Risk spec；target-local arm 的 Risk 也没有要求
 `MsgAppResp` 丢弃后的 alternate-quorum 闭合，因此不能把差异归因于 closure。
 
-M4l6R 为此加入窄的 `-fixed-risk-input` 模式。输入是公开的 RiskCandidate JSON，
-可信代码会针对当前 Target 重新执行资格与 capability-gap 检查；合格后跳过 Risk
-provider，仅运行 Scenario Agent、Runtime、fresh Replay 与 Oracle。Risk 候选规范化摘要、
-`fixed-accepted` 模式和实际 `closure_mode` 均进入原有 MethodSpec。固定模式只允许
-单 Episode 且不与 capability probe 混用。零模型回归已证明 Risk provider 为 0、
+M4l6R 为此加入了读取 Risk 的原型。M4l7 将其固定为正式 `-risk-input`：可读取独立
+RiskCandidate、RiskCandidateAssessment 或已有 Episode `summary.json` 中的
+`accepted_risk`。可信代码只提取候选并针对当前 Target 重新执行资格与 capability-gap
+检查；合格后跳过 Risk provider，仅运行 Scenario Agent、Runtime、fresh Replay 与
+Oracle。规范化候选摘要、`existing-candidate` 模式和实际 `closure_mode` 均进入原有
+MethodSpec。该模式支持单 Episode 和多 Episode Investigation；默认模式明确记录为
+`agent-generated`。零模型回归已证明 Risk provider 为 0、
 Scenario provider 为 1，并以同一 alternate-quorum Risk 完成 5 个计划 Action、12 个
 closure Action、stable Replay 和四个 Oracle monitor。
 
@@ -102,6 +104,15 @@ target-local 在第 2 次调用已经真实 drop 目标 `MsgAppResp n2→n1`，�
 所以只在完整计划结束后接管的 closure 没有激活。该结果是可信的接口负证据，不是
 closure 无效或协议 finding。精简结果见
 `benchmarks/experiments/etcdraft-fixed-risk-scenario-only-m4l6r-v1/`。
+
+M4l7 已修复该接口缺口。Scenario view 现在显式声明
+`post_intervention_closure`；prompt 要求 Agent 在目标干预处结束计划。可信执行器也不
+仅依赖提示：每个成功 Action 后由 Target factory 检查真实前缀，只有 factory 明确认可
+时才发生 handoff，剩余 Agent 预测步骤不会执行。handoff 后仍只能选择
+Effect/Deliver/Temporal，并完整记录 handoff step、自动推进、fresh Replay 和 Oracle。
+零模型回归使用“正确 drop 后附带过早 n3 response 投递”的过度计划，确认在 drop 后
+截断为 5 个真实计划 Action并完成原 12 个 closure Action。public-fixed、无 factory
+以及 factory 不识别干预的行为保持不变。
 
 ## 当前输入
 
@@ -174,10 +185,8 @@ closure 无效或协议 finding。精简结果见
 
 ## 下一步
 
-1. 让 Scenario view/prompt 明确表示 target-local post-intervention closure 可用，或
-   增加显式零 Action 的 closure handoff；Agent 完成真实干预后不应继续猜闭合时序；
-2. 重跑相同 fixed Risk 两臂，比较正确 `MsgAppResp` 干预、handoff、Risk/RequestID/
+1. 重跑相同 existing Risk 两臂，比较正确 `MsgAppResp` 干预、handoff、Risk/RequestID/
    Replay/Oracle、decisions/calls/tokens 以及停止原因；
-3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
-4. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
-5. 只有效果证据成立后才进入 private holdout 和第三协议接入。
+2. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
+3. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
+4. 只有效果证据成立后才进入 private holdout 和第三协议接入。

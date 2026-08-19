@@ -64,9 +64,11 @@ type ScenarioClosureContext struct {
 }
 
 // ScenarioClosureFactory may recognize one post-intervention prefix and
-// return a narrow selector for already enabled closure Actions. active=false
-// preserves ordinary public natural progress. Once active, a selector stop or
-// error is authoritative and must not fall back to public ordering.
+// return a narrow selector for already enabled closure Actions. The executor
+// may query it after each successfully applied prefix; only active=true may
+// replace the remaining untrusted plan suffix. active=false preserves ordinary
+// execution. Once active, a selector stop or error is authoritative and must
+// not fall back to public ordering.
 type ScenarioClosureFactory func(ScenarioClosureContext) (
 	selector ScenarioClosureSelector,
 	active bool,

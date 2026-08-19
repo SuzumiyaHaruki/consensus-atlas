@@ -9,21 +9,24 @@ import (
 )
 
 const (
-	AgenticMethodSpecSchemaVersion          = "consensus-atlas/agentic-method-spec/v1"
-	AgenticMethodExecutorID                 = "consensus-atlas/agentic-episode-cli/v1"
-	AgenticMethodStrategyID                 = "agentic-episode-v1"
-	AgenticMethodImplementationID           = "consensus-atlas/agentic-method/m4l5-closure-v1"
-	agenticMethodLegacyImplementationID     = "consensus-atlas/agentic-method/m4d-v1"
-	AgenticSourceExposureNone               = "none"
-	AgenticSourceExposureDossierV1          = "dossier-declared-readonly-v1"
-	AgenticSourceExposureDossierV2          = "dossier-declared-readonly-navigation-v2"
-	AgenticCapabilityFeedbackReasonCodes    = "reason-codes"
-	AgenticCapabilityFeedbackStructuredGaps = "structured-gaps"
-	AgenticClosureModePublicFixed           = "public-fixed"
-	AgenticClosureModeTargetLocal           = "target-local"
-	AgenticRiskInputAgentDiscovery          = "agent-discovery"
-	AgenticRiskInputFixedAccepted           = "fixed-accepted"
-	agenticMethodMaxInvestigation           = 1_000
+	AgenticMethodSpecSchemaVersion                                  = "consensus-atlas/agentic-method-spec/v1"
+	AgenticMethodExecutorID                                         = "consensus-atlas/agentic-episode-cli/v1"
+	AgenticMethodStrategyID                                         = "agentic-episode-v1"
+	AgenticMethodImplementationID                                   = "consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1"
+	agenticMethodClosureLegacyImplementationID                      = "consensus-atlas/agentic-method/m4l5-closure-v1"
+	agenticMethodLegacyImplementationID                             = "consensus-atlas/agentic-method/m4d-v1"
+	AgenticSourceExposureNone                                       = "none"
+	AgenticSourceExposureDossierV1                                  = "dossier-declared-readonly-v1"
+	AgenticSourceExposureDossierV2                                  = "dossier-declared-readonly-navigation-v2"
+	AgenticCapabilityFeedbackReasonCodes                            = "reason-codes"
+	AgenticCapabilityFeedbackStructuredGaps                         = "structured-gaps"
+	AgenticClosureModePublicFixed                                   = "public-fixed"
+	AgenticClosureModeTargetLocal                                   = "target-local"
+	AgenticRiskInputAgentGenerated             AgenticRiskInputMode = "agent-generated"
+	AgenticRiskInputExistingCandidate          AgenticRiskInputMode = "existing-candidate"
+	agenticRiskInputLegacyAgentDiscovery       AgenticRiskInputMode = "agent-discovery"
+	agenticRiskInputLegacyFixedAccepted        AgenticRiskInputMode = "fixed-accepted"
+	agenticMethodMaxInvestigation                                   = 1_000
 )
 
 // AgenticSourceExposureSpec identifies the source surface available to the
@@ -51,6 +54,8 @@ type AgenticEpisodeLimits struct {
 type AgenticCapabilityFeedbackMode string
 
 type AgenticClosureMode string
+
+type AgenticRiskInputMode string
 
 func (mode AgenticClosureMode) Validate() error {
 	switch mode {
@@ -108,7 +113,7 @@ type AgenticMethodSpec struct {
 	SemanticInputDigest      string                          `json:"semantic_input_digest"`
 	ScenarioSemanticExposure ScenarioSemanticExposureMode    `json:"scenario_semantic_exposure"`
 	ClosureMode              AgenticClosureMode              `json:"closure_mode,omitempty"`
-	RiskInputMode            string                          `json:"risk_input_mode,omitempty"`
+	RiskInputMode            AgenticRiskInputMode            `json:"risk_input_mode,omitempty"`
 	RiskInputDigest          string                          `json:"risk_input_digest,omitempty"`
 	CapabilityFeedbackMode   AgenticCapabilityFeedbackMode   `json:"capability_feedback_mode,omitempty"`
 	CapabilityFeedbackProbe  *AgenticCapabilityFeedbackProbe `json:"capability_feedback_probe,omitempty"`
@@ -155,10 +160,14 @@ func (spec AgenticMethodSpec) Validate() error {
 	if spec.ImplementationID == agenticMethodLegacyImplementationID {
 		closureModeValid = spec.ClosureMode == ""
 	}
-	riskInputValid := spec.RiskInputMode == "" && spec.RiskInputDigest == "" ||
-		spec.RiskInputMode == AgenticRiskInputAgentDiscovery && spec.RiskInputDigest == "" ||
-		spec.RiskInputMode == AgenticRiskInputFixedAccepted && validSHA256(spec.RiskInputDigest)
-	if spec.ImplementationID == agenticMethodLegacyImplementationID {
+	riskInputValid := spec.RiskInputMode == AgenticRiskInputAgentGenerated &&
+		spec.RiskInputDigest == "" || spec.RiskInputMode == AgenticRiskInputExistingCandidate &&
+		validSHA256(spec.RiskInputDigest)
+	if spec.ImplementationID == agenticMethodClosureLegacyImplementationID {
+		riskInputValid = spec.RiskInputMode == "" && spec.RiskInputDigest == "" ||
+			spec.RiskInputMode == agenticRiskInputLegacyAgentDiscovery && spec.RiskInputDigest == "" ||
+			spec.RiskInputMode == agenticRiskInputLegacyFixedAccepted && validSHA256(spec.RiskInputDigest)
+	} else if spec.ImplementationID == agenticMethodLegacyImplementationID {
 		riskInputValid = spec.RiskInputMode == "" && spec.RiskInputDigest == ""
 	}
 	if spec.SchemaVersion != AgenticMethodSpecSchemaVersion ||
@@ -196,7 +205,9 @@ func (spec AgenticMethodSpec) Validate() error {
 }
 
 func validAgenticMethodImplementationID(id string) bool {
-	return id == AgenticMethodImplementationID || id == agenticMethodLegacyImplementationID
+	return id == AgenticMethodImplementationID ||
+		id == agenticMethodClosureLegacyImplementationID ||
+		id == agenticMethodLegacyImplementationID
 }
 
 func validAgenticEpisodeLimits(limits AgenticEpisodeLimits, budget AgenticLogicalBudget) bool {

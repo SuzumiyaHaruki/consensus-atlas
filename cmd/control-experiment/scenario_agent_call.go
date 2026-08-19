@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v16"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v17"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
@@ -240,25 +240,27 @@ func scenarioAgentPrompt(
 		"as unavailable evidence rather than permission to invent an internal transition. "
 	if promptView.AcceptedHypothesis != nil {
 		agentView = struct {
-			AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext    `json:"accepted_hypothesis"`
-			TargetSurface      *controlexperiment.AgentTargetSurface           `json:"target_surface,omitempty"`
-			OrderedMilestones  []string                                        `json:"ordered_milestones"`
-			Frontier           controlexperiment.RiskFrontierView              `json:"root_frontier"`
-			Semantics          controlexperiment.ScenarioSemanticExposure      `json:"action_semantics"`
-			MaxSteps           int                                             `json:"max_steps"`
-			DecisionAllowance  int                                             `json:"decision_allowance"`
-			RemainingDecisions int                                             `json:"remaining_decisions"`
-			AvailableIntents   []string                                        `json:"available_intents"`
-			Branches           []controlexperiment.ScenarioInvestigationBranch `json:"branches,omitempty"`
-			Prior              *controlexperiment.ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
+			AcceptedHypothesis      *controlexperiment.AcceptedHypothesisContext    `json:"accepted_hypothesis"`
+			TargetSurface           *controlexperiment.AgentTargetSurface           `json:"target_surface,omitempty"`
+			OrderedMilestones       []string                                        `json:"ordered_milestones"`
+			Frontier                controlexperiment.RiskFrontierView              `json:"root_frontier"`
+			Semantics               controlexperiment.ScenarioSemanticExposure      `json:"action_semantics"`
+			MaxSteps                int                                             `json:"max_steps"`
+			DecisionAllowance       int                                             `json:"decision_allowance"`
+			RemainingDecisions      int                                             `json:"remaining_decisions"`
+			AvailableIntents        []string                                        `json:"available_intents"`
+			PostInterventionClosure bool                                            `json:"post_intervention_closure"`
+			Branches                []controlexperiment.ScenarioInvestigationBranch `json:"branches,omitempty"`
+			Prior                   *controlexperiment.ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
 		}{
 			AcceptedHypothesis: promptView.AcceptedHypothesis,
 			TargetSurface:      promptView.TargetSurface, OrderedMilestones: promptView.OrderedMilestones,
 			Frontier: promptView.Frontier, Semantics: promptView.Semantics,
 			MaxSteps: promptView.MaxSteps, DecisionAllowance: promptView.DecisionAllowance,
-			RemainingDecisions: promptView.RemainingDecisions,
-			AvailableIntents:   promptView.AvailableIntents,
-			Branches:           promptView.Branches, Prior: promptView.Prior,
+			RemainingDecisions:      promptView.RemainingDecisions,
+			AvailableIntents:        promptView.AvailableIntents,
+			PostInterventionClosure: promptView.PostInterventionClosure,
+			Branches:                promptView.Branches, Prior: promptView.Prior,
 		}
 		implementationContext = "Use accepted_hypothesis as the investigated mechanism and executable witness. It is an " +
 			"Agent proposal accepted for execution, not a protocol fact or verdict. "
@@ -341,6 +343,11 @@ func scenarioAgentPrompt(
 		"decision_allowance bounds this proposal plus its deterministic natural-progress slice; remaining_decisions is the " +
 		"episode-wide successful Action budget still available. " +
 		"Frozen input JSON:\n" + string(encoded)
+	if view.PostInterventionClosure {
+		user = "The trusted Target exposes post_intervention_closure. End the plan at the intended fault intervention; " +
+			"do not predict subsequent effect or message Actions. Once the Target recognizes the executed intervention, " +
+			"trusted closure takes over only already enabled non-intervention Actions and reports its mechanical stop. " + user
+	}
 	if view.MaxSteps == 1 {
 		system += " For every intent other than select or abandon, the nested plan must contain exactly one step."
 	} else {

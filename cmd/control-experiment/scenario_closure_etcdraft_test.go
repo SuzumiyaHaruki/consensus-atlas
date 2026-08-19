@@ -19,7 +19,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-func TestEtcdraftFixedRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
+func TestEtcdraftExistingRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(), controlExperimentTestTimeout(180*time.Second),
 	)
@@ -35,15 +35,15 @@ func TestEtcdraftFixedRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixedRisk, _, err := loadFixedRiskInput(
-		"../../plans/agent/etcdraft-alternate-quorum-fixed-risk-v1.json", target,
+	existingRisk, riskDigest, err := loadExistingRiskInput(
+		"../../plans/agent/etcdraft-alternate-quorum-risk-v1.json", target,
 	)
-	if err != nil || fixedRisk == nil {
-		t.Fatalf("load fixed Risk: %#v/%v", fixedRisk, err)
+	if err != nil || existingRisk == nil {
+		t.Fatalf("load existing Risk: %#v/%v", existingRisk, err)
 	}
 	proposal, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 		Intent: controlexperiment.ScenarioIntentContinue,
-		Plan:   etcdraftAppendResponseInterventionPlan(),
+		Plan:   etcdraftOverSpecifiedAppendResponsePlan(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,9 @@ func TestEtcdraftFixedRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
 		providerCalls++
 		var payload openRouterChatRequest
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil ||
-			payload.ResponseFormat.JSONSchema.Name != scenarioInvestigationStructuredOutputName {
+			payload.ResponseFormat.JSONSchema.Name != scenarioInvestigationStructuredOutputName ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte(`"post_intervention_closure": true`)) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("End the plan at the intended fault intervention")) {
 			t.Fatalf("unexpected provider call: %#v/%v", payload, err)
 		}
 		return &http.Response{
@@ -80,9 +82,9 @@ func TestEtcdraftFixedRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
 	result, err := runAgenticEpisode(
 		ctx, target, riskJournal, scenarioJournal, agenticEpisodeBudget{
 			MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2,
-			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 5,
+			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 6,
 			MaxRuntimeDecisions: 17,
-		}, nil, nil, fixedRisk,
+		}, nil, nil, existingRisk,
 		func() error { return fmt.Errorf("Risk provider must not be activated") },
 		func() error { return scenarioJournal.ActivateKey("fixture-key") },
 	)
@@ -91,22 +93,36 @@ func TestEtcdraftFixedRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
 		len(result.ScenarioProviderCalls) != 1 || result.Testing == nil ||
 		result.Scenario == nil || result.Scenario.Agent.Execution == nil ||
 		result.Scenario.Agent.DecisionsUsed != 17 ||
+		!result.Scenario.Agent.Execution.ClosureHandoff ||
+		result.Scenario.Agent.Execution.ClosureHandoffStepID != "drop-n2-append-response" ||
+		len(result.Scenario.Agent.Execution.Steps) != 5 ||
 		result.Scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
 		!result.Testing.Replay.Stable || result.Testing.Risk.Status != semantic.RiskWitnessReached ||
 		len(result.Testing.Oracle.Violations) != 0 {
-		t.Fatalf("fixed-Risk Scenario-only episode did not close: %#v calls=%d err=%v",
+		t.Fatalf("existing-Risk Scenario-only episode did not close: %#v calls=%d err=%v",
 			result, providerCalls, err)
 	}
+	artifactDirectory := t.TempDir()
 	artifact, err := persistAgenticEpisodeArtifacts(
-		t.TempDir(), target.ID, agenticEpisodeBudget{
+		artifactDirectory, target.ID, agenticEpisodeBudget{
 			MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2,
-			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 5,
+			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 6,
 			MaxRuntimeDecisions: 17,
 		}, result,
 	)
-	if err != nil || artifact.RiskAttempts != 0 || artifact.ScenarioAttempts != 1 {
-		t.Fatalf("fixed-Risk artifact did not preserve Scenario-only accounting: %#v/%v",
+	if err != nil || artifact.RiskAttempts != 0 || artifact.ScenarioAttempts != 1 ||
+		!artifact.ScenarioAttemptFeedback[0].ClosureHandoff ||
+		artifact.ScenarioAttemptFeedback[0].ClosureHandoffStepID != "drop-n2-append-response" {
+		t.Fatalf("existing-Risk artifact did not preserve Scenario-only accounting: %#v/%v",
 			artifact, err)
+	}
+	reloaded, reloadedDigest, err := loadExistingRiskInput(
+		filepath.Join(artifactDirectory, agenticEpisodeSummaryFile), target,
+	)
+	if err != nil || reloaded == nil || reloaded.Candidate.ID != existingRisk.Candidate.ID ||
+		reloadedDigest != riskDigest {
+		t.Fatalf("Agent-generated Risk summary was not reusable: %#v/%s/%v",
+			reloaded, reloadedDigest, err)
 	}
 }
 
@@ -364,18 +380,18 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 	core.TargetSurface = &target.Surface
 	plannerCalls := 0
 	scenario, err := runScenarioEpisodeCore(
-		ctx, core, 1, 5, 17,
+		ctx, core, 1, 6, 17,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
 			plannerCalls++
 			if view.RemainingDecisions != 17 || view.DecisionAllowance != 17 ||
-				view.MaxSteps != 5 {
+				view.MaxSteps != 6 || !view.PostInterventionClosure {
 				t.Fatalf("Scenario Agent budget view drifted: %#v", view)
 			}
 			encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 				Intent: controlexperiment.ScenarioIntentContinue,
-				Plan:   etcdraftAppendResponseInterventionPlan(),
+				Plan:   etcdraftOverSpecifiedAppendResponsePlan(),
 			})
 			return encoded, controlexperiment.ModelWork{
 				Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5,
@@ -389,6 +405,8 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopRiskReached ||
 		scenario.Agent.DecisionsUsed != 17 || scenario.Agent.Execution == nil ||
 		len(scenario.Agent.Execution.Steps) != 5 ||
+		!scenario.Agent.Execution.ClosureHandoff ||
+		scenario.Agent.Execution.ClosureHandoffStepID != "drop-n2-append-response" ||
 		len(scenario.Agent.Execution.AutomaticProgress) != 12 ||
 		scenario.Agent.Execution.NaturalProgressStop != controlexperiment.ScenarioProgressClientTerminal ||
 		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
@@ -489,6 +507,18 @@ func etcdraftAppendResponseInterventionPlan() controlexperiment.ScenarioPlan {
 			}},
 		},
 	}
+}
+
+func etcdraftOverSpecifiedAppendResponsePlan() controlexperiment.ScenarioPlan {
+	plan := etcdraftAppendResponseInterventionPlan()
+	plan.ID = "etcdraft-drop-n2-append-response-over-specified-plan"
+	plan.Steps = append(plan.Steps, controlexperiment.ScenarioStep{
+		ID: "predict-n3-append-response", Selector: controlexperiment.FrontierActionSelector{
+			Kind: control.ActionDeliverMessage, MessageSource: "n3", MessageTarget: "n1",
+			MessageTypeHint: "MsgAppResp",
+		},
+	})
+	return plan
 }
 
 type etcdraftClosureTestSummary struct {

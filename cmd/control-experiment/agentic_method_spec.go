@@ -29,7 +29,7 @@ func buildAgenticMethodSpec(
 	sessionWallClockMS int64,
 	mounts []controlexperiment.KnowledgeSourceMount,
 	feedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe,
-	fixedRiskInputDigest string,
+	riskInputDigest string,
 ) (controlexperiment.AgenticMethodSpec, error) {
 	if target.validate() != nil || budget.validate() != nil || budget.Logical == nil ||
 		options.InvestigationEpisodes <= 0 || semanticInputSchema == "" || sessionWallClockMS <= 0 ||
@@ -53,9 +53,9 @@ func buildAgenticMethodSpec(
 	}
 	scenarioTransport := scenarioClient.freeze()
 	closureMode := agenticClosureModeForTarget(target)
-	riskInputMode := controlexperiment.AgenticRiskInputAgentDiscovery
-	if fixedRiskInputDigest != "" {
-		riskInputMode = controlexperiment.AgenticRiskInputFixedAccepted
+	riskInputMode := controlexperiment.AgenticRiskInputAgentGenerated
+	if riskInputDigest != "" {
+		riskInputMode = controlexperiment.AgenticRiskInputExistingCandidate
 	}
 	spec, err := controlexperiment.NewAgenticMethodSpec(controlexperiment.AgenticMethodSpec{
 		TargetID: target.ID, Transport: client.freeze(), ScenarioTransport: &scenarioTransport,
@@ -64,7 +64,7 @@ func buildAgenticMethodSpec(
 		SemanticInputDigest:      controlexperiment.AgentInvocationDigest(semanticBytes),
 		ScenarioSemanticExposure: semanticExposure, SourceExposure: source,
 		ClosureMode:   closureMode,
-		RiskInputMode: riskInputMode, RiskInputDigest: fixedRiskInputDigest,
+		RiskInputMode: riskInputMode, RiskInputDigest: riskInputDigest,
 		CapabilityFeedbackMode: controlexperiment.AgenticCapabilityFeedbackMode(
 			normalizedCapabilityFeedbackMode(options.CapabilityFeedbackMode),
 		),

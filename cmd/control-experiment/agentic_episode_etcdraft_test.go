@@ -63,8 +63,8 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		composition.MethodSpec.Transport.Model != openRouterFixtureModel ||
 		composition.MethodSpec.SemanticInputSchema != etcdraftSemanticInputSchema ||
 		composition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModeTargetLocal ||
-		composition.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputAgentDiscovery ||
-		composition.MethodSpec.RiskInputDigest != "" || composition.FixedRisk != nil ||
+		composition.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputAgentGenerated ||
+		composition.MethodSpec.RiskInputDigest != "" || composition.ExistingRisk != nil ||
 		composition.MethodSpec.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
 		composition.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
 		composition.MethodSpec.EpisodeLimits.MaxRiskCalls != composition.Budget.MaxRiskCalls ||
@@ -92,27 +92,36 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		t.Fatalf("public-fixed arm was not mechanically bound: %#v/%v",
 			publicComposition.MethodSpec, err)
 	}
-	fixedOptions := publicOptions
-	fixedOptions.FixedRiskInput = "../../plans/agent/etcdraft-alternate-quorum-fixed-risk-v1.json"
-	fixedPublic, err := prepareAgenticEpisodeComposition(ctx, fixedOptions)
-	if err != nil || fixedPublic.FixedRisk == nil ||
-		fixedPublic.FixedRisk.Candidate.ID != "append-response-loss-with-alternate-quorum" ||
-		fixedPublic.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputFixedAccepted ||
-		!validAgenticSHA256(fixedPublic.MethodSpec.RiskInputDigest) ||
-		fixedPublic.MethodSpec.RiskInputDigest != fixedPublic.FixedRiskInputDigest {
-		t.Fatalf("fixed Risk input was not mechanically bound: %#v/%v",
-			fixedPublic.MethodSpec, err)
+	existingOptions := publicOptions
+	existingOptions.RiskInput = "../../plans/agent/etcdraft-alternate-quorum-risk-v1.json"
+	existingPublic, err := prepareAgenticEpisodeComposition(ctx, existingOptions)
+	if err != nil || existingPublic.ExistingRisk == nil ||
+		existingPublic.ExistingRisk.Candidate.ID != "append-response-loss-with-alternate-quorum" ||
+		existingPublic.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputExistingCandidate ||
+		!validAgenticSHA256(existingPublic.MethodSpec.RiskInputDigest) ||
+		existingPublic.MethodSpec.RiskInputDigest != existingPublic.RiskInputDigest {
+		t.Fatalf("existing Risk input was not mechanically bound: %#v/%v",
+			existingPublic.MethodSpec, err)
 	}
-	fixedOptions.ClosureMode = controlexperiment.AgenticClosureModeTargetLocal
-	fixedTargetLocal, err := prepareAgenticEpisodeComposition(ctx, fixedOptions)
-	if err != nil || fixedTargetLocal.Target.ClosureFactory == nil ||
-		fixedTargetLocal.FixedRiskInputDigest != fixedPublic.FixedRiskInputDigest ||
-		fixedTargetLocal.MethodSpec.Digest == fixedPublic.MethodSpec.Digest {
-		t.Fatalf("fixed Risk pair did not share Risk identity and isolate closure mode: %#v/%v",
-			fixedTargetLocal.MethodSpec, err)
+	existingOptions.ClosureMode = controlexperiment.AgenticClosureModeTargetLocal
+	existingTargetLocal, err := prepareAgenticEpisodeComposition(ctx, existingOptions)
+	if err != nil || existingTargetLocal.Target.ClosureFactory == nil ||
+		existingTargetLocal.RiskInputDigest != existingPublic.RiskInputDigest ||
+		existingTargetLocal.MethodSpec.Digest == existingPublic.MethodSpec.Digest {
+		t.Fatalf("existing Risk pair did not share Risk identity and isolate closure mode: %#v/%v",
+			existingTargetLocal.MethodSpec, err)
 	}
-	tamperedRiskInput := fixedTargetLocal
-	tamperedRiskInput.FixedRiskInputDigest = formalTestStringDigest("different-fixed-risk")
+	multiEpisodeOptions := existingOptions
+	multiEpisodeOptions.InvestigationEpisodes = 2
+	multiEpisode, err := prepareAgenticEpisodeComposition(ctx, multiEpisodeOptions)
+	if err != nil || multiEpisode.MethodSpec.InvestigationEpisodes != 2 ||
+		multiEpisode.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputExistingCandidate ||
+		multiEpisode.RiskInputDigest != existingTargetLocal.RiskInputDigest {
+		t.Fatalf("existing Risk input did not support a multi-Episode Investigation: %#v/%v",
+			multiEpisode.MethodSpec, err)
+	}
+	tamperedRiskInput := existingTargetLocal
+	tamperedRiskInput.RiskInputDigest = formalTestStringDigest("different-existing-risk")
 	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
 		Directory:    filepath.Join(t.TempDir(), "fixed-risk-mismatch"),
 		AgentKeyFile: "fixture-key.txt",
@@ -123,12 +132,12 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
-		t.Fatalf("composition accepted fixed Risk identity mismatch: %v", err)
+		t.Fatalf("composition accepted existing Risk identity mismatch: %v", err)
 	}
-	tamperedRiskContent := fixedTargetLocal
-	changedRisk := *fixedTargetLocal.FixedRisk
+	tamperedRiskContent := existingTargetLocal
+	changedRisk := *existingTargetLocal.ExistingRisk
 	changedRisk.Candidate.Summary += " changed after loading"
-	tamperedRiskContent.FixedRisk = &changedRisk
+	tamperedRiskContent.ExistingRisk = &changedRisk
 	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
 		Directory:    filepath.Join(t.TempDir(), "fixed-risk-content-mismatch"),
 		AgentKeyFile: "fixture-key.txt",
@@ -139,7 +148,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
-		t.Fatalf("composition accepted substituted fixed Risk content: %v", err)
+		t.Fatalf("composition accepted substituted existing Risk content: %v", err)
 	}
 	tamperedClosure := composition
 	tamperedClosure.Target.ClosureFactory = nil

@@ -33,8 +33,8 @@ type agenticEpisodeComposition struct {
 	SessionWallClockMS      int64
 	CapabilityFeedbackMode  controlexperiment.AgenticCapabilityFeedbackMode
 	CapabilityFeedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe
-	FixedRisk               *controlexperiment.RiskCandidateAssessment
-	FixedRiskInputDigest    string
+	ExistingRisk            *controlexperiment.RiskCandidateAssessment
+	RiskInputDigest         string
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -283,7 +283,7 @@ func runAgenticEpisodeDirectory(
 		composition.Target.Surface, composition.CapabilityFeedbackProbe,
 	)
 	riskInputMode, riskInputDigest, riskInputValid := agenticRiskInputIdentity(
-		composition.FixedRisk, composition.FixedRiskInputDigest,
+		composition.ExistingRisk, composition.RiskInputDigest,
 	)
 	methodBound := composition.MethodSpec.Digest != ""
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
@@ -367,7 +367,7 @@ func runAgenticEpisodeDirectory(
 		sessionCtx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
 		projectAgenticCapabilityFeedbackMemory(
 			composition.Memory, composition.CapabilityFeedbackMode,
-		), knowledgeReader, composition.FixedRisk,
+		), knowledgeReader, composition.ExistingRisk,
 		activateRiskKey, activateScenarioKey,
 	)
 	if err != nil {

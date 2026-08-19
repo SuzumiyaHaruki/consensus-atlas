@@ -155,16 +155,19 @@ MethodSpec。
 再从 factory 是否存在机械派生到 MethodSpec；没有专属 factory 的 Target 会拒绝
 `target-local`。
 
-需要隔离 Scenario 能力时，可增加：
+Risk 输入有两种正式模式。默认由 Risk Agent 生成；需要让不同方法使用同一个已有
+Risk 时，可增加：
 
 ```bash
--fixed-risk-input plans/agent/etcdraft-alternate-quorum-fixed-risk-v1.json
+-risk-input plans/agent/etcdraft-alternate-quorum-risk-v1.json
 ```
 
-该文件不是未经检查的模型输出：CLI 会按当前 Target 的知识、Observation 和 Action
-能力重新资格审查，只接受 qualified 且无 capability gap 的 Risk。此模式只允许单
-Episode，Risk provider 调用为 0；Risk 候选的规范化摘要及 `fixed-accepted` 模式进入现有
-MethodSpec，因而两个 closure arm 可机械证明使用了同一 Risk。
+`-risk-input` 既可读取独立 RiskCandidate/assessment，也可直接读取先前 Agentic
+Episode 的 `summary.json`（使用其中的 `accepted_risk`）。历史 qualification 不被
+信任：CLI 会按当前 Target 的知识、Observation 和 Action 能力重新审查，只接受
+qualified 且无 capability gap 的 Risk。读取模式下 Risk provider 调用为 0；候选的
+规范化摘要及 `existing-candidate` 模式进入 MethodSpec。该模式同样支持连续
+Investigation，因此不同 closure、搜索方法或模型可以机械证明使用了同一个 Risk。
 
 ## 验证与研究边界
 
@@ -184,6 +187,11 @@ git diff --check
 按 Replay 计费。Scenario Agent 还可在收到可信 `ProgressDelta` 后用零 Action 的 `abandon` 将低收益假设
 交还给下一 Episode；这只是搜索选择，不是 verdict。这仍未证明 Agent 优于其他搜索方法，
 也尚未发现新的实现问题。旧 A8 paired evaluator/session 已删除，不参与新 Agentic holdout 路径。
+
+配置 target-local closure 时，Scenario view 会声明 `post_intervention_closure=true`。
+Target factory 只基于真实已执行前缀判断是否接管；一旦认可某个干预，执行器会忽略
+Agent 对后续尚未 enabled Action 的预测并转入受限 closure。未配置 factory、未识别
+干预及 public-fixed 路径不变。
 
 继续阅读：[`docs/architecture.md`](docs/architecture.md)、[`docs/CURRENT_STAGE.md`](docs/CURRENT_STAGE.md) 和
 [`docs/ConsensusAtlas-总体规划.md`](docs/ConsensusAtlas-总体规划.md)。

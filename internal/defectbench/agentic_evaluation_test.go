@@ -364,6 +364,7 @@ func agenticHoldoutTestMethodSpec(
 		SemanticInputSchema:      "etcdraft-agentic-input-v1",
 		SemanticInputDigest:      testFormalDigest("agentic-semantic-input"),
 		ScenarioSemanticExposure: controlexperiment.ScenarioSemanticExposureFull,
+		RiskInputMode:            controlexperiment.AgenticRiskInputAgentGenerated,
 		ClosureMode:              controlexperiment.AgenticClosureModePublicFixed,
 		SourceExposure: controlexperiment.AgenticSourceExposureSpec{
 			Mode: controlexperiment.AgenticSourceExposureNone,

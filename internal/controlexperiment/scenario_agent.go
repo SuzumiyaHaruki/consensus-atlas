@@ -52,40 +52,43 @@ const (
 )
 
 type ScenarioAgentFeedback struct {
-	Attempt             int                               `json:"attempt"`
-	Intent              string                            `json:"intent,omitempty"`
-	BranchID            string                            `json:"branch_id,omitempty"`
-	ReferenceBranchID   string                            `json:"reference_branch_id,omitempty"`
-	Outcome             string                            `json:"outcome"`
-	ReasonCode          string                            `json:"reason_code,omitempty"`
-	ValidationIssues    []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
-	CapabilityGaps      []AgentCapabilityGap              `json:"capability_gaps,omitempty"`
-	AllowedIntents      []string                          `json:"allowed_intents,omitempty"`
-	PreviousProposal    *ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
-	FailedStep          *ScenarioStep                     `json:"failed_step,omitempty"`
-	Steps               []ScenarioStepFeedback            `json:"steps,omitempty"`
-	NaturalProgress     []ScenarioStepFeedback            `json:"natural_progress,omitempty"`
-	NaturalProgressStop string                            `json:"natural_progress_stop,omitempty"`
-	ProgressDelta       *ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+	Attempt              int                               `json:"attempt"`
+	Intent               string                            `json:"intent,omitempty"`
+	BranchID             string                            `json:"branch_id,omitempty"`
+	ReferenceBranchID    string                            `json:"reference_branch_id,omitempty"`
+	Outcome              string                            `json:"outcome"`
+	ReasonCode           string                            `json:"reason_code,omitempty"`
+	ValidationIssues     []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	CapabilityGaps       []AgentCapabilityGap              `json:"capability_gaps,omitempty"`
+	AllowedIntents       []string                          `json:"allowed_intents,omitempty"`
+	PreviousProposal     *ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
+	FailedStep           *ScenarioStep                     `json:"failed_step,omitempty"`
+	Steps                []ScenarioStepFeedback            `json:"steps,omitempty"`
+	NaturalProgress      []ScenarioStepFeedback            `json:"natural_progress,omitempty"`
+	NaturalProgressStop  string                            `json:"natural_progress_stop,omitempty"`
+	ClosureHandoff       bool                              `json:"closure_handoff,omitempty"`
+	ClosureHandoffStepID string                            `json:"closure_handoff_step_id,omitempty"`
+	ProgressDelta        *ScenarioProgressDelta            `json:"progress_delta,omitempty"`
 }
 
 type ScenarioAgentView struct {
 	// Provider prompts use AcceptedHypothesis when present and omit the two
 	// overlapping construction contracts below. They remain available to
 	// trusted validation and direct composition tests.
-	Knowledge          ProtocolKnowledgePack         `json:"knowledge"`
-	Hypothesis         TestHypothesis                `json:"hypothesis"`
-	AcceptedHypothesis *AcceptedHypothesisContext    `json:"accepted_hypothesis,omitempty"`
-	TargetSurface      *AgentTargetSurface           `json:"target_surface,omitempty"`
-	OrderedMilestones  []string                      `json:"ordered_milestones"`
-	Frontier           RiskFrontierView              `json:"root_frontier"`
-	Semantics          ScenarioSemanticExposure      `json:"action_semantics"`
-	MaxSteps           int                           `json:"max_steps"`
-	DecisionAllowance  int                           `json:"decision_allowance"`
-	RemainingDecisions int                           `json:"remaining_decisions"`
-	AvailableIntents   []string                      `json:"available_intents"`
-	Branches           []ScenarioInvestigationBranch `json:"branches,omitempty"`
-	Prior              *ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
+	Knowledge               ProtocolKnowledgePack         `json:"knowledge"`
+	Hypothesis              TestHypothesis                `json:"hypothesis"`
+	AcceptedHypothesis      *AcceptedHypothesisContext    `json:"accepted_hypothesis,omitempty"`
+	TargetSurface           *AgentTargetSurface           `json:"target_surface,omitempty"`
+	OrderedMilestones       []string                      `json:"ordered_milestones"`
+	Frontier                RiskFrontierView              `json:"root_frontier"`
+	Semantics               ScenarioSemanticExposure      `json:"action_semantics"`
+	MaxSteps                int                           `json:"max_steps"`
+	DecisionAllowance       int                           `json:"decision_allowance"`
+	RemainingDecisions      int                           `json:"remaining_decisions"`
+	AvailableIntents        []string                      `json:"available_intents"`
+	PostInterventionClosure bool                          `json:"post_intervention_closure"`
+	Branches                []ScenarioInvestigationBranch `json:"branches,omitempty"`
+	Prior                   *ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
 }
 
 type ScenarioAgentAttempt struct {
@@ -271,19 +274,20 @@ func exploreScenarioWithPlanner(
 			}
 		}
 		view := ScenarioAgentView{
-			Knowledge:          cloneProtocolKnowledge(knowledge),
-			TargetSurface:      cloneAgentTargetSurface(targetSurface),
-			Hypothesis:         hypothesis,
-			AcceptedHypothesis: cloneAcceptedHypothesisContext(acceptedHypothesis),
-			OrderedMilestones:  scenarioMilestoneIDs(spec),
-			Frontier:           cloneScenarioFrontier(currentFrontier),
-			Semantics:          cloneScenarioSemantics(currentSemantics),
-			MaxSteps:           viewMaxSteps,
-			DecisionAllowance:  attemptAllowance,
-			RemainingDecisions: remaining,
-			AvailableIntents:   availableIntents,
-			Branches:           cloneScenarioBranches(result.Branches),
-			Prior:              cloneScenarioFeedback(prior),
+			Knowledge:               cloneProtocolKnowledge(knowledge),
+			TargetSurface:           cloneAgentTargetSurface(targetSurface),
+			Hypothesis:              hypothesis,
+			AcceptedHypothesis:      cloneAcceptedHypothesisContext(acceptedHypothesis),
+			OrderedMilestones:       scenarioMilestoneIDs(spec),
+			Frontier:                cloneScenarioFrontier(currentFrontier),
+			Semantics:               cloneScenarioSemantics(currentSemantics),
+			MaxSteps:                viewMaxSteps,
+			DecisionAllowance:       attemptAllowance,
+			RemainingDecisions:      remaining,
+			AvailableIntents:        availableIntents,
+			PostInterventionClosure: closureFactory != nil,
+			Branches:                cloneScenarioBranches(result.Branches),
+			Prior:                   cloneScenarioFeedback(prior),
 		}
 		response, work, err := planner(ctx, view)
 		if err != nil {
@@ -422,10 +426,12 @@ func exploreScenarioWithPlanner(
 		attempt.Feedback = ScenarioAgentFeedback{
 			Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
 			ReferenceBranchID: proposal.ReferenceBranchID, Outcome: execution.Status,
-			PreviousProposal:    cloneScenarioProposal(&proposal),
-			Steps:               cloneScenarioStepFeedback(execution.Steps),
-			NaturalProgress:     cloneScenarioStepFeedback(execution.AutomaticProgress),
-			NaturalProgressStop: execution.NaturalProgressStop,
+			PreviousProposal:     cloneScenarioProposal(&proposal),
+			Steps:                cloneScenarioStepFeedback(execution.Steps),
+			NaturalProgress:      cloneScenarioStepFeedback(execution.AutomaticProgress),
+			NaturalProgressStop:  execution.NaturalProgressStop,
+			ClosureHandoff:       execution.ClosureHandoff,
+			ClosureHandoffStepID: execution.ClosureHandoffStepID,
 		}
 		if execution.NaturalProgressStop == ScenarioProgressClosureUnderdetermined ||
 			execution.NaturalProgressStop == ScenarioProgressClosureQuiescent ||

@@ -33,18 +33,20 @@ type agenticBranchEvidenceArtifact struct {
 }
 
 type agenticScenarioAttemptArtifact struct {
-	Ordinal          int                                                 `json:"ordinal"`
-	Intent           string                                              `json:"intent,omitempty"`
-	Outcome          string                                              `json:"outcome"`
-	ReasonCode       string                                              `json:"reason_code,omitempty"`
-	ValidationIssues []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
-	CapabilityGaps   []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
-	AllowedIntents   []string                                            `json:"allowed_intents,omitempty"`
-	FailedStepID     string                                              `json:"failed_step_id,omitempty"`
-	MatchCount       int                                                 `json:"match_count,omitempty"`
-	SelectorTrace    []controlexperiment.ScenarioSelectorFilter          `json:"selector_trace,omitempty"`
-	EnteredExecution bool                                                `json:"entered_execution"`
-	ProgressDelta    *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+	Ordinal              int                                                 `json:"ordinal"`
+	Intent               string                                              `json:"intent,omitempty"`
+	Outcome              string                                              `json:"outcome"`
+	ReasonCode           string                                              `json:"reason_code,omitempty"`
+	ValidationIssues     []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	CapabilityGaps       []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
+	AllowedIntents       []string                                            `json:"allowed_intents,omitempty"`
+	FailedStepID         string                                              `json:"failed_step_id,omitempty"`
+	MatchCount           int                                                 `json:"match_count,omitempty"`
+	SelectorTrace        []controlexperiment.ScenarioSelectorFilter          `json:"selector_trace,omitempty"`
+	EnteredExecution     bool                                                `json:"entered_execution"`
+	ClosureHandoff       bool                                                `json:"closure_handoff,omitempty"`
+	ClosureHandoffStepID string                                              `json:"closure_handoff_step_id,omitempty"`
+	ProgressDelta        *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
 }
 
 // agenticEpisodeArtifact is deliberately compact. Exact prompts and provider
@@ -141,9 +143,11 @@ func newAgenticEpisodeArtifact(
 					[]controlexperiment.AgentCapabilityGap(nil),
 					attempt.Feedback.CapabilityGaps...,
 				),
-				AllowedIntents:   append([]string(nil), attempt.Feedback.AllowedIntents...),
-				EnteredExecution: attempt.Execution != nil,
-				ProgressDelta:    attempt.Feedback.ProgressDelta,
+				AllowedIntents:       append([]string(nil), attempt.Feedback.AllowedIntents...),
+				EnteredExecution:     attempt.Execution != nil,
+				ClosureHandoff:       attempt.Feedback.ClosureHandoff,
+				ClosureHandoffStepID: attempt.Feedback.ClosureHandoffStepID,
+				ProgressDelta:        attempt.Feedback.ProgressDelta,
 			}
 			if attempt.Feedback.FailedStep != nil {
 				compact.FailedStepID = attempt.Feedback.FailedStep.ID
@@ -436,6 +440,8 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	for index, attempt := range artifact.ScenarioAttemptFeedback {
 		if attempt.Ordinal != index+1 || attempt.Outcome == "" ||
 			attempt.MatchCount < 0 ||
+			attempt.ClosureHandoff != (attempt.ClosureHandoffStepID != "") ||
+			attempt.ClosureHandoff && !attempt.EnteredExecution ||
 			!validAgenticScenarioAttemptIntents(attempt.AllowedIntents) {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
 		}

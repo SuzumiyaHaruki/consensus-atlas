@@ -206,7 +206,7 @@ func runAgenticEpisode(
 	budget agenticEpisodeBudget,
 	memory []controlexperiment.RiskExplorationMemoryEntry,
 	knowledgeReader controlexperiment.RiskKnowledgeReader,
-	fixedRisk *controlexperiment.RiskCandidateAssessment,
+	existingRisk *controlexperiment.RiskCandidateAssessment,
 	activateRiskKey func() error,
 	activateScenarioKey func() error,
 ) (agenticEpisodeResult, error) {
@@ -226,8 +226,8 @@ func runAgenticEpisode(
 	actions := target.Surface.Capabilities.ComposableActions
 	risk := controlexperiment.RiskAgentResult{Status: controlexperiment.RiskAgentAccepted}
 	var runErr error
-	if fixedRisk != nil {
-		accepted := *fixedRisk
+	if existingRisk != nil {
+		accepted := *existingRisk
 		risk.Accepted = &accepted
 	} else {
 		risk, runErr = controlexperiment.DiscoverRiskWithPlanner(

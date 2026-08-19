@@ -22,7 +22,7 @@ type controlExperimentOptions struct {
 	WorkerPath              string
 	Target                  string
 	SemanticInput           string
-	FixedRiskInput          string
+	RiskInput               string
 	KnowledgeSourceMounts   []string
 	CampaignDirectory       string
 	CampaignResume          bool
@@ -38,7 +38,7 @@ type controlExperimentOptions struct {
 func (options controlExperimentOptions) hasNonSessionFlags() bool {
 	return options.Out != "" || options.BundleOut != "" ||
 		options.BundleEvidenceVersion != 0 || options.MethodSpecDigest != "" || options.Target != "" ||
-		options.FixedRiskInput != "" ||
+		options.RiskInput != "" ||
 		len(options.KnowledgeSourceMounts) != 0 || options.InvestigationEpisodes != 1 ||
 		options.Decisions != 96 || options.PolicySeed != 1
 }
@@ -89,7 +89,7 @@ func validateQualifiedCLIOptions(options controlExperimentOptions) error {
 		return errors.New("Agentic Episode flags require -strategy agentic-episode-v1")
 	}
 	if options.AgentKeyFile != "" || options.AgentModel != "" || options.SemanticInput != "" ||
-		options.FixedRiskInput != "" ||
+		options.RiskInput != "" ||
 		options.AgentProvider != "" && options.AgentProvider != openRouterProvider ||
 		options.WorkerPath != "" || options.Target != "" || len(options.KnowledgeSourceMounts) != 0 ||
 		options.InvestigationEpisodes != 1 || options.ClosureMode != "" ||

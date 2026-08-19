@@ -181,11 +181,16 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
-- closure 接入属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4l5-closure-v1`；旧身份只用于读取历史工件，不能恢复为当前运行；
+- closure handoff 与正式 Risk 输入属于方法实现变化，当前 MethodSpec implementation
+  identity 为 `m4l7-risk-input-closure-handoff-v1`；旧 `m4l5-closure-v1`/`m4d-v1`
+  只用于读取历史工件，不能恢复为当前运行；
 - 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
   factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
   composition 与字段不一致时拒绝运行，两个 arm 使用不同 digest；
+- Risk 输入是正式的二选一方法参数：默认 `agent-generated`；`existing-candidate` 可从
+  独立候选、assessment 或已有 Episode summary 读取。已有 qualification 不复用，必须
+  按当前 Target 重算；规范化候选 digest 进入 MethodSpec，并允许跨 Episode、closure、
+  搜索策略或模型进行同 Risk 对比；
 - 扩大但仍声明式的只读源码查询；
 - 利用真实 ProgressDelta 做多轮 revise；
 - 让 Risk Agent 根据执行 capability gap 切换假设；
@@ -195,13 +200,14 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 - 先做三节点 etcd 短公开 capability pilot。首轮自由 Risk Agent 两臂生成了不同
   Risk，故只保留为可运行性样本；修正版使用经过当前 Target 重新资格审查的公开
-  fixed Risk，跳过 Risk provider，仅比较 Scenario Agent。固定 Risk digest、输入模式
+  existing Risk，跳过 Risk provider，仅比较 Scenario Agent。Risk digest、输入模式
   和 `closure_mode` 均由现有 MethodSpec 绑定；除 `closure_mode` 外，leaf semantic
   view、模型/prompt/seed、预算、Replay 与 Oracle 必须相同；
-- fixed Risk 首次真实配对已消除 Risk 漂移，但两个 arm 均未 reached。target-local
-  已执行正确 drop，随后因 Agent 继续猜测未 enabled 的闭合消息而 `no-match`，计划
-  没有正常结束，closure 因而没有接管。下一步先暴露明确的 post-intervention
-  closure/handoff 语义，再以相同 Risk 重跑；不靠单纯增加调用预算掩盖接口缺口；
+- existing Risk 首次真实配对已消除 Risk 漂移，但两个 arm 均未 reached。target-local
+  已执行正确 drop，随后因 Agent 继续猜测未 enabled 的闭合消息而 `no-match`。M4l7
+  已增加可信前缀 handoff：Scenario view/prompt 暴露 closure，且 Target factory 在每个
+  成功前缀后机械确认是否接管；确认后忽略剩余预测步骤并执行受限 closure。以相同
+  Risk 重跑验证，不靠单纯增加调用预算掩盖接口缺口；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。
