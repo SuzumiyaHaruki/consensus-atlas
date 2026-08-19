@@ -71,7 +71,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		composition.Budget.Logical == nil ||
 		*composition.Budget.Logical != inputs.experiment.SessionBudget ||
 		composition.Budget.MaxRiskCalls != 3 || composition.Budget.MaxScenarioCalls != 3 ||
-		composition.Budget.MaxScenarioPlanSteps != 4 ||
+		composition.Budget.MaxScenarioPlanSteps != 5 ||
 		composition.Budget.MaxTotalCalls != 6 || composition.Budget.MaxObservedTokens != 50000 ||
 		transport.Model != openRouterFixtureModel || transport.Thinking != "low" ||
 		transport.MaxOutputTokens != 32000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {

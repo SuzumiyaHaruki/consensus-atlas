@@ -235,7 +235,7 @@
       "max_active_partitions": 1
     },
     "scenario_max_calls": 3,
-    "scenario_max_steps": 4,
+    "scenario_max_steps": 5,
     "scenario_max_decisions": 32,
     "scenario_semantic_exposure": "full",
     "model_reasoning_effort": "low",

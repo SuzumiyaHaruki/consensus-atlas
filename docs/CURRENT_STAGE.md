@@ -69,6 +69,10 @@ arm 的 MethodSpec digest 必然不同。OmniPaxos 当前没有 closure factory�
 `closure-budget-exhausted`，不再被通用 `budget-exhausted` 覆盖。零模型回归已覆盖
 模式身份、factory/MethodSpec 失配拒绝和该预算边界。本轮没有调用外部模型。
 
+短配对实验的 etcd 输入将单次 Scenario plan 上限从 4 调整为 5；这是已验证
+`persist leader → advance leader → deliver MsgApp → persist follower → drop MsgAppResp`
+干预前缀所需的最小长度。Scenario 调用数、总 decision、模型 token 与时间预算均未改变。
+
 ## 当前输入
 
 - `plans/agent/`：Agent 方法、模型预算和协议知识配置；
