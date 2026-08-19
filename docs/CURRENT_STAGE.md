@@ -71,7 +71,13 @@ arm 的 MethodSpec digest 必然不同。OmniPaxos 当前没有 closure factory�
 
 短配对实验的 etcd 输入将单次 Scenario plan 上限从 4 调整为 5；这是已验证
 `persist leader → advance leader → deliver MsgApp → persist follower → drop MsgAppResp`
-干预前缀所需的最小长度。Scenario 调用数、总 decision、模型 token 与时间预算均未改变。
+干预前缀所需的最小长度；该项调整本身没有改变 Scenario 调用数、总 decision 或时间预算。
+
+首轮 `public-fixed` 预算校准中，Risk 与首个 Scenario provider 调用合计 50,793
+tokens，超过旧 Episode 上限 50,000；Scenario 响应因此没有进入 proposal 执行。
+后续两个配对 arm 统一使用 120,000 token Episode 上限，其他调用、Action 与时间
+预算保持不变，并使用新的输出目录和新的 MethodSpec digest。该首轮结果只作为预算
+校准证据，不参与 closure 效果比较。
 
 ## 当前输入
 
