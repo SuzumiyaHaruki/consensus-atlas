@@ -282,6 +282,12 @@ Trace 绑定的 Adapter command item 投影其已声明的 opaque `message-role`
 共享同一份 executable registry，formal contract 只按既有 `MonitorIDs` 选择子集。target/projector 不匹配或
 未注册 monitor 会被明确拒绝。Agent assertion 只能作为候选，不能进入 verdict。
 
+OmniPaxos 的 `omnipaxos-client-decision-binding` 是 target-local monitor：它只读取
+Bundle 中已存在的 Invoke、completed ClientResult target payload 和 decided-prefix
+DecisionHistory，在同一 RequestID、origin、value 与 log position 上做确定性联结。
+pending/unreturned 请求不属于该完成态安全判断。协议 payload 的解析留在 Adapter 导出的
+投影函数中，registry 只组合 monitor；公共 Oracle 层不理解 Paxos 字段。
+
 ## 9. 资格与 fidelity
 
 Qualification 验证 Adapter/Runtime 的机械能力。Target surface 进一步区分：

@@ -50,6 +50,23 @@ func TestResolveTargetBindsRegisteredProjector(t *testing.T) {
 	}
 }
 
+func TestOmnipaxosRegistryIncludesClientDecisionBinding(t *testing.T) {
+	_, registry, err := ResolveTarget(OmnipaxosV2TargetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	monitors := registry.EvaluationMonitors()
+	want := []string{"agreement", OmnipaxosClientDecisionBindingMonitorID}
+	if len(monitors) != len(want) {
+		t.Fatalf("OmniPaxos evaluation monitors = %#v", monitors)
+	}
+	for index := range want {
+		if monitors[index].Name() != want[index] {
+			t.Fatalf("OmniPaxos monitor %d = %q, want %q", index, monitors[index].Name(), want[index])
+		}
+	}
+}
+
 func TestRegistryRejectsDeclaredAndExecutableMonitorIDDrift(t *testing.T) {
 	registry := newRegistry(
 		"fixture-target", "fixture-projector",

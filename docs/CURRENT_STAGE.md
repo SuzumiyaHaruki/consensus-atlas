@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：M4m2R OmniPaxos Scenario Agent 主路径收口
+阶段：M4m3 OmniPaxos 真实模型配对准备
 
 ## 一句话状态
 
@@ -176,6 +176,15 @@ digest，同一 RequestID completed、fresh Replay stable、两个 Oracle 0 viol
 handoff 后没有第二次干预。非匹配 Risk、非 operation-carrying 消息、同层歧义和无候选
 也已有独立边界回归。
 
+M4m2O 已补齐 `omnipaxos-client-decision-binding` Target-local Oracle。monitor 只联结
+Bundle 中的原始 Invoke、worker decided log 产生的 completed ClientResult payload，以及
+同一 participant/index 的 decided-prefix observation；它不读取 Risk、Agent 输出或 PSS。
+正常 M4m2R Bundle 现在由 registry 检查 trace-integrity、agreement 和 binding 三个
+monitor，0 violation。普通回归覆盖客户端 RequestID、决定内容、请求—决定映射和
+decided-prefix witness 篡改；尚未完成的 ClientResult 不产生 violation。OmniPaxos
+`client-operation-continuity` 因此从 observable-only 提升为 oracle-backed，不需要修改
+公共 Action、Runtime、Bundle schema 或 worker evidence schema。
+
 saved Bundle Oracle audit 保持 v1 工件兼容：Go 字段仍名为
 `RecordedReplayStable`，JSON 继续使用 `replay_stable`。该字段只表示 Bundle 已封存的
 fresh Replay 结果；evaluator audit 不重新启动 Runtime。
@@ -253,9 +262,9 @@ M4l7--M4m2 的 canonical Bundle、audit 与精简报告。
 
 ## 下一步
 
-1. 使用已固定的 OmniPaxos existing Risk 组织一组短 Scenario-only 真实模型配对，确认
-   模型能自行给出等价干预并触发同一 handoff；
-2. 为 OmniPaxos 增加请求—决定 binding Oracle，避免只以 Agreement 支撑 continuity 解释；
-3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
-4. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
-5. 只有效果证据成立后才进入 private holdout 和第三协议接入。
+1. 按预注册镜像顺序运行两组、四个 OmniPaxos Scenario-only Episode，只改变
+   `closure_mode=public-fixed|target-local`；
+2. 选择一个历史问题版本或受控差异版本，先以零模型 Trace 得到首个非零 Oracle 结果；
+3. 再让 Scenario Agent 从已知 Risk 复现同一干预，最后恢复 Risk Agent 完整流程；
+4. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
+5. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验。

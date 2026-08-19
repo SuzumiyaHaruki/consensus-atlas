@@ -58,5 +58,13 @@ func OmnipaxosV2Registry() Registry {
 			},
 			Monitor: oracle.BundleAgreement{},
 		},
+		Registration{
+			Capability: controlexperiment.AgentOracleCapability{
+				ID:          OmnipaxosClientDecisionBindingMonitorID,
+				Scope:       controlexperiment.AgentOracleScopeTarget,
+				PropertyIDs: []string{"client-operation-continuity"},
+			},
+			Monitor: OmnipaxosClientDecisionBindingMonitor{},
+		},
 	)
 }

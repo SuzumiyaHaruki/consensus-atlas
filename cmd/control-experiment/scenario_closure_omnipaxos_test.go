@@ -18,7 +18,9 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 func TestOmnipaxosMessageLossClosureSharedPrefix(t *testing.T) {
@@ -166,7 +168,9 @@ func TestOmnipaxosMessageLossClosureSharedPrefix(t *testing.T) {
 	droppedRequestID := intervention.Steps[0].Choice.Action.MessageMetadata["request_id"]
 	if !qualified.Replay.Stable || qualified.Risk.Status != semantic.RiskWitnessReached ||
 		len(qualified.Oracle.Violations) != 0 ||
-		!reflect.DeepEqual(qualified.Oracle.Checked, []string{"trace-integrity", "agreement"}) ||
+		!reflect.DeepEqual(qualified.Oracle.Checked, []string{
+			"trace-integrity", "agreement", targetoracles.OmnipaxosClientDecisionBindingMonitorID,
+		}) ||
 		droppedRequestID == "" || len(qualified.Bundle.ClientHistory) != 1 ||
 		qualified.Bundle.ClientHistory[0].State != control.ItemCompleted ||
 		qualified.Bundle.ClientHistory[0].Response.RequestID != droppedRequestID {
@@ -307,7 +311,9 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 		execution.FinalRisk.Status != semantic.RiskWitnessReached ||
 		!result.Testing.Replay.Stable || result.Testing.Risk.Status != semantic.RiskWitnessReached ||
 		len(result.Testing.Oracle.Violations) != 0 ||
-		!reflect.DeepEqual(result.Testing.Oracle.Checked, []string{"trace-integrity", "agreement"}) ||
+		!reflect.DeepEqual(result.Testing.Oracle.Checked, []string{
+			"trace-integrity", "agreement", targetoracles.OmnipaxosClientDecisionBindingMonitorID,
+		}) ||
 		len(result.Testing.Bundle.ClientHistory) != 1 ||
 		result.Testing.Bundle.ClientHistory[0].State != control.ItemCompleted ||
 		result.Testing.Bundle.ClientHistory[0].Response.RequestID != "omnipaxos-a9e1-request" {
@@ -325,6 +331,7 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 	if interventions != 1 {
 		t.Fatalf("Agent path did not retain exactly one intervention: %d", interventions)
 	}
+	assertOmnipaxosClientDecisionBinding(t, result.Testing.Bundle)
 	wantClosureLeaves := []string{
 		"sequence-paxos/prepare", "sequence-paxos/promise",
 		"sequence-paxos/accept-sync", "sequence-paxos/accepted",
@@ -355,6 +362,135 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("OMNIPAXOS_AGENT_CLOSURE_RESULT %s", summary)
+}
+
+func assertOmnipaxosClientDecisionBinding(
+	t *testing.T,
+	bundle controlexperiment.ExecutionBundle,
+) {
+	t.Helper()
+	monitor := targetoracles.OmnipaxosClientDecisionBindingMonitor{}
+	verdict := oracle.CheckBundle(bundle, monitor)
+	if len(verdict.Violations) != 0 || !reflect.DeepEqual(
+		verdict.Checked, []string{targetoracles.OmnipaxosClientDecisionBindingMonitorID},
+	) {
+		t.Fatalf("real OmniPaxos Bundle binding verdict = %#v", verdict)
+	}
+	if len(bundle.ClientHistory) != 1 {
+		t.Fatalf("real OmniPaxos Bundle client history = %#v", bundle.ClientHistory)
+	}
+
+	t.Run("tampered-client-request-id", func(t *testing.T) {
+		mutated := bundle
+		mutated.ClientHistory = append(
+			[]controlexperiment.ClientHistoryEntry(nil), bundle.ClientHistory...,
+		)
+		mutated.ClientHistory[0].Response.RequestID = "tampered-request"
+		assertOmnipaxosBindingViolation(t, oracle.CheckBundle(mutated, monitor), "projection failed")
+	})
+
+	t.Run("tampered-decision-content", func(t *testing.T) {
+		mutated := bundle
+		mutated.ClientHistory = append(
+			[]controlexperiment.ClientHistoryEntry(nil), bundle.ClientHistory...,
+		)
+		entry := mutated.ClientHistory[0]
+		decision := decodeOmnipaxosDecisionPayload(t, entry.Response.Payload)
+		decision.Value = []byte("tampered-decision")
+		entry.Response.Payload = encodeOmnipaxosDecisionPayload(t, entry.Response.Payload, decision)
+		mutated.ClientHistory[0] = entry
+		assertOmnipaxosBindingViolation(t, oracle.CheckBundle(mutated, monitor), "does not match its invoke")
+	})
+
+	t.Run("tampered-request-decision-mapping", func(t *testing.T) {
+		mutated := bundle
+		mutated.ClientHistory = append(
+			[]controlexperiment.ClientHistoryEntry(nil), bundle.ClientHistory...,
+		)
+		entry := mutated.ClientHistory[0]
+		decision := decodeOmnipaxosDecisionPayload(t, entry.Response.Payload)
+		decision.RequestID = "uninvoked-request"
+		entry.Response.RequestID = decision.RequestID
+		entry.Response.Payload = encodeOmnipaxosDecisionPayload(t, entry.Response.Payload, decision)
+		mutated.ClientHistory[0] = entry
+		assertOmnipaxosBindingViolation(t, oracle.CheckBundle(mutated, monitor), "has no invoke")
+	})
+
+	t.Run("same-request-multiple-decisions", func(t *testing.T) {
+		mutated := bundle
+		mutated.ClientHistory = append(
+			[]controlexperiment.ClientHistoryEntry(nil), bundle.ClientHistory...,
+		)
+		entry := mutated.ClientHistory[0]
+		decision := decodeOmnipaxosDecisionPayload(t, entry.Response.Payload)
+		decision.Index++
+		entry.Step++
+		entry.Item = control.ItemID("duplicate-decision-binding")
+		entry.Response.Payload = encodeOmnipaxosDecisionPayload(t, entry.Response.Payload, decision)
+		mutated.ClientHistory = append(mutated.ClientHistory, entry)
+		assertOmnipaxosBindingViolation(t, oracle.CheckBundle(mutated, monitor), "maps to different decisions")
+	})
+
+	t.Run("missing-decided-prefix-witness", func(t *testing.T) {
+		mutated := bundle
+		mutated.Decisions.Observations = nil
+		assertOmnipaxosBindingViolation(t, oracle.CheckBundle(mutated, monitor), "no decided-prefix witness")
+	})
+
+	t.Run("pending-result-is-not-a-violation", func(t *testing.T) {
+		mutated := bundle
+		mutated.ClientHistory = append(
+			[]controlexperiment.ClientHistoryEntry(nil), bundle.ClientHistory...,
+		)
+		mutated.ClientHistory[0].State = control.ItemEnabled
+		mutated.ClientHistory[0].Response.RequestID = "not-yet-returned"
+		verdict := oracle.CheckBundle(mutated, monitor)
+		if len(verdict.Violations) != 0 {
+			t.Fatalf("pending request produced a binding violation: %#v", verdict)
+		}
+	})
+}
+
+type omnipaxosDecisionPayloadFixture struct {
+	Node      uint64 `json:"node"`
+	Index     uint64 `json:"index"`
+	RequestID string `json:"request_id"`
+	Origin    uint64 `json:"origin"`
+	Value     []byte `json:"value"`
+}
+
+func decodeOmnipaxosDecisionPayload(
+	t *testing.T,
+	payload control.PayloadEnvelope,
+) omnipaxosDecisionPayloadFixture {
+	t.Helper()
+	var decision omnipaxosDecisionPayloadFixture
+	if err := json.Unmarshal(payload.Bytes, &decision); err != nil {
+		t.Fatal(err)
+	}
+	return decision
+}
+
+func encodeOmnipaxosDecisionPayload(
+	t *testing.T,
+	original control.PayloadEnvelope,
+	decision omnipaxosDecisionPayloadFixture,
+) control.PayloadEnvelope {
+	t.Helper()
+	payload, err := control.NewJSONPayload(original.SchemaVersion, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
+func assertOmnipaxosBindingViolation(t *testing.T, result oracle.Result, message string) {
+	t.Helper()
+	if len(result.Violations) != 1 ||
+		result.Violations[0].Monitor != targetoracles.OmnipaxosClientDecisionBindingMonitorID ||
+		!bytes.Contains([]byte(result.Violations[0].Message), []byte(message)) {
+		t.Fatalf("OmniPaxos binding mutation was not detected: %#v", result)
+	}
 }
 
 func TestOmnipaxosClosureFactoryRejectsUnrecognizedInputs(t *testing.T) {

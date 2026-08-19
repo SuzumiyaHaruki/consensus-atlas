@@ -61,6 +61,11 @@ stable，两个 Oracle 0 violation，handoff 后没有新的 Drop、Crash、Dupl
 Partition。该回归证明的是 `existing Risk → Scenario Agent → handoff → closure →
 qualified Bundle` 的本地主路径，不是一次外部模型效果实验。
 
+后续 M4m2O 在不修改该历史 Trace/Bundle 格式的前提下增加了
+`omnipaxos-client-decision-binding`。当前 registry 的新运行会检查
+`trace-integrity`、`agreement` 和该 binding monitor；本目录中原始 M4m2/M4m2R
+摘要仍如实保留当时只执行两个 monitor 的历史结果。
+
 机械回归入口：
 
 ```text

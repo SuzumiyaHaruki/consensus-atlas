@@ -17,6 +17,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 type failAfterInitialYieldAdapter struct {
@@ -174,7 +175,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				view.TargetSurface.FaultAllowance.MaxMessageDrops != 1 ||
 				len(view.TargetSurface.Capabilities.ComposableActions) != 4 ||
 				len(view.TargetSurface.Capabilities.ObservationCapabilities) == 0 ||
-				len(view.TargetSurface.Capabilities.OracleCapabilities) != 2 ||
+				len(view.TargetSurface.Capabilities.OracleCapabilities) != 3 ||
 				len(view.TargetSurface.Capabilities.FidelityBoundaries) != 1 {
 				t.Fatalf("Risk Agent did not receive the active target surface: %#v", view.TargetSurface)
 			}
@@ -285,10 +286,13 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		result.Work.QualifiedExecution.Replay.WorkUnits == 0 ||
 		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 1 ||
 		providerCalls != 2 || keyActivations != 2 ||
-		result.Assessment.Status != agenticEvidenceRiskUnverified ||
-		result.Assessment.ReasonCode != "missing-property-oracle" ||
+		result.Assessment.Status != agenticEvidenceRiskReached ||
+		result.Assessment.ReasonCode != "property-oracle-clean" ||
 		result.Assessment.PropertyID != "client-operation-continuity" ||
-		result.Assessment.EvidenceLevel != controlexperiment.PropertyEvidenceObservable {
+		result.Assessment.EvidenceLevel != controlexperiment.PropertyEvidenceOracleBacked ||
+		!reflect.DeepEqual(result.Assessment.OracleIDs, []string{
+			targetoracles.OmnipaxosClientDecisionBindingMonitorID,
+		}) {
 		t.Fatalf("bounded agentic episode incomplete: %#v calls=%d keys=%d err=%v",
 			result, providerCalls, keyActivations, err)
 	}

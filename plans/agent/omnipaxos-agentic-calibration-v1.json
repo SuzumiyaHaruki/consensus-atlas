@@ -26,7 +26,7 @@
       {
         "id": "client-operation-continuity",
         "summary": "A client operation must remain consistently related to the command that is replicated and decided across ballot transitions.",
-        "evidence_level": "observable-only"
+        "evidence_level": "oracle-backed"
       },
       {
         "id": "ballot-leadership-safety",
