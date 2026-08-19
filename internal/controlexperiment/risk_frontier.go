@@ -137,8 +137,8 @@ func ReconstructRiskFrontierState(
 
 // reconstructRiskFrontierRuntime is the Scenario-only prepared form of
 // ReconstructRiskFrontierState. The caller must either consume the returned
-// Runtime with executeScenarioChildOnRuntime or close it without exposing any state
-// derived after this frontier.
+// Runtime with executeScenarioChildOnLiveRuntime or close it without exposing
+// any state derived after this frontier.
 func reconstructRiskFrontierRuntime(
 	ctx context.Context,
 	id string,

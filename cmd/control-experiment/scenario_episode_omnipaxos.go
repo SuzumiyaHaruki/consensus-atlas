@@ -135,22 +135,6 @@ func executeOmnipaxosScenarioQualifiedRisk(
 	)
 }
 
-func executeOmnipaxosScenarioQualifiedRiskWithoutWorkload(
-	ctx context.Context,
-	workerPath string,
-	experiment omnipaxosScenarioExperimentConfig,
-	qualification omnipaxosScenarioQualification,
-	root controlruntime.Trace,
-	execution controlexperiment.ScenarioExecution,
-	spec semantic.RiskWitnessSpec,
-	projector controlexperiment.SemanticPrefixProjector,
-) (scenarioTestingResult, error) {
-	return executeOmnipaxosScenarioQualifiedRiskWithWorkload(
-		ctx, workerPath, experiment, nil, qualification, root, execution,
-		spec, projector, "",
-	)
-}
-
 func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 	ctx context.Context,
 	workerPath string,

@@ -184,67 +184,6 @@ func (view ActionFrontierView) Validate() error {
 	return nil
 }
 
-func executeScenarioChildOnRuntime(
-	ctx context.Context,
-	wantView ActionFrontierView,
-	action FrontierActionRef,
-	runtime *controlruntime.Runtime,
-	preparedPrefixes ...controlruntime.Trace,
-) (controlruntime.Trace, PhaseWork, error) {
-	var work PhaseWork
-	if runtime == nil || len(preparedPrefixes) > 1 {
-		return controlruntime.Trace{}, work, errors.New("EXPERIMENT_SCENARIO_PREPARED_RUNTIME_INVALID")
-	}
-	if wantView.Validate() != nil {
-		return controlruntime.Trace{}, work, errors.Join(
-			errors.New("EXPERIMENT_SCENARIO_PREPARED_RUNTIME_INVALID"), runtime.Close(),
-		)
-	}
-	prefix, err := runtime.Trace()
-	prefixMatches := err == nil && prefix.Digest == wantView.PrefixTraceDigest &&
-		len(prefix.Records) == wantView.PrefixDecisions
-	if len(preparedPrefixes) == 1 {
-		prefixMatches = preparedRuntimeHasExactTracePrefix(
-			prefix, preparedPrefixes[0], wantView,
-		)
-	}
-	if !prefixMatches {
-		return controlruntime.Trace{}, work, errors.Join(
-			errors.New("EXPERIMENT_SCENARIO_PREPARED_RUNTIME_DRIFT"), err, runtime.Close(),
-		)
-	}
-	snapshotDigest, err := runtime.Snapshot().Digest()
-	if err != nil || snapshotDigest != wantView.SnapshotDigest {
-		return controlruntime.Trace{}, work, errors.Join(
-			errors.New("EXPERIMENT_SCENARIO_PREPARED_RUNTIME_DRIFT"), err, runtime.Close(),
-		)
-	}
-	found := false
-	for _, candidate := range wantView.Actions {
-		if reflect.DeepEqual(candidate, action) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return controlruntime.Trace{}, work, errors.Join(
-			errors.New("EXPERIMENT_SCENARIO_ACTION_NOT_ADMISSIBLE"), runtime.Close(),
-		)
-	}
-	chargeDecisions(&work, 1)
-	if _, err := runtime.Select(ctx, action.ActionID); err != nil {
-		return controlruntime.Trace{}, work, errors.Join(err, runtime.Close())
-	}
-	child, err := runtime.Trace()
-	if err != nil {
-		return controlruntime.Trace{}, work, errors.Join(err, runtime.Close())
-	}
-	if err := runtime.Close(); err != nil {
-		return controlruntime.Trace{}, work, err
-	}
-	return child, work, nil
-}
-
 // executeScenarioChildOnLiveRuntime advances a Scenario-owned branch without
 // closing it. The caller keeps exclusive ownership and must eventually close
 // the Runtime and fresh-replay the promoted final Trace.

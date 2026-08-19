@@ -1,8 +1,8 @@
 # 当前阶段
 
-更新时间：2026-08-18
+更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：架构收敛与仓库瘦身
+阶段：S1 精确收尾完成，准备进入 Agent 效果实验
 
 ## 一句话状态
 
@@ -64,17 +64,19 @@ finding，也不是多 Agent 优于 baseline 的证据。
 - 普通测试不再读取 `benchmarks/experiments` 或 `benchmarks/pilots`，必要的
   build-audit fixture 移入小型 `testdata/`；
 - 历史阶段 summary 等值测试改为对象级行为测试；
-- 压缩仓库约束和阶段文档，删除桌面规划副本要求。
-
-待完成：
-
-- 永久移除旧 benchmark 目录。代码已与其解耦，但本次批量删除被环境安全策略
-  拒绝；执行前需要用户对具体目录删除再次明确确认；
+- 压缩仓库约束和阶段文档，删除桌面规划副本要求；
+- 删除两个确认无调用者的旧执行 wrapper，并让注释只指向 live Runtime 主线；
+- 删除 `benchmarks/pilots` 以及除最终 M4l2/M4l3 外的历史、失败和基础设施实验；
+- M4l3 使用 `final-summary.json` 取代有歧义的原始 summary；三份 canonical Bundle
+  以确定性 gzip 保留，展开 Bundle、Scenario result、root Trace 和 provider journal
+  不进入 HEAD；
+- 清理所有本轮遗留的空目录。
 
 验证已完成：`go test ./...`、`go vet ./...`、`audit-no-v1`、
 `audit-race-shards`、受影响 Scenario/消息语义聚焦 race、Rust fmt/clippy 和
-`git diff --check` 全部通过。仓库工作区约 53MB；Go 代码 52,860 行，其中测试
-17,452 行。
+全仓 JSON/压缩 Bundle 解析、`git diff --check` 全部通过。仓库工作区（含 Git）
+约 33MB；Go 代码 52,783 行，其中测试 17,452 行、生产代码 35,331 行；
+`benchmarks/` 收敛为 56 个文件、约 0.5MB 实际内容。
 
 ## 当前结果边界
 
@@ -94,8 +96,8 @@ finding，也不是多 Agent 优于 baseline 的证据。
 
 ## 下一步
 
-1. 完成瘦身验证并版本化收口；
-2. 以精简后的唯一 Episode 主线运行短公开校准，确认没有依赖已删除 runner；
+1. 停止以代码行数为目标的大范围删除；
+2. 补一个不依赖历史工件的 formal evaluator candidate/control 纯内存行为测试；
 3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
 4. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
 5. 只有效果证据成立后才进入 private holdout 和第三协议接入。

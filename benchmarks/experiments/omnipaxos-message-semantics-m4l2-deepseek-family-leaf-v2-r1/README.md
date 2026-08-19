@@ -70,5 +70,6 @@ part of this paired result and must not be merged into its metrics.
 
 Primary artifacts are `summary.json`, `ground-truth.json`,
 `scripted-preflight.json`, each arm's `method-spec.json`, `arm-summary.json`,
-and `provider-audits.json`. The large leaf Bundle remains reproducible from the
-recorded method and is intentionally not retained in HEAD.
+and `provider-audits.json`. The Replay-stable leaf evidence is retained as
+`leaf/canonical-bundle.json.gz`; the expanded Bundle and duplicate Scenario
+result are intentionally not retained in HEAD.

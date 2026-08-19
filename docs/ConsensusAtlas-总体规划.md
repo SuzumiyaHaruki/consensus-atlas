@@ -163,13 +163,13 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 ## 9. 后续阶段
 
-### S1：瘦身与唯一主线（当前）
+### S1：瘦身与唯一主线（已完成）
 
 - 完成历史资产清理、命名收敛和全仓验证；
 - 保证唯一活动 Episode CLI 不依赖一次性 runner；
 - 形成可阅读、可版本化的精简仓库。
 
-### S2：Agent 能力释放
+### S2：Agent 能力释放（当前）
 
 - 扩大但仍声明式的只读源码查询；
 - 利用真实 ProgressDelta 做多轮 revise；

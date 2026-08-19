@@ -25,7 +25,9 @@
 
 原始 `summary.json` 中的 family `qualified_risk_reached=true` 已被
 [verification-audit.json](verification-audit.json) 明确取代，因此未将该易误读的原始 summary 纳入 HEAD。
-仓库只保留修正后的审计以及方法/调用摘要；大型 Bundle 不纳入 HEAD。
+仓库以 [final-summary.json](final-summary.json) 作为唯一最终摘要，并以两个 arm 的
+`canonical-bundle.json.gz` 保留 Replay 稳定证据；展开后的 Bundle、Scenario result 和 provider journal
+不纳入 HEAD。
 
 ## 结论边界
 
