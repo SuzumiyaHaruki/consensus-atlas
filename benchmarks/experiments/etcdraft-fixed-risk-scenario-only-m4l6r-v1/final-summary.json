@@ -1,0 +1,46 @@
+{
+  "experiment_id": "etcdraft-fixed-risk-scenario-only-m4l6r-v1",
+  "git_commit": "2cf7999",
+  "target_id": "etcdraft-v2",
+  "risk_id": "append-response-loss-with-alternate-quorum",
+  "risk_input_mode": "fixed-accepted",
+  "risk_input_digest": "91646150ca0bbddc7613bcd6f94917c641e31911e6704ccb91124e9272506da8",
+  "paired_risk_identical": true,
+  "arms": [
+    {
+      "closure_mode": "public-fixed",
+      "method_spec_digest": "4ceb7176dae502e7457a451e0c15ff1369671475e35366c1351ebefadac7d2f5",
+      "status": "completed",
+      "risk_calls": 0,
+      "scenario_calls": 3,
+      "model_tokens": 82848,
+      "scenario_decisions": 5,
+      "qualified_trace_decisions": 33,
+      "scenario_stop_reason": "call-budget-exhausted",
+      "risk_reached": false,
+      "first_missing_milestone": "alternate-quorum-decision-advanced",
+      "trace_digest": "71687536aea02e95bae7c1a646da7060e2316cae50d0abbc03f1290d831b7b2e",
+      "replay_stable": true,
+      "oracle_findings": 0
+    },
+    {
+      "closure_mode": "target-local",
+      "method_spec_digest": "c131f2ecf7c2b5e85b9d4e1e58e5349cb17f11e8c79304833464fdebbe4459e7",
+      "status": "completed",
+      "risk_calls": 0,
+      "scenario_calls": 3,
+      "model_tokens": 92913,
+      "scenario_decisions": 7,
+      "qualified_trace_decisions": 35,
+      "scenario_stop_reason": "call-budget-exhausted",
+      "risk_reached": false,
+      "first_missing_milestone": "alternate-quorum-decision-advanced",
+      "target_drop_executed": true,
+      "closure_activated": false,
+      "trace_digest": "54077ebb9a772739dad5a5a78ab72a44ec8bc0544b8a86bcac8169df77a75b8c",
+      "replay_stable": true,
+      "oracle_findings": 0
+    }
+  ],
+  "conclusion": "valid paired capability pilot, but inconclusive for closure benefit because over-specified Scenario plans stopped after the intervention and before closure takeover"
+}

@@ -91,7 +91,17 @@ provider，仅运行 Scenario Agent、Runtime、fresh Replay 与 Oracle。Risk �
 `fixed-accepted` 模式和实际 `closure_mode` 均进入原有 MethodSpec。固定模式只允许
 单 Episode 且不与 capability probe 混用。零模型回归已证明 Risk provider 为 0、
 Scenario provider 为 1，并以同一 alternate-quorum Risk 完成 5 个计划 Action、12 个
-closure Action、stable Replay 和四个 Oracle monitor。真实两臂尚待从用户终端运行。
+closure Action、stable Replay 和四个 Oracle monitor。
+
+真实 M4l6R 两臂已经运行。两者的 fixed Risk digest 完全相同，均为 0 Risk calls、
+3 Scenario calls、stable Replay 和 0 Oracle finding；因此上一轮 Risk 漂移问题已消除。
+但 public-fixed 使用 82,848 tokens/5 Scenario decisions，target-local 使用 92,913
+tokens/7 Scenario decisions，二者均以 `call-budget-exhausted` 停止且 Risk 未到达。
+target-local 在第 2 次调用已经真实 drop 目标 `MsgAppResp n2→n1`，但 Agent 在同一计划
+中继续请求尚未 enabled 的 n3 response，导致 `no-match`；第 3 次调用再次过早请求，
+所以只在完整计划结束后接管的 closure 没有激活。该结果是可信的接口负证据，不是
+closure 无效或协议 finding。精简结果见
+`benchmarks/experiments/etcdraft-fixed-risk-scenario-only-m4l6r-v1/`。
 
 ## 当前输入
 
@@ -164,10 +174,10 @@ closure Action、stable Replay 和四个 Oracle monitor。真实两臂尚待从�
 
 ## 下一步
 
-1. 运行固定已接受 Risk 的 Scenario-only 两臂：固定三节点 etcd root、Risk 输入
-   digest、leaf semantic view、模型/prompt/seed 和全部预算，只改变 `-closure-mode`；
-2. 比较正确 `MsgAppResp` 干预、有效 `revise`、Risk/RequestID/Replay/Oracle、
-   decisions/calls/tokens 以及三类停止原因；
+1. 让 Scenario view/prompt 明确表示 target-local post-intervention closure 可用，或
+   增加显式零 Action 的 closure handoff；Agent 完成真实干预后不应继续猜闭合时序；
+2. 重跑相同 fixed Risk 两臂，比较正确 `MsgAppResp` 干预、handoff、Risk/RequestID/
+   Replay/Oracle、decisions/calls/tokens 以及停止原因；
 3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
 4. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
 5. 只有效果证据成立后才进入 private holdout 和第三协议接入。

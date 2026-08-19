@@ -198,6 +198,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   fixed Risk，跳过 Risk provider，仅比较 Scenario Agent。固定 Risk digest、输入模式
   和 `closure_mode` 均由现有 MethodSpec 绑定；除 `closure_mode` 外，leaf semantic
   view、模型/prompt/seed、预算、Replay 与 Oracle 必须相同；
+- fixed Risk 首次真实配对已消除 Risk 漂移，但两个 arm 均未 reached。target-local
+  已执行正确 drop，随后因 Agent 继续猜测未 enabled 的闭合消息而 `no-match`，计划
+  没有正常结束，closure 因而没有接管。下一步先暴露明确的 post-intervention
+  closure/handoff 语义，再以相同 Risk 重跑；不靠单纯增加调用预算掩盖接口缺口；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。
