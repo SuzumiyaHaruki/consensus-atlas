@@ -713,7 +713,7 @@ func TestA9e3aAgenticEpisodePersistsTerminalExecutionOutcome(t *testing.T) {
 		MaxScenarioPlanSteps: 1, MaxRuntimeDecisions: inputs.Experiment.ScenarioMaxDecisions,
 	}
 	result, err := runAgenticEpisode(
-		ctx, target, riskJournal, scenarioJournal, budget, nil, nil,
+		ctx, target, riskJournal, scenarioJournal, budget, nil, nil, nil,
 		func() error { return riskJournal.ActivateKey("fixture-key") },
 		func() error { return scenarioJournal.ActivateKey("fixture-key") },
 	)

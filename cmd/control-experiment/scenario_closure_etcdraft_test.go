@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -13,6 +18,97 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
+
+func TestEtcdraftFixedRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), controlExperimentTestTimeout(180*time.Second),
+	)
+	defer cancel()
+	inputs, err := prepareEtcdraftAgenticEpisode(
+		ctx, "", "../../plans/agent/etcdraft-agentic-calibration-v1.json",
+		fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixedRisk, _, err := loadFixedRiskInput(
+		"../../plans/agent/etcdraft-alternate-quorum-fixed-risk-v1.json", target,
+	)
+	if err != nil || fixedRisk == nil {
+		t.Fatalf("load fixed Risk: %#v/%v", fixedRisk, err)
+	}
+	proposal, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+		Intent: controlexperiment.ScenarioIntentContinue,
+		Plan:   etcdraftAppendResponseInterventionPlan(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCalls := 0
+	client := fixtureOpenRouterIntentClient()
+	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls++
+		var payload openRouterChatRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil ||
+			payload.ResponseFormat.JSONSchema.Name != scenarioInvestigationStructuredOutputName {
+			t.Fatalf("unexpected provider call: %#v/%v", payload, err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(bytes.NewReader(fixtureOpenRouterResponse(
+				t, providerCalls, proposal,
+			))),
+		}, nil
+	})
+	directory := t.TempDir()
+	riskJournal, err := newStatelessAgentCallJournal(
+		filepath.Join(directory, "risk"), client, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarioJournal, err := newScenarioAgentCallJournal(
+		filepath.Join(directory, "scenario"), client, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runAgenticEpisode(
+		ctx, target, riskJournal, scenarioJournal, agenticEpisodeBudget{
+			MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2,
+			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 5,
+			MaxRuntimeDecisions: 17,
+		}, nil, nil, fixedRisk,
+		func() error { return fmt.Errorf("Risk provider must not be activated") },
+		func() error { return scenarioJournal.ActivateKey("fixture-key") },
+	)
+	if err != nil || providerCalls != 1 || len(result.RiskProviderCalls) != 0 ||
+		result.RiskAgent.Accepted == nil || len(result.RiskAgent.Attempts) != 0 ||
+		len(result.ScenarioProviderCalls) != 1 || result.Testing == nil ||
+		result.Scenario == nil || result.Scenario.Agent.Execution == nil ||
+		result.Scenario.Agent.DecisionsUsed != 17 ||
+		result.Scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
+		!result.Testing.Replay.Stable || result.Testing.Risk.Status != semantic.RiskWitnessReached ||
+		len(result.Testing.Oracle.Violations) != 0 {
+		t.Fatalf("fixed-Risk Scenario-only episode did not close: %#v calls=%d err=%v",
+			result, providerCalls, err)
+	}
+	artifact, err := persistAgenticEpisodeArtifacts(
+		t.TempDir(), target.ID, agenticEpisodeBudget{
+			MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2,
+			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 5,
+			MaxRuntimeDecisions: 17,
+		}, result,
+	)
+	if err != nil || artifact.RiskAttempts != 0 || artifact.ScenarioAttempts != 1 {
+		t.Fatalf("fixed-Risk artifact did not preserve Scenario-only accounting: %#v/%v",
+			artifact, err)
+	}
+}
 
 func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) {
 	ctx, cancel := context.WithTimeout(

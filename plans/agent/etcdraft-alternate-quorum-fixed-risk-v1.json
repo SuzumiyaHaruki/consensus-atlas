@@ -1,0 +1,33 @@
+{
+  "id": "append-response-loss-with-alternate-quorum",
+  "property_ref": "client-operation-continuity",
+  "inspiration_ref": "original",
+  "summary": "Drop one append response and close the same request through the alternate quorum.",
+  "suspected_mechanism": "An append response is lost while another follower remains able to form a quorum for the same request.",
+  "predicates": [
+    {
+      "milestone_id": "workload-invoked-at-coordinator",
+      "kind": "workload-invoked",
+      "constraints": [
+        {
+          "field": "participant-role",
+          "equals": "coordinator"
+        }
+      ]
+    },
+    {
+      "milestone_id": "append-response-dropped-while-replication-inflight",
+      "kind": "message-dropped",
+      "constraints": [
+        {
+          "field": "message-role",
+          "equals": "MsgAppResp"
+        }
+      ]
+    },
+    {
+      "milestone_id": "alternate-quorum-decision-advanced",
+      "kind": "decision-advanced"
+    }
+  ]
+}

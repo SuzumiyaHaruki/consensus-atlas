@@ -155,6 +155,17 @@ MethodSpec。
 再从 factory 是否存在机械派生到 MethodSpec；没有专属 factory 的 Target 会拒绝
 `target-local`。
 
+需要隔离 Scenario 能力时，可增加：
+
+```bash
+-fixed-risk-input plans/agent/etcdraft-alternate-quorum-fixed-risk-v1.json
+```
+
+该文件不是未经检查的模型输出：CLI 会按当前 Target 的知识、Observation 和 Action
+能力重新资格审查，只接受 qualified 且无 capability gap 的 Risk。此模式只允许单
+Episode，Risk provider 调用为 0；Risk 候选的规范化摘要及 `fixed-accepted` 模式进入现有
+MethodSpec，因而两个 closure arm 可机械证明使用了同一 Risk。
+
 ## 验证与研究边界
 
 ```bash

@@ -42,6 +42,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.StringVar(&options.WorkerPath, "worker", "", "target worker executable for a worker-backed Agent strategy")
 	flags.StringVar(&options.Target, "target", "", "target composition for an Agentic Episode")
 	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol and Agent-planning JSON")
+	flags.StringVar(&options.FixedRiskInput, "fixed-risk-input", "", "optional public accepted Risk candidate JSON for Scenario-only calibration")
 	var knowledgeSourceMounts repeatableStringFlag
 	flags.Var(&knowledgeSourceMounts, "knowledge-source-mount", "repeatable repo=<directory> or <reference-prefix>=<directory> read-only Agent source mount")
 	flags.StringVar(&options.CampaignDirectory, "campaign-dir", "", "Campaign directory")

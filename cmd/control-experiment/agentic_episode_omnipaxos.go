@@ -59,7 +59,8 @@ func runOmnipaxosAgenticEpisode(
 		return omnipaxosAgenticEpisodeResult{Status: agenticEpisodeRiskStopped}, err
 	}
 	return runAgenticEpisode(
-		ctx, target, riskJournal, scenarioJournal, budget, nil, nil, activateRiskKey, activateScenarioKey,
+		ctx, target, riskJournal, scenarioJournal, budget, nil, nil, nil,
+		activateRiskKey, activateScenarioKey,
 	)
 }
 

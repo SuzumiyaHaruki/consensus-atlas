@@ -193,9 +193,11 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 ### S3：效果实验
 
-- 先做三节点 etcd 短公开 capability pilot，只改变 MethodSpec 已绑定的
-  `closure_mode`；Risk spec、leaf semantic view、模型/prompt/seed、预算、Replay 与
-  Oracle 必须相同，否则不能解释为 closure 的配对效果；
+- 先做三节点 etcd 短公开 capability pilot。首轮自由 Risk Agent 两臂生成了不同
+  Risk，故只保留为可运行性样本；修正版使用经过当前 Target 重新资格审查的公开
+  fixed Risk，跳过 Risk provider，仅比较 Scenario Agent。固定 Risk digest、输入模式
+  和 `closure_mode` 均由现有 MethodSpec 绑定；除 `closure_mode` 外，leaf semantic
+  view、模型/prompt/seed、预算、Replay 与 Oracle 必须相同；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。

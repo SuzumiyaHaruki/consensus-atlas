@@ -21,6 +21,8 @@ const (
 	AgenticCapabilityFeedbackStructuredGaps = "structured-gaps"
 	AgenticClosureModePublicFixed           = "public-fixed"
 	AgenticClosureModeTargetLocal           = "target-local"
+	AgenticRiskInputAgentDiscovery          = "agent-discovery"
+	AgenticRiskInputFixedAccepted           = "fixed-accepted"
 	agenticMethodMaxInvestigation           = 1_000
 )
 
@@ -106,6 +108,8 @@ type AgenticMethodSpec struct {
 	SemanticInputDigest      string                          `json:"semantic_input_digest"`
 	ScenarioSemanticExposure ScenarioSemanticExposureMode    `json:"scenario_semantic_exposure"`
 	ClosureMode              AgenticClosureMode              `json:"closure_mode,omitempty"`
+	RiskInputMode            string                          `json:"risk_input_mode,omitempty"`
+	RiskInputDigest          string                          `json:"risk_input_digest,omitempty"`
 	CapabilityFeedbackMode   AgenticCapabilityFeedbackMode   `json:"capability_feedback_mode,omitempty"`
 	CapabilityFeedbackProbe  *AgenticCapabilityFeedbackProbe `json:"capability_feedback_probe,omitempty"`
 	SourceExposure           AgenticSourceExposureSpec       `json:"source_exposure"`
@@ -151,6 +155,12 @@ func (spec AgenticMethodSpec) Validate() error {
 	if spec.ImplementationID == agenticMethodLegacyImplementationID {
 		closureModeValid = spec.ClosureMode == ""
 	}
+	riskInputValid := spec.RiskInputMode == "" && spec.RiskInputDigest == "" ||
+		spec.RiskInputMode == AgenticRiskInputAgentDiscovery && spec.RiskInputDigest == "" ||
+		spec.RiskInputMode == AgenticRiskInputFixedAccepted && validSHA256(spec.RiskInputDigest)
+	if spec.ImplementationID == agenticMethodLegacyImplementationID {
+		riskInputValid = spec.RiskInputMode == "" && spec.RiskInputDigest == ""
+	}
 	if spec.SchemaVersion != AgenticMethodSpecSchemaVersion ||
 		spec.ExecutorID != AgenticMethodExecutorID || spec.Strategy != AgenticMethodStrategyID ||
 		!validAgenticMethodImplementationID(spec.ImplementationID) || !validMethodToken(spec.TargetID) ||
@@ -159,7 +169,7 @@ func (spec AgenticMethodSpec) Validate() error {
 		!validMethodToken(spec.RiskPromptVersion) ||
 		!validMethodToken(spec.ScenarioPromptVersion) || !validMethodToken(spec.SemanticInputSchema) ||
 		!validSHA256(spec.SemanticInputDigest) || spec.ScenarioSemanticExposure.Validate() != nil ||
-		!closureModeValid ||
+		!closureModeValid || !riskInputValid ||
 		spec.CapabilityFeedbackMode.Validate() != nil ||
 		spec.CapabilityFeedbackProbe != nil && spec.CapabilityFeedbackProbe.Validate() != nil ||
 		spec.CapabilityFeedbackProbe != nil && (spec.InvestigationEpisodes != 1 ||

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：M4l6 closure-mode 配对 capability pilot 准备
+阶段：M4l6R 固定已接受 Risk 的 Scenario-only 配对 pilot
 
 ## 一句话状态
 
@@ -79,6 +79,20 @@ tokens，超过旧 Episode 上限 50,000；Scenario 响应因此没有进入 pro
 预算保持不变，并使用新的输出目录和新的 MethodSpec digest。该首轮结果只作为预算
 校准证据，不参与 closure 效果比较。
 
+随后完成的两个 live arm 仍不能作为正式配对结果：`public-fixed-v2` 使用 3 次
+Scenario 调用、111,234 tokens 且 Risk 未到达；`target-local-v2` 使用 1 次 Scenario
+调用、41,157 tokens 且其 Risk 到达。虽然两者均完成确定执行与 stable Replay，
+但 Risk Agent 实际生成了不同的 Risk spec；target-local arm 的 Risk 也没有要求
+`MsgAppResp` 丢弃后的 alternate-quorum 闭合，因此不能把差异归因于 closure。
+
+M4l6R 为此加入窄的 `-fixed-risk-input` 模式。输入是公开的 RiskCandidate JSON，
+可信代码会针对当前 Target 重新执行资格与 capability-gap 检查；合格后跳过 Risk
+provider，仅运行 Scenario Agent、Runtime、fresh Replay 与 Oracle。Risk 候选规范化摘要、
+`fixed-accepted` 模式和实际 `closure_mode` 均进入原有 MethodSpec。固定模式只允许
+单 Episode 且不与 capability probe 混用。零模型回归已证明 Risk provider 为 0、
+Scenario provider 为 1，并以同一 alternate-quorum Risk 完成 5 个计划 Action、12 个
+closure Action、stable Replay 和四个 Oracle monitor。真实两臂尚待从用户终端运行。
+
 ## 当前输入
 
 - `plans/agent/`：Agent 方法、模型预算和协议知识配置；
@@ -150,9 +164,8 @@ tokens，超过旧 Episode 上限 50,000；Scenario 响应因此没有进入 pro
 
 ## 下一步
 
-1. 在显式授权后运行短公开配对 capability pilot：固定三节点 etcd root、Risk、
-   leaf semantic view、模型/prompt/seed 和全部预算，只改变 `-closure-mode`；如果
-   两臂没有得到同一 Risk spec，则本次结果只作为可运行性样本，不进入配对结论；
+1. 运行固定已接受 Risk 的 Scenario-only 两臂：固定三节点 etcd root、Risk 输入
+   digest、leaf semantic view、模型/prompt/seed 和全部预算，只改变 `-closure-mode`；
 2. 比较正确 `MsgAppResp` 干预、有效 `revise`、Risk/RequestID/Replay/Oracle、
    decisions/calls/tokens 以及三类停止原因；
 3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；

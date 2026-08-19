@@ -206,6 +206,7 @@ func runAgenticEpisode(
 	budget agenticEpisodeBudget,
 	memory []controlexperiment.RiskExplorationMemoryEntry,
 	knowledgeReader controlexperiment.RiskKnowledgeReader,
+	fixedRisk *controlexperiment.RiskCandidateAssessment,
 	activateRiskKey func() error,
 	activateScenarioKey func() error,
 ) (agenticEpisodeResult, error) {
@@ -223,23 +224,30 @@ func runAgenticEpisode(
 	}
 	capabilities := target.ObservationProjector.Capabilities()
 	actions := target.Surface.Capabilities.ComposableActions
-	risk, runErr := controlexperiment.DiscoverRiskWithPlanner(
-		ctx, controlexperiment.RiskAgentBudget{
-			MaxCalls: budget.MaxRiskCalls, MaxTokens: budget.MaxObservedTokens,
-		}, target.Knowledge, capabilities, actions, memory, &target.Surface, knowledgeReader,
-		func(ctx context.Context, view controlexperiment.RiskAgentView) (
-			[]byte, controlexperiment.ModelWork, error,
-		) {
-			content, work, err := planRiskCandidate(ctx, riskJournal, view)
-			if !errors.Is(err, errStatelessAgentCallKeyRequired) {
-				return content, work, err
-			}
-			if err := activateRiskKey(); err != nil {
-				return nil, work, err
-			}
-			return planRiskCandidate(ctx, riskJournal, view)
-		},
-	)
+	risk := controlexperiment.RiskAgentResult{Status: controlexperiment.RiskAgentAccepted}
+	var runErr error
+	if fixedRisk != nil {
+		accepted := *fixedRisk
+		risk.Accepted = &accepted
+	} else {
+		risk, runErr = controlexperiment.DiscoverRiskWithPlanner(
+			ctx, controlexperiment.RiskAgentBudget{
+				MaxCalls: budget.MaxRiskCalls, MaxTokens: budget.MaxObservedTokens,
+			}, target.Knowledge, capabilities, actions, memory, &target.Surface, knowledgeReader,
+			func(ctx context.Context, view controlexperiment.RiskAgentView) (
+				[]byte, controlexperiment.ModelWork, error,
+			) {
+				content, work, err := planRiskCandidate(ctx, riskJournal, view)
+				if !errors.Is(err, errStatelessAgentCallKeyRequired) {
+					return content, work, err
+				}
+				if err := activateRiskKey(); err != nil {
+					return nil, work, err
+				}
+				return planRiskCandidate(ctx, riskJournal, view)
+			},
+		)
+	}
 	result.RiskAgent = risk
 	riskAudits, auditErr := riskJournal.Audits()
 	if auditErr != nil {

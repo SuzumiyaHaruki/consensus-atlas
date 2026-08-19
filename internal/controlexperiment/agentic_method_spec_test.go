@@ -36,6 +36,7 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		SemanticInputDigest:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		ScenarioSemanticExposure: ScenarioSemanticExposureFull,
 		ClosureMode:              AgenticClosureModeTargetLocal,
+		RiskInputMode:            AgenticRiskInputAgentDiscovery,
 		SourceExposure: AgenticSourceExposureSpec{
 			Mode:              AgenticSourceExposureDossierV2,
 			ReferencePrefixes: []string{"upstream", "repo"},
@@ -56,6 +57,8 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	legacy := spec
 	legacy.ImplementationID = agenticMethodLegacyImplementationID
 	legacy.ClosureMode = ""
+	legacy.RiskInputMode = ""
+	legacy.RiskInputDigest = ""
 	legacy.Digest = ""
 	legacyDigest, err := control.CanonicalDigest(legacy)
 	if err != nil {
@@ -71,6 +74,19 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	public, err := NewAgenticMethodSpec(publicInput)
 	if err != nil || public.Validate() != nil || public.Digest == spec.Digest {
 		t.Fatalf("closure mode did not acquire distinct method identity: %#v/%v", public, err)
+	}
+	fixedRiskInput := spec
+	fixedRiskInput.RiskInputMode = AgenticRiskInputFixedAccepted
+	fixedRiskInput.RiskInputDigest = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	fixedRiskInput.Digest = ""
+	fixedRisk, err := NewAgenticMethodSpec(fixedRiskInput)
+	if err != nil || fixedRisk.Validate() != nil || fixedRisk.Digest == spec.Digest {
+		t.Fatalf("fixed Risk input did not acquire distinct method identity: %#v/%v", fixedRisk, err)
+	}
+	tamperedRisk := fixedRisk
+	tamperedRisk.RiskInputDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	if tamperedRisk.Validate() == nil {
+		t.Fatal("changed fixed Risk input retained the old method identity")
 	}
 	structuredInput := spec
 	structuredInput.CapabilityFeedbackMode = AgenticCapabilityFeedbackStructuredGaps

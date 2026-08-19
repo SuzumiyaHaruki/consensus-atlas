@@ -33,6 +33,8 @@ type agenticEpisodeComposition struct {
 	SessionWallClockMS      int64
 	CapabilityFeedbackMode  controlexperiment.AgenticCapabilityFeedbackMode
 	CapabilityFeedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe
+	FixedRisk               *controlexperiment.RiskCandidateAssessment
+	FixedRiskInputDigest    string
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -280,11 +282,17 @@ func runAgenticEpisodeDirectory(
 	probeMemory, probeErr := agenticCapabilityFeedbackProbeMemory(
 		composition.Target.Surface, composition.CapabilityFeedbackProbe,
 	)
+	riskInputMode, riskInputDigest, riskInputValid := agenticRiskInputIdentity(
+		composition.FixedRisk, composition.FixedRiskInputDigest,
+	)
 	methodBound := composition.MethodSpec.Digest != ""
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
+		!riskInputValid ||
 		methodBound && (composition.MethodSpec.Validate() != nil ||
 			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
 			composition.MethodSpec.ClosureMode != agenticClosureModeForTarget(composition.Target) ||
+			composition.MethodSpec.RiskInputMode != riskInputMode ||
+			composition.MethodSpec.RiskInputDigest != riskInputDigest ||
 			composition.MethodSpec.CapabilityFeedbackMode != composition.CapabilityFeedbackMode ||
 			!reflect.DeepEqual(composition.MethodSpec.CapabilityFeedbackProbe, composition.CapabilityFeedbackProbe)) ||
 		!methodBound && composition.Target.MethodSpecDigest != "" ||
@@ -359,7 +367,7 @@ func runAgenticEpisodeDirectory(
 		sessionCtx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
 		projectAgenticCapabilityFeedbackMemory(
 			composition.Memory, composition.CapabilityFeedbackMode,
-		), knowledgeReader,
+		), knowledgeReader, composition.FixedRisk,
 		activateRiskKey, activateScenarioKey,
 	)
 	if err != nil {
