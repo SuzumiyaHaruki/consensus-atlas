@@ -12,12 +12,15 @@ const (
 	AgenticMethodSpecSchemaVersion          = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                 = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                 = "agentic-episode-v1"
-	AgenticMethodImplementationID           = "consensus-atlas/agentic-method/m4d-v1"
+	AgenticMethodImplementationID           = "consensus-atlas/agentic-method/m4l5-closure-v1"
+	agenticMethodLegacyImplementationID     = "consensus-atlas/agentic-method/m4d-v1"
 	AgenticSourceExposureNone               = "none"
 	AgenticSourceExposureDossierV1          = "dossier-declared-readonly-v1"
 	AgenticSourceExposureDossierV2          = "dossier-declared-readonly-navigation-v2"
 	AgenticCapabilityFeedbackReasonCodes    = "reason-codes"
 	AgenticCapabilityFeedbackStructuredGaps = "structured-gaps"
+	AgenticClosureModePublicFixed           = "public-fixed"
+	AgenticClosureModeTargetLocal           = "target-local"
 	agenticMethodMaxInvestigation           = 1_000
 )
 
@@ -44,6 +47,17 @@ type AgenticEpisodeLimits struct {
 }
 
 type AgenticCapabilityFeedbackMode string
+
+type AgenticClosureMode string
+
+func (mode AgenticClosureMode) Validate() error {
+	switch mode {
+	case AgenticClosureModePublicFixed, AgenticClosureModeTargetLocal:
+		return nil
+	default:
+		return errors.New("EXPERIMENT_AGENTIC_CLOSURE_MODE_INVALID")
+	}
+}
 
 // Empty is the legacy projection used by historical MethodSpec artifacts.
 // New CLI runs always resolve to one of the two explicit modes.
@@ -91,6 +105,7 @@ type AgenticMethodSpec struct {
 	SemanticInputSchema      string                          `json:"semantic_input_schema"`
 	SemanticInputDigest      string                          `json:"semantic_input_digest"`
 	ScenarioSemanticExposure ScenarioSemanticExposureMode    `json:"scenario_semantic_exposure"`
+	ClosureMode              AgenticClosureMode              `json:"closure_mode,omitempty"`
 	CapabilityFeedbackMode   AgenticCapabilityFeedbackMode   `json:"capability_feedback_mode,omitempty"`
 	CapabilityFeedbackProbe  *AgenticCapabilityFeedbackProbe `json:"capability_feedback_probe,omitempty"`
 	SourceExposure           AgenticSourceExposureSpec       `json:"source_exposure"`
@@ -132,14 +147,19 @@ func NewAgenticMethodSpec(spec AgenticMethodSpec) (AgenticMethodSpec, error) {
 }
 
 func (spec AgenticMethodSpec) Validate() error {
+	closureModeValid := spec.ClosureMode.Validate() == nil
+	if spec.ImplementationID == agenticMethodLegacyImplementationID {
+		closureModeValid = spec.ClosureMode == ""
+	}
 	if spec.SchemaVersion != AgenticMethodSpecSchemaVersion ||
 		spec.ExecutorID != AgenticMethodExecutorID || spec.Strategy != AgenticMethodStrategyID ||
-		spec.ImplementationID != AgenticMethodImplementationID || !validMethodToken(spec.TargetID) ||
+		!validAgenticMethodImplementationID(spec.ImplementationID) || !validMethodToken(spec.TargetID) ||
 		spec.Transport.Validate() != nil ||
 		spec.ScenarioTransport != nil && spec.ScenarioTransport.Validate() != nil ||
 		!validMethodToken(spec.RiskPromptVersion) ||
 		!validMethodToken(spec.ScenarioPromptVersion) || !validMethodToken(spec.SemanticInputSchema) ||
 		!validSHA256(spec.SemanticInputDigest) || spec.ScenarioSemanticExposure.Validate() != nil ||
+		!closureModeValid ||
 		spec.CapabilityFeedbackMode.Validate() != nil ||
 		spec.CapabilityFeedbackProbe != nil && spec.CapabilityFeedbackProbe.Validate() != nil ||
 		spec.CapabilityFeedbackProbe != nil && (spec.InvestigationEpisodes != 1 ||
@@ -163,6 +183,10 @@ func (spec AgenticMethodSpec) Validate() error {
 		return errors.New("EXPERIMENT_AGENTIC_METHOD_SPEC_DIGEST_MISMATCH")
 	}
 	return nil
+}
+
+func validAgenticMethodImplementationID(id string) bool {
+	return id == AgenticMethodImplementationID || id == agenticMethodLegacyImplementationID
 }
 
 func validAgenticEpisodeLimits(limits AgenticEpisodeLimits, budget AgenticLogicalBudget) bool {

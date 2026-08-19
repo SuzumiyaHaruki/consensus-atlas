@@ -1,0 +1,78 @@
+{
+  "schema_version": "consensus-atlas/etcdraft-alternate-quorum-closure-summary/v1",
+  "experiment_id": "etcdraft-alternate-quorum-closure-m4l4-script-v1",
+  "target": "etcdraft-v2",
+  "method": "deterministic-script",
+  "model_calls": 0,
+  "request": {
+    "request_id": "a9d6-write-1",
+    "invoke_decision": 28,
+    "drop_decision": 33,
+    "return_decision": 45,
+    "response_request_id": "a9d6-write-1",
+    "response_status": "committed",
+    "identity_stable": true
+  },
+  "intervention": {
+    "kind": "drop-message",
+    "message_type": "MsgAppResp",
+    "source": "n2",
+    "target": "n1",
+    "selector_match_count": 1
+  },
+  "public_fixed_order": {
+    "original_closure_budget": 11,
+    "decisions_used": 11,
+    "stop_reason": "natural-progress-budget-exhausted",
+    "client_terminal": false,
+    "extended_budget_client_terminal": true,
+    "extended_budget_decisions_used": 17,
+    "explanation": "The fixed kind/node/item ordering first completed n2's non-causal Ready advance and, after the first n3 acknowledgement cycle, selected an old MsgVote/MsgVoteResp chain. Those five decisions displaced the second n3 replication cycle beyond the original 11-decision budget."
+  },
+  "target_closure": {
+    "selector": "etcdraft-intervention-derived-alternate-quorum-closure-v2",
+    "participants_derived_from_intervention": {
+      "leader": "n1",
+      "dropped_follower": "n2",
+      "alternate_follower": "n3"
+    },
+    "decision_budget": 12,
+    "decisions_after_drop": 12,
+    "decisions_inclusive_invoke_to_return": 18,
+    "stop_reason": "client-terminal",
+    "ambiguous_frontiers": 0,
+    "choices": [
+      {"decision": 34, "kind": "deliver-message", "message_type": "MsgApp", "source": "n1", "target": "n3"},
+      {"decision": 35, "kind": "complete-effect", "owner": "n3", "effect_kind": "raft-ready-persist"},
+      {"decision": 36, "kind": "complete-effect", "owner": "n3", "effect_kind": "raft-ready-advance"},
+      {"decision": 37, "kind": "deliver-message", "message_type": "MsgAppResp", "source": "n3", "target": "n1"},
+      {"decision": 38, "kind": "complete-effect", "owner": "n1", "effect_kind": "raft-ready-persist"},
+      {"decision": 39, "kind": "complete-effect", "owner": "n1", "effect_kind": "raft-ready-advance"},
+      {"decision": 40, "kind": "deliver-message", "message_type": "MsgApp", "source": "n1", "target": "n3"},
+      {"decision": 41, "kind": "complete-effect", "owner": "n3", "effect_kind": "raft-ready-persist"},
+      {"decision": 42, "kind": "complete-effect", "owner": "n3", "effect_kind": "raft-ready-advance"},
+      {"decision": 43, "kind": "deliver-message", "message_type": "MsgAppResp", "source": "n3", "target": "n1"},
+      {"decision": 44, "kind": "complete-effect", "owner": "n1", "effect_kind": "raft-ready-persist"},
+      {"decision": 45, "kind": "complete-effect", "owner": "n1", "effect_kind": "raft-ready-advance"}
+    ]
+  },
+  "qualification": {
+    "risk_status": "reached",
+    "satisfied_milestones": [
+      "workload-invoked-at-coordinator",
+      "append-response-dropped-while-replication-inflight",
+      "alternate-quorum-decision-advanced"
+    ],
+    "bundle_schema": "consensus-atlas/execution-bundle/v2",
+    "method_spec_digest": null,
+    "fresh_replay_stable": true,
+    "oracle_checked": [
+      "trace-integrity",
+      "agreement",
+      "etcdraft-client-application-binding",
+      "etcdraft-log-progress"
+    ],
+    "oracle_violations": 0
+  },
+  "claim_boundary": "This public scripted calibration proves deterministic closure of one correctly intervened etcd/raft causal path. It does not show an implementation defect, Agent superiority, or a protocol-independent closure policy."
+}

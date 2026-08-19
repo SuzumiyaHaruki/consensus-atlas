@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,11 +56,13 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	}
 	transport := composition.Client.freeze()
 	if composition.Target.ID != "etcdraft-v2" ||
+		composition.Target.ClosureFactory == nil ||
 		composition.MethodSpec.Validate() != nil ||
 		composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
 		composition.MethodSpec.InvestigationEpisodes != 1 ||
 		composition.MethodSpec.Transport.Model != openRouterFixtureModel ||
 		composition.MethodSpec.SemanticInputSchema != etcdraftSemanticInputSchema ||
+		composition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModeTargetLocal ||
 		composition.MethodSpec.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
 		composition.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
 		composition.MethodSpec.EpisodeLimits.MaxRiskCalls != composition.Budget.MaxRiskCalls ||
@@ -73,6 +76,33 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		transport.Model != openRouterFixtureModel || transport.Thinking != "low" ||
 		transport.MaxOutputTokens != 32000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {
 		t.Fatalf("etcd/raft registry composition drifted: %#v err=%v", composition, err)
+	}
+	publicOptions := controlExperimentOptions{
+		Target: "etcdraft-v2", InvestigationEpisodes: 1,
+		SemanticInput: "../../plans/agent/etcdraft-agentic-calibration-v1.json",
+		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
+		ClosureMode: controlexperiment.AgenticClosureModePublicFixed,
+	}
+	publicComposition, err := prepareAgenticEpisodeComposition(ctx, publicOptions)
+	if err != nil || publicComposition.Target.ClosureFactory != nil ||
+		publicComposition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModePublicFixed ||
+		publicComposition.MethodSpec.Digest == composition.MethodSpec.Digest {
+		t.Fatalf("public-fixed arm was not mechanically bound: %#v/%v",
+			publicComposition.MethodSpec, err)
+	}
+	tamperedClosure := composition
+	tamperedClosure.Target.ClosureFactory = nil
+	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
+		Directory:    filepath.Join(t.TempDir(), "closure-mode-mismatch"),
+		AgentKeyFile: "fixture-key.txt",
+		ReadKey:      func(string) (string, error) { return "fixture-key", nil },
+		Recovery:     etcdraftAgenticEpisodeRecoveryBinding(),
+		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
+			return tamperedClosure, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
+		t.Fatalf("composition accepted MethodSpec/factory mismatch: %v", err)
 	}
 	mismatchOptions := controlExperimentOptions{
 		Target: "etcdraft-v2", InvestigationEpisodes: 1,

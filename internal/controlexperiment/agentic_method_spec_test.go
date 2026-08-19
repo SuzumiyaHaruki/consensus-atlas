@@ -1,6 +1,10 @@
 package controlexperiment
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+)
 
 func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	episode := AgenticLogicalBudget{
@@ -31,6 +35,7 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		SemanticInputSchema:      "etcdraft-agentic-input-v1",
 		SemanticInputDigest:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		ScenarioSemanticExposure: ScenarioSemanticExposureFull,
+		ClosureMode:              AgenticClosureModeTargetLocal,
 		SourceExposure: AgenticSourceExposureSpec{
 			Mode:              AgenticSourceExposureDossierV2,
 			ReferencePrefixes: []string{"upstream", "repo"},
@@ -44,8 +49,28 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		InvestigationEpisodes: 3, EpisodeBudget: episode, InvestigationBudget: total,
 	})
 	if err != nil || spec.Validate() != nil || spec.Digest == "" ||
-		spec.SourceExposure.ReferencePrefixes[0] != "repo" {
+		spec.SourceExposure.ReferencePrefixes[0] != "repo" ||
+		spec.ImplementationID != AgenticMethodImplementationID {
 		t.Fatalf("Agentic MethodSpec invalid: %#v/%v", spec, err)
+	}
+	legacy := spec
+	legacy.ImplementationID = agenticMethodLegacyImplementationID
+	legacy.ClosureMode = ""
+	legacy.Digest = ""
+	legacyDigest, err := control.CanonicalDigest(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Digest = legacyDigest
+	if legacy.Validate() != nil || legacy.Digest == spec.Digest {
+		t.Fatalf("legacy MethodSpec lost read-only validation: %#v", legacy)
+	}
+	publicInput := spec
+	publicInput.ClosureMode = AgenticClosureModePublicFixed
+	publicInput.Digest = ""
+	public, err := NewAgenticMethodSpec(publicInput)
+	if err != nil || public.Validate() != nil || public.Digest == spec.Digest {
+		t.Fatalf("closure mode did not acquire distinct method identity: %#v/%v", public, err)
 	}
 	structuredInput := spec
 	structuredInput.CapabilityFeedbackMode = AgenticCapabilityFeedbackStructuredGaps

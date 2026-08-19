@@ -47,6 +47,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.StringVar(&options.CampaignDirectory, "campaign-dir", "", "Campaign directory")
 	flags.BoolVar(&options.CampaignResume, "campaign-resume", false, "resume an exact Campaign")
 	flags.IntVar(&options.InvestigationEpisodes, "investigation-episodes", options.InvestigationEpisodes, "Agentic Investigation episode limit")
+	flags.StringVar(&options.ClosureMode, "closure-mode", "", "Agent progress mode: public-fixed or target-local (default: Target composition)")
 	flags.StringVar(&options.CapabilityFeedbackMode, "capability-feedback", options.CapabilityFeedbackMode, "Agent capability feedback: reason-codes or structured-gaps")
 	flags.StringVar(&options.CapabilityFeedbackProbe, "capability-feedback-probe", "", "optional public mechanical capability-probe JSON")
 	flags.StringVar(&options.Strategy, "strategy", options.Strategy, "qualified or explicit opt-in Agent strategy")

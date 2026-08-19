@@ -307,7 +307,8 @@ qualified primary work 和 replay work；decisions/primary work 任一超过 for
 正式 Agentic 路径只接受 V3 Bundle；summary 必须声明主路径和每个 branch evidence，而且
 Plan/Risk ID、Trace digest、work 与 `MethodSpecDigest` 都要与文件和 formal contract 交叉一致。
 因此未声明分支和其他方法生成的 Bundle 不能借 Agentic Episode 目录获得 finding credit。
-活动 CLI 根据真实 transport/model、prompt 版本、semantic input、源码暴露、Episode 数和预算派生
+活动 CLI 根据真实 transport/model、prompt 版本、semantic input、源码暴露、Episode 数、预算和
+Target composition 实际启用的 `public-fixed|target-local` closure mode 派生
 typed `AgenticMethodSpec`；调用者提供的 digest 只能作为预期值。多 Episode formal trial 必须包含连续
 `episode-0001..N` 并聚合每轮成本；单 Episode 入口只兼容明确声明一轮的方法。搜索中的
 child verification 是 fresh replay，和最终 Bundle replay 一起受 Replay 预算约束。

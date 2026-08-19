@@ -51,12 +51,14 @@ func buildAgenticMethodSpec(
 		return controlexperiment.AgenticMethodSpec{}, err
 	}
 	scenarioTransport := scenarioClient.freeze()
+	closureMode := agenticClosureModeForTarget(target)
 	spec, err := controlexperiment.NewAgenticMethodSpec(controlexperiment.AgenticMethodSpec{
 		TargetID: target.ID, Transport: client.freeze(), ScenarioTransport: &scenarioTransport,
 		RiskPromptVersion: riskAgentPromptVersion, ScenarioPromptVersion: scenarioAgentPromptVersion,
 		SemanticInputSchema:      semanticInputSchema,
 		SemanticInputDigest:      controlexperiment.AgentInvocationDigest(semanticBytes),
 		ScenarioSemanticExposure: semanticExposure, SourceExposure: source,
+		ClosureMode: closureMode,
 		CapabilityFeedbackMode: controlexperiment.AgenticCapabilityFeedbackMode(
 			normalizedCapabilityFeedbackMode(options.CapabilityFeedbackMode),
 		),
@@ -78,6 +80,15 @@ func buildAgenticMethodSpec(
 		return controlexperiment.AgenticMethodSpec{}, errors.New("AGENTIC_METHOD_SPEC_EXPECTED_DIGEST_MISMATCH")
 	}
 	return spec, nil
+}
+
+func agenticClosureModeForTarget(
+	target agenticEpisodeTarget,
+) controlexperiment.AgenticClosureMode {
+	if target.ClosureFactory != nil {
+		return controlexperiment.AgenticClosureModeTargetLocal
+	}
+	return controlexperiment.AgenticClosureModePublicFixed
 }
 
 func normalizedCapabilityFeedbackMode(value string) string {

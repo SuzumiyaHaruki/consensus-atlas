@@ -31,4 +31,5 @@
 
 ## 结论边界
 
-这次实验已经提供了“leaf 消息语义降低目标选择歧义”的真实模型证据，而且结果在 OmniPaxos 之外的 etcd-raft 上复现。它尚未证明 leaf 视图可以让 Agent 完成整个假设，也没有发现协议实现本身的问题。下一步应先改善首次正确干预后的执行引导与自然推进预算，而不是继续增加公共 Action。
+这次实验已经提供了“leaf 消息语义降低目标选择歧义”的真实模型证据，而且结果在 OmniPaxos 之外的 etcd-raft 上复现。它尚未证明 leaf 视图可以让 Agent 完成整个假设，也没有发现协议实现本身的问题。其正确 Drop 后的确定性闭合已经由后续
+[M4l4 脚本实验](../etcdraft-alternate-quorum-closure-m4l4-script-v1/README.md)完成。

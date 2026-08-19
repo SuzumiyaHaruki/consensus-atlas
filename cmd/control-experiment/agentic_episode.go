@@ -91,11 +91,11 @@ type agenticEpisodeMetrics struct {
 }
 
 type agenticEpisodeWork struct {
-	Model                     controlexperiment.ModelWork        `json:"model"`
-	ScenarioFrontier          controlexperiment.PhaseWork        `json:"scenario_frontier"`
+	Model                     controlexperiment.ModelWork             `json:"model"`
+	ScenarioFrontier          controlexperiment.PhaseWork             `json:"scenario_frontier"`
 	ScenarioSearch            controlexperiment.ScenarioExecutionWork `json:"scenario_search"`
-	QualifiedExecution        controlexperiment.WorkLedger       `json:"qualified_execution"`
-	BranchQualifiedExecutions []agenticBranchExecutionWork       `json:"branch_qualified_executions,omitempty"`
+	QualifiedExecution        controlexperiment.WorkLedger            `json:"qualified_execution"`
+	BranchQualifiedExecutions []agenticBranchExecutionWork            `json:"branch_qualified_executions,omitempty"`
 }
 
 type agenticBranchExecutionWork struct {
@@ -157,6 +157,7 @@ type agenticEpisodeTarget struct {
 	Surface              controlexperiment.AgentTargetSurface
 	ObservationProjector agenticEpisodeObservationProjector
 	OracleRegistry       targetoracles.Registry
+	ClosureFactory       controlexperiment.ScenarioClosureFactory
 	ScenarioInputs       func(
 		controlexperiment.ScenarioRiskHypothesis,
 		controlexperiment.SemanticPrefixProjector,
@@ -279,9 +280,10 @@ func runAgenticEpisode(
 		coreInputs.AcceptedHypothesis == nil ||
 		!reflect.DeepEqual(*coreInputs.AcceptedHypothesis, scenarioRisk.AcceptedHypothesis) ||
 		!reflect.DeepEqual(coreInputs.RiskSpec, scenarioRisk.Spec) || coreInputs.RiskProjector == nil ||
-		coreInputs.RiskProjector.ID() != projector.ID() {
+		coreInputs.RiskProjector.ID() != projector.ID() || coreInputs.ClosureFactory != nil {
 		return result, errors.New("AGENTIC_EPISODE_TARGET_SCENARIO_INVALID")
 	}
+	coreInputs.ClosureFactory = target.ClosureFactory
 	coreInputs.TargetSurface = &target.Surface
 	rootID := target.ID + "-agentic-" + risk.Accepted.Candidate.ID
 	coreInputs.RootID = rootID

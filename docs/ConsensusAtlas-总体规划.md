@@ -171,6 +171,21 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 ### S2：Agent 能力释放（当前）
 
+- 已用 target-local closure selector 闭合 Agent 已正确选择的协议因果路径，并将
+  可选 factory 接入 Scenario Agent 的 `after_milestone` 与计划结束推进；公共
+  Runtime 只提供 enabled frontier、执行、Trace 和 fresh Replay，不解释闭合语义；
+  closure selector 只能选择 Effect/Deliver/Temporal，歧义或无可选动作必须返回
+  正常反馈，不能在闭合阶段继续制造新的故障干预；公共层必须保留不可变权威
+  frontier，且预算最后一个 Action 产生的 terminal/Risk 结果必须在预算判定前采集；
+- factory 只在可信 Trace 已记录真实干预后激活；未配置 factory 的 Target 行为不变，
+  已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
+- 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
+  无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
+- closure 接入属于方法实现变化，当前 MethodSpec implementation identity 为
+  `m4l5-closure-v1`；旧身份只用于读取历史工件，不能恢复为当前运行；
+- 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
+  factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
+  composition 与字段不一致时拒绝运行，两个 arm 使用不同 digest；
 - 扩大但仍声明式的只读源码查询；
 - 利用真实 ProgressDelta 做多轮 revise；
 - 让 Risk Agent 根据执行 capability gap 切换假设；
@@ -178,7 +193,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 ### S3：效果实验
 
-- 先做短公开 capability pilot；
+- 先做三节点 etcd 短公开 capability pilot，只改变 MethodSpec 已绑定的
+  `closure_mode`；Risk spec、leaf semantic view、模型/prompt/seed、预算、Replay 与
+  Oracle 必须相同，否则不能解释为 closure 的配对效果；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。

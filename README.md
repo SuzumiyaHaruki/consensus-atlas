@@ -150,6 +150,10 @@ Agent 只能读取 Dossier 已声明的精确 reference；本地路径不会进�
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
 公开反馈校准可指定 `-capability-feedback-probe`；探针只由真实 TargetSurface 预检，不执行 Action，并进入
 MethodSpec。
+短 closure capability pilot 可显式使用 `-closure-mode public-fixed` 或
+`-closure-mode target-local`。该值不是自由标签：CLI 先改变实际 Target composition，
+再从 factory 是否存在机械派生到 MethodSpec；没有专属 factory 的 Target 会拒绝
+`target-local`。
 
 ## 验证与研究边界
 

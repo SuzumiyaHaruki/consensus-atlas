@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：S1 精确收尾完成，准备进入 Agent 效果实验
+阶段：M4l6 closure-mode 配对 capability pilot 准备
 
 ## 一句话状态
 
@@ -24,6 +24,50 @@ etcd/raft 与 OmniPaxos 两个真实 Target 已走通该链路。M4l2/M4l3 说�
 Target-local 消息 leaf type 可以在不扩展公共 ActionKind 的情况下减少
 Scenario Agent 的消息选择歧义；这是表达与选择能力的校准证据，不是协议
 finding，也不是多 Agent 优于 baseline 的证据。
+
+M4l4 进一步用零模型调用的脚本证明了一条完整垂直路径：在丢弃
+`MsgAppResp n2→n1` 后，etcd Target-local closure selector 只沿 n3 备用复制链
+和必要 Ready effect 前进，12 个 decision 后提交并应用同一 RequestID；最终
+alternate-quorum Risk reached，fresh Replay 稳定，四个 Oracle monitor 无 violation。
+闭合器只能从当前 frontier 选择 Effect/Deliver/Temporal；歧义会以正常停止和原
+frontier 返回，不能继续制造 Drop、Crash 等干预。权威 frontier 与 selector 副本
+已经隔离，且请求恰好在第 12 个闭合 decision 完成时仍报告 `client-terminal`。
+
+M4l5 已将同一 closure 作为可选 Target composition 接入真实 Scenario Agent
+执行路径。公共层只在计划已经执行 Drop/Duplicate/Crash/Partition 干预后调用
+Target factory；factory 不识别当前 Risk/干预时仍使用原公共顺序，一旦激活则
+`underdetermined`、`no-eligible` 和预算停止直接进入结构化 Agent feedback，不会
+静默回退。`after_milestone` 与计划结束后的自然推进共用这一逻辑，fresh Replay
+仍只执行已记录的精确 Trace，不重新调用 selector。
+
+零模型 Agent Episode 回归已复现 M4l4：5 个 Agent 计划 decision 后，由 etcd
+闭合器执行 12 个 decision，最终同一 RequestID committed、Risk reached、fresh
+Replay 稳定，四个 Oracle monitor 无 violation。没有 ClosureFactory 的 Target
+继续走原 `ExploreScenarioWithPlanner`/公共自然推进路径。
+
+跨调用闭环也已收口：Scenario Agent 从已晋升的可信 `ScenarioExecution` 恢复最近
+一次真实干预。零模型两轮回归先得到 `closure-underdetermined`，再以 `revise`
+执行一个非干预 Action；第二轮仍使用原干预的 Target closure，并以三个专属闭合
+Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共固定顺序。
+已经满足的 `after_milestone` 不再提前构造 factory。etcd 多候选 alternate 推导也
+转换为 `closure-underdetermined`，不再作为执行错误。
+
+当前新运行的 MethodSpec implementation identity 已更新为
+`consensus-atlas/agentic-method/m4l5-closure-v1`，因此接入 closure 前后的方法 digest
+不同。旧 `m4d-v1` 仅保留只读工件验证；新建和恢复运行仍必须与当前完整 MethodSpec
+严格一致，不能把旧 Investigation 混入新实现。
+
+M4l6 已在同一个活动 CLI 中加入两个窄实验臂：`public-fixed` 与
+`target-local`。它们不是调用方自报标签：`public-fixed` 会从实际 Target
+composition 移除 closure factory；`target-local` 只有在 Target 已提供 factory 时
+才可选择；随后 `AgenticMethodSpec.closure_mode` 从 composition 的实际 factory
+机械派生。composition、MethodSpec 与 factory 不一致时普通输入校验直接拒绝，两个
+arm 的 MethodSpec digest 必然不同。OmniPaxos 当前没有 closure factory，因此不能
+被标成 `target-local`。旧 `m4d-v1` 工件没有该字段并继续按原 digest 只读验证。
+
+`after_milestone` 在专属闭合恰好耗尽预算时，步骤和 Agent 顶层反馈现在都保留
+`closure-budget-exhausted`，不再被通用 `budget-exhausted` 覆盖。零模型回归已覆盖
+模式身份、factory/MethodSpec 失配拒绝和该预算边界。本轮没有调用外部模型。
 
 ## 当前输入
 
@@ -96,8 +140,11 @@ finding，也不是多 Agent 优于 baseline 的证据。
 
 ## 下一步
 
-1. 停止以代码行数为目标的大范围删除；
-2. 补一个不依赖历史工件的 formal evaluator candidate/control 纯内存行为测试；
+1. 在显式授权后运行短公开配对 capability pilot：固定三节点 etcd root、Risk、
+   leaf semantic view、模型/prompt/seed 和全部预算，只改变 `-closure-mode`；如果
+   两臂没有得到同一 Risk spec，则本次结果只作为可运行性样本，不进入配对结论；
+2. 比较正确 `MsgAppResp` 干预、有效 `revise`、Risk/RequestID/Replay/Oracle、
+   decisions/calls/tokens 以及三类停止原因；
 3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
 4. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
 5. 只有效果证据成立后才进入 private holdout 和第三协议接入。

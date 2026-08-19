@@ -157,6 +157,7 @@ func newEtcdraftAgenticEpisodeTarget(
 		ID: "etcdraft-v2", Knowledge: inputs.knowledge, Surface: surface,
 		OracleRegistry:       oracleRegistry,
 		ObservationProjector: observationProjector,
+		ClosureFactory:       newEtcdraftScenarioClosureFactory(),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,

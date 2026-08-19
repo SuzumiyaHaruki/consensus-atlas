@@ -156,6 +156,71 @@ func ExploreScenarioWithPlanner(
 	planner ScenarioPlanner,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioAgentResult, error) {
+	return exploreScenarioWithPlanner(
+		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
+		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
+		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
+		nil, planner, preparers...,
+	)
+}
+
+// ExploreScenarioWithPlannerAndClosure is the Target-composed Agent path.
+// The factory is consulted only after a strategic plan has executed a real
+// intervention; nil retains the exact behavior of ExploreScenarioWithPlanner.
+func ExploreScenarioWithPlannerAndClosure(
+	ctx context.Context,
+	maxCalls int,
+	maxPlanSteps int,
+	maxDecisions int,
+	knowledge ProtocolKnowledgePack,
+	hypothesis TestHypothesis,
+	spec semantic.RiskWitnessSpec,
+	rootFrontier RiskFrontierView,
+	rootSemantics ScenarioSemanticExposure,
+	rootRisk semantic.RiskWitnessResult,
+	root controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	targetSurface *AgentTargetSurface,
+	acceptedHypothesis *AcceptedHypothesisContext,
+	newAdapter AdapterFactory,
+	projector SemanticPrefixProjector,
+	semanticProjector ScenarioSemanticProjector,
+	closureFactory ScenarioClosureFactory,
+	planner ScenarioPlanner,
+	preparers ...ScenarioActionPreparer,
+) (ScenarioAgentResult, error) {
+	return exploreScenarioWithPlanner(
+		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
+		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
+		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
+		closureFactory, planner, preparers...,
+	)
+}
+
+func exploreScenarioWithPlanner(
+	ctx context.Context,
+	maxCalls int,
+	maxPlanSteps int,
+	maxDecisions int,
+	knowledge ProtocolKnowledgePack,
+	hypothesis TestHypothesis,
+	spec semantic.RiskWitnessSpec,
+	rootFrontier RiskFrontierView,
+	rootSemantics ScenarioSemanticExposure,
+	rootRisk semantic.RiskWitnessResult,
+	root controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	targetSurface *AgentTargetSurface,
+	acceptedHypothesis *AcceptedHypothesisContext,
+	newAdapter AdapterFactory,
+	projector SemanticPrefixProjector,
+	semanticProjector ScenarioSemanticProjector,
+	closureFactory ScenarioClosureFactory,
+	planner ScenarioPlanner,
+	preparers ...ScenarioActionPreparer,
+) (ScenarioAgentResult, error) {
 	if maxCalls <= 0 || maxCalls > ScenarioAgentMaxCalls || maxPlanSteps <= 0 ||
 		maxPlanSteps > ScenarioPlanMaxSteps || maxDecisions <= 0 ||
 		maxDecisions > ScenarioAgentMaxDecisions || planner == nil || semanticProjector == nil ||
@@ -335,10 +400,11 @@ func ExploreScenarioWithPlanner(
 		if attemptAllowance < naturalProgressAllowance {
 			naturalProgressAllowance = attemptAllowance
 		}
-		execution, err := ExecuteSemanticBoundedScenarioPlan(
+		inheritedIntervention := latestScenarioExecutionClosureIntervention(selected.execution)
+		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
 			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, spec, selected.risk, selected.trace,
 			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
-			naturalProgressAllowance, preparer...,
+			closureFactory, inheritedIntervention, naturalProgressAllowance, preparer...,
 		)
 		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		if err != nil {
@@ -360,6 +426,12 @@ func ExploreScenarioWithPlanner(
 			Steps:               cloneScenarioStepFeedback(execution.Steps),
 			NaturalProgress:     cloneScenarioStepFeedback(execution.AutomaticProgress),
 			NaturalProgressStop: execution.NaturalProgressStop,
+		}
+		if execution.NaturalProgressStop == ScenarioProgressClosureUnderdetermined ||
+			execution.NaturalProgressStop == ScenarioProgressClosureQuiescent ||
+			execution.NaturalProgressStop == ScenarioProgressClosureBudget {
+			attempt.Feedback.Outcome = ScenarioAgentStopped
+			attempt.Feedback.ReasonCode = execution.NaturalProgressStop
 		}
 		if execution.Status == ScenarioStatusStopped && len(execution.Steps) > 0 {
 			failed := execution.Steps[len(execution.Steps)-1]

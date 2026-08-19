@@ -359,6 +359,7 @@ func agenticHoldoutCLIMethodSpec(
 		SemanticInputSchema:      "etcdraft-agentic-input-v1",
 		SemanticInputDigest:      digestBytes([]byte("agentic-cli-semantic-input")),
 		ScenarioSemanticExposure: controlexperiment.ScenarioSemanticExposureFull,
+		ClosureMode:              controlexperiment.AgenticClosureModePublicFixed,
 		SourceExposure:           controlexperiment.AgenticSourceExposureSpec{Mode: controlexperiment.AgenticSourceExposureNone},
 		EpisodeLimits: controlexperiment.AgenticEpisodeLimits{
 			MaxRiskCalls: 3, MaxScenarioCalls: 3, MaxTotalCalls: episodeBudget.MaxModelCalls,

@@ -284,6 +284,7 @@ func runAgenticEpisodeDirectory(
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 		methodBound && (composition.MethodSpec.Validate() != nil ||
 			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
+			composition.MethodSpec.ClosureMode != agenticClosureModeForTarget(composition.Target) ||
 			composition.MethodSpec.CapabilityFeedbackMode != composition.CapabilityFeedbackMode ||
 			!reflect.DeepEqual(composition.MethodSpec.CapabilityFeedbackProbe, composition.CapabilityFeedbackProbe)) ||
 		!methodBound && composition.Target.MethodSpecDigest != "" ||

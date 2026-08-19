@@ -21,6 +21,7 @@ func runAgenticEpisodeCLI(
 	withoutTarget.MethodSpecDigest = ""
 	withoutTarget.InvestigationEpisodes = 1
 	withoutTarget.KnowledgeSourceMounts = nil
+	withoutTarget.ClosureMode = ""
 	if options.CampaignDirectory == "" || options.Target == "" ||
 		options.InvestigationEpisodes <= 0 || withoutTarget.hasNonSessionFlags() {
 		return errors.New("Agentic Episode requires -campaign-dir, -target, target inputs, Agent inputs, optional -investigation-episodes, and optional -campaign-resume")
@@ -171,6 +172,10 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
+		target, err = bindRequestedClosureMode(target, options.ClosureMode)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.experiment.ScenarioMaxCalls, inputs.experiment.ScenarioMaxSteps,
 			inputs.experiment.ScenarioMaxDecisions, inputs.experiment.SessionBudget,
@@ -217,6 +222,10 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
+		target, err = bindRequestedClosureMode(target, options.ClosureMode)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
 			inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,
@@ -252,5 +261,28 @@ func prepareAgenticEpisodeComposition(
 		}, nil
 	default:
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")
+	}
+}
+
+// bindRequestedClosureMode resolves the experiment arm against the actual
+// Target composition. MethodSpec is derived from the resulting factory field,
+// so a caller cannot label a public-fixed execution as target-local.
+func bindRequestedClosureMode(
+	target agenticEpisodeTarget,
+	requested string,
+) (agenticEpisodeTarget, error) {
+	switch controlexperiment.AgenticClosureMode(requested) {
+	case "":
+		return target, nil
+	case controlexperiment.AgenticClosureModePublicFixed:
+		target.ClosureFactory = nil
+		return target, nil
+	case controlexperiment.AgenticClosureModeTargetLocal:
+		if target.ClosureFactory == nil {
+			return agenticEpisodeTarget{}, errors.New("AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_UNAVAILABLE")
+		}
+		return target, nil
+	default:
+		return agenticEpisodeTarget{}, errors.New("AGENTIC_EPISODE_CLOSURE_MODE_INVALID")
 	}
 }
