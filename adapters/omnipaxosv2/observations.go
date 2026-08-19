@@ -2,6 +2,7 @@ package omnipaxosv2
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -10,11 +11,12 @@ import (
 )
 
 const (
-	ObservationProjectionID                                  = "omnipaxos-v2/observations-v2"
-	ObservationPromiseRaised       semantic.ObservationKind  = "omnipaxos/promise-raised"
-	ObservationFieldBallotNode     semantic.ObservationField = "omnipaxos/ballot-node"
-	ObservationFieldBallotNumber   semantic.ObservationField = "omnipaxos/ballot-number"
-	ObservationFieldBallotPriority semantic.ObservationField = "omnipaxos/ballot-priority"
+	ObservationProjectionID                                              = "omnipaxos-v2/observations-v3"
+	ObservationPromiseRaised                   semantic.ObservationKind  = "omnipaxos/promise-raised"
+	ObservationFieldBallotNode                 semantic.ObservationField = "omnipaxos/ballot-node"
+	ObservationFieldBallotNumber               semantic.ObservationField = "omnipaxos/ballot-number"
+	ObservationFieldBallotPriority             semantic.ObservationField = "omnipaxos/ballot-priority"
+	ObservationMessageRoleOperationReplication                           = "operation-replication"
 )
 
 type ObservationProjector struct{}
@@ -35,7 +37,9 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 				semantic.ObservationFieldParticipantRole: {"coordinator"},
 			}},
 		{Kind: semantic.ObservationMessageDropped, Fields: append(append([]semantic.ObservationField{}, node...),
-			semantic.ObservationFieldOperationStage), Values: map[semantic.ObservationField][]string{
+			semantic.ObservationFieldMessageRole, semantic.ObservationFieldOperationStage,
+			semantic.ObservationFieldRequestID), Values: map[semantic.ObservationField][]string{
+			semantic.ObservationFieldMessageRole:    {ObservationMessageRoleOperationReplication},
 			semantic.ObservationFieldOperationStage: {"inflight"},
 		}},
 		{Kind: semantic.ObservationMessageDelivered, Fields: append([]semantic.ObservationField{}, node...)},
@@ -45,7 +49,8 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 			semantic.ObservationFieldRelatedParticipant, semantic.ObservationFieldRelatedNode,
 		}},
 		{Kind: semantic.ObservationEpochAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
-		{Kind: semantic.ObservationDecisionAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
+		{Kind: semantic.ObservationDecisionAdvanced, Fields: append(append([]semantic.ObservationField{}, node...),
+			semantic.ObservationFieldRequestID)},
 		{Kind: ObservationPromiseRaised, Fields: []semantic.ObservationField{
 			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
 			ObservationFieldBallotNode, ObservationFieldBallotNumber, ObservationFieldBallotPriority,
@@ -73,6 +78,7 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 	previousDecision := omnipaxosMaxDecision(previous)
 	activeBaseline := uint64(0)
 	activeWorkload := false
+	messages := make(map[control.ItemID]omnipaxosObservedMessage)
 
 	for _, record := range trace.Records {
 		digest, err := control.CanonicalDigest(record)
@@ -93,10 +99,21 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 			activeBaseline = previousDecision
 			activeWorkload = true
 		}
+		message, hasMessage, err := omnipaxosObservedMessageFromRecord(record)
+		if err != nil {
+			return semantic.ObservationHistory{}, err
+		}
+		if hasMessage {
+			messages[record.Action.Item] = message
+		}
 		if record.Action.Kind == control.ActionDropMessage && activeWorkload {
 			for index := range events {
 				if events[index].Step == record.Step && events[index].Kind == semantic.ObservationMessageDropped {
 					events[index].OperationStage = "inflight"
+					if message.OperationRequestID != "" {
+						events[index].MessageRole = ObservationMessageRoleOperationReplication
+						events[index].RequestID = message.OperationRequestID
+					}
 					break
 				}
 			}
@@ -160,9 +177,11 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 		}
 		if currentDecision > previousDecision {
 			participant, participantOK := omnipaxosDecisionParticipant(current, previousDecision)
+			requestID, _ := omnipaxosObservedRequest(record.Action.Item, messages)
 			events = append(events, semantic.Observation{
 				Kind: semantic.ObservationDecisionAdvanced, Step: record.Step, SourceDigest: digest,
 				Participant: omnipaxosOptionalNode(participant, participantOK),
+				RequestID:   requestID,
 			})
 			previousDecision = currentDecision
 		}
@@ -173,6 +192,78 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 	return semantic.NewObservationHistoryWithCapabilities(
 		ObservationProjectionID, trace, events, (ObservationProjector{}).Capabilities(),
 	)
+}
+
+type omnipaxosObservedMessage struct {
+	Dependencies       []control.ItemID
+	OperationRequestID string
+}
+
+func omnipaxosObservedMessageFromRecord(
+	record controlruntime.ActionRecord,
+) (omnipaxosObservedMessage, bool, error) {
+	if record.Action.Kind != control.ActionDropMessage && record.Action.Kind != control.ActionDeliverMessage {
+		return omnipaxosObservedMessage{}, false, nil
+	}
+	if record.Command == nil {
+		return omnipaxosObservedMessage{}, false, errors.New("OMNIPAXOS_OBSERVATION_MESSAGE_COMMAND_REQUIRED")
+	}
+	envelope, err := control.DecodeAdapterCommand(*record.Command)
+	if err != nil {
+		return omnipaxosObservedMessage{}, false, err
+	}
+	if !validMessageItem(*record.Command, envelope.Item) || envelope.Item.Message.Payload.SchemaVersion != messageSchema ||
+		envelope.Item.Message.Payload.Encoding != "json" {
+		return omnipaxosObservedMessage{}, false, errors.New("OMNIPAXOS_OBSERVATION_MESSAGE_INVALID")
+	}
+	result := omnipaxosObservedMessage{
+		Dependencies: append([]control.ItemID(nil), envelope.Item.Dependencies...),
+	}
+	if omnipaxosOperationReplication(envelope.Item.Message) {
+		result.OperationRequestID = envelope.Item.Message.Metadata["request_id"]
+	}
+	return result, true, nil
+}
+
+func omnipaxosOperationReplication(message *control.MessageEnvelope) bool {
+	if message == nil || (message.TypeHint != "sequence-paxos/accept-sync" &&
+		message.TypeHint != "sequence-paxos/accept-decide") || message.Metadata["request_id"] == "" {
+		return false
+	}
+	count, err := strconv.ParseUint(message.Metadata["entry_count"], 10, 64)
+	return err == nil && count > 0
+}
+
+func omnipaxosObservedRequest(
+	item control.ItemID,
+	messages map[control.ItemID]omnipaxosObservedMessage,
+) (string, bool) {
+	if item == "" {
+		return "", false
+	}
+	pending := []control.ItemID{item}
+	seen := make(map[control.ItemID]bool, len(messages))
+	requestID := ""
+	for len(pending) > 0 {
+		current := pending[0]
+		pending = pending[1:]
+		if current == "" || seen[current] {
+			continue
+		}
+		seen[current] = true
+		message, ok := messages[current]
+		if !ok {
+			continue
+		}
+		if message.OperationRequestID != "" {
+			if requestID != "" && requestID != message.OperationRequestID {
+				return "", false
+			}
+			requestID = message.OperationRequestID
+		}
+		pending = append(pending, message.Dependencies...)
+	}
+	return requestID, requestID != ""
 }
 
 func omnipaxosObservationInput(parameters json.RawMessage) (Input, error) {

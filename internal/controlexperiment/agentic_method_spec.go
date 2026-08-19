@@ -12,7 +12,8 @@ const (
 	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                                                = "agentic-episode-v1"
-	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4m1-closure-ownership-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4m4-risk-fidelity-v1"
+	agenticMethodM4m1LegacyID                                              = "consensus-atlas/agentic-method/m4m1-closure-ownership-v1"
 	agenticMethodClosureHandoffLegacyImplementationID                      = "consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1"
 	agenticMethodClosureLegacyImplementationID                             = "consensus-atlas/agentic-method/m4l5-closure-v1"
 	agenticMethodLegacyImplementationID                                    = "consensus-atlas/agentic-method/m4d-v1"
@@ -207,6 +208,7 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodM4m1LegacyID ||
 		id == agenticMethodClosureHandoffLegacyImplementationID ||
 		id == agenticMethodClosureLegacyImplementationID ||
 		id == agenticMethodLegacyImplementationID

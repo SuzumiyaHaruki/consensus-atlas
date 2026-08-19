@@ -71,15 +71,19 @@ func TestNonLeaderOpaqueAppendDecisionResultAndFreshWorkerReplay(t *testing.T) {
 	}
 	observed := make(map[semantic.ObservationKind]int)
 	requestObserved := false
+	decisionRequestObserved := false
 	promiseObserved := false
 	for _, event := range history.Events {
 		observed[event.Kind]++
 		requestObserved = requestObserved || event.RequestID == "request-1"
+		decisionRequestObserved = decisionRequestObserved ||
+			event.Kind == semantic.ObservationDecisionAdvanced && event.RequestID == "request-1"
 		promiseObserved = promiseObserved || event.Kind == ObservationPromiseRaised &&
 			len(event.Attributes) >= 2
 	}
 	if observed[semantic.ObservationWorkloadInvoked] == 0 ||
-		observed[semantic.ObservationDecisionAdvanced] == 0 || !requestObserved || !promiseObserved {
+		observed[semantic.ObservationDecisionAdvanced] == 0 || !requestObserved ||
+		!decisionRequestObserved || !promiseObserved {
 		t.Fatalf("common observation projection incomplete: observed=%v request=%v", observed, requestObserved)
 	}
 	if err := adapter.Close(); err != nil {

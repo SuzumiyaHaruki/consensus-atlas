@@ -182,8 +182,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
 - closure handoff、正式 Risk 输入与 closure 全局预算所有权属于方法实现变化，当前
-  MethodSpec implementation identity 为 `m4m1-closure-ownership-v1`；旧
-  `m4l7-risk-input-closure-handoff-v1`/`m4l5-closure-v1`/`m4d-v1` 只用于读取
+  MethodSpec implementation identity 为 `m4m4-risk-fidelity-v1`；旧
+  `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
+  `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
 - 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
   factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
@@ -251,6 +252,12 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   fresh Replay 和三个 Oracle 均闭合；public-fixed 两轮机械 Risk 也 reached，但实际
   Drop 均为 `prepare`，不满足预注册干预口径。故当前证据是“跨协议真实模型 handoff
   2/2”，不是总体优越性；它还暴露出 Risk 可执行谓词弱于自然语言 summary 的明确缺口；
+- M4m4 以 Target-local Observation 修复该缺口，没有扩展公共 Action 或时序 DSL。
+  operation Drop 必须来自带 `entry_count > 0` 和 RequestID 的 `accept-sync|accept-decide`；
+  Decision RequestID 从实际消息 dependency 链唯一回溯；v2 Risk 用同一请求绑定 Invoke、
+  Drop 和 Decision。四个 M4m3 Bundle 离线重投影后，旧谓词 4/4 reached，严格谓词为
+  public 0/2、target-local 2/2。该结果只作事后 fidelity 诊断，不覆盖预注册结论；
+  implementation identity 同步更新为 `m4m4-risk-fidelity-v1`，旧 `m4m1` 只读有效；
 - 上述证据支持“Agent 选干预 + Target-local 闭合”的窄 capability 结论，但仍不是
   跨协议普适性、缺陷发现能力或总体方法优越性证据；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；

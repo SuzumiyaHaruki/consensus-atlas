@@ -54,6 +54,17 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		spec.ImplementationID != AgenticMethodImplementationID {
 		t.Fatalf("Agentic MethodSpec invalid: %#v/%v", spec, err)
 	}
+	closureOwnershipLegacy := spec
+	closureOwnershipLegacy.ImplementationID = agenticMethodM4m1LegacyID
+	closureOwnershipLegacy.Digest = ""
+	closureOwnershipLegacyDigest, err := control.CanonicalDigest(closureOwnershipLegacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closureOwnershipLegacy.Digest = closureOwnershipLegacyDigest
+	if closureOwnershipLegacy.Validate() != nil || closureOwnershipLegacy.Digest == spec.Digest {
+		t.Fatalf("closure ownership legacy MethodSpec lost read-only validation: %#v", closureOwnershipLegacy)
+	}
 	legacy := spec
 	legacy.ImplementationID = agenticMethodLegacyImplementationID
 	legacy.ClosureMode = ""

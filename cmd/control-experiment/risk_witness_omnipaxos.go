@@ -14,12 +14,12 @@ const (
 	omnipaxosMilestoneWorkloadInvoked   = "workload-invoked-at-coordinator"
 	omnipaxosMilestoneMessageDropped    = "consensus-message-dropped-while-inflight"
 	omnipaxosMilestoneDecisionAfterDrop = "workload-decided-after-drop"
-	omnipaxosScenarioProjectorID        = "omnipaxos-v2-message-loss-prefix-v2"
+	omnipaxosScenarioProjectorID        = "omnipaxos-v2-message-loss-prefix-v3"
 )
 
 func omnipaxosMessageLossWitness() (semantic.RiskWitnessSpec, error) {
 	return semantic.NewRiskWitnessSpec(
-		"omnipaxos-message-loss-before-decision-v1", "paxos", omnipaxosMessageLossRiskID,
+		"omnipaxos-message-loss-before-decision-v2", "paxos", omnipaxosMessageLossRiskID,
 		[]string{
 			omnipaxosMilestoneWorkloadInvoked,
 			omnipaxosMilestoneMessageDropped,
@@ -37,20 +37,26 @@ func omnipaxosMessageLossObservationPredicates() []semantic.ObservationPredicate
 		{
 			MilestoneID: omnipaxosMilestoneWorkloadInvoked,
 			Kind:        semantic.ObservationWorkloadInvoked,
-			Constraints: []semantic.ObservationConstraint{{
-				Field: semantic.ObservationFieldParticipantRole, Equals: "coordinator",
-			}},
+			Constraints: []semantic.ObservationConstraint{
+				{Field: semantic.ObservationFieldParticipantRole, Equals: "coordinator"},
+				{Field: semantic.ObservationFieldRequestID, BindAs: "request"},
+			},
 		},
 		{
 			MilestoneID: omnipaxosMilestoneMessageDropped,
 			Kind:        semantic.ObservationMessageDropped,
-			Constraints: []semantic.ObservationConstraint{{
-				Field: semantic.ObservationFieldOperationStage, Equals: "inflight",
-			}},
+			Constraints: []semantic.ObservationConstraint{
+				{Field: semantic.ObservationFieldMessageRole, Equals: omnipaxosv2.ObservationMessageRoleOperationReplication},
+				{Field: semantic.ObservationFieldOperationStage, Equals: "inflight"},
+				{Field: semantic.ObservationFieldRequestID, BindAs: "request"},
+			},
 		},
 		{
 			MilestoneID: omnipaxosMilestoneDecisionAfterDrop,
 			Kind:        semantic.ObservationDecisionAdvanced,
+			Constraints: []semantic.ObservationConstraint{{
+				Field: semantic.ObservationFieldRequestID, BindAs: "request",
+			}},
 		},
 	}
 }

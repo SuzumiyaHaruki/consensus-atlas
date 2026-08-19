@@ -118,5 +118,6 @@ target-local 的模型调用、tokens、Scenario decisions 和 qualified work �
 - target-local handoff 并直接闭合：2/2。
 
 该差异是后续 Risk 表达改进的具体输入，不能在本实验结束后追溯修改判定规则。
+事后严格重投影见相邻的 `omnipaxos-risk-fidelity-m4m4-v1/`，它不覆盖本目录的预注册结果。
 完整数字见 `final-summary.json`；四个确定性 gzip Bundle 与四个 Oracle audit 是最小
 可复核证据。没有保存或提交 provider journal，也不以 Agent 自报 verdict 产生 finding。

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：M4m3 OmniPaxos 真实模型配对完成
+阶段：M4m4 OmniPaxos Risk fidelity 修复完成
 
 ## 一句话状态
 
@@ -53,8 +53,9 @@ Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共�
 转换为 `closure-underdetermined`，不再作为执行错误。
 
 当前新运行的 MethodSpec implementation identity 已更新为
-`consensus-atlas/agentic-method/m4m1-closure-ownership-v1`。旧
-`m4l7-risk-input-closure-handoff-v1`、`m4l5-closure-v1` 与 `m4d-v1` 仅保留只读
+`consensus-atlas/agentic-method/m4m4-risk-fidelity-v1`。旧
+`m4m1-closure-ownership-v1`、`m4l7-risk-input-closure-handoff-v1`、
+`m4l5-closure-v1` 与 `m4d-v1` 仅保留只读
 工件验证；新建和恢复运行仍必须与当前完整
 MethodSpec 严格一致，不能把旧 Investigation 混入新实现。
 
@@ -197,6 +198,17 @@ Replay stable，三个 registry monitor 均为 0 violation。public-fixed 两轮
 四个 canonical Bundle、独立 Oracle audit 和完整结果见
 `benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/`。
 
+M4m4 已将上述差异闭合为可执行语义。OmniPaxos Drop Observation 只有在消息是
+`accept-sync|accept-decide`、`entry_count > 0` 且携带 RequestID 时，才声明
+`message-role=operation-replication` 并暴露该请求；Decision Observation 从实际消息
+item dependency 链回溯唯一 RequestID。v2 Risk 用同一 `bind_as=request` 连接 Invoke、
+operation Drop 和 Decision。四项普通回归覆盖 prepare、同请求、不同请求和 pending；
+对 M4m3 四个保存 Bundle 的离线重投影得到 public 0/2、target-local 2/2。旧 v1 输入和
+M4m3 预注册结果保持不变，严格输入新增为
+`plans/agent/omnipaxos-message-loss-risk-v2.json`。新 implementation identity 防止旧
+`m4m1` Investigation 在相同运行参数下被当前语义恢复。本阶段没有调用模型，也没有运行真实
+问题版本；结果见 `benchmarks/experiments/omnipaxos-risk-fidelity-m4m4-v1/`。
+
 saved Bundle Oracle audit 保持 v1 工件兼容：Go 字段仍名为
 `RecordedReplayStable`，JSON 继续使用 `replay_stable`。该字段只表示 Bundle 已封存的
 fresh Replay 结果；evaluator audit 不重新启动 Runtime。
@@ -274,9 +286,8 @@ M4l7--M4m2 的 canonical Bundle、audit 与精简报告。
 
 ## 下一步
 
-1. 按预注册镜像顺序运行两组、四个 OmniPaxos Scenario-only Episode，只改变
-   `closure_mode=public-fixed|target-local`；
-2. 选择一个历史问题版本或受控差异版本，先以零模型 Trace 得到首个非零 Oracle 结果；
+1. 选择一个历史问题版本或受控差异版本，但在单独确认范围后才开始真实验证；
+2. 先以零模型 Trace 确认现有 Action/evidence/Oracle 能得到首个非零结果；
 3. 再让 Scenario Agent 从已知 Risk 复现同一干预，最后恢复 Risk Agent 完整流程；
 4. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
 5. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验。

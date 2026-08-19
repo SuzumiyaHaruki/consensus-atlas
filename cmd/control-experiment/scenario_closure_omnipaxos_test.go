@@ -232,7 +232,7 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	existingRisk, _, err := loadExistingRiskInput(
-		"../../plans/agent/omnipaxos-message-loss-risk-v1.json", target,
+		"../../plans/agent/omnipaxos-message-loss-risk-v2.json", target,
 	)
 	if err != nil || existingRisk == nil ||
 		existingRisk.Candidate.ID != omnipaxosMessageLossRiskID {

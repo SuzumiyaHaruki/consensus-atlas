@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -72,37 +71,43 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 				inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
 			)
 		},
-	}, 1, 1, inputs.Experiment.ScenarioMaxDecisions,
+	}, 1, 3, inputs.Experiment.ScenarioMaxDecisions,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) ([]byte, controlexperiment.ModelWork, error) {
 			if view.Hypothesis.RiskID != candidate.ID || view.Knowledge.Digest != scenarioRisk.Knowledge.Digest ||
 				view.AcceptedHypothesis == nil || view.AcceptedHypothesis.Candidate.ID != candidate.ID ||
 				!reflect.DeepEqual(view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue}) {
 				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
+			hasPrepare := false
 			for _, action := range view.Frontier.Actions {
-				if action.Kind == control.ActionDropMessage &&
-					strings.HasPrefix(action.MessageTypeHint, "sequence-paxos/") {
-					if action.MessageTypeHint == "" {
-						t.Fatal("Scenario Agent did not receive the target-local leaf message type")
-					}
-					plan, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
-						Intent: controlexperiment.ScenarioIntentContinue,
-						Plan: controlexperiment.ScenarioPlan{
-							ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
-								ID: "drop-protocol-message", Selector: controlexperiment.FrontierActionSelector{
-									Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
-									MessageTypeHint: action.MessageTypeHint,
-								},
-							}},
-						},
-					})
-					return plan, controlexperiment.ModelWork{
-						Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7,
-					}, err
-				}
+				hasPrepare = hasPrepare || action.Kind == control.ActionDeliverMessage &&
+					action.MessageTypeHint == "sequence-paxos/prepare"
 			}
-			t.Fatalf("Scenario Agent received no Sequence Paxos message to drop: %#v", view.Frontier.Actions)
-			return nil, controlexperiment.ModelWork{}, nil
+			if !hasPrepare {
+				t.Fatalf("Scenario Agent did not receive target-local leaf semantics: %#v", view.Frontier.Actions)
+			}
+			plan, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+				Intent: controlexperiment.ScenarioIntentContinue,
+				Plan: controlexperiment.ScenarioPlan{
+					ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{
+						{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
+							MessageTypeHint: "sequence-paxos/prepare",
+						}},
+						{ID: "deliver-promise", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
+							MessageTypeHint: "sequence-paxos/promise",
+						}},
+						{ID: "drop-operation-replication", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
+							MessageTypeHint: "sequence-paxos/accept-sync",
+						}},
+					},
+				},
+			})
+			return plan, controlexperiment.ModelWork{
+				Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7,
+			}, err
 		},
 	)
 	if err != nil || scenario.Agent.Execution == nil ||
@@ -136,14 +141,20 @@ func omnipaxosDiscoveredRiskCandidate() controlexperiment.RiskCandidate {
 		},
 		Predicates: []semantic.ObservationPredicate{
 			{MilestoneID: omnipaxosMilestoneWorkloadInvoked, Kind: semantic.ObservationWorkloadInvoked,
-				Constraints: []semantic.ObservationConstraint{{
-					Field: semantic.ObservationFieldParticipantRole, Equals: "coordinator",
-				}}},
+				Constraints: []semantic.ObservationConstraint{
+					{Field: semantic.ObservationFieldParticipantRole, Equals: "coordinator"},
+					{Field: semantic.ObservationFieldRequestID, BindAs: "request"},
+				}},
 			{MilestoneID: omnipaxosMilestoneMessageDropped, Kind: semantic.ObservationMessageDropped,
+				Constraints: []semantic.ObservationConstraint{
+					{Field: semantic.ObservationFieldMessageRole, Equals: omnipaxosv2.ObservationMessageRoleOperationReplication},
+					{Field: semantic.ObservationFieldOperationStage, Equals: "inflight"},
+					{Field: semantic.ObservationFieldRequestID, BindAs: "request"},
+				}},
+			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced,
 				Constraints: []semantic.ObservationConstraint{{
-					Field: semantic.ObservationFieldOperationStage, Equals: "inflight",
+					Field: semantic.ObservationFieldRequestID, BindAs: "request",
 				}}},
-			{MilestoneID: omnipaxosMilestoneDecisionAfterDrop, Kind: semantic.ObservationDecisionAdvanced},
 		},
 	}
 }
