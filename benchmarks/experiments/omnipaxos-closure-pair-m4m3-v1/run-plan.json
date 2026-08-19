@@ -1,0 +1,47 @@
+{
+  "schema_version": "consensus-atlas/paired-agentic-run-plan/v1",
+  "experiment_id": "omnipaxos-closure-pair-m4m3-v1",
+  "base_commit": "d6d3392ea30871d268a551e44c6ebf0fb0cca65d",
+  "target_id": "omnipaxos-v2",
+  "strategy": "agentic-episode-v1",
+  "risk_input": "plans/agent/omnipaxos-message-loss-risk-v1.json",
+  "semantic_input": "plans/agent/omnipaxos-agentic-calibration-v1.json",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "capability_feedback": "structured-gaps",
+  "fixed_method_fields": {
+    "scenario_prompt_version": "scenario-agent-investigation-v17",
+    "temperature": 0,
+    "thinking": "high",
+    "structured_output_mode": "json-object",
+    "max_risk_calls": 3,
+    "expected_risk_calls": 0,
+    "max_scenario_calls": 3,
+    "max_model_calls": 6,
+    "max_model_tokens": 120000,
+    "max_scenario_plan_steps": 4,
+    "max_runtime_decisions": 64,
+    "session_wall_clock_ms": 1200000,
+    "oracle_monitors": [
+      "trace-integrity",
+      "agreement",
+      "omnipaxos-client-decision-binding"
+    ]
+  },
+  "valid_operation_carrying_interventions": [
+    "sequence-paxos/accept-sync",
+    "sequence-paxos/accept-decide"
+  ],
+  "variable": "closure_mode",
+  "arms": {
+    "A": "public-fixed",
+    "B": "target-local"
+  },
+  "schedule": [
+    {"group": 1, "ordinal": 1, "arm": "A", "closure_mode": "public-fixed", "episode": "g01-public-fixed"},
+    {"group": 1, "ordinal": 2, "arm": "B", "closure_mode": "target-local", "episode": "g01-target-local"},
+    {"group": 2, "ordinal": 3, "arm": "B", "closure_mode": "target-local", "episode": "g02-target-local"},
+    {"group": 2, "ordinal": 4, "arm": "A", "closure_mode": "public-fixed", "episode": "g02-public-fixed"}
+  ],
+  "analysis_policy": "Report all four scheduled Episodes in order. Transport ambiguity is not a method outcome and may only be resumed in the same directory when the durable journal permits it. No successful Episode may replace a completed unsuccessful Episode."
+}

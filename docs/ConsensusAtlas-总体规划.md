@@ -245,6 +245,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   并把 `client-operation-continuity` 提升为 oracle-backed。正常、RequestID 篡改、决定
   内容/映射篡改、缺失 witness 与 pending 边界均由普通测试覆盖；公共 Action、Runtime、
   Bundle schema 和 worker evidence 不变；
+- M4m3 在调用前固定两组镜像顺序的四个 Scenario-only Episode。Risk provider 为 0，
+  合法干预同时接受 `accept-sync` 与 `accept-decide`，只改变 MethodSpec 中机械派生的
+  `public-fixed|target-local` closure mode；所有完成 Episode 都进入结果，传输歧义与
+  方法停止分开记录。该短实验只验证真实模型跨协议 handoff，不承担统计显著性结论；
 - 上述证据支持“Agent 选干预 + Target-local 闭合”的窄 capability 结论，但仍不是
   跨协议普适性、缺陷发现能力或总体方法优越性证据；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；

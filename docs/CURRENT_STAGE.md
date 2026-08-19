@@ -185,6 +185,14 @@ decided-prefix witness 篡改；尚未完成的 ClientResult 不产生 violation
 `client-operation-continuity` 因此从 observable-only 提升为 oracle-backed，不需要修改
 公共 Action、Runtime、Bundle schema 或 worker evidence schema。
 
+M4m3 已在外部调用前预注册为两组、四个 Scenario-only Episode，顺序为
+`public-fixed→target-local`、`target-local→public-fixed`。四轮共享 fixed Risk、root、
+协议材料、DeepSeek 模型、Prompt v17、temperature 0、thinking high 和全部预算，只改变
+由实际 composition 绑定的 `closure_mode`。完整顺序、成本上限、合法 operation-carrying
+leaf、输出目录与结果提取规则位于
+`benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/run-plan.json`；当前尚未发起
+付费调用，目录中没有结果工件。
+
 saved Bundle Oracle audit 保持 v1 工件兼容：Go 字段仍名为
 `RecordedReplayStable`，JSON 继续使用 `replay_stable`。该字段只表示 Bundle 已封存的
 fresh Replay 结果；evaluator audit 不重新启动 Runtime。
