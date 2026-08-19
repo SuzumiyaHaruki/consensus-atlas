@@ -239,16 +239,18 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   `Scenario Agent→handoff→closure→qualified Bundle`。规范 Risk ID 保持精确匹配，
   不把 factory 放宽到任意消息丢失候选；零模型 Planner 只调用一次，三步计划加四步
   closure 形成与脚本消融相同的 Trace/Bundle，同一 RequestID、Replay 和 Oracle 均闭合。
-  下一步真实模型实验只替换 Planner，不改变 Risk、Runtime、closure、Replay 或 Oracle；
+  后续 M4m3 真实模型实验只替换 Planner，没有改变 Risk、Runtime、closure、Replay 或 Oracle；
 - M4m2O 新增窄的 `omnipaxos-client-decision-binding` monitor。它从同一 Bundle 联结
   Invoke、completed ClientResult 中的 worker decision，以及对应 decided-prefix 位置，
   并把 `client-operation-continuity` 提升为 oracle-backed。正常、RequestID 篡改、决定
   内容/映射篡改、缺失 witness 与 pending 边界均由普通测试覆盖；公共 Action、Runtime、
   Bundle schema 和 worker evidence 不变；
-- M4m3 在调用前固定两组镜像顺序的四个 Scenario-only Episode。Risk provider 为 0，
-  合法干预同时接受 `accept-sync` 与 `accept-decide`，只改变 MethodSpec 中机械派生的
-  `public-fixed|target-local` closure mode；所有完成 Episode 都进入结果，传输歧义与
-  方法停止分开记录。该短实验只验证真实模型跨协议 handoff，不承担统计显著性结论；
+- M4m3 已按预注册镜像顺序完成四个 Scenario-only Episode。Risk provider 为 0，总计
+  10 次 Scenario 调用、181,093 observed tokens，无传输歧义。target-local 两轮均选择
+  operation-carrying `accept-sync`、发生 handoff 并直接闭合，同一 RequestID、recorded
+  fresh Replay 和三个 Oracle 均闭合；public-fixed 两轮机械 Risk 也 reached，但实际
+  Drop 均为 `prepare`，不满足预注册干预口径。故当前证据是“跨协议真实模型 handoff
+  2/2”，不是总体优越性；它还暴露出 Risk 可执行谓词弱于自然语言 summary 的明确缺口；
 - 上述证据支持“Agent 选干预 + Target-local 闭合”的窄 capability 结论，但仍不是
   跨协议普适性、缺陷发现能力或总体方法优越性证据；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：M4m3 OmniPaxos 真实模型配对准备
+阶段：M4m3 OmniPaxos 真实模型配对完成
 
 ## 一句话状态
 
@@ -185,13 +185,17 @@ decided-prefix witness 篡改；尚未完成的 ClientResult 不产生 violation
 `client-operation-continuity` 因此从 observable-only 提升为 oracle-backed，不需要修改
 公共 Action、Runtime、Bundle schema 或 worker evidence schema。
 
-M4m3 已在外部调用前预注册为两组、四个 Scenario-only Episode，顺序为
-`public-fixed→target-local`、`target-local→public-fixed`。四轮共享 fixed Risk、root、
-协议材料、DeepSeek 模型、Prompt v17、temperature 0、thinking high 和全部预算，只改变
-由实际 composition 绑定的 `closure_mode`。完整顺序、成本上限、合法 operation-carrying
-leaf、输出目录与结果提取规则位于
-`benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/run-plan.json`；当前尚未发起
-付费调用，目录中没有结果工件。
+M4m3 已按预注册镜像顺序完成四个真实 DeepSeek Scenario-only Episode。Risk provider
+为 0，总计 10 次 Scenario 调用和 181,093 observed tokens，无传输歧义。target-local
+两轮都 Drop enabled 的 operation-carrying `accept-sync n1→n2`，随后发生可信 handoff，
+在没有后续模型调用或新干预的情况下直接闭合；同一 RequestID completed，保存的 fresh
+Replay stable，三个 registry monitor 均为 0 violation。public-fixed 两轮也机械 reached，
+但实际 Drop 是 `prepare` 而非预注册的 operation-carrying leaf。因此本轮应同时报告：
+机械 Risk reached 为两臂 2/2；预注册正确干预为 public 0/2、target-local 2/2；handoff
+为 target-local 2/2。该差异暴露出现有 Risk 的可执行谓词弱于其自然语言 summary，不能
+把 public 的机械 reached 当成同类干预成功，也不能据四轮宣称总体成本/成功率优势。
+四个 canonical Bundle、独立 Oracle audit 和完整结果见
+`benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/`。
 
 saved Bundle Oracle audit 保持 v1 工件兼容：Go 字段仍名为
 `RecordedReplayStable`，JSON 继续使用 `replay_stable`。该字段只表示 Bundle 已封存的

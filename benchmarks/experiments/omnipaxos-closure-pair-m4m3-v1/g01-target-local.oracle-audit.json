@@ -1,0 +1,19 @@
+{
+  "schema_version": "consensus-atlas/saved-bundle-oracle-audit/v1",
+  "target_id": "omnipaxos-v2",
+  "projector_id": "omnipaxos-v2/decided-prefix-chain-v2",
+  "bundle_digest": "17c12bfb7f5a92fcc07f3f437a2042b5f9ec5556da94ef18e129b8e0c02036f2",
+  "trace_digest": "8f227660ee162b303547f36845ad18941b70b96769fd7e91aedb3a3b570bc549",
+  "replay_stable": true,
+  "decisions": 30,
+  "primary_work_units": 32,
+  "replay_work_units": 32,
+  "oracle": {
+    "checked": [
+      "trace-integrity",
+      "agreement",
+      "omnipaxos-client-decision-binding"
+    ],
+    "violations": null
+  }
+}
