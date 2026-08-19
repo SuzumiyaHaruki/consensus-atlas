@@ -1,0 +1,40 @@
+{
+  "schema_version": "consensus-atlas/paired-agentic-run-plan/v1",
+  "experiment_id": "etcdraft-closure-repeats-m4l9-v1",
+  "base_commit": "f7b1a4a1534b4dfc127f644e36fe77217f3abae2",
+  "target_id": "etcdraft-v2",
+  "strategy": "agentic-episode-v1",
+  "risk_input": "plans/agent/etcdraft-alternate-quorum-risk-v1.json",
+  "semantic_input": "plans/agent/etcdraft-agentic-calibration-v1.json",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "capability_feedback": "structured-gaps",
+  "fixed_method_fields": {
+    "scenario_prompt_version": "scenario-agent-investigation-v17",
+    "temperature": 0,
+    "max_scenario_calls": 3,
+    "max_model_calls": 6,
+    "max_model_tokens": 120000,
+    "max_scenario_plan_steps": 5,
+    "max_runtime_decisions": 32,
+    "session_wall_clock_ms": 600000
+  },
+  "variable": "closure_mode",
+  "arms": {
+    "A": "public-fixed",
+    "B": "target-local"
+  },
+  "schedule": [
+    {"group": 1, "ordinal": 1, "arm": "A", "closure_mode": "public-fixed"},
+    {"group": 1, "ordinal": 2, "arm": "B", "closure_mode": "target-local"},
+    {"group": 2, "ordinal": 3, "arm": "B", "closure_mode": "target-local"},
+    {"group": 2, "ordinal": 4, "arm": "A", "closure_mode": "public-fixed"},
+    {"group": 3, "ordinal": 5, "arm": "A", "closure_mode": "public-fixed"},
+    {"group": 3, "ordinal": 6, "arm": "B", "closure_mode": "target-local"},
+    {"group": 4, "ordinal": 7, "arm": "B", "closure_mode": "target-local"},
+    {"group": 4, "ordinal": 8, "arm": "A", "closure_mode": "public-fixed"},
+    {"group": 5, "ordinal": 9, "arm": "A", "closure_mode": "public-fixed"},
+    {"group": 5, "ordinal": 10, "arm": "B", "closure_mode": "target-local"}
+  ],
+  "analysis_policy": "Report every scheduled Episode; transport failures remain separate from method outcomes and are resumed in place when safe."
+}

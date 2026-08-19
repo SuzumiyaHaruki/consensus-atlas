@@ -80,6 +80,17 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	if closureLegacy.Validate() != nil || closureLegacy.Digest == spec.Digest {
 		t.Fatalf("closure legacy MethodSpec lost read-only validation: %#v", closureLegacy)
 	}
+	handoffLegacy := spec
+	handoffLegacy.ImplementationID = agenticMethodClosureHandoffLegacyImplementationID
+	handoffLegacy.Digest = ""
+	handoffLegacyDigest, err := control.CanonicalDigest(handoffLegacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoffLegacy.Digest = handoffLegacyDigest
+	if handoffLegacy.Validate() != nil || handoffLegacy.Digest == spec.Digest {
+		t.Fatalf("closure handoff legacy MethodSpec lost read-only validation: %#v", handoffLegacy)
+	}
 	publicInput := spec
 	publicInput.ClosureMode = AgenticClosureModePublicFixed
 	publicInput.Digest = ""

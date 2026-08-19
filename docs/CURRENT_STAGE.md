@@ -2,7 +2,7 @@
 
 更新时间：2026-08-19
 分支：`feature/agentic-consensus-testing`
-阶段：M4l7 正式 Risk 输入与 post-intervention closure handoff
+阶段：M4m2R OmniPaxos Scenario Agent 主路径收口
 
 ## 一句话状态
 
@@ -53,8 +53,9 @@ Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共�
 转换为 `closure-underdetermined`，不再作为执行错误。
 
 当前新运行的 MethodSpec implementation identity 已更新为
-`consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1`。旧
-`m4l5-closure-v1` 与 `m4d-v1` 仅保留只读工件验证；新建和恢复运行仍必须与当前完整
+`consensus-atlas/agentic-method/m4m1-closure-ownership-v1`。旧
+`m4l7-risk-input-closure-handoff-v1`、`m4l5-closure-v1` 与 `m4d-v1` 仅保留只读
+工件验证；新建和恢复运行仍必须与当前完整
 MethodSpec 严格一致，不能把旧 Investigation 混入新实现。
 
 M4l6 已在同一个活动 CLI 中加入两个窄实验臂：`public-fixed` 与
@@ -62,8 +63,8 @@ M4l6 已在同一个活动 CLI 中加入两个窄实验臂：`public-fixed` 与
 composition 移除 closure factory；`target-local` 只有在 Target 已提供 factory 时
 才可选择；随后 `AgenticMethodSpec.closure_mode` 从 composition 的实际 factory
 机械派生。composition、MethodSpec 与 factory 不一致时普通输入校验直接拒绝，两个
-arm 的 MethodSpec digest 必然不同。OmniPaxos 当前没有 closure factory，因此不能
-被标成 `target-local`。旧 `m4d-v1` 工件没有该字段并继续按原 digest 只读验证。
+arm 的 MethodSpec digest 必然不同。etcd/raft 与 OmniPaxos 当前均提供窄 closure
+factory；旧 `m4d-v1` 工件没有该字段并继续按原 digest 只读验证。
 
 `after_milestone` 在专属闭合恰好耗尽预算时，步骤和 Agent 顶层反馈现在都保留
 `closure-budget-exhausted`，不再被通用 `budget-exhausted` 覆盖。零模型回归已覆盖
@@ -114,6 +115,71 @@ Effect/Deliver/Temporal，并完整记录 handoff step、自动推进、fresh Re
 截断为 5 个真实计划 Action并完成原 12 个 closure Action。public-fixed、无 factory
 以及 factory 不识别干预的行为保持不变。
 
+M4l7 真实 fixed-Risk 配对也已完成。两个 arm 的最终 Trace 在 Scenario step 29--31
+共享完全相同的动作与 item identity，并丢弃同一个 `MsgAppResp n2→n1`。public-fixed
+使用 3 次 Scenario 调用、83,202 tokens，在正确 drop 后错误预测 n3 response 的 enabled
+时机，最终因调用预算耗尽而未达到 Risk。target-local 使用 2 次调用、41,133 tokens，
+在同一 drop 后发生可信 handoff，执行 14 个受限闭合 Action，于 Trace step 45 提交
+`a9d6-write-1` 并达到 Risk；fresh Replay stable，Oracle finding 为 0。该单样本证明
+closure handoff 能在 Agent 已找到正确干预后闭合此因果路径。target-local view/prompt
+明确暴露 closure，且 public-fixed 第2次调用因非法 `branch_id` 没有进入执行；因此少一次
+调用和42,069 tokens 是完整方法臂结果，不能全部归因于 selector。记录的执行 work
+反而是 public 198、target-local 250；没有 wall time/CPU/RSS，不能声称总成本降低。
+
+两个 M4l7 Bundle 现已通过 `defect-eval -oracle-bundle` 独立验证 Bundle、projection
+并重算 Target registry。两边均实际检查 trace-integrity、agreement、client application
+binding 和 log progress，0 violation；canonical Bundle 以确定性 gzip 进入精简证据，
+没有把未保存的 provider journal 列为证据。精简结果见
+`benchmarks/experiments/etcdraft-existing-risk-closure-pair-m4l7-v1/`。
+
+M4l8 随后完成零模型因果隔离。测试机械重建 M4l7 真实 Agent 的 step 29--31 共同
+Trace，从同一个 drop 后状态分别运行 public-fixed 和 target-local。14-decision 等预算
+下，两边 progress work 均为94、qualified primary/replay 均为47/47；target-local 在
+step45 reached 并 committed 同一请求，public-fixed 预算耗尽且 not-reached。扩大 public
+预算后，它在19个后干预 decision、step50 才 reached，progress work 为104、qualified
+primary/replay 为52/52。三条 Trace 均 stable Replay，并由既有 registry 独立重算四个
+Oracle monitor、0 violation。结果见
+`benchmarks/experiments/etcdraft-shared-prefix-backend-ablation-m4l8-v1/`。
+
+M4l9 已按预注册交替顺序完成五组真实模型重复。两臂均在 5/5 Episode 中选择语义等价的
+follower→leader `MsgAppResp` 干预；其中两轮为 `n3→n1`，其余为 `n2→n1`。
+target-local 通过 5/5 closure handoff 全部 reached，
+public-fixed 仅 2/5 reached，其余三次在正确干预后耗尽调用预算。public-fixed 使用
+15 次调用、395,236 observed tokens，target-local 使用12次、265,819 tokens；后者
+qualified primary/replay work 略高，不能解释为所有成本均下降。target-local 中
+4/5 是干预后直接闭合；`g01` 因旧的 per-call closure quantum 耗尽而交还 Agent，随后
+多执行一次 Crash。10 个 Bundle 均记录 stable fresh Replay；独立 evaluator 校验
+Bundle/projector 并重算四个 monitor、0 violation，但没有重新执行 Runtime Replay。结果仍只是
+单 Risk/单协议的公开 capability 证据，不是缺陷 finding 或总体方法优越性证明。精简
+报告见 `benchmarks/experiments/etcdraft-closure-repeats-m4l9-v1/`。
+
+M4m1 已修复上述 closure 生命周期问题：Target 一旦从真实干预接管，只要 Episode
+全局 decision 预算尚存，就自动延续同一 closure；per-call progress quantum 不再把
+控制权提前交还 Agent。只有 `closure-underdetermined`、`closure-quiescent` 或全局预算
+真正耗尽才结束接管。零模型回归以小于完整闭合长度的本轮 quantum 复现该边界，最终
+仍完成 5+12 路径，Planner 只调用一次且 Trace 中没有额外 Crash。
+
+M4m2 已完成 OmniPaxos 第二协议垂直切片。真实首请求产生 operation-carrying
+`accept-sync` 而非 `accept-decide`；共同前缀在 step 26 丢弃 `accept-sync n1→n2`。
+相同 4-decision 后干预算下，public-fixed 未 reached，OmniPaxos factory 从 evidence
+推导备用参与者 n3，并只投递 enabled 的 `prepare→promise→accept-sync→accepted`，
+恰好 4 步 reached；公共顺序放宽后需 8 步。target Trace 形成 qualified Bundle，
+同一 RequestID completed，fresh Replay stable，trace-integrity/agreement 0 violation。
+结果见 `benchmarks/experiments/omnipaxos-message-loss-closure-m4m2-v1/`。
+
+M4m2R 已补齐真实 Scenario Agent 协调主路径。新增 existing Risk
+`plans/agent/omnipaxos-message-loss-risk-v1.json`，每次加载均针对当前 Target 重新资格
+审查，并保持 factory 精确要求的规范 Risk ID `message-loss-before-decision`。零模型
+Planner 只调用一次，执行 `prepare→promise→Drop accept-sync` 三个计划 Action；随后
+factory handoff 并执行四个 closure Action。最终与脚本消融得到相同 Trace/Bundle
+digest，同一 RequestID completed、fresh Replay stable、两个 Oracle 0 violation，且
+handoff 后没有第二次干预。非匹配 Risk、非 operation-carrying 消息、同层歧义和无候选
+也已有独立边界回归。
+
+saved Bundle Oracle audit 保持 v1 工件兼容：Go 字段仍名为
+`RecordedReplayStable`，JSON 继续使用 `replay_stable`。该字段只表示 Bundle 已封存的
+fresh Replay 结果；evaluator audit 不重新启动 Runtime。
+
 ## 当前输入
 
 - `plans/agent/`：Agent 方法、模型预算和协议知识配置；
@@ -134,6 +200,7 @@ Effect/Deliver/Temporal，并完整记录 handoff step、自动推进、fresh Re
 - 多步 Scenario、live Runtime、周期 `ProgressDelta` 和最终 fresh Replay；
 - durable provider journal、Episode/Investigation 恢复与完整成本核算；
 - formal/private evaluator 从保存的 Bundle 重算 Oracle；
+- public saved-Bundle audit 可按 Target registry 重算完整 checked/violation 证据；
 - 所有 Replay 稳定候选均可离线运行 Oracle，Agent 自报不能产生 finding。
 
 分支实验能力仍存在，但当前主实验优先使用 `continue`、`revise`、`abandon`。
@@ -164,8 +231,9 @@ Effect/Deliver/Temporal，并完整记录 handoff step、自动推进、fresh Re
 验证已完成：`go test ./...`、`go vet ./...`、`audit-no-v1`、
 `audit-race-shards`、受影响 Scenario/消息语义聚焦 race、Rust fmt/clippy 和
 全仓 JSON/压缩 Bundle 解析、`git diff --check` 全部通过。仓库工作区（含 Git）
-约 33MB；Go 代码 52,783 行，其中测试 17,452 行、生产代码 35,331 行；
-`benchmarks/` 收敛为 56 个文件、约 0.5MB 实际内容。
+约 55MB（清理可重建 OmniPaxos worker target 后）；Go 代码 55,884 行，其中测试
+19,447 行；`benchmarks/` 当前为 93 个文件、约 1.9MB，新增部分主要是
+M4l7--M4m2 的 canonical Bundle、audit 与精简报告。
 
 ## 当前结果边界
 
@@ -185,8 +253,9 @@ Effect/Deliver/Temporal，并完整记录 handoff step、自动推进、fresh Re
 
 ## 下一步
 
-1. 重跑相同 existing Risk 两臂，比较正确 `MsgAppResp` 干预、handoff、Risk/RequestID/
-   Replay/Oracle、decisions/calls/tokens 以及停止原因；
-2. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
-3. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
-4. 只有效果证据成立后才进入 private holdout 和第三协议接入。
+1. 使用已固定的 OmniPaxos existing Risk 组织一组短 Scenario-only 真实模型配对，确认
+   模型能自行给出等价干预并触发同一 handoff；
+2. 为 OmniPaxos 增加请求—决定 binding Oracle，避免只以 Agreement 支撑 continuity 解释；
+3. 扩大 Agent 的源码理解和基于 `ProgressDelta` 的 revise 能力；
+4. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验；
+5. 只有效果证据成立后才进入 private holdout 和第三协议接入。

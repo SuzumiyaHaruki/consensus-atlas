@@ -113,6 +113,20 @@ func Resolve(
 	targetID string,
 	projectorID string,
 ) (semantic.DecisionProjector, Registry, error) {
+	projector, registry, err := ResolveTarget(targetID)
+	if err != nil {
+		return nil, Registry{}, err
+	}
+	if !registry.Matches(targetID, projectorID) || projector.ID() != projectorID {
+		return nil, Registry{}, errors.New("TARGET_ORACLE_COMPOSITION_MISMATCH")
+	}
+	return projector, registry, nil
+}
+
+// ResolveTarget returns the registered projector and Oracle registry for one
+// concrete Target. Evaluator-side saved-Bundle checks use this entry point so
+// the caller cannot pair a Target with a different projector identifier.
+func ResolveTarget(targetID string) (semantic.DecisionProjector, Registry, error) {
 	var projector semantic.DecisionProjector
 	var registry Registry
 	switch targetID {
@@ -125,7 +139,7 @@ func Resolve(
 	default:
 		return nil, Registry{}, errors.New("TARGET_ORACLE_TARGET_UNSUPPORTED")
 	}
-	if !registry.Matches(targetID, projectorID) || projector.ID() != projectorID {
+	if !registry.Matches(targetID, projector.ID()) {
 		return nil, Registry{}, errors.New("TARGET_ORACLE_COMPOSITION_MISMATCH")
 	}
 	return projector, registry, nil

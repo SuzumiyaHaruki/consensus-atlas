@@ -406,7 +406,8 @@ func exploreScenarioWithPlanner(
 		}
 		inheritedIntervention := latestScenarioExecutionClosureIntervention(selected.execution)
 		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
-			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, spec, selected.risk, selected.trace,
+			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, remaining,
+			spec, selected.risk, selected.trace,
 			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 			closureFactory, inheritedIntervention, naturalProgressAllowance, preparer...,
 		)

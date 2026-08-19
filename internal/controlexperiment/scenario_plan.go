@@ -161,7 +161,7 @@ func ExecuteBoundedScenarioPlan(
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
 	return executeBoundedScenarioPlan(
-		ctx, executionID, plan, maxSteps, maxDecisions, spec, rootRisk, root,
+		ctx, executionID, plan, maxSteps, maxDecisions, maxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, nil, nil, nil,
 		naturalProgressLimit, preparers...,
 	)
@@ -189,7 +189,7 @@ func ExecuteSemanticBoundedScenarioPlan(
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
 	return executeSemanticBoundedScenarioPlanWithClosureContext(
-		ctx, executionID, plan, maxSteps, maxDecisions, spec, rootRisk, root,
+		ctx, executionID, plan, maxSteps, maxDecisions, maxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 		closureFactory, nil, naturalProgressLimit, preparers...,
 	)
@@ -201,6 +201,7 @@ func executeSemanticBoundedScenarioPlanWithClosureContext(
 	plan ScenarioPlan,
 	maxSteps int,
 	maxDecisions int,
+	closureMaxDecisions int,
 	spec semantic.RiskWitnessSpec,
 	rootRisk semantic.RiskWitnessResult,
 	root controlruntime.Trace,
@@ -218,7 +219,7 @@ func executeSemanticBoundedScenarioPlanWithClosureContext(
 		return ScenarioExecution{}, errors.New("EXPERIMENT_SCENARIO_SEMANTIC_PROJECTOR_REQUIRED")
 	}
 	return executeBoundedScenarioPlan(
-		ctx, executionID, plan, maxSteps, maxDecisions, spec, rootRisk, root,
+		ctx, executionID, plan, maxSteps, maxDecisions, closureMaxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 		closureFactory, inheritedIntervention, naturalProgressLimit, preparers...,
 	)
@@ -230,6 +231,7 @@ func executeBoundedScenarioPlan(
 	plan ScenarioPlan,
 	maxSteps int,
 	maxDecisions int,
+	closureMaxDecisions int,
 	spec semantic.RiskWitnessSpec,
 	rootRisk semantic.RiskWitnessResult,
 	root controlruntime.Trace,
@@ -246,6 +248,7 @@ func executeBoundedScenarioPlan(
 	if !validMethodToken(executionID) || plan.Validate() != nil || maxSteps <= 0 ||
 		maxSteps > ScenarioPlanMaxSteps || spec.Validate() != nil || root.Validate() != nil ||
 		maxDecisions <= 0 || maxDecisions > ScenarioAgentMaxDecisions ||
+		closureMaxDecisions < maxDecisions || closureMaxDecisions > ScenarioAgentMaxDecisions ||
 		rootRisk.Validate(spec) != nil || rootRisk.ExecutionDigest != root.Digest ||
 		rootRisk.TargetIdentityDigest != root.ManifestDigest || newAdapter == nil ||
 		isNilSemanticComponent(projector) || projector.ID() != rootRisk.ProjectorID ||
@@ -365,7 +368,11 @@ func executeBoundedScenarioPlan(
 					}
 					selectorResolved = true
 				}
-				if len(result.FinalTrace.Records)-len(root.Records) >= maxDecisions {
+				decisionLimit := maxDecisions
+				if selector != nil {
+					decisionLimit = closureMaxDecisions
+				}
+				if len(result.FinalTrace.Records)-len(root.Records) >= decisionLimit {
 					result.NaturalProgressStop = ScenarioProgressBudget
 					reasonCode := ScenarioReasonBudgetExhausted
 					if selector != nil {
@@ -592,15 +599,22 @@ func executeBoundedScenarioPlan(
 		}
 	}
 	if result.Status == ScenarioStatusCompleted && naturalProgressLimit > 0 {
-		remaining := maxDecisions - (len(result.FinalTrace.Records) - len(root.Records))
-		if remaining > naturalProgressLimit {
+		selector, selectorErr := closureSelector()
+		if selectorErr != nil {
+			return ScenarioExecution{}, closeWith(selectorErr)
+		}
+		decisionLimit := maxDecisions
+		if selector != nil {
+			// Once trusted Target composition recognizes the intervention,
+			// closure owns the rest of the Episode decision allowance. The
+			// per-call progress quantum only bounds public fixed progress.
+			decisionLimit = closureMaxDecisions
+		}
+		remaining := decisionLimit - (len(result.FinalTrace.Records) - len(root.Records))
+		if selector == nil && remaining > naturalProgressLimit {
 			remaining = naturalProgressLimit
 		}
 		if remaining > 0 {
-			selector, selectorErr := closureSelector()
-			if selectorErr != nil {
-				return ScenarioExecution{}, closeWith(selectorErr)
-			}
 			if view.PrefixTraceDigest != result.FinalTrace.Digest {
 				if refreshErr := refreshFrontier(executionID + "-natural-frontier"); refreshErr != nil {
 					return ScenarioExecution{}, closeWith(refreshErr)

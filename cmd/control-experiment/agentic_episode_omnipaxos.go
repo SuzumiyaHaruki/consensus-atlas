@@ -118,6 +118,7 @@ func newOmnipaxosAgenticEpisodeTarget(
 		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge, Surface: surface,
 		OracleRegistry:       oracleRegistry,
 		ObservationProjector: observationProjector,
+		ClosureFactory:       newOmnipaxosScenarioClosureFactory(),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,

@@ -202,6 +202,12 @@ Coordinator 每轮以 `ceil(remainingDecisions/remainingCalls)` 重新计算自�
 `decision_allowance` 约束“计划 + 本轮自然推进”，`remaining_decisions` 表示 episode 尚可使用的成功 Action。
 这两个值属于资源边界，不授权 Agent 创建 Action 或改变终止/verdict 语义。
 
+若 Target-local closure factory 从可信 Trace 中识别出已执行干预，Target 从该点持续拥有
+Episode 剩余的全局 decision allowance；per-call 自然推进 quantum 不再提前把控制权交回
+Agent。只有歧义、无合格 enabled Action 或全局预算真正耗尽才结束接管。etcd/raft 与
+OmniPaxos 都通过同一接口提供窄 selector；公共层仍复核权威 frontier membership 与
+ActionKind，selector 只能选择当前 enabled 的 Effect/Deliver/Temporal，fresh Replay 不调用 selector。
+
 真实 Target 的长轨迹回归从同一 Adapter 的确定性初态开始，以 exact policy 将最终 Scenario Trace 再执行为
 qualified Bundle。测试同时要求 target-local epoch/ballot Observation、protocol/control/joint PSS、stable Replay
 和完整 Oracle registry。没有 workload 的校准 Risk 保持 `not-reached`；它验证执行容量，不伪装为缺陷发现。
@@ -300,6 +306,10 @@ Agentic Episode 保存紧凑 `summary.json`、可选主路径 `bundle.json` 和�
 `cmd/defect-eval` 支持保存 Bundle/MethodSpec 的旧评测，也能通过 `-agentic-inputs` 直接消费
 单 Episode 或完整 Agentic Investigation 目录。私有 contract 提供 pair、SUT 身份、预算和 monitor composition；
 summary 只提供方法状态/成本，独立 evaluator 从主路径及所有分支 Bundle 重算 verdict。
+公开 capability 实验可以使用 `-oracle-bundle <bundle> -target <target> -out <audit>`：该模式先验证保存的
+Bundle 与注册 projector，再执行同一 Target registry，并输出 checked/violation 证据。
+v1 audit 的兼容字段 `replay_stable` 只是 Bundle 中已封存的 fresh Replay 结果；audit 不重新启动 Runtime
+执行 Replay。它不接受 Agent verdict，也不把单 Bundle audit 提升为 formal benchmark finding。
 对一个 trial，任一合法候选的独立 monitor finding 都会进入可信结果；方法自报的 Risk/Oracle 字段不参与判定。
 在检查 finding 前，evaluator 先汇总 Scenario frontier/search work、所有候选的 Trace decisions、
 qualified primary work 和 replay work；decisions/primary work 任一超过 formal trial 的现有预算，

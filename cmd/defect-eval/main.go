@@ -81,8 +81,21 @@ func run(args []string) error {
 	formalExposurePath := flags.String("formal-exposure-audit", "", "passed private FormalExposureAudit")
 	formalInputsPath := flags.String("formal-inputs", "", "private multi-trial audit/binary path manifest")
 	agenticInputsPath := flags.String("agentic-inputs", "", "private trial-to-Agentic-Episode directory manifest")
+	oracleBundlePath := flags.String("oracle-bundle", "", "saved public ExecutionBundle to validate and recheck")
+	targetID := flags.String("target", "", "Target registry used with -oracle-bundle")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *oracleBundlePath != "" || *targetID != "" {
+		if *oracleBundlePath == "" || *targetID == "" || *outPath == "" ||
+			*agenticInputsPath != "" || *formalContractPath != "" || *formalExposurePath != "" ||
+			*formalInputsPath != "" || *methodSpecPath != "" || *freshArtifacts != "" ||
+			*manifestPath != "" || *controlPath != "" || *candidatePath != "" ||
+			*controlAuditPath != "" || *controlBinaryPath != "" ||
+			*candidateAuditPath != "" || *candidateBinaryPath != "" {
+			return errors.New("saved Bundle Oracle audit requires target, oracle bundle, out, and no evaluation flags")
+		}
+		return runSavedBundleOracleAudit(*targetID, *oracleBundlePath, *outPath)
 	}
 	if *agenticInputsPath != "" {
 		if *formalContractPath == "" || *formalExposurePath == "" || *outPath == "" ||

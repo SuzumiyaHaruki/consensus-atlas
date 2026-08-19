@@ -9,24 +9,25 @@ import (
 )
 
 const (
-	AgenticMethodSpecSchemaVersion                                  = "consensus-atlas/agentic-method-spec/v1"
-	AgenticMethodExecutorID                                         = "consensus-atlas/agentic-episode-cli/v1"
-	AgenticMethodStrategyID                                         = "agentic-episode-v1"
-	AgenticMethodImplementationID                                   = "consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1"
-	agenticMethodClosureLegacyImplementationID                      = "consensus-atlas/agentic-method/m4l5-closure-v1"
-	agenticMethodLegacyImplementationID                             = "consensus-atlas/agentic-method/m4d-v1"
-	AgenticSourceExposureNone                                       = "none"
-	AgenticSourceExposureDossierV1                                  = "dossier-declared-readonly-v1"
-	AgenticSourceExposureDossierV2                                  = "dossier-declared-readonly-navigation-v2"
-	AgenticCapabilityFeedbackReasonCodes                            = "reason-codes"
-	AgenticCapabilityFeedbackStructuredGaps                         = "structured-gaps"
-	AgenticClosureModePublicFixed                                   = "public-fixed"
-	AgenticClosureModeTargetLocal                                   = "target-local"
-	AgenticRiskInputAgentGenerated             AgenticRiskInputMode = "agent-generated"
-	AgenticRiskInputExistingCandidate          AgenticRiskInputMode = "existing-candidate"
-	agenticRiskInputLegacyAgentDiscovery       AgenticRiskInputMode = "agent-discovery"
-	agenticRiskInputLegacyFixedAccepted        AgenticRiskInputMode = "fixed-accepted"
-	agenticMethodMaxInvestigation                                   = 1_000
+	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
+	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
+	AgenticMethodStrategyID                                                = "agentic-episode-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4m1-closure-ownership-v1"
+	agenticMethodClosureHandoffLegacyImplementationID                      = "consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1"
+	agenticMethodClosureLegacyImplementationID                             = "consensus-atlas/agentic-method/m4l5-closure-v1"
+	agenticMethodLegacyImplementationID                                    = "consensus-atlas/agentic-method/m4d-v1"
+	AgenticSourceExposureNone                                              = "none"
+	AgenticSourceExposureDossierV1                                         = "dossier-declared-readonly-v1"
+	AgenticSourceExposureDossierV2                                         = "dossier-declared-readonly-navigation-v2"
+	AgenticCapabilityFeedbackReasonCodes                                   = "reason-codes"
+	AgenticCapabilityFeedbackStructuredGaps                                = "structured-gaps"
+	AgenticClosureModePublicFixed                                          = "public-fixed"
+	AgenticClosureModeTargetLocal                                          = "target-local"
+	AgenticRiskInputAgentGenerated                    AgenticRiskInputMode = "agent-generated"
+	AgenticRiskInputExistingCandidate                 AgenticRiskInputMode = "existing-candidate"
+	agenticRiskInputLegacyAgentDiscovery              AgenticRiskInputMode = "agent-discovery"
+	agenticRiskInputLegacyFixedAccepted               AgenticRiskInputMode = "fixed-accepted"
+	agenticMethodMaxInvestigation                                          = 1_000
 )
 
 // AgenticSourceExposureSpec identifies the source surface available to the
@@ -206,6 +207,7 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodClosureHandoffLegacyImplementationID ||
 		id == agenticMethodClosureLegacyImplementationID ||
 		id == agenticMethodLegacyImplementationID
 }

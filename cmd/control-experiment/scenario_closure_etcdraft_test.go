@@ -331,6 +331,219 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	t.Logf("ETCDRAFT_CLOSURE_RESULT %s", encoded)
 }
 
+func TestM4l8EtcdraftSharedAgentPrefixBackendAblation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), controlExperimentTestTimeout(180*time.Second),
+	)
+	defer cancel()
+	_, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(
+		"../../plans/agent/etcdraft-agentic-calibration-v1.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executionInputs, root, err := prepareEtcdraftAgenticExecutionInputs(ctx, workload, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, predicates, err := etcdraftAlternateQuorumRisk()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector, err := controlexperiment.NewLinearObservationRiskProjector(
+		spec, predicates, etcdraftv2.ObservationProjector{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootRisk, err := projector.Project("m4l8-root-risk", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory := func() (control.Adapter, error) {
+		return etcdraftv2.NewWithConfig(experiment.AdapterConfig)
+	}
+
+	// This is the exact semantic action prefix selected by both live M4l7
+	// arms after their common 28-decision root. It deliberately excludes the
+	// model-specific failed proposal attempts and every post-drop action.
+	shared, err := controlexperiment.ExecuteSemanticBoundedScenarioPlan(
+		ctx, "m4l8-shared-agent-prefix", controlexperiment.ScenarioPlan{
+			ID: "m4l8-shared-agent-prefix-plan",
+			Steps: []controlexperiment.ScenarioStep{
+				{ID: "deliver-proposal-to-n2", Selector: controlexperiment.FrontierActionSelector{
+					Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
+					MessageTypeHint: "MsgApp",
+				}},
+				{ID: "persist-n2-proposal", Selector: controlexperiment.FrontierActionSelector{
+					Kind: control.ActionCompleteEffect, Owner: "n2", EffectKind: "raft-ready-persist",
+				}},
+				{ID: "drop-n2-append-response", Selector: controlexperiment.FrontierActionSelector{
+					Kind: control.ActionDropMessage, MessageSource: "n2", MessageTarget: "n1",
+					MessageTypeHint: "MsgAppResp",
+				}},
+			},
+		}, 3, 3, spec, rootRisk, root, experiment.Runtime, experiment.faultEnvelope(), factory,
+		projector, func(
+			trace controlruntime.Trace,
+			frontier controlexperiment.RiskFrontierView,
+			snapshot controlruntime.Snapshot,
+		) (controlexperiment.ScenarioSemanticExposure, error) {
+			return projectEtcdraftScenarioSemantics(
+				experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
+			)
+		}, nil, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root.Records) != 28 || len(shared.Steps) != 3 || len(shared.FinalTrace.Records) != 31 ||
+		shared.Steps[2].Choice == nil ||
+		shared.Steps[2].Choice.Action.Kind != control.ActionDropMessage ||
+		shared.Steps[2].Choice.Action.MessageSource.Node != "n2" ||
+		shared.Steps[2].Choice.Action.MessageTarget != "n1" ||
+		shared.Steps[2].Choice.Action.MessageTypeHint != "MsgAppResp" ||
+		shared.FinalRisk.Status != semantic.RiskWitnessNotReached ||
+		!reflect.DeepEqual(shared.FinalRisk.MissingMilestones, []string{
+			"alternate-quorum-decision-advanced",
+		}) {
+		t.Fatalf("M4l8 shared post-intervention prefix drifted: %#v", shared)
+	}
+
+	const equalBudget = 14
+	publicEqual, err := controlexperiment.ExecuteScenarioNaturalProgress(
+		ctx, "m4l8-public-equal", equalBudget, spec, shared.FinalRisk, shared.FinalTrace,
+		experiment.Runtime, experiment.faultEnvelope(), factory, projector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector, participants, err := newEtcdraftAlternateQuorumClosureSelector(
+		shared.FinalTrace, shared.Steps[2].Choice.Action,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetEqual, err := controlexperiment.ExecuteScenarioNaturalProgressWithClosure(
+		ctx, "m4l8-target-equal", equalBudget, spec, shared.FinalRisk, shared.FinalTrace,
+		experiment.Runtime, experiment.faultEnvelope(), factory, projector, selector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicExtended, err := controlexperiment.ExecuteScenarioNaturalProgress(
+		ctx, "m4l8-public-extended", 32, spec, shared.FinalRisk, shared.FinalTrace,
+		experiment.Runtime, experiment.faultEnvelope(), factory, projector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if targetEqual.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
+		len(targetEqual.Execution.Steps) != equalBudget ||
+		targetEqual.Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
+		publicExtended.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
+		publicExtended.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
+		t.Fatalf("M4l8 backend outcomes drifted: public=%#v target=%#v extended=%#v",
+			publicEqual, targetEqual, publicExtended)
+	}
+
+	qualify := func(id string, progress controlexperiment.ScenarioProgressResult) scenarioTestingResult {
+		combined := shared
+		combined.PlanID = id
+		combined.AutomaticProgress = append(
+			append([]controlexperiment.ScenarioStepFeedback(nil), shared.AutomaticProgress...),
+			progress.Execution.Steps...,
+		)
+		combined.NaturalProgressStop = progress.StopReason
+		combined.FinalTrace = progress.Execution.FinalTrace
+		combined.FinalRisk = progress.Execution.FinalRisk
+		qualified, qualifyErr := executeEtcdraftScenarioQualifiedRisk(
+			ctx, executionInputs, root, experiment, combined, spec, projector, "",
+		)
+		if qualifyErr != nil {
+			t.Fatal(qualifyErr)
+		}
+		return qualified
+	}
+	publicEqualQualified := qualify("m4l8-public-equal-qualified", publicEqual)
+	targetQualified := qualify("m4l8-target-qualified", targetEqual)
+	publicExtendedQualified := qualify("m4l8-public-extended-qualified", publicExtended)
+	wantOracleIDs := []string{
+		"trace-integrity", "agreement", "etcdraft-client-application-binding",
+		"etcdraft-log-progress",
+	}
+	for name, qualified := range map[string]scenarioTestingResult{
+		"public-equal":    publicEqualQualified,
+		"target-equal":    targetQualified,
+		"public-extended": publicExtendedQualified,
+	} {
+		recomputed := etcdraftAgenticOracleRegistry().Check(qualified.Bundle)
+		if !qualified.Replay.Stable || len(qualified.Oracle.Violations) != 0 ||
+			!reflect.DeepEqual(qualified.Oracle, recomputed) ||
+			!reflect.DeepEqual(qualified.Oracle.Checked, wantOracleIDs) {
+			t.Fatalf("%s evaluator evidence drifted: %#v / %#v", name, qualified, recomputed)
+		}
+	}
+	requestID := workload.Invocations[0].ID
+	if len(targetQualified.Bundle.ClientHistory) != 1 ||
+		targetQualified.Bundle.ClientHistory[0].Response.RequestID != requestID ||
+		targetQualified.Bundle.ClientHistory[0].Response.Status != "committed" ||
+		len(publicExtendedQualified.Bundle.ClientHistory) != 1 ||
+		publicExtendedQualified.Bundle.ClientHistory[0].Response.RequestID != requestID ||
+		publicExtendedQualified.Bundle.ClientHistory[0].Response.Status != "committed" {
+		t.Fatalf("M4l8 request identity drifted: target=%#v public=%#v",
+			targetQualified.Bundle.ClientHistory, publicExtendedQualified.Bundle.ClientHistory)
+	}
+
+	summary := map[string]any{
+		"shared_prefix_decisions": len(shared.Steps),
+		"shared_trace_decisions":  len(shared.FinalTrace.Records),
+		"shared_trace_digest":     shared.FinalTrace.Digest,
+		"shared_actions":          closureChoiceSummaries(shared.Steps),
+		"request_id":              requestID,
+		"participants":            participants,
+		"equal_budget":            equalBudget,
+		"public_equal": map[string]any{
+			"stop": publicEqual.StopReason, "decisions": len(publicEqual.Execution.Steps),
+			"risk":              publicEqual.Execution.FinalRisk.Status,
+			"work":              publicEqual.Execution.Work.TotalWorkUnits,
+			"qualified_primary": publicEqualQualified.Bundle.Work.Primary.WorkUnits,
+			"qualified_replay":  publicEqualQualified.Bundle.Work.Replay.WorkUnits,
+			"trace_digest":      publicEqualQualified.Bundle.Trace.Digest,
+			"bundle_digest":     publicEqualQualified.Bundle.Digest,
+			"replay_stable":     publicEqualQualified.Replay.Stable,
+		},
+		"target_equal": map[string]any{
+			"stop": targetEqual.StopReason, "decisions": len(targetEqual.Execution.Steps),
+			"risk":              targetEqual.Execution.FinalRisk.Status,
+			"work":              targetEqual.Execution.Work.TotalWorkUnits,
+			"qualified_primary": targetQualified.Bundle.Work.Primary.WorkUnits,
+			"qualified_replay":  targetQualified.Bundle.Work.Replay.WorkUnits,
+			"trace_digest":      targetQualified.Bundle.Trace.Digest,
+			"bundle_digest":     targetQualified.Bundle.Digest,
+			"replay_stable":     targetQualified.Replay.Stable,
+			"client_step":       targetQualified.Bundle.ClientHistory[0].Step,
+		},
+		"public_extended": map[string]any{
+			"stop": publicExtended.StopReason, "decisions": len(publicExtended.Execution.Steps),
+			"risk":              publicExtended.Execution.FinalRisk.Status,
+			"work":              publicExtended.Execution.Work.TotalWorkUnits,
+			"qualified_primary": publicExtendedQualified.Bundle.Work.Primary.WorkUnits,
+			"qualified_replay":  publicExtendedQualified.Bundle.Work.Replay.WorkUnits,
+			"trace_digest":      publicExtendedQualified.Bundle.Trace.Digest,
+			"bundle_digest":     publicExtendedQualified.Bundle.Digest,
+			"replay_stable":     publicExtendedQualified.Replay.Stable,
+			"client_step":       publicExtendedQualified.Bundle.ClientHistory[0].Step,
+		},
+		"oracle_checked": wantOracleIDs,
+	}
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("M4L8_BACKEND_ABLATION %s", encoded)
+}
+
 func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(), controlExperimentTestTimeout(180*time.Second),
@@ -380,12 +593,15 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 	core.TargetSurface = &target.Surface
 	plannerCalls := 0
 	scenario, err := runScenarioEpisodeCore(
-		ctx, core, 1, 6, 17,
+		ctx, core, 3, 6, 17,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
 			plannerCalls++
-			if view.RemainingDecisions != 17 || view.DecisionAllowance != 17 ||
+			if plannerCalls > 1 {
+				t.Fatal("closure returned control to the Agent before exhausting the global budget")
+			}
+			if view.RemainingDecisions != 17 || view.DecisionAllowance != 12 ||
 				view.MaxSteps != 6 || !view.PostInterventionClosure {
 				t.Fatalf("Scenario Agent budget view drifted: %#v", view)
 			}
@@ -411,6 +627,11 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 		scenario.Agent.Execution.NaturalProgressStop != controlexperiment.ScenarioProgressClientTerminal ||
 		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
 		t.Fatalf("Scenario Agent did not promote the exact 5+12 closure: %#v", scenario.Agent)
+	}
+	for _, record := range scenario.Agent.Execution.FinalTrace.Records {
+		if record.Action.Kind == control.ActionCrash {
+			t.Fatalf("closure lifecycle admitted an unnecessary later crash: %#v", record.Action)
+		}
 	}
 	qualified, err := target.Execute(ctx, risk, projector, *scenario.Agent.Execution, "")
 	if err != nil {

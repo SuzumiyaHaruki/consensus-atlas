@@ -1119,7 +1119,7 @@ func TestScenarioMilestoneAlreadyReachedDoesNotBuildClosure(t *testing.T) {
 	}
 }
 
-func TestScenarioAgentReceivesTargetClosureStopFeedback(t *testing.T) {
+func TestScenarioAgentClosureOwnsRemainingGlobalDecisionBudget(t *testing.T) {
 	ctx := context.Background()
 	runtimeConfig := RuntimeConfig{SeedHex: "6d346c342d6167656e742d666565646261636b", MaxClones: 1}
 	root := fixtureInitialTrace(t, ctx, runtimeConfig)
@@ -1225,15 +1225,8 @@ func TestScenarioAgentReceivesTargetClosureStopFeedback(t *testing.T) {
 				})
 				return encoded, ModelWork{}, marshalErr
 			}
-			if calls == 3 {
-				if view.Prior == nil || view.Prior.ReasonCode != ScenarioProgressClosureBudget ||
-					view.Prior.NaturalProgressStop != ScenarioProgressClosureBudget ||
-					view.Prior.ProgressDelta == nil ||
-					view.Prior.ProgressDelta.NaturalProgressStop != ScenarioProgressClosureBudget ||
-					len(view.Prior.NaturalProgress) != 3 {
-					t.Fatalf("revised path lost inherited closure context: %#v", view.Prior)
-				}
-				return []byte(`{"intent":"abandon"}`), ModelWork{}, nil
+			if calls > 2 {
+				t.Fatal("closure returned control to the Agent after only the local progress quantum")
 			}
 			encoded, marshalErr := json.Marshal(ScenarioInvestigationProposal{
 				Intent: ScenarioIntentContinue,
@@ -1246,13 +1239,15 @@ func TestScenarioAgentReceivesTargetClosureStopFeedback(t *testing.T) {
 			return encoded, ModelWork{}, marshalErr
 		},
 	)
-	if err != nil || calls != 3 || closureCalls != 2 ||
-		result.StopReason != ScenarioAgentStopHypothesisAbandoned || result.DecisionsUsed != 5 ||
+	if err != nil || calls != 2 || closureCalls != 2 ||
+		result.StopReason != ScenarioAgentStopDecisionBudget || result.DecisionsUsed != 6 ||
 		result.Execution == nil || len(result.Execution.Steps) != 2 ||
-		len(result.Execution.AutomaticProgress) != 3 ||
+		len(result.Execution.AutomaticProgress) != 4 ||
+		result.Execution.NaturalProgressStop != ScenarioProgressClosureBudget ||
 		result.Execution.Steps[1].Choice == nil ||
 		result.Execution.Steps[1].Choice.Action.Kind != control.ActionFireTemporal {
-		t.Fatalf("Agent closure feedback path failed: %#v calls=%d err=%v", result, calls, err)
+		t.Fatalf("closure did not retain the remaining global allowance: %#v calls=%d err=%v",
+			result, calls, err)
 	}
 }
 

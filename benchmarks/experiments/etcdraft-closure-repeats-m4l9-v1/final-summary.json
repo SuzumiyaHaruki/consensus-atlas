@@ -1,0 +1,87 @@
+{
+  "schema_version": "consensus-atlas/paired-agentic-summary/v1",
+  "experiment_id": "etcdraft-closure-repeats-m4l9-v1",
+  "base_commit": "f7b1a4a1534b4dfc127f644e36fe77217f3abae2",
+  "target_id": "etcdraft-v2",
+  "risk_input": "plans/agent/etcdraft-alternate-quorum-risk-v1.json",
+  "risk_input_digest": "91646150ca0bbddc7613bcd6f94917c641e31911e6704ccb91124e9272506da8",
+  "semantic_input_digest": "738357d7c6da8ebc00db731349757a675c2dc59124998054fc24ca918a84eefb",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "completed_groups": 5,
+  "completed_episodes": 10,
+  "effective_model_calls": 27,
+  "effective_observed_tokens": 661055,
+  "transport_incidents": [
+    {
+      "artifact": "artifacts/agentic/m4l9-etcdraft-closure-repeats-v1/g01-public-fixed",
+      "classification": "agent-transport-ambiguous",
+      "provider_usage_status": "unknown",
+      "included_as_method_outcome": false,
+      "replacement_artifact": "artifacts/agentic/m4l9-etcdraft-closure-repeats-v1/g01-public-fixed-r2"
+    }
+  ],
+  "arms": [
+    {
+      "closure_mode": "public-fixed",
+      "method_spec_digest": "0f2f1fdb28e0b15cd74dc379814177943631fe4534f00b4c60fa5b38c5a495a6",
+      "episodes": 5,
+      "correct_intervention": 5,
+      "closure_handoffs": 0,
+      "risk_reached": 2,
+      "call_budget_exhausted": 3,
+      "model_calls": 15,
+      "model_tokens": 395236,
+      "mean_model_tokens": 79047.2,
+      "median_model_tokens": 78260,
+      "scenario_decisions": 62,
+      "scenario_frontier_work": 150,
+      "scenario_search_work": 1022,
+      "qualified_primary_work": 212,
+      "qualified_replay_work": 212
+    },
+    {
+      "closure_mode": "target-local",
+      "method_spec_digest": "6ae0c24837ac8b03269073d5f9d6b2b7786a56a710b91d7bc74079c308a2b00d",
+      "episodes": 5,
+      "correct_intervention": 5,
+      "closure_handoffs": 5,
+      "direct_closure_without_later_intervention": 4,
+      "risk_reached": 5,
+      "call_budget_exhausted": 0,
+      "model_calls": 12,
+      "model_tokens": 265819,
+      "mean_model_tokens": 53163.8,
+      "median_model_tokens": 52033,
+      "scenario_decisions": 86,
+      "scenario_frontier_work": 150,
+      "scenario_search_work": 816,
+      "qualified_primary_work": 236,
+      "qualified_replay_work": 236
+    }
+  ],
+  "episodes": [
+    {"group": 1, "ordinal": 1, "closure_mode": "public-fixed", "artifact": "g01-public-fixed-r2", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 34, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": false, "handoff_trace_step": null, "post_handoff_new_intervention": null, "stop_reason": "risk-reached", "model_calls": 3, "model_tokens": 78032, "scenario_decisions": 22, "scenario_search_work": 240, "qualified_primary_work": 52, "qualified_replay_work": 52},
+    {"group": 1, "ordinal": 2, "closure_mode": "target-local", "artifact": "g01-target-local", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 31, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": true, "handoff_trace_step": 31, "post_handoff_new_intervention": {"trace_step": 43, "kind": "crash", "node": "n2"}, "stop_reason": "risk-reached", "model_calls": 2, "model_tokens": 52033, "scenario_decisions": 18, "scenario_search_work": 184, "qualified_primary_work": 48, "qualified_replay_work": 48},
+    {"group": 2, "ordinal": 3, "closure_mode": "target-local", "artifact": "g02-target-local", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 31, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": true, "handoff_trace_step": 31, "post_handoff_new_intervention": null, "stop_reason": "risk-reached", "model_calls": 3, "model_tokens": 58422, "scenario_decisions": 17, "scenario_search_work": 156, "qualified_primary_work": 47, "qualified_replay_work": 47},
+    {"group": 2, "ordinal": 4, "closure_mode": "public-fixed", "artifact": "g02-public-fixed", "risk_reached": false, "correct_intervention": true, "intervention": {"trace_step": 34, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": false, "handoff_trace_step": null, "post_handoff_new_intervention": null, "stop_reason": "call-budget-exhausted", "model_calls": 3, "model_tokens": 78260, "scenario_decisions": 6, "scenario_search_work": 136, "qualified_primary_work": 36, "qualified_replay_work": 36},
+    {"group": 3, "ordinal": 5, "closure_mode": "public-fixed", "artifact": "g03-public-fixed", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 31, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": false, "handoff_trace_step": null, "post_handoff_new_intervention": null, "stop_reason": "risk-reached", "model_calls": 3, "model_tokens": 84329, "scenario_decisions": 22, "scenario_search_work": 236, "qualified_primary_work": 52, "qualified_replay_work": 52},
+    {"group": 3, "ordinal": 6, "closure_mode": "target-local", "artifact": "g03-target-local", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 34, "source": "n3", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-17d467e45a33882b429045d67dc379281ac5d3d4fdaffa7fd44716eb26fa7e9c"}, "closure_handoff": true, "handoff_trace_step": 34, "post_handoff_new_intervention": null, "stop_reason": "risk-reached", "model_calls": 3, "model_tokens": 71573, "scenario_decisions": 17, "scenario_search_work": 158, "qualified_primary_work": 47, "qualified_replay_work": 47},
+    {"group": 4, "ordinal": 7, "closure_mode": "target-local", "artifact": "g04-target-local", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 32, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": true, "handoff_trace_step": 32, "post_handoff_new_intervention": null, "stop_reason": "risk-reached", "model_calls": 2, "model_tokens": 46040, "scenario_decisions": 17, "scenario_search_work": 158, "qualified_primary_work": 47, "qualified_replay_work": 47},
+    {"group": 4, "ordinal": 8, "closure_mode": "public-fixed", "artifact": "g04-public-fixed", "risk_reached": false, "correct_intervention": true, "intervention": {"trace_step": 33, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4"}, "closure_handoff": false, "handoff_trace_step": null, "post_handoff_new_intervention": null, "stop_reason": "call-budget-exhausted", "model_calls": 3, "model_tokens": 80634, "scenario_decisions": 6, "scenario_search_work": 206, "qualified_primary_work": 36, "qualified_replay_work": 36},
+    {"group": 5, "ordinal": 9, "closure_mode": "public-fixed", "artifact": "g05-public-fixed", "risk_reached": false, "correct_intervention": true, "intervention": {"trace_step": 31, "source": "n3", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-f04fc4976cf2a03e89bdf3cc57adea4cb4704ce188fb579b36e08aecb00dd2cd"}, "closure_handoff": false, "handoff_trace_step": null, "post_handoff_new_intervention": null, "stop_reason": "call-budget-exhausted", "model_calls": 3, "model_tokens": 73981, "scenario_decisions": 6, "scenario_search_work": 204, "qualified_primary_work": 36, "qualified_replay_work": 36},
+    {"group": 5, "ordinal": 10, "closure_mode": "target-local", "artifact": "g05-target-local", "risk_reached": true, "correct_intervention": true, "intervention": {"trace_step": 34, "source": "n2", "target": "n1", "leaf_type": "MsgAppResp", "item_id": "etcdraft-v2-item-3c385bb659d7d24f0a1bc83f9dc37b281391258ac2dd3c9d88b2d07e5d5a3268"}, "closure_handoff": true, "handoff_trace_step": 34, "post_handoff_new_intervention": null, "stop_reason": "risk-reached", "model_calls": 2, "model_tokens": 37751, "scenario_decisions": 17, "scenario_search_work": 160, "qualified_primary_work": 47, "qualified_replay_work": 47}
+  ],
+  "evaluator_recheck": {
+    "bundles_checked": 10,
+    "recorded_replay_stable": 10,
+    "monitors_checked_per_bundle": 4,
+    "oracle_violations": 0,
+    "runtime_replay_reexecuted_by_evaluator": false
+  },
+  "retained_evidence": {"canonical_gzip_bundles": 10, "oracle_audits": 10, "provider_journals": 0},
+  "interpretation": {
+    "supported": "Under this fixed public Risk, target, prompt version and budget, both arms selected a semantically equivalent follower-to-leader MsgAppResp intervention in all five Episodes; target-local reached in all five and public-fixed in two. Four target-local Episodes reached without a later intervention; one required a later Crash after closure quantum exhaustion.",
+    "not_supported": "This small public capability pilot does not establish general superiority, defect discovery, cross-protocol transfer, or statistical significance. Zero Oracle violations means the experiment exercised a valid recovery path rather than finding an implementation defect."
+  }
+}

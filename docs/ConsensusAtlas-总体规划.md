@@ -181,9 +181,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
-- closure handoff 与正式 Risk 输入属于方法实现变化，当前 MethodSpec implementation
-  identity 为 `m4l7-risk-input-closure-handoff-v1`；旧 `m4l5-closure-v1`/`m4d-v1`
-  只用于读取历史工件，不能恢复为当前运行；
+- closure handoff、正式 Risk 输入与 closure 全局预算所有权属于方法实现变化，当前
+  MethodSpec implementation identity 为 `m4m1-closure-ownership-v1`；旧
+  `m4l7-risk-input-closure-handoff-v1`/`m4l5-closure-v1`/`m4d-v1` 只用于读取
+  历史工件，不能恢复为当前运行；
 - 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
   factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
   composition 与字段不一致时拒绝运行，两个 arm 使用不同 digest；
@@ -207,7 +208,40 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   已执行正确 drop，随后因 Agent 继续猜测未 enabled 的闭合消息而 `no-match`。M4l7
   已增加可信前缀 handoff：Scenario view/prompt 暴露 closure，且 Target factory 在每个
   成功前缀后机械确认是否接管；确认后忽略剩余预测步骤并执行受限 closure。以相同
-  Risk 重跑验证，不靠单纯增加调用预算掩盖接口缺口；
+  Risk 重跑已经完成：两个 arm 共享到同一 `MsgAppResp n2→n1` drop 的精确 Trace 前缀；
+  public-fixed 以 3 次调用/83,202 tokens 未 reached，target-local 在 drop 后 handoff，以
+  2 次调用/41,133 tokens reached 并提交同一 RequestID，fresh Replay stable、Oracle
+  finding 为 0。两臂 view/prompt 因 closure mode 而不同，public 还包含一次无效 revise；
+  token 差额只能归于完整方法臂。保存 Bundle 已由 evaluator 侧按既有 Target registry
+  重算四个 monitor，并作为 canonical gzip 保留；
+- M4l8 已从上述真实 step-31 共同 Trace 做零模型后端消融：14-decision 等预算且执行
+  work 相同时，只有 target-local reached；public-fixed 需要19个后干预 decision 才得到
+  同一 committed RequestID。该结果隔离了 prompt、token 和 proposal 波动，但仍只是
+  单 Risk/单拓扑 capability 证据；下一步用少量同预算模型重复估计方差，不把一次成功
+  提升为总体方法结论；
+- M4l9 已按预注册的五组交替顺序完成上述重复。两臂正确干预率均为 5/5；
+  target-local reached 5/5，public-fixed reached 2/5。target-local 使用 12 次调用和
+  265,819 observed tokens，public-fixed 使用 15 次调用和 395,236 tokens。10 个
+  Bundle 均记录 stable Replay，并由 evaluator 校验 Bundle/projection、重算四个
+  monitor、0 violation。干预是语义等价的 follower→leader `MsgAppResp`，并非全部
+  固定为 n2→n1；target-local 直接闭合为 4/5，旧 per-call quantum 在一轮中导致
+  handoff 后又出现额外 Crash；
+- M4m1 将 closure 所有权提升到 Episode 剩余全局 decision 预算：接管后不因本轮
+  quantum 耗尽而重新调用 Agent，除非歧义、无候选或全局预算真正耗尽；现有 etcd
+  5+12 回归不再产生额外 Crash；
+- M4m2 已用 OmniPaxos 验证第二条相同接口的垂直切片。真实首请求使用
+  `accept-sync→accepted→decide` 路径；丢弃 step-26 `accept-sync n1→n2` 后，4-decision
+  等预算下只有 target-local reached，公共顺序需 8 decisions。factory 仅选择实际
+  enabled 的 `prepare/promise/accept-sync/accepted`，同一 RequestID completed、fresh
+  Replay stable、Agreement 0 violation。该结果把跨协议复用从设计主张推进为两个
+  Target 的代码证据，但仍不是 finding 或总体优越性证明；
+- M4m2R 已以当前 Target 重新资格审查的 existing Risk 走通
+  `Scenario Agent→handoff→closure→qualified Bundle`。规范 Risk ID 保持精确匹配，
+  不把 factory 放宽到任意消息丢失候选；零模型 Planner 只调用一次，三步计划加四步
+  closure 形成与脚本消融相同的 Trace/Bundle，同一 RequestID、Replay 和 Oracle 均闭合。
+  下一步真实模型实验只替换 Planner，不改变 Risk、Runtime、closure、Replay 或 Oracle；
+- 上述证据支持“Agent 选干预 + Target-local 闭合”的窄 capability 结论，但仍不是
+  跨协议普适性、缺陷发现能力或总体方法优越性证据；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。

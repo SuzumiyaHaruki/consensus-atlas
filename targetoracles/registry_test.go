@@ -36,6 +36,20 @@ func TestRegistryResolvesExactTargetAndProjector(t *testing.T) {
 	}
 }
 
+func TestResolveTargetBindsRegisteredProjector(t *testing.T) {
+	projector, registry, err := ResolveTarget(EtcdraftV2TargetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projector.ID() != registry.ProjectorID() || registry.TargetID() != EtcdraftV2TargetID {
+		t.Fatalf("resolved Target composition drifted: %s/%s/%s",
+			projector.ID(), registry.ProjectorID(), registry.TargetID())
+	}
+	if _, _, err := ResolveTarget("unknown-target"); err == nil {
+		t.Fatal("unknown Target resolved an Oracle composition")
+	}
+}
+
 func TestRegistryRejectsDeclaredAndExecutableMonitorIDDrift(t *testing.T) {
 	registry := newRegistry(
 		"fixture-target", "fixture-projector",
