@@ -507,6 +507,14 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		len(limitedArtifact.ScenarioProviderCalls) != 1 {
 		t.Fatalf("charged token-boundary call was not persisted: %#v err=%v", limitedArtifact, err)
 	}
+	queuedAfterTokenStop, err := nextAgenticPortfolioRisk([]recoveredAgenticEpisode{{
+		Summary: limitedArtifact,
+	}})
+	if err != nil || queuedAfterTokenStop == nil ||
+		queuedAfterTokenStop.Candidate.ID != limitedArtifact.Accepted.Candidate.ID {
+		t.Fatalf("accepted candidate with no Scenario attempt was skipped: %#v err=%v",
+			queuedAfterTokenStop, err)
+	}
 	tokenPrepareCalls := 0
 	tokenStoppedInvestigation, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
 		Directory: tokenInvestigationDirectory, Resume: true,
