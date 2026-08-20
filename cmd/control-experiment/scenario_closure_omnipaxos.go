@@ -10,6 +10,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 type omnipaxosClosureParticipantSet struct {
@@ -57,6 +58,10 @@ func newOmnipaxosScenarioClosureFactory() controlexperiment.ScenarioClosureFacto
 		participants.Selected = selected
 		return omnipaxosDecisionClosureSetSelector(participants), true, nil
 	}
+}
+
+func omnipaxosScenarioClosureSupports(spec semantic.RiskWitnessSpec) bool {
+	return spec.RiskID == omnipaxosMessageLossRiskID
 }
 
 func omnipaxosDecisionClosureSetSelector(

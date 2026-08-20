@@ -14,7 +14,8 @@ const (
 	ScenarioProgressClientTerminal         = "client-terminal"
 	ScenarioProgressQuiescent              = "natural-progress-quiescent"
 	ScenarioProgressBudget                 = "natural-progress-budget-exhausted"
-	ScenarioProgressRiskReached            = "risk-reached"
+	ScenarioProgressSemanticYield          = "natural-progress-semantic-yield"
+	ScenarioProgressWitnessInstantiated    = "witness-instantiated"
 	ScenarioProgressClosureBudget          = "closure-budget-exhausted"
 	ScenarioProgressClosureQuiescent       = "closure-quiescent"
 	ScenarioProgressClosureUnderdetermined = "closure-underdetermined"
@@ -81,6 +82,12 @@ type ScenarioClosureFactory func(ScenarioClosureContext) (
 	active bool,
 	err error,
 )
+
+// ScenarioClosureSupport is a protocol-neutral preflight declaration for one
+// accepted witness spec. It controls only what the planner is promised; the
+// factory must still recognize the exact executed intervention before any
+// closure Action can run.
+type ScenarioClosureSupport func(semantic.RiskWitnessSpec) bool
 
 // ExecuteScenarioNaturalProgress advances only host effects, ordinary message
 // delivery and naturally due temporal events until a mechanical terminal or
@@ -224,6 +231,10 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 	selector ScenarioClosureSelector,
 ) (scenarioLiveProgressResult, error) {
 	result := scenarioLiveProgressResult{FinalTrace: root, FinalRisk: rootRisk}
+	rootInterventions, err := scenarioStrategicActionKeys(view.Actions)
+	if err != nil {
+		return result, err
+	}
 	for decision := 0; decision < maxDecisions; decision++ {
 		if scenarioClientTerminal(snapshot) {
 			result.StopReason = ScenarioProgressClientTerminal
@@ -282,9 +293,8 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			result.StopReason = ScenarioProgressClientTerminal
 			break
 		}
-		if selector != nil && decision+1 == maxDecisions &&
-			result.FinalRisk.Status == semantic.RiskWitnessReached {
-			result.StopReason = ScenarioProgressRiskReached
+		if result.FinalRisk.Status == semantic.RiskWitnessReached {
+			result.StopReason = ScenarioProgressWitnessInstantiated
 			break
 		}
 		if decision+1 < maxDecisions {
@@ -295,6 +305,17 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			if err != nil {
 				return result, err
 			}
+			if selector == nil && scenarioPublicProgressShouldYield(
+				rootRisk, result.FinalRisk, rootInterventions, view.Actions,
+			) {
+				result.StopReason = ScenarioProgressSemanticYield
+				frontier, frontierErr := scenarioActionFrontier(view)
+				if frontierErr != nil {
+					return result, frontierErr
+				}
+				result.Frontier = &frontier
+				break
+			}
 		}
 	}
 	if result.StopReason == "" {
@@ -304,6 +325,45 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 		}
 	}
 	result.Work.TotalWorkUnits = result.Work.ChildMaterialization.WorkUnits
+	return result, nil
+}
+
+func scenarioPublicProgressShouldYield(
+	rootRisk semantic.RiskWitnessResult,
+	currentRisk semantic.RiskWitnessResult,
+	rootInterventions map[string]struct{},
+	actions []FrontierActionRef,
+) bool {
+	if len(currentRisk.SatisfiedMilestones) > len(rootRisk.SatisfiedMilestones) {
+		return true
+	}
+	current, err := scenarioStrategicActionKeys(actions)
+	if err != nil {
+		return true
+	}
+	for key := range current {
+		if _, existed := rootInterventions[key]; !existed {
+			return true
+		}
+	}
+	return false
+}
+
+func scenarioStrategicActionKeys(actions []FrontierActionRef) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	for _, action := range actions {
+		if scenarioNaturalProgressKind(action.Kind) {
+			continue
+		}
+		normalized := action
+		normalized.ActionID = ""
+		normalized.ActionDigest = ""
+		digest, err := control.CanonicalDigest(normalized)
+		if err != nil {
+			return nil, err
+		}
+		result[digest] = struct{}{}
+	}
 	return result, nil
 }
 

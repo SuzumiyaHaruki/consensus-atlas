@@ -307,11 +307,31 @@ func scenarioAgentPrompt(
 		"When prior_feedback.capability_gaps is present, the trusted Target surface proves those requested controls unavailable; " +
 		"revise the plan using declared composable Actions and capability values, or abandon when allowed. A capability gap is not a verdict. " +
 		"Never copy an ActionID from prior_feedback. Never add budgets, faults, assertions, verdicts, or digests."
+	singlePath := scenarioSinglePathPromptView(view)
+	if singlePath {
+		system = "Return exactly one ScenarioInvestigationProposal JSON object and no prose. This is a single-path " +
+			"investigation. Use only the intent listed in available_intents, or abandon when it is also listed. " +
+			"For continue/revise provide one plan containing exactly one strategic Action step. Omit branch_id, " +
+			"from_branch_id, reference_branch_id, omitted_step_ids, assertions, verdicts, budgets, and digests. " +
+			"Use only a current enabled Action or stable selector fields present in root_frontier/action_semantics."
+	}
 	if len(view.AvailableIntents) == 1 &&
 		(view.AvailableIntents[0] == controlexperiment.ScenarioIntentContinue ||
 			view.AvailableIntents[0] == controlexperiment.ScenarioIntentRevise) {
 		system += " This phase permits only intent=" + view.AvailableIntents[0] +
 			" with plan; omit branch_id, from_branch_id, reference_branch_id, and omitted_step_ids."
+	}
+	investigationGuidance := "Use branch with a new branch_id to retain an intervention result. Use control with a new branch_id and an existing " +
+		"reference_branch_id; it will execute from the referenced branch's root checkpoint. Use ablate only when available, name " +
+		"the omitted_step_ids from the reference branch's applied_interventions, and supply a shorter plan. Branch metadata reports " +
+		"the strategic Actions actually applied, not merely proposed plan text. Use select with from_branch_id to finalize a stored path " +
+		"without executing another Action; use from_branch_id with continue to promote and extend a path, or with branch to fork " +
+		"another candidate. revise repairs only the current selected path. When abandon is available, use it only when the mechanical " +
+		"progress_delta shows that this hypothesis is no longer worth the remaining budget; abandon is not a correctness or defect verdict. "
+	if singlePath {
+		investigationGuidance = "The trusted coordinator has already derived continue versus revise from the previous mechanical result. " +
+			"Choose one current strategic Action; do not create or refer to branches, controls, ablations, or path selection. " +
+			"When abandon is available, use it only when progress_delta shows this hypothesis is no longer worth the remaining budget. "
 	}
 	user := "Create one complete but bounded investigation proposal of at most max_steps that advances the supplied hypothesis. " +
 		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. " +
@@ -327,13 +347,7 @@ func scenarioAgentPrompt(
 		"no-match or ambiguous feedback, match_count is the final candidate count and selector_trace shows the count after each " +
 		"field is applied. The first zero-count field is a concrete conflict; a final count above one requires another stable " +
 		"field from available_actions. " +
-		"Use branch with a new branch_id to retain an intervention result. Use control with a new branch_id and an existing " +
-		"reference_branch_id; it will execute from the referenced branch's root checkpoint. Use ablate only when available, name " +
-		"the omitted_step_ids from the reference branch's applied_interventions, and supply a shorter plan. Branch metadata reports " +
-		"the strategic Actions actually applied, not merely proposed plan text. Use select with from_branch_id to finalize a stored path " +
-		"without executing another Action; use from_branch_id with continue to promote and extend a path, or with branch to fork " +
-		"another candidate. revise repairs only the current selected path. When abandon is available, use it only when the mechanical " +
-		"progress_delta shows that this hypothesis is no longer worth the remaining budget; abandon is not a correctness or defect verdict. " +
+		investigationGuidance +
 		"When present, prior_feedback.progress_delta is the compact trusted account of decisions, new milestones, the first missing " +
 		"milestone, newly observed milestone evidence, transition novelty, Action counts, temporal callbacks versus actual logical-clock " +
 		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available non-closure interventions, and recent " +
@@ -359,6 +373,22 @@ func scenarioAgentPrompt(
 			"earlier step rebuilds the frontier and may invalidate every current ActionID."
 	}
 	return system, user, nil
+}
+
+func scenarioSinglePathPromptView(view controlexperiment.ScenarioAgentView) bool {
+	if view.MaxSteps != 1 || len(view.Branches) != 0 {
+		return false
+	}
+	for _, intent := range view.AvailableIntents {
+		switch intent {
+		case controlexperiment.ScenarioIntentContinue,
+			controlexperiment.ScenarioIntentRevise,
+			controlexperiment.ScenarioIntentAbandon:
+		default:
+			return false
+		}
+	}
+	return len(view.AvailableIntents) > 0
 }
 
 func scenarioSelectionOnlyView(view controlexperiment.ScenarioAgentView) bool {

@@ -116,6 +116,7 @@ func newOmnipaxosAgenticEpisodeTarget(
 		OracleRegistry:              oracleRegistry,
 		ObservationProjector:        observationProjector,
 		ClosureFactory:              newOmnipaxosScenarioClosureFactory(),
+		ClosureSupport:              omnipaxosScenarioClosureSupports,
 		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(len(surface.Nodes)),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
@@ -128,9 +129,10 @@ func newOmnipaxosAgenticEpisodeTarget(
 				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis,
 				AcceptedHypothesis: &risk.AcceptedHypothesis, RiskSpec: risk.Spec,
 				Root: inputs.Root, Runtime: inputs.Experiment.Runtime,
-				FaultEnvelope:    inputs.Experiment.faultEnvelope(),
-				SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
-				NewAdapter:       factory, RiskProjector: projector,
+				FaultEnvelope:         inputs.Experiment.faultEnvelope(),
+				SemanticExposure:      inputs.Experiment.ScenarioSemanticExposure,
+				SingleStrategicAction: true,
+				NewAdapter:            factory, RiskProjector: projector,
 				SemanticProjector: func(
 					trace controlruntime.Trace,
 					frontier controlexperiment.RiskFrontierView,

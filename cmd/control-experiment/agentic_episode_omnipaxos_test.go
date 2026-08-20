@@ -189,11 +189,18 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			content = candidateBytes
 		case scenarioInvestigationStructuredOutputName:
 			view := a4bScenarioViewFromPayload(t, payload)
+			wantIntents := []string{controlexperiment.ScenarioIntentContinue}
+			if view.Prior != nil && view.Prior.Outcome == controlexperiment.ScenarioAgentStopped {
+				wantIntents = []string{
+					controlexperiment.ScenarioIntentRevise,
+					controlexperiment.ScenarioIntentAbandon,
+				}
+			}
 			if view.AcceptedHypothesis == nil ||
 				view.AcceptedHypothesis.Candidate.ID != omnipaxosDiscoveredRiskCandidate().ID ||
 				view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
 				len(view.TargetSurface.Workload.Invocations) != 1 ||
-				!reflect.DeepEqual(view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue}) ||
+				!reflect.DeepEqual(view.AvailableIntents, wantIntents) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"required":["intent","plan"]`)) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"message_class"`)) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"replication"`)) ||
@@ -208,29 +215,36 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				strings.Contains(payload.Messages[1].Content, `"hypothesis":`) {
 				t.Fatal("Scenario provider prompt retained the full knowledge/hypothesis contracts")
 			}
-			hasPrepare := false
+			var step *controlexperiment.ScenarioStep
 			for _, action := range view.Frontier.Actions {
-				hasPrepare = hasPrepare || action.Kind == control.ActionDeliverMessage &&
-					action.MessageTypeHint == "sequence-paxos/prepare"
+				if action.Kind == control.ActionDeliverMessage &&
+					action.MessageTypeHint == "sequence-paxos/prepare" {
+					value := controlexperiment.ScenarioStep{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
+						Kind: control.ActionDeliverMessage, MessageSource: action.MessageSource.Node,
+						MessageTarget: action.MessageTarget, MessageTypeHint: action.MessageTypeHint,
+					}}
+					step = &value
+					break
+				}
 			}
-			if hasPrepare {
+			if step == nil {
+				for _, action := range view.Frontier.Actions {
+					if (action.Kind == control.ActionDeliverMessage && action.MessageTypeHint == "sequence-paxos/promise") ||
+						(action.Kind == control.ActionDropMessage && action.MessageTypeHint == "sequence-paxos/accept-sync") {
+						value := controlexperiment.ScenarioStep{ID: "advance-replication", Selector: controlexperiment.FrontierActionSelector{
+							Kind: action.Kind, MessageSource: action.MessageSource.Node,
+							MessageTarget: action.MessageTarget, MessageTypeHint: action.MessageTypeHint,
+						}}
+						step = &value
+						break
+					}
+				}
+			}
+			if step != nil {
 				content, err = json.Marshal(controlexperiment.ScenarioInvestigationProposal{
-					Intent: controlexperiment.ScenarioIntentContinue,
+					Intent: view.AvailableIntents[0],
 					Plan: controlexperiment.ScenarioPlan{
-						ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{
-							{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
-								Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
-								MessageTypeHint: "sequence-paxos/prepare",
-							}},
-							{ID: "deliver-promise", Selector: controlexperiment.FrontierActionSelector{
-								Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
-								MessageTypeHint: "sequence-paxos/promise",
-							}},
-							{ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
-								Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
-								MessageTypeHint: "sequence-paxos/accept-sync",
-							}},
-						},
+						ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{*step},
 					},
 				})
 			}
@@ -266,27 +280,27 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	}
 	budget := agenticEpisodeBudget{
 		MaxRiskCalls: 1, MaxScenarioCalls: 3, MaxTotalCalls: 4,
-		MaxObservedTokens: 20, MaxScenarioPlanSteps: 4,
+		MaxObservedTokens: 30, MaxScenarioPlanSteps: 4,
 		MaxRuntimeDecisions: inputs.Experiment.ScenarioMaxDecisions,
 	}
 	result, err := runOmnipaxosAgenticEpisode(
 		ctx, inputs, riskJournal, scenarioJournal, budget, activateRisk, activateScenario,
 	)
 	if err != nil || result.Status != agenticEpisodeCompleted || result.Testing == nil ||
-		!result.Metrics.CandidateAccepted || !result.Metrics.RiskReached ||
+		!result.Metrics.CandidateAccepted || !result.Metrics.WitnessInstantiated ||
 		result.Scenario == nil || result.Scenario.Agent.DecisionsUsed == 0 ||
 		result.Metrics.CorePSSSamples == 0 || result.Metrics.UniquePSSStates == 0 ||
 		result.Metrics.ProtocolPSSStates == 0 || result.Metrics.ControlPSSStates == 0 ||
 		result.Metrics.ProtocolPSSStates > result.Metrics.UniquePSSStates ||
 		result.Metrics.OracleFindings != 0 || !result.Testing.Replay.Stable ||
 		result.Work.Model != (controlexperiment.ModelWork{
-			Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14,
+			Calls: 4, InputTokens: 16, OutputTokens: 12, TotalTokens: 28,
 		}) || result.Work.ScenarioSearch.TotalWorkUnits == 0 ||
 		result.Work.QualifiedExecution.Primary.WorkUnits == 0 ||
 		result.Work.QualifiedExecution.Replay.WorkUnits == 0 ||
-		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 1 ||
-		providerCalls != 2 || keyActivations != 2 ||
-		result.Assessment.Status != agenticEvidenceRiskReached ||
+		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 3 ||
+		providerCalls != 4 || keyActivations != 4 ||
+		result.Assessment.Status != agenticEvidenceWitnessInstantiated ||
 		result.Assessment.ReasonCode != "property-oracle-clean" ||
 		result.Assessment.PropertyID != "client-operation-continuity" ||
 		result.Assessment.EvidenceLevel != controlexperiment.PropertyEvidenceOracleBacked ||
@@ -301,9 +315,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		artifactDirectory, "omnipaxos-v2", budget, result,
 	)
 	if err != nil || len(artifact.ScenarioAttemptFeedback) != artifact.ScenarioAttempts ||
-		len(artifact.ScenarioAttemptFeedback) != 1 ||
+		len(artifact.ScenarioAttemptFeedback) != 3 ||
 		!artifact.ScenarioAttemptFeedback[0].EnteredExecution ||
-		artifact.ScenarioAttemptFeedback[0].Outcome != controlexperiment.ScenarioStatusCompleted {
+		!artifact.ScenarioAttemptFeedback[1].EnteredExecution ||
+		!artifact.ScenarioAttemptFeedback[2].EnteredExecution ||
+		artifact.ScenarioAttemptFeedback[2].Outcome != controlexperiment.ScenarioStatusCompleted {
 		t.Fatalf("compact Scenario attempt evidence missing: %#v err=%v", artifact.ScenarioAttemptFeedback, err)
 	}
 	recoveredArtifact, terminal, err := recoverAgenticEpisodeArtifacts(
@@ -447,7 +463,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	if err != nil || recovered.Status != result.Status || recovered.Metrics != result.Metrics ||
 		recovered.Work.Model != result.Work.Model || recovered.Testing == nil ||
 		recovered.Testing.Bundle.Trace.Digest != result.Testing.Bundle.Trace.Digest ||
-		providerCalls != 2 || keyActivations != 2 {
+		providerCalls != 4 || keyActivations != 4 {
 		t.Fatalf("dual-Agent recovery repeated a model call or drifted: %#v calls=%d keys=%d err=%v",
 			recovered, providerCalls, keyActivations, err)
 	}
@@ -473,8 +489,8 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		},
 	)
 	if err != nil || limited.Status != agenticEpisodeTokenStopped || limited.Testing != nil ||
-		!limited.Metrics.CandidateAccepted || limited.Metrics.RiskReached ||
-		limited.Work.Model.TotalTokens != 14 || providerCalls != 4 || keyActivations != 4 ||
+		!limited.Metrics.CandidateAccepted || limited.Metrics.WitnessInstantiated ||
+		limited.Work.Model.TotalTokens != 14 || providerCalls != 6 || keyActivations != 6 ||
 		limited.Assessment.Status != agenticEvidenceBudgetExhausted {
 		t.Fatalf("token threshold did not stop before execution: %#v calls=%d keys=%d err=%v",
 			limited, providerCalls, keyActivations, err)
@@ -535,7 +551,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		},
 	})
 	if err != nil || runner.Summary.Status != agenticEpisodeCompleted || runner.Testing == nil ||
-		providerCalls != 6 || keyReads != 2 || prepareCalls != 1 {
+		providerCalls != 10 || keyReads != 4 || prepareCalls != 1 {
 		t.Fatalf("directory runner incomplete: %#v calls=%d keys=%d prepare=%d err=%v",
 			runner, providerCalls, keyReads, prepareCalls, err)
 	}
@@ -544,7 +560,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
 	})
 	if err != nil || terminalRunner.Testing == nil || terminalRunner.Summary.Status != agenticEpisodeCompleted ||
-		providerCalls != 6 || keyReads != 2 || prepareCalls != 1 {
+		providerCalls != 10 || keyReads != 4 || prepareCalls != 1 {
 		t.Fatalf("terminal runner accessed active inputs: %#v calls=%d keys=%d prepare=%d err=%v",
 			terminalRunner, providerCalls, keyReads, prepareCalls, err)
 	}
@@ -556,7 +572,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		"-campaign-resume",
 	}, &terminalOutput); err != nil ||
 		!bytes.Contains(terminalOutput.Bytes(), []byte("target=omnipaxos-v2 status=completed")) ||
-		providerCalls != 6 || keyReads != 2 || prepareCalls != 1 {
+		providerCalls != 10 || keyReads != 4 || prepareCalls != 1 {
 		t.Fatalf("terminal CLI recovery failed or accessed active inputs: %q err=%v",
 			terminalOutput.String(), err)
 	}
@@ -584,11 +600,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	})
 	if err != nil || investigation.StopReason != agenticInvestigationEpisodeLimit ||
 		len(investigation.Episodes) != 2 || len(investigation.ExplorationMemory) != 2 ||
-		investigation.ModelWork.Calls != 4 || investigation.ModelWork.TotalTokens != 28 ||
+		investigation.ModelWork.Calls != 8 || investigation.ModelWork.TotalTokens != 56 ||
 		investigation.RuntimeDecisionAllowance != 2*budget.MaxRuntimeDecisions ||
 		!investigation.ExplorationMemory[1].RepeatedCandidate ||
 		investigation.ExplorationMemory[1].NewProtocolPSSStates != 0 ||
-		memoryRiskRequests != 1 || providerCalls != 10 || keyReads != 6 || investigationPrepareCalls != 1 {
+		memoryRiskRequests != 1 || providerCalls != 18 || keyReads != 12 || investigationPrepareCalls != 1 {
 		t.Fatalf("two-round Investigation did not pass recovered Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
 			investigation, providerCalls, keyReads, memoryRiskRequests, investigationPrepareCalls, err)
 	}
@@ -615,11 +631,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	})
 	if err != nil || resumedInvestigation.StopReason != agenticInvestigationEpisodeLimit ||
 		len(resumedInvestigation.Episodes) != 3 || len(resumedInvestigation.ExplorationMemory) != 3 ||
-		resumedInvestigation.ModelWork.Calls != 6 || resumedInvestigation.ModelWork.TotalTokens != 42 ||
+		resumedInvestigation.ModelWork.Calls != 12 || resumedInvestigation.ModelWork.TotalTokens != 84 ||
 		resumedInvestigation.RuntimeDecisionAllowance != 3*budget.MaxRuntimeDecisions ||
 		!resumedInvestigation.ExplorationMemory[2].RepeatedCandidate ||
 		resumedInvestigation.ExplorationMemory[2].NewProtocolPSSStates != 0 ||
-		memoryRiskRequests != 2 || providerCalls != 12 || keyReads != 8 || resumePrepareCalls != 1 {
+		memoryRiskRequests != 2 || providerCalls != 22 || keyReads != 16 || resumePrepareCalls != 1 {
 		t.Fatalf("Investigation resume repeated old episodes or lost Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
 			resumedInvestigation, providerCalls, keyReads, memoryRiskRequests, resumePrepareCalls, err)
 	}
@@ -642,7 +658,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		},
 	})
 	if err != nil || budgetStopped.StopReason != agenticInvestigationCallLimit ||
-		len(budgetStopped.Episodes) != 0 || providerCalls != 12 || keyReads != 8 {
+		len(budgetStopped.Episodes) != 0 || providerCalls != 22 || keyReads != 16 {
 		t.Fatalf("Investigation started an episode without its declared call allowance: %#v err=%v",
 			budgetStopped, err)
 	}

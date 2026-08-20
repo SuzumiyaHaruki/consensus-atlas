@@ -45,11 +45,11 @@ func runAgenticEpisodeCLI(
 	})
 	if result.Summary.TargetID != "" {
 		fmt.Fprintf(stdout,
-			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d accepted=%t reached=%t pss_protocol=%d pss_control=%d pss_joint=%d pss_samples=%d oracle=%d\n",
+			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d executable=%t witness_instantiated=%t pss_protocol=%d pss_control=%d pss_joint=%d pss_samples=%d oracle_findings=%d\n",
 			options.CampaignDirectory, result.Summary.TargetID, result.Summary.Status,
 			result.Summary.RiskAttempts, result.Summary.ScenarioAttempts,
 			result.Summary.Work.Model.Calls, result.Summary.Work.Model.TotalTokens,
-			result.Summary.Metrics.CandidateAccepted, result.Summary.Metrics.RiskReached,
+			result.Summary.Metrics.CandidateAccepted, result.Summary.Metrics.WitnessInstantiated,
 			result.Summary.Metrics.ProtocolPSSStates, result.Summary.Metrics.ControlPSSStates,
 			result.Summary.Metrics.UniquePSSStates, result.Summary.Metrics.CorePSSSamples,
 			result.Summary.Metrics.OracleFindings,
@@ -336,12 +336,14 @@ func bindRequestedClosureMode(
 	switch controlexperiment.AgenticClosureMode(requested) {
 	case "":
 		target.ClosureFactory = nil
+		target.ClosureSupport = nil
 		return target, nil
 	case controlexperiment.AgenticClosureModePublicFixed:
 		target.ClosureFactory = nil
+		target.ClosureSupport = nil
 		return target, nil
 	case controlexperiment.AgenticClosureModeTargetLocal:
-		if target.ClosureFactory == nil {
+		if target.ClosureFactory == nil || target.ClosureSupport == nil {
 			return agenticEpisodeTarget{}, errors.New("AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_UNAVAILABLE")
 		}
 		return target, nil

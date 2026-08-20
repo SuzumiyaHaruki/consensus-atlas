@@ -150,6 +150,45 @@ func TestKnowledgeDiscoveryUsesLongestExplicitSourceMount(t *testing.T) {
 	}
 }
 
+func TestKnowledgeDiscoverySearchesNeutralMountedSourcesBeforeBoundedRead(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "protocol"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, "protocol", "election.go"),
+		[]byte("package protocol\n\nfunc tallyVotes() {\n  // quorum transition\n}\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, ".git", "hidden.go"), []byte("package hidden\n// quorum transition\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	mounts := []KnowledgeSourceMount{{ReferencePrefix: "sut/", Directory: root}}
+	search, err := SearchMountedKnowledgeSources(mounts, KnowledgeReadRequest{
+		Query: "quorum transition", MaxResults: 5,
+	})
+	if err != nil || search.Validate() != nil || search.Status != KnowledgeDiscoveryCompleted ||
+		len(search.Matches) != 1 || search.Matches[0].Reference != "sut/protocol/election.go" ||
+		search.Matches[0].Line != 4 {
+		t.Fatalf("neutral mounted search drifted: %#v/%v", search, err)
+	}
+	read, err := ReadMountedKnowledgeSourceFromMounts(
+		mounts,
+		KnowledgeSource{Reference: search.Matches[0].Reference, Path: search.Matches[0].Reference},
+		KnowledgeReadRequest{Reference: search.Matches[0].Reference, StartLine: 2, MaxLines: 3},
+	)
+	if err != nil || read.Validate() != nil || read.Status != KnowledgeDiscoveryCompleted ||
+		!strings.Contains(read.Text, "tallyVotes") || read.StartLine != 2 || read.EndLine != 4 {
+		t.Fatalf("bounded read of discovered source failed: %#v/%v", read, err)
+	}
+}
+
 func knowledgeDiscoveryFixture(t *testing.T, references []string) ProtocolKnowledgePack {
 	t.Helper()
 	pack, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{

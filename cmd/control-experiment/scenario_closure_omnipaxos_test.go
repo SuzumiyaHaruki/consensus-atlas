@@ -276,29 +276,6 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 		existingRisk.Candidate.ID != omnipaxosMessageLossRiskID {
 		t.Fatalf("load OmniPaxos existing Risk: %#v/%v", existingRisk, err)
 	}
-	proposal, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
-		Intent: controlexperiment.ScenarioIntentContinue,
-		Plan: controlexperiment.ScenarioPlan{
-			ID: "omnipaxos-existing-risk-closure",
-			Steps: []controlexperiment.ScenarioStep{
-				{ID: "deliver-prepare-to-n2", Selector: controlexperiment.FrontierActionSelector{
-					Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
-					MessageTypeHint: "sequence-paxos/prepare",
-				}},
-				{ID: "deliver-promise-to-n1", Selector: controlexperiment.FrontierActionSelector{
-					Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
-					MessageTypeHint: "sequence-paxos/promise",
-				}},
-				{ID: "drop-operation-replication", Selector: controlexperiment.FrontierActionSelector{
-					Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
-					MessageTypeHint: "sequence-paxos/accept-sync",
-				}},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	providerCalls := 0
 	client := fixtureOpenRouterIntentClient()
 	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
@@ -309,6 +286,44 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 			!bytes.Contains([]byte(payload.Messages[1].Content),
 				[]byte(`"post_intervention_closure": true`)) {
 			t.Fatalf("unexpected OmniPaxos Scenario provider call: %#v/%v", payload, err)
+		}
+		view := a4bScenarioViewFromPayload(t, payload)
+		var step *controlexperiment.ScenarioStep
+		for _, want := range []struct {
+			kind control.ActionKind
+			leaf string
+			id   string
+		}{
+			{control.ActionDeliverMessage, "sequence-paxos/prepare", "deliver-prepare-to-n2"},
+			{control.ActionDeliverMessage, "sequence-paxos/promise", "deliver-promise-to-n1"},
+			{control.ActionDropMessage, "sequence-paxos/accept-sync", "drop-operation-replication"},
+		} {
+			for _, action := range view.Frontier.Actions {
+				if action.Kind == want.kind && action.MessageTypeHint == want.leaf {
+					value := controlexperiment.ScenarioStep{
+						ID:       want.id,
+						Selector: controlexperiment.FrontierActionSelector{ActionID: action.ActionID},
+					}
+					step = &value
+					break
+				}
+			}
+			if step != nil {
+				break
+			}
+		}
+		if step == nil {
+			t.Fatalf("OmniPaxos single-Action planner had no semantic target: %#v", view.Frontier.Actions)
+		}
+		proposal, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+			Intent: view.AvailableIntents[0],
+			Plan: controlexperiment.ScenarioPlan{
+				ID:    "omnipaxos-existing-risk-closure",
+				Steps: []controlexperiment.ScenarioStep{*step},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -328,16 +343,16 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 	}
 	result, err := runAgenticEpisode(
 		ctx, target, riskJournal, scenarioJournal, agenticEpisodeBudget{
-			MaxRiskCalls: 1, MaxScenarioCalls: 1, MaxTotalCalls: 2,
-			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 3,
-			MaxRuntimeDecisions: 7,
+			MaxRiskCalls: 1, MaxScenarioCalls: 3, MaxTotalCalls: 4,
+			MaxObservedTokens: 120_000, MaxScenarioPlanSteps: 1,
+			MaxRuntimeDecisions: 16,
 		}, nil, nil, existingRisk,
 		func() error { return errors.New("Risk provider must not be activated") },
 		func() error { return scenarioJournal.ActivateKey("fixture-key") },
 	)
-	if err != nil || providerCalls != 1 || len(result.RiskProviderCalls) != 0 ||
+	if err != nil || providerCalls != 3 || len(result.RiskProviderCalls) != 0 ||
 		result.RiskAgent.Accepted == nil || len(result.RiskAgent.Attempts) != 0 ||
-		len(result.ScenarioProviderCalls) != 1 || result.Scenario == nil ||
+		len(result.ScenarioProviderCalls) != 3 || result.Scenario == nil ||
 		result.Scenario.Agent.Execution == nil || result.Testing == nil {
 		t.Fatalf("OmniPaxos existing-Risk Agent path failed: %#v calls=%d err=%v",
 			result, providerCalls, err)
@@ -348,6 +363,7 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 		len(execution.Steps) != 3 || len(execution.AutomaticProgress) != 4 ||
 		execution.FinalRisk.Status != semantic.RiskWitnessReached ||
 		!result.Testing.Replay.Stable || result.Testing.Risk.Status != semantic.RiskWitnessReached ||
+		result.Testing.Outcome != scenarioTestingOracleClean ||
 		len(result.Testing.Oracle.Violations) != 0 ||
 		!reflect.DeepEqual(result.Testing.Oracle.Checked, []string{
 			"trace-integrity", "agreement", targetoracles.OmnipaxosClientDecisionBindingMonitorID,
@@ -355,7 +371,11 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 		len(result.Testing.Bundle.ClientHistory) != 1 ||
 		result.Testing.Bundle.ClientHistory[0].State != control.ItemCompleted ||
 		result.Testing.Bundle.ClientHistory[0].Response.RequestID != "omnipaxos-a9e1-request" {
-		t.Fatalf("OmniPaxos Agent closure evidence drifted: %#v", result)
+		t.Fatalf("OmniPaxos Agent closure evidence drifted: decisions=%d handoff=%t step=%s steps=%d automatic=%d risk=%s replay=%t checked=%v history=%#v",
+			result.Scenario.Agent.DecisionsUsed, execution.ClosureHandoff,
+			execution.ClosureHandoffStepID, len(execution.Steps), len(execution.AutomaticProgress),
+			execution.FinalRisk.Status, result.Testing.Replay.Stable,
+			result.Testing.Oracle.Checked, result.Testing.Bundle.ClientHistory)
 	}
 	interventions := 0
 	for _, record := range execution.FinalTrace.Records {
@@ -371,11 +391,17 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 	}
 	assertOmnipaxosClientDecisionBinding(t, result.Testing.Bundle)
 	wantClosureLeaves := []string{
-		"sequence-paxos/prepare", "sequence-paxos/promise",
 		"sequence-paxos/accept-sync", "sequence-paxos/accepted",
 	}
-	gotClosureLeaves := make([]string, 0, len(execution.AutomaticProgress))
-	for _, step := range execution.AutomaticProgress {
+	var closureProgress []controlexperiment.ScenarioStepFeedback
+	for _, attempt := range result.Scenario.Agent.Attempts {
+		if attempt.Feedback.ClosureHandoff {
+			closureProgress = attempt.Feedback.NaturalProgress
+			break
+		}
+	}
+	gotClosureLeaves := make([]string, 0, len(closureProgress))
+	for _, step := range closureProgress {
 		if step.Choice == nil {
 			t.Fatalf("Agent closure omitted an exact choice: %#v", step)
 		}
@@ -449,6 +475,8 @@ func TestOmnipaxosFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	core.ClosureFactory = target.ClosureFactory
+	core.ClosureSupport = target.ClosureSupport
+	core.SingleStrategicAction = false // Preserve the scripted multi-step quorum fixture.
 	core.RootID = "omnipaxos-five-node-agent-closure"
 	core.TargetSurface = &target.Surface
 	plannerCalls := 0
@@ -536,7 +564,7 @@ func TestOmnipaxosFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
 	// the Agent selects one additional path (n4 here), after which the trusted
 	// closure has the two followers required by the five-node majority.
 	if plannerCalls != 2 || len(selectedTargets) != 1 || scenario.Agent.Execution == nil ||
-		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopRiskReached ||
+		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopWitnessInstantiated ||
 		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
 		t.Fatalf("five-node OmniPaxos closure did not complete: calls=%d selected=%v result=%#v",
 			plannerCalls, selectedTargets, scenario.Agent)

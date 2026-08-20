@@ -12,11 +12,11 @@ import (
 const scenarioProgressRecentActions = 8
 
 const (
-	ScenarioMilestoneProgressUnchanged = "milestone-unchanged"
-	ScenarioMilestoneProgressAdvanced  = "milestone-advanced"
-	ScenarioMilestoneProgressRepeated  = "scheduling-pattern-repeated"
-	ScenarioMilestoneProgressStalled   = "milestone-stalled"
-	ScenarioMilestoneProgressReached   = "risk-reached"
+	ScenarioMilestoneProgressUnchanged    = "milestone-unchanged"
+	ScenarioMilestoneProgressAdvanced     = "milestone-advanced"
+	ScenarioMilestoneProgressRepeated     = "scheduling-pattern-repeated"
+	ScenarioMilestoneProgressStalled      = "milestone-stalled"
+	ScenarioMilestoneProgressInstantiated = "witness-instantiated"
 )
 
 type ScenarioRecentAction struct {
@@ -133,7 +133,7 @@ func NewScenarioProgressDelta(
 	result.RepeatedPatternDepth = repeatedScenarioPatternDepth(keys)
 	switch {
 	case afterRisk.Status == semantic.RiskWitnessReached:
-		result.MilestoneProgress = ScenarioMilestoneProgressReached
+		result.MilestoneProgress = ScenarioMilestoneProgressInstantiated
 	case len(result.NewMilestones) > 0:
 		result.MilestoneProgress = ScenarioMilestoneProgressAdvanced
 	case result.RepeatedPatternDepth > 0:

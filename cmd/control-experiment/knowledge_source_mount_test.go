@@ -57,7 +57,7 @@ func TestEtcdraftLocalSourceIsReadableAndBoundThroughExplicitMount(t *testing.T)
 		KnowledgeSourceMounts: mountValues,
 	})
 	if err != nil || len(composition.KnowledgeSourceMounts) != 2 ||
-		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureDossierV2 ||
+		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureRepositorySearchV3 ||
 		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 2 ||
 		len(composition.MethodSpec.SourceExposure.SUTBindings) != 1 ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ModulePath != etcdraftLocalModulePath ||
@@ -124,7 +124,7 @@ func TestOmnipaxosLocalSourceIsReadableAndBoundThroughExplicitMount(t *testing.T
 		KnowledgeSourceMounts: mountValues,
 	})
 	if err != nil || len(composition.KnowledgeSourceMounts) != 2 ||
-		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureDossierV2 ||
+		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureRepositorySearchV3 ||
 		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 2 ||
 		len(composition.MethodSpec.SourceExposure.SUTBindings) != 1 ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ModulePath != omnipaxosLocalModulePath ||

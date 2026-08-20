@@ -95,7 +95,7 @@ func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T
 				t.Fatal("first call received invented feedback")
 			}
 		} else {
-			if view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonUnqualified ||
+			if view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonNotExecutable ||
 				len(view.Prior.Issues) != 2 ||
 				view.Prior.Issues[0].Code != semantic.RiskIssueMissingAction ||
 				view.Prior.Issues[1].Code != semantic.RiskIssueMissingObservationKind {
@@ -133,7 +133,7 @@ func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T
 	}
 	if result.Status != RiskAgentAccepted || result.Accepted == nil || len(result.Attempts) != 2 ||
 		result.Attempts[0].Assessment == nil || result.Attempts[0].Assessment.Qualification.Qualified ||
-		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonUnqualified ||
+		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonNotExecutable ||
 		!result.Accepted.Qualification.Qualified || result.Accepted.Spec.FamilyID != "paxos" ||
 		len(result.Accepted.Spec.RequiredOrder) != 2 ||
 		result.ModelWork != (ModelWork{Calls: 2, InputTokens: 6, OutputTokens: 4, TotalTokens: 10}) {
@@ -472,11 +472,20 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 		},
 	}
 	qualified = riskCandidateWithSupport(qualified, "primer/rounds")
+	directDecision := qualified
+	directDecision.ID = "direct-decision-progress"
+	directDecision.Summary = "Observe a later decision after invoking one operation."
+	directDecision.MechanismSteps = []RiskMechanismStep{
+		qualified.MechanismSteps[0], qualified.MechanismSteps[2],
+	}
+	directDecision.Predicates = []semantic.ObservationPredicate{
+		qualified.Predicates[0], qualified.Predicates[2],
+	}
 	unknownProperty := qualified
 	unknownProperty.ID = "unknown-property-hypothesis"
 	unknownProperty.PropertyRef = "not-supplied"
 	encoded, err := json.Marshal(RiskCandidatePortfolio{
-		Candidates: []RiskCandidate{unknownProperty, qualified},
+		Candidates: []RiskCandidate{unknownProperty, qualified, directDecision},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -484,10 +493,10 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 	memory := []RiskExplorationMemoryEntry{{
 		Episode: 1, CandidateID: "earlier-message-loss", Summary: "Earlier investigation.",
 		SuspectedMechanism: "A message-loss ordering was investigated previously.",
-		EpisodeOutcome:     RiskMemoryOutcomeRiskNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
+		EpisodeOutcome:     RiskMemoryOutcomeWitnessNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
 		ProtocolPSSStates: 3, NewProtocolPSSStates: 2,
-		MechanicalReasonCodes: []string{RiskAgentReasonUnqualified},
+		MechanicalReasonCodes: []string{RiskAgentReasonNotExecutable},
 		CapabilityGaps: []AgentCapabilityGap{{
 			Code: AgentCapabilityGapMissingControl, Reference: "storage-step",
 			Summary: "the requested storage failure outcome is unavailable",
@@ -512,9 +521,11 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 	)
 	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
 		result.Accepted.Candidate.ID != qualified.ID || len(result.Attempts) != 1 ||
-		len(result.Attempts[0].Feedback.Reviews) != 2 ||
+		len(result.Executable) != 2 || result.Executable[1].Candidate.ID != directDecision.ID ||
+		len(result.Attempts[0].Feedback.Reviews) != 3 ||
 		result.Attempts[0].Feedback.Reviews[0].ReasonCode != RiskAgentReasonProperty ||
-		result.Attempts[0].Feedback.Reviews[1].Outcome != RiskCandidateQualified {
+		result.Attempts[0].Feedback.Reviews[1].Outcome != RiskCandidateExecutable ||
+		result.Attempts[0].Feedback.Reviews[2].Outcome != RiskCandidateExecutable {
 		t.Fatalf("portfolio was not mechanically reviewed in order: %#v/%v", result, err)
 	}
 	if memory[0].SatisfiedMilestones[0] != "invoke" {

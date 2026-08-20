@@ -32,9 +32,10 @@ func isNilSemanticComponent(value any) bool {
 }
 
 const (
-	ScenarioPlanningBackendID = "bounded-scenario-plan-v1"
-	ScenarioAgentMaxCalls     = 16
-	ScenarioAgentMaxDecisions = 512
+	ScenarioPlanningBackendID    = "bounded-scenario-plan-v1"
+	ScenarioAgentMaxCalls        = 16
+	ScenarioAgentMaxDecisions    = 512
+	ScenarioNaturalProgressSlice = 4
 
 	ScenarioAgentCompleted = "completed"
 	ScenarioAgentStopped   = "stopped"
@@ -42,7 +43,7 @@ const (
 	ScenarioAgentProposalInvalid = "proposal-invalid"
 	ScenarioAgentExecutionFailed = "execution-failed"
 
-	ScenarioAgentStopRiskReached            = "risk-reached"
+	ScenarioAgentStopWitnessInstantiated    = "witness-instantiated"
 	ScenarioAgentStopPathSelected           = "path-selected"
 	ScenarioAgentStopDecisionBudget         = "decision-budget-exhausted"
 	ScenarioAgentStopCallBudget             = "call-budget-exhausted"
@@ -164,7 +165,7 @@ func ExploreScenarioWithPlanner(
 		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
 		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
 		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		nil, planner, preparers...,
+		nil, false, false, planner, preparers...,
 	)
 }
 
@@ -198,7 +199,43 @@ func ExploreScenarioWithPlannerAndClosure(
 		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
 		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
 		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		closureFactory, planner, preparers...,
+		closureFactory, closureFactory != nil, false, planner, preparers...,
+	)
+}
+
+// ExploreScenarioWithPlannerAndScopedClosure exposes closure to the planner
+// only when trusted Target composition declares support for this exact spec.
+// The factory remains authoritative after a real intervention is executed.
+func ExploreScenarioWithPlannerAndScopedClosure(
+	ctx context.Context,
+	maxCalls int,
+	maxPlanSteps int,
+	maxDecisions int,
+	knowledge ProtocolKnowledgePack,
+	hypothesis TestHypothesis,
+	spec semantic.RiskWitnessSpec,
+	rootFrontier RiskFrontierView,
+	rootSemantics ScenarioSemanticExposure,
+	rootRisk semantic.RiskWitnessResult,
+	root controlruntime.Trace,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	targetSurface *AgentTargetSurface,
+	acceptedHypothesis *AcceptedHypothesisContext,
+	newAdapter AdapterFactory,
+	projector SemanticPrefixProjector,
+	semanticProjector ScenarioSemanticProjector,
+	closureFactory ScenarioClosureFactory,
+	closureSupport ScenarioClosureSupport,
+	planner ScenarioPlanner,
+	preparers ...ScenarioActionPreparer,
+) (ScenarioAgentResult, error) {
+	advertiseClosure := closureFactory != nil && closureSupport != nil && closureSupport(spec)
+	return exploreScenarioWithPlanner(
+		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
+		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
+		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
+		closureFactory, advertiseClosure, true, planner, preparers...,
 	)
 }
 
@@ -222,6 +259,8 @@ func exploreScenarioWithPlanner(
 	projector SemanticPrefixProjector,
 	semanticProjector ScenarioSemanticProjector,
 	closureFactory ScenarioClosureFactory,
+	advertiseClosure bool,
+	singlePath bool,
 	planner ScenarioPlanner,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioAgentResult, error) {
@@ -252,7 +291,7 @@ func exploreScenarioWithPlanner(
 	var prior *ScenarioAgentFeedback
 	for ordinal := 1; ordinal <= maxCalls; ordinal++ {
 		remaining := maxDecisions - usedDecisions
-		selectionOnly := len(result.Branches) > 0 && (remaining <= 0 || ordinal == maxCalls)
+		selectionOnly := !singlePath && len(result.Branches) > 0 && (remaining <= 0 || ordinal == maxCalls)
 		if remaining <= 0 && !selectionOnly {
 			break
 		}
@@ -261,7 +300,13 @@ func exploreScenarioWithPlanner(
 		if !selectionOnly {
 			remainingCalls := maxCalls - ordinal + 1
 			progressQuantum = (remaining + remainingCalls - 1) / remainingCalls
+			if progressQuantum > ScenarioNaturalProgressSlice {
+				progressQuantum = ScenarioNaturalProgressSlice
+			}
 			viewMaxSteps = maxPlanSteps
+			if singlePath {
+				viewMaxSteps = 1
+			}
 			if remaining < viewMaxSteps {
 				viewMaxSteps = remaining
 			}
@@ -270,8 +315,14 @@ func exploreScenarioWithPlanner(
 				attemptAllowance = remaining
 			}
 			availableIntents = scenarioAvailableIntents(prior, result.Branches)
+			if singlePath {
+				availableIntents = scenarioSinglePathIntents(prior)
+			}
 			if ordinal == maxCalls {
 				availableIntents = scenarioFinalExplorationIntents(prior)
+				if singlePath {
+					availableIntents = scenarioSinglePathIntents(prior)
+				}
 			}
 		}
 		view := ScenarioAgentView{
@@ -286,7 +337,7 @@ func exploreScenarioWithPlanner(
 			DecisionAllowance:       attemptAllowance,
 			RemainingDecisions:      remaining,
 			AvailableIntents:        availableIntents,
-			PostInterventionClosure: closureFactory != nil,
+			PostInterventionClosure: advertiseClosure,
 			Branches:                cloneScenarioBranches(result.Branches),
 			Prior:                   cloneScenarioFeedback(prior),
 		}
@@ -377,7 +428,7 @@ func exploreScenarioWithPlanner(
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			if currentRisk.Status == semantic.RiskWitnessReached {
-				return finishScenarioAgentResult(result, root, ScenarioAgentStopRiskReached), nil
+				return finishScenarioAgentResult(result, root, ScenarioAgentStopWitnessInstantiated), nil
 			}
 			return finishScenarioAgentResult(result, root, ScenarioAgentStopPathSelected), nil
 		}
@@ -532,7 +583,7 @@ func exploreScenarioWithPlanner(
 		result.Attempts = append(result.Attempts, attempt)
 		prior = &result.Attempts[len(result.Attempts)-1].Feedback
 		if promote && currentRisk.Status == semantic.RiskWitnessReached {
-			return finishScenarioAgentResult(result, root, ScenarioAgentStopRiskReached), nil
+			return finishScenarioAgentResult(result, root, ScenarioAgentStopWitnessInstantiated), nil
 		}
 		if usedDecisions >= maxDecisions {
 			if ordinal < maxCalls && len(result.Branches) > 0 {
@@ -610,6 +661,17 @@ func scenarioFinalExplorationIntents(prior *ScenarioAgentFeedback) []string {
 	if prior.Outcome == ScenarioAgentStopped {
 		result = []string{ScenarioIntentRevise}
 	}
+	if prior.ProgressDelta != nil {
+		result = append(result, ScenarioIntentAbandon)
+	}
+	return result
+}
+
+func scenarioSinglePathIntents(prior *ScenarioAgentFeedback) []string {
+	if prior == nil || prior.Outcome != ScenarioAgentStopped {
+		return []string{ScenarioIntentContinue}
+	}
+	result := []string{ScenarioIntentRevise}
 	if prior.ProgressDelta != nil {
 		result = append(result, ScenarioIntentAbandon)
 	}
@@ -774,6 +836,10 @@ func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecu
 		result.Execution.AutomaticProgress,
 		cloneScenarioStepFeedback(execution.AutomaticProgress)...,
 	)
+	if execution.ClosureHandoff {
+		result.Execution.ClosureHandoff = true
+		result.Execution.ClosureHandoffStepID = execution.ClosureHandoffStepID
+	}
 	result.Execution.NaturalProgressStop = execution.NaturalProgressStop
 	result.Execution.ClosureCandidates = cloneFrontierActionRefs(execution.ClosureCandidates)
 	result.Execution.FinalTrace = execution.FinalTrace

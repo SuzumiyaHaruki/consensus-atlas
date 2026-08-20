@@ -132,12 +132,31 @@ func (spec RiskWitnessSpec) seal() (RiskWitnessSpec, error) {
 // RiskWitnessMilestoneEvidence is a target-owned, trace-bound projection. The
 // generic validator checks identity and order but never interprets Kind.
 type RiskWitnessMilestoneEvidence struct {
-	MilestoneID        string           `json:"milestone_id"`
-	Step               uint64           `json:"step"`
-	Kind               string           `json:"kind"`
-	EvidenceDigest     string           `json:"evidence_digest"`
-	Participant        *control.NodeRef `json:"participant,omitempty"`
-	RelatedParticipant *control.NodeRef `json:"related_participant,omitempty"`
+	MilestoneID        string                       `json:"milestone_id"`
+	Step               uint64                       `json:"step"`
+	Kind               string                       `json:"kind"`
+	EvidenceDigest     string                       `json:"evidence_digest"`
+	Participant        *control.NodeRef             `json:"participant,omitempty"`
+	RelatedParticipant *control.NodeRef             `json:"related_participant,omitempty"`
+	Bindings           []RiskWitnessBindingEvidence `json:"bindings,omitempty"`
+}
+
+// RiskWitnessBindingEvidence records a binding resolved by trusted
+// Observation matching. It is execution evidence, not an Agent assertion.
+type RiskWitnessBindingEvidence struct {
+	Name  string           `json:"name"`
+	Field ObservationField `json:"field"`
+	Value string           `json:"value"`
+}
+
+func (binding RiskWitnessBindingEvidence) validate() error {
+	if !validRiskWitnessToken(binding.Name) || binding.Value == "" {
+		return errors.New("RISK_WITNESS_BINDING_EVIDENCE_INVALID")
+	}
+	if _, ok := observationFields[binding.Field]; !ok {
+		return errors.New("RISK_WITNESS_BINDING_FIELD_INVALID")
+	}
+	return nil
 }
 
 func (evidence RiskWitnessMilestoneEvidence) validate() error {
@@ -153,6 +172,13 @@ func (evidence RiskWitnessMilestoneEvidence) validate() error {
 	if evidence.RelatedParticipant != nil {
 		if err := evidence.RelatedParticipant.Validate(); err != nil {
 			return err
+		}
+	}
+	for index, binding := range evidence.Bindings {
+		if binding.validate() != nil || index > 0 &&
+			(evidence.Bindings[index-1].Name > binding.Name ||
+				(evidence.Bindings[index-1].Name == binding.Name && evidence.Bindings[index-1].Field >= binding.Field)) {
+			return errors.New("RISK_WITNESS_BINDING_EVIDENCE_NOT_CANONICAL")
 		}
 	}
 	return nil
@@ -382,6 +408,7 @@ func cloneRiskWitnessEvidence(values []RiskWitnessMilestoneEvidence) []RiskWitne
 			related := *values[index].RelatedParticipant
 			result[index].RelatedParticipant = &related
 		}
+		result[index].Bindings = append([]RiskWitnessBindingEvidence(nil), values[index].Bindings...)
 	}
 	return result
 }

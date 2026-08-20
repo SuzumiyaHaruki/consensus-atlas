@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	scenarioTestingPassed    = "passed"
-	scenarioTestingViolation = "violation"
+	scenarioTestingOracleClean   = "oracle-clean"
+	scenarioTestingOracleFinding = "oracle-finding"
 )
 
 // scenarioTestingResult is a target-neutral view over the existing Bundle.
@@ -35,7 +35,7 @@ func (result scenarioTestingResult) validateExecutionStructure() error {
 		result.CorePSSSamples != result.Bundle.Run.CorePSSSamples ||
 		result.UniqueCorePSSStates != result.Bundle.Run.UniqueCoreStates ||
 		result.Replay != result.Bundle.Run.Replay || !result.Replay.Required || !result.Replay.Stable ||
-		(result.Outcome != scenarioTestingPassed && result.Outcome != scenarioTestingViolation) {
+		(result.Outcome != scenarioTestingOracleClean && result.Outcome != scenarioTestingOracleFinding) {
 		return errors.New("SCENARIO_TESTING_EXECUTION_INVALID")
 	}
 	return nil
@@ -48,9 +48,9 @@ func newScenarioTestingResult(
 	registry targetoracles.Registry,
 ) scenarioTestingResult {
 	verdict := registry.Check(bundle)
-	outcome := scenarioTestingPassed
+	outcome := scenarioTestingOracleClean
 	if len(verdict.Violations) > 0 {
-		outcome = scenarioTestingViolation
+		outcome = scenarioTestingOracleFinding
 	}
 	return scenarioTestingResult{
 		PlanID: planID, Bundle: bundle, Risk: risk,
@@ -77,9 +77,9 @@ func validateScenarioTestingRisk(
 		return errors.New("SCENARIO_TESTING_RISK_INVALID")
 	}
 	verdict := registry.Check(result.Bundle)
-	outcome := scenarioTestingPassed
+	outcome := scenarioTestingOracleClean
 	if len(verdict.Violations) > 0 {
-		outcome = scenarioTestingViolation
+		outcome = scenarioTestingOracleFinding
 	}
 	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome {
 		return errors.New("SCENARIO_TESTING_ORACLE_INVALID")

@@ -334,7 +334,7 @@ func TestAgenticHoldoutCLIRequiresCompleteInvestigationAndAggregatesPriorEpisode
 							"model":             controlexperiment.ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5},
 							"scenario_frontier": controlexperiment.PhaseWork{SetupAttempts: 1, WorkUnits: 1},
 						},
-						"evidence_assessment": map[string]any{"status": "risk-near-miss"},
+						"evidence_assessment": map[string]any{"status": "witness-near-miss"},
 					}
 					if err := writeJSON(filepath.Join(directory, "summary.json"), summary); err != nil {
 						t.Fatal(err)

@@ -58,6 +58,7 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 	factory := func() (control.Adapter, error) {
 		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	}
+	plannerCalls := 0
 	scenario, err := runScenarioEpisodeCore(ctx, scenarioEpisodeCoreInputs{
 		RootID: "omnipaxos-discovered-risk", Knowledge: scenarioRisk.Knowledge,
 		Hypothesis: scenarioRisk.Hypothesis, AcceptedHypothesis: &scenarioRisk.AcceptedHypothesis,
@@ -71,11 +72,14 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 				inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
 			)
 		},
-	}, 1, 3, inputs.Experiment.ScenarioMaxDecisions,
+	}, 3, 3, inputs.Experiment.ScenarioMaxDecisions,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) ([]byte, controlexperiment.ModelWork, error) {
+			plannerCalls++
 			if view.Hypothesis.RiskID != candidate.ID || view.Knowledge.Digest != scenarioRisk.Knowledge.Digest ||
 				view.AcceptedHypothesis == nil || view.AcceptedHypothesis.Candidate.ID != candidate.ID ||
-				!reflect.DeepEqual(view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue}) {
+				(plannerCalls == 1 && !reflect.DeepEqual(
+					view.AvailableIntents, []string{controlexperiment.ScenarioIntentContinue},
+				)) {
 				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
 			hasPrepare := false
@@ -83,26 +87,42 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 				hasPrepare = hasPrepare || action.Kind == control.ActionDeliverMessage &&
 					action.MessageTypeHint == "sequence-paxos/prepare"
 			}
-			if !hasPrepare {
-				t.Fatalf("Scenario Agent did not receive target-local leaf semantics: %#v", view.Frontier.Actions)
+			steps := []controlexperiment.ScenarioStep(nil)
+			if hasPrepare {
+				steps = []controlexperiment.ScenarioStep{
+					{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
+						Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
+						MessageTypeHint: "sequence-paxos/prepare",
+					}},
+					{ID: "deliver-promise", Selector: controlexperiment.FrontierActionSelector{
+						Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
+						MessageTypeHint: "sequence-paxos/promise",
+					}},
+					{ID: "drop-operation-replication", Selector: controlexperiment.FrontierActionSelector{
+						Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
+						MessageTypeHint: "sequence-paxos/accept-sync",
+					}},
+				}
+			} else {
+				for _, action := range view.Frontier.Actions {
+					if action.Kind == control.ActionDeliverMessage ||
+						action.Kind == control.ActionFireTemporal ||
+						action.Kind == control.ActionCompleteEffect {
+						steps = []controlexperiment.ScenarioStep{{
+							ID:       "continue-after-semantic-yield",
+							Selector: controlexperiment.FrontierActionSelector{ActionID: action.ActionID},
+						}}
+						break
+					}
+				}
+			}
+			if len(steps) == 0 {
+				t.Fatalf("Scenario Agent did not receive an executable consensus Action: %#v", view.Frontier.Actions)
 			}
 			plan, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 				Intent: controlexperiment.ScenarioIntentContinue,
 				Plan: controlexperiment.ScenarioPlan{
-					ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{
-						{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
-							Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
-							MessageTypeHint: "sequence-paxos/prepare",
-						}},
-						{ID: "deliver-promise", Selector: controlexperiment.FrontierActionSelector{
-							Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
-							MessageTypeHint: "sequence-paxos/promise",
-						}},
-						{ID: "drop-operation-replication", Selector: controlexperiment.FrontierActionSelector{
-							Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
-							MessageTypeHint: "sequence-paxos/accept-sync",
-						}},
-					},
+					ID: "discovered-risk-scenario", Steps: steps,
 				},
 			})
 			return plan, controlexperiment.ModelWork{

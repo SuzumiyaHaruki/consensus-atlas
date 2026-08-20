@@ -25,8 +25,8 @@ const (
 	agenticEvidenceBudgetExhausted      = "search-budget-exhausted"
 	agenticEvidenceExecutionFailed      = "execution-failed"
 	agenticEvidenceInconclusive         = "inconclusive"
-	agenticEvidenceRiskReached          = "risk-reached"
-	agenticEvidenceRiskUnverified       = "risk-reached-unverified"
+	agenticEvidenceWitnessInstantiated  = "witness-instantiated"
+	agenticEvidenceWitnessUnverified    = "witness-instantiated-unverified"
 	agenticEvidenceOracleFinding        = "oracle-finding"
 	agenticEvidenceHypothesisNotReached = "hypothesis-not-reached"
 	agenticEvidenceHypothesisAbandoned  = "hypothesis-abandoned"
@@ -78,7 +78,7 @@ type agenticEpisodeMetrics struct {
 	CandidateAccepted             bool `json:"candidate_accepted"`
 	ExecutedCandidates            int  `json:"executed_candidates"`
 	BranchCandidates              int  `json:"branch_candidates"`
-	RiskReached                   bool `json:"risk_reached"`
+	WitnessInstantiated           bool `json:"witness_instantiated"`
 	CorePSSSamples                int  `json:"core_pss_samples"`
 	UniquePSSStates               int  `json:"unique_pss_states"`
 	ProtocolPSSStates             int  `json:"protocol_pss_states,omitempty"`
@@ -159,6 +159,7 @@ type agenticEpisodeTarget struct {
 	ObservationProjector agenticEpisodeObservationProjector
 	OracleRegistry       targetoracles.Registry
 	ClosureFactory       controlexperiment.ScenarioClosureFactory
+	ClosureSupport       controlexperiment.ScenarioClosureSupport
 	// ClosureMinimumScenarioCalls is a target-owned structural lower bound:
 	// one call selects the intervention and any remaining calls select an
 	// otherwise ambiguous quorum path. It does not promise success within that
@@ -236,6 +237,7 @@ func runAgenticEpisode(
 	if existingRisk != nil {
 		accepted := *existingRisk
 		risk.Accepted = &accepted
+		risk.Executable = []controlexperiment.RiskCandidateAssessment{accepted}
 	} else {
 		risk, runErr = controlexperiment.DiscoverRiskWithPlanner(
 			ctx, controlexperiment.RiskAgentBudget{
@@ -295,10 +297,12 @@ func runAgenticEpisode(
 		coreInputs.AcceptedHypothesis == nil ||
 		!reflect.DeepEqual(*coreInputs.AcceptedHypothesis, scenarioRisk.AcceptedHypothesis) ||
 		!reflect.DeepEqual(coreInputs.RiskSpec, scenarioRisk.Spec) || coreInputs.RiskProjector == nil ||
-		coreInputs.RiskProjector.ID() != projector.ID() || coreInputs.ClosureFactory != nil {
+		coreInputs.RiskProjector.ID() != projector.ID() || coreInputs.ClosureFactory != nil ||
+		coreInputs.ClosureSupport != nil {
 		return result, errors.New("AGENTIC_EPISODE_TARGET_SCENARIO_INVALID")
 	}
 	coreInputs.ClosureFactory = target.ClosureFactory
+	coreInputs.ClosureSupport = target.ClosureSupport
 	coreInputs.TargetSurface = &target.Surface
 	rootID := target.ID + "-agentic-" + risk.Accepted.Candidate.ID
 	coreInputs.RootID = rootID
@@ -562,13 +566,13 @@ func assessTestingEvidence(
 		return assessment
 	}
 	if testing.Risk.Status == semantic.RiskWitnessReached {
-		assessment.Status = agenticEvidenceRiskReached
+		assessment.Status = agenticEvidenceWitnessInstantiated
 		assessment.ReasonCode = "property-oracle-clean"
 		if len(assessment.OracleIDs) == 0 {
-			assessment.Status = agenticEvidenceRiskUnverified
+			assessment.Status = agenticEvidenceWitnessUnverified
 			assessment.ReasonCode = "missing-property-oracle"
 		} else if !containsAllStrings(testing.Oracle.Checked, assessment.OracleIDs) {
-			assessment.Status = agenticEvidenceRiskUnverified
+			assessment.Status = agenticEvidenceWitnessUnverified
 			assessment.ReasonCode = "property-oracle-not-executed"
 		}
 		return assessment

@@ -178,15 +178,6 @@
           "id": "adapter-tick-config",
           "summary": "The active Adapter configuration uses ElectionTick 5 and HeartbeatTick 1.",
           "evidence_refs": ["plans/agent/etcdraft-agentic-calibration-v1.json:experiment.adapter_config"]
-        },
-        {
-          "id": "local-election-paths",
-          "summary": "The local core election tally and quorum-result paths are available for bounded read-only source inspection during this experiment.",
-          "evidence_refs": [
-            "go.etcd.io/raft/v3@v3.6.0/quorum/majority.go:ElectionVoteResult",
-            "go.etcd.io/raft/v3@v3.6.0/quorum/joint.go:ElectionVoteResult",
-            "go.etcd.io/raft/v3@v3.6.0/tracker/tracker.go:TallyVotes"
-          ]
         }
       ],
       "blind_spots": [

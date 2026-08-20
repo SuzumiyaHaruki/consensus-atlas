@@ -19,6 +19,26 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
+func TestEtcdraftClosureSupportDoesNotAdvertiseForUnrecognizedRisk(t *testing.T) {
+	supported, err := semantic.NewRiskWitnessSpec(
+		"supported-witness", "raft", "append-response-loss-with-alternate-quorum",
+		[]string{"drop"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsupported, err := semantic.NewRiskWitnessSpec(
+		"unsupported-witness", "raft", "agent-generated-message-loss",
+		[]string{"drop"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !etcdraftScenarioClosureSupports(supported) || etcdraftScenarioClosureSupports(unsupported) {
+		t.Fatal("closure support did not match the factory's accepted Risk identity")
+	}
+}
+
 func TestEtcdraftExistingRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(), controlExperimentTestTimeout(180*time.Second),
@@ -34,6 +54,15 @@ func TestEtcdraftExistingRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) 
 	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
 	if err != nil {
 		t.Fatal(err)
+	}
+	originalScenarioInputs := target.ScenarioInputs
+	target.ScenarioInputs = func(
+		risk controlexperiment.ScenarioRiskHypothesis,
+		projector controlexperiment.SemanticPrefixProjector,
+	) (scenarioEpisodeCoreInputs, error) {
+		core, inputErr := originalScenarioInputs(risk, projector)
+		core.SingleStrategicAction = false // Preserve the historical one-call handoff calibration.
+		return core, inputErr
 	}
 	existingRisk, riskDigest, err := loadExistingRiskInput(
 		"../../plans/agent/etcdraft-alternate-quorum-risk-v1.json", target,
@@ -213,8 +242,9 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if public.StopReason != controlexperiment.ScenarioProgressBudget {
-		t.Fatalf("public fixed order unexpectedly closed: %#v", public)
+	if public.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
+		len(public.Execution.Steps) != 3 {
+		t.Fatalf("public fixed order did not yield on a changed strategic frontier: %#v", public)
 	}
 	publicExtended, err := controlexperiment.ExecuteScenarioNaturalProgress(
 		ctx, "etcdraft-public-fixed-closure-extended", 32, spec, intervention.FinalRisk,
@@ -223,9 +253,9 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if publicExtended.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
-		len(publicExtended.Execution.Steps) != 17 {
-		t.Fatalf("extended public fixed order changed: %#v", publicExtended)
+	if publicExtended.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
+		len(publicExtended.Execution.Steps) != 3 {
+		t.Fatalf("public semantic-yield boundary changed with a larger budget: %#v", publicExtended)
 	}
 
 	selector, participants, err := newEtcdraftAlternateQuorumClosureSelector(
@@ -440,8 +470,10 @@ func TestM4l8EtcdraftSharedAgentPrefixBackendAblation(t *testing.T) {
 	if targetEqual.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
 		len(targetEqual.Execution.Steps) != equalBudget ||
 		targetEqual.Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
-		publicExtended.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
-		publicExtended.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
+		publicEqual.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
+		publicEqual.Execution.FinalRisk.Status != semantic.RiskWitnessNotReached ||
+		publicExtended.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
+		publicExtended.Execution.FinalRisk.Status != semantic.RiskWitnessNotReached {
 		t.Fatalf("M4l8 backend outcomes drifted: public=%#v target=%#v extended=%#v",
 			publicEqual, targetEqual, publicExtended)
 	}
@@ -486,10 +518,7 @@ func TestM4l8EtcdraftSharedAgentPrefixBackendAblation(t *testing.T) {
 	requestID := workload.Invocations[0].ID
 	if len(targetQualified.Bundle.ClientHistory) != 1 ||
 		targetQualified.Bundle.ClientHistory[0].Response.RequestID != requestID ||
-		targetQualified.Bundle.ClientHistory[0].Response.Status != "committed" ||
-		len(publicExtendedQualified.Bundle.ClientHistory) != 1 ||
-		publicExtendedQualified.Bundle.ClientHistory[0].Response.RequestID != requestID ||
-		publicExtendedQualified.Bundle.ClientHistory[0].Response.Status != "committed" {
+		targetQualified.Bundle.ClientHistory[0].Response.Status != "committed" {
 		t.Fatalf("M4l8 request identity drifted: target=%#v public=%#v",
 			targetQualified.Bundle.ClientHistory, publicExtendedQualified.Bundle.ClientHistory)
 	}
@@ -532,7 +561,6 @@ func TestM4l8EtcdraftSharedAgentPrefixBackendAblation(t *testing.T) {
 			"trace_digest":      publicExtendedQualified.Bundle.Trace.Digest,
 			"bundle_digest":     publicExtendedQualified.Bundle.Digest,
 			"replay_stable":     publicExtendedQualified.Replay.Stable,
-			"client_step":       publicExtendedQualified.Bundle.ClientHistory[0].Step,
 		},
 		"oracle_checked": wantOracleIDs,
 	}
@@ -584,10 +612,14 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if core.ClosureFactory != nil || target.ClosureFactory == nil {
+	if core.ClosureFactory != nil || core.ClosureSupport != nil ||
+		target.ClosureFactory == nil || target.ClosureSupport == nil || !target.ClosureSupport(risk.Spec) ||
+		!core.SingleStrategicAction {
 		t.Fatal("closure factory was not owned exclusively by Target composition")
 	}
+	core.SingleStrategicAction = false // This legacy multi-step fixture tests handoff truncation.
 	core.ClosureFactory = target.ClosureFactory
+	core.ClosureSupport = target.ClosureSupport
 	core.RootID = "etcdraft-agent-closure"
 	core.TargetSurface = &target.Surface
 	plannerCalls := 0
@@ -600,7 +632,7 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 			if plannerCalls > 1 {
 				t.Fatal("closure returned control to the Agent before exhausting the global budget")
 			}
-			if view.RemainingDecisions != 17 || view.DecisionAllowance != 12 ||
+			if view.RemainingDecisions != 17 || view.DecisionAllowance != 10 ||
 				view.MaxSteps != 6 || !view.PostInterventionClosure {
 				t.Fatalf("Scenario Agent budget view drifted: %#v", view)
 			}
@@ -617,7 +649,7 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 		t.Fatal(err)
 	}
 	if plannerCalls != 1 || scenario.Agent.Status != controlexperiment.ScenarioAgentCompleted ||
-		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopRiskReached ||
+		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopWitnessInstantiated ||
 		scenario.Agent.DecisionsUsed != 17 || scenario.Agent.Execution == nil ||
 		len(scenario.Agent.Execution.Steps) != 5 ||
 		!scenario.Agent.Execution.ClosureHandoff ||
@@ -693,6 +725,8 @@ func TestEtcdraftFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	core.ClosureFactory = target.ClosureFactory
+	core.ClosureSupport = target.ClosureSupport
+	core.SingleStrategicAction = false // Preserve the scripted multi-step quorum fixture.
 	core.RootID = "etcdraft-five-node-agent-closure"
 	core.TargetSurface = &target.Surface
 	plannerCalls := 0
@@ -747,7 +781,7 @@ func TestEtcdraftFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	if plannerCalls != 3 || len(selectedTargets) != 2 || scenario.Agent.Execution == nil ||
-		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopRiskReached ||
+		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopWitnessInstantiated ||
 		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
 		t.Fatalf("five-node quorum closure did not complete: calls=%d selected=%v result=%#v",
 			plannerCalls, selectedTargets, scenario.Agent)

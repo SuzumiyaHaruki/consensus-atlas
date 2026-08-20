@@ -62,6 +62,7 @@ type agenticEpisodeArtifact struct {
 	Status                     string                                      `json:"status"`
 	Budget                     agenticEpisodeBudget                        `json:"budget"`
 	Accepted                   *controlexperiment.RiskCandidateAssessment  `json:"accepted_risk,omitempty"`
+	ExecutableRisks            []controlexperiment.RiskCandidateAssessment `json:"executable_risks,omitempty"`
 	RiskAttempts               int                                         `json:"risk_attempts"`
 	RiskFeedback               *controlexperiment.RiskAgentFeedback        `json:"risk_feedback,omitempty"`
 	ScenarioStatus             string                                      `json:"scenario_status,omitempty"`
@@ -124,6 +125,9 @@ func newAgenticEpisodeArtifact(
 		accepted := *result.RiskAgent.Accepted
 		artifact.Accepted = &accepted
 	}
+	artifact.ExecutableRisks = append(
+		[]controlexperiment.RiskCandidateAssessment(nil), result.RiskAgent.Executable...,
+	)
 	if len(result.RiskAgent.Attempts) > 0 {
 		feedback := result.RiskAgent.Attempts[len(result.RiskAgent.Attempts)-1].Feedback
 		artifact.RiskFeedback = &feedback
@@ -559,6 +563,18 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			return errors.Join(errors.New("AGENTIC_EPISODE_ARTIFACT_ASSESSMENT_CANDIDATE_INVALID"), err)
 		}
 	}
+	seenExecutable := make(map[string]bool, len(artifact.ExecutableRisks))
+	for _, assessment := range artifact.ExecutableRisks {
+		if validateAgenticEpisodeAssessment(assessment) != nil ||
+			seenExecutable[assessment.Candidate.ID] {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_EXECUTABLE_RISK_INVALID")
+		}
+		seenExecutable[assessment.Candidate.ID] = true
+	}
+	if artifact.Accepted != nil && len(artifact.ExecutableRisks) > 0 &&
+		!reflect.DeepEqual(*artifact.Accepted, artifact.ExecutableRisks[0]) {
+		return errors.New("AGENTIC_EPISODE_ARTIFACT_EXECUTABLE_RISK_ORDER_INVALID")
+	}
 	switch artifact.Status {
 	case agenticEpisodeRiskStopped:
 		if artifact.Failure != nil || artifact.Accepted != nil || artifact.Metrics.CandidateAccepted ||
@@ -610,7 +626,7 @@ func validAgenticScenarioProgress(delta controlexperiment.ScenarioProgressDelta)
 		controlexperiment.ScenarioMilestoneProgressAdvanced,
 		controlexperiment.ScenarioMilestoneProgressRepeated,
 		controlexperiment.ScenarioMilestoneProgressStalled,
-		controlexperiment.ScenarioMilestoneProgressReached:
+		controlexperiment.ScenarioMilestoneProgressInstantiated:
 	default:
 		return false
 	}
@@ -775,9 +791,9 @@ func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
 		if artifact.Metrics.OracleFindings > 0 {
 			return assessment.Status == agenticEvidenceOracleFinding
 		}
-		if artifact.Metrics.RiskReached {
-			return assessment.Status == agenticEvidenceRiskReached ||
-				assessment.Status == agenticEvidenceRiskUnverified
+		if artifact.Metrics.WitnessInstantiated {
+			return assessment.Status == agenticEvidenceWitnessInstantiated ||
+				assessment.Status == agenticEvidenceWitnessUnverified
 		}
 		return assessment.Status == agenticEvidenceInconclusive ||
 			assessment.Status == agenticEvidenceBudgetExhausted
@@ -904,7 +920,7 @@ func agenticEpisodeMetricsFromEvidence(
 		if testing.validateExecutionStructure() != nil {
 			return agenticEpisodeMetrics{}, errors.New("AGENTIC_EPISODE_CANDIDATE_EVIDENCE_INVALID")
 		}
-		metrics.RiskReached = metrics.RiskReached ||
+		metrics.WitnessInstantiated = metrics.WitnessInstantiated ||
 			testing.Risk.Status == semantic.RiskWitnessReached
 		metrics.CorePSSSamples += testing.CorePSSSamples
 		metrics.OracleFindings += len(testing.Oracle.Violations)
@@ -1062,7 +1078,7 @@ func agenticMemoryEpisodeOutcome(
 	}
 	if summary.Status == agenticEpisodeCompleted {
 		if riskStatus == semantic.RiskWitnessNotReached {
-			return controlexperiment.RiskMemoryOutcomeRiskNearMiss
+			return controlexperiment.RiskMemoryOutcomeWitnessNearMiss
 		}
 		return controlexperiment.RiskMemoryOutcomeExecutionCompleted
 	}

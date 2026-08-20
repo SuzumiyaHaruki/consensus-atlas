@@ -322,12 +322,12 @@ func TestScenarioNaturalProgressUsesOneLiveBranchAndOnePromotionReplay(t *testin
 		ctx, "fixture-live-branch", 8, spec, rootRisk, root,
 		runtimeConfig, nil, factory, projector,
 	)
-	if err != nil || result.StopReason != ScenarioProgressBudget ||
-		len(result.Execution.Steps) != 8 ||
-		len(result.Execution.FinalTrace.Records) != len(root.Records)+8 ||
+	if err != nil || result.StopReason != ScenarioProgressWitnessInstantiated ||
+		len(result.Execution.Steps) != 1 ||
+		len(result.Execution.FinalTrace.Records) != len(root.Records)+1 ||
 		result.Execution.Work.FrontierReconstruction.SetupAttempts != 1 ||
 		result.Execution.Work.FrontierReconstruction.RuntimeInitializations != 1 ||
-		result.Execution.Work.ChildMaterialization.SchedulerDecisions != 8 ||
+		result.Execution.Work.ChildMaterialization.SchedulerDecisions != 1 ||
 		result.Execution.Work.ChildVerification.SetupAttempts != 1 ||
 		result.Execution.Work.ChildVerification.RuntimeInitializations != 1 ||
 		result.Execution.Work.ChildVerification.SchedulerDecisions != len(result.Execution.FinalTrace.Records) {
@@ -337,9 +337,9 @@ func TestScenarioNaturalProgressUsesOneLiveBranchAndOnePromotionReplay(t *testin
 	delta, err := NewScenarioProgressDelta(
 		spec, rootRisk, root, result.Execution.FinalRisk, result.Execution.FinalTrace,
 	)
-	if err != nil || delta.Decisions != 8 || len(delta.RecentActions) != 8 ||
+	if err != nil || delta.Decisions != 1 || len(delta.RecentActions) != 1 ||
 		len(delta.NewMilestones) != 1 || delta.UniqueStateTransitions == 0 ||
-		delta.MilestoneProgress != ScenarioMilestoneProgressReached ||
+		delta.MilestoneProgress != ScenarioMilestoneProgressInstantiated ||
 		len(delta.NewMilestoneEvidence) != 1 || len(delta.ActionCounts) == 0 ||
 		delta.TemporalCallbacks == 0 || delta.LogicalClockAdvances > delta.TemporalCallbacks ||
 		repeatedScenarioPatternDepth([]string{"a", "b", "a", "b", "a", "b"}) != 2 {
@@ -393,9 +393,9 @@ func TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRemaining := []int{256, 191, 126, 62}
-	wantAllowance := []int{65, 65, 64, 62}
-	wantDelta := []int{65, 65, 64, 62}
+	wantRemaining := []int{256, 251, 246, 241}
+	wantAllowance := []int{5, 5, 5, 5}
+	wantDelta := []int{5, 5, 5, 5}
 	calls := 0
 	result, err := ExploreScenarioWithPlanner(
 		ctx, 4, 1, 256, knowledge, hypothesis, spec, frontier,
@@ -412,12 +412,12 @@ func TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback(t *testing
 			if calls > 0 {
 				if view.Prior == nil || view.Prior.ProgressDelta == nil ||
 					view.Prior.ProgressDelta.Decisions != wantDelta[calls-1] ||
-					view.Prior.ProgressDelta.RepeatedPatternDepth == 0 ||
-					view.Prior.ProgressDelta.MilestoneProgress != ScenarioMilestoneProgressRepeated ||
+					(view.Prior.ProgressDelta.MilestoneProgress != ScenarioMilestoneProgressRepeated &&
+						view.Prior.ProgressDelta.MilestoneProgress != ScenarioMilestoneProgressStalled) ||
 					view.Prior.ProgressDelta.TemporalCallbacks == 0 ||
 					view.Prior.ProgressDelta.LogicalClockAdvances > view.Prior.ProgressDelta.TemporalCallbacks ||
 					len(view.Prior.ProgressDelta.ActionCounts) == 0 ||
-					len(view.Prior.ProgressDelta.RecentActions) != scenarioProgressRecentActions {
+					len(view.Prior.ProgressDelta.RecentActions) != wantDelta[calls-1] {
 					t.Fatalf("long loop did not return compact adaptive feedback at call %d: %#v",
 						calls+1, view.Prior)
 				}
@@ -447,12 +447,12 @@ func TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback(t *testing
 		},
 	)
 	if err != nil || calls != 4 || result.Status != ScenarioAgentCompleted ||
-		result.Execution == nil || len(result.Execution.FinalTrace.Records) != 256 ||
+		result.Execution == nil || len(result.Execution.FinalTrace.Records) != 20 ||
 		len(result.Attempts) != 4 || result.Attempts[3].Feedback.ProgressDelta == nil ||
-		result.Attempts[3].Feedback.ProgressDelta.Decisions != 62 ||
-		result.StopReason != ScenarioAgentStopDecisionBudget || result.DecisionsUsed != 256 ||
-		result.SelectedPathDecisions != 256 || result.BranchExplorationDecisions != 0 ||
-		result.ExecutionWork.ChildMaterialization.SchedulerDecisions != 256 ||
+		result.Attempts[3].Feedback.ProgressDelta.Decisions != 5 ||
+		result.StopReason != ScenarioAgentStopCallBudget || result.DecisionsUsed != 20 ||
+		result.SelectedPathDecisions != 20 || result.BranchExplorationDecisions != 0 ||
+		result.ExecutionWork.ChildMaterialization.SchedulerDecisions != 20 ||
 		result.ExecutionWork.FrontierReconstruction.SetupAttempts > 12 ||
 		result.ExecutionWork.ChildVerification.SetupAttempts > 8 {
 		decisions := 0
@@ -466,7 +466,7 @@ func TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback(t *testing
 			result.ExecutionWork.ChildVerification.SchedulerDecisions,
 			result.ExecutionWork.TotalWorkUnits, err)
 	}
-	t.Logf("256 actions: reconstruction=%d verification_setups=%d verification_decisions=%d work=%d",
+	t.Logf("small-slice progress: reconstruction=%d verification_setups=%d verification_decisions=%d work=%d",
 		result.ExecutionWork.FrontierReconstruction.SetupAttempts,
 		result.ExecutionWork.ChildVerification.SetupAttempts,
 		result.ExecutionWork.ChildVerification.SchedulerDecisions,
@@ -844,7 +844,7 @@ func TestClientTerminalContinuesToPlannerWhileRiskAndBudgetRemain(t *testing.T) 
 		},
 		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
 			calls++
-			wantAllowance := []int{5, 6, 8}
+			wantAllowance := []int{5, 5, 5}
 			if view.DecisionAllowance != wantAllowance[calls-1] {
 				t.Fatalf("remaining decision budget was not rebalanced at call %d: got %d want %d",
 					calls, view.DecisionAllowance, wantAllowance[calls-1])
@@ -1560,7 +1560,7 @@ func TestScenarioBranchAtDecisionLimitRetainsRiskReachedCandidate(t *testing.T) 
 		},
 	)
 	if err != nil || calls != 3 || result.Execution == nil || result.DecisionsUsed != 3 ||
-		result.StopReason != ScenarioAgentStopRiskReached || result.SelectedPathDecisions != 3 ||
+		result.StopReason != ScenarioAgentStopWitnessInstantiated || result.SelectedPathDecisions != 3 ||
 		len(result.CandidateExecutions) != 1 ||
 		result.CandidateExecutions[0].Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
 		result.CandidateExecutions[0].Execution.FinalTrace.Digest == "" {

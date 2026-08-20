@@ -327,6 +327,7 @@ func MatchLinearRiskWitnessBounded(
 				MilestoneID: predicate.MilestoneID, Step: event.Step,
 				Kind: string(event.Kind), EvidenceDigest: event.SourceDigest,
 				Participant: event.Participant, RelatedParticipant: event.RelatedParticipant,
+				Bindings: observationPredicateBindingEvidence(predicate, event),
 			}
 			if search(predicateIndex+1, index+1, nextBindings, append(path, matched)) {
 				return true
@@ -346,6 +347,32 @@ func MatchLinearRiskWitnessBounded(
 		best = make([]RiskWitnessMilestoneEvidence, 0)
 	}
 	return best, nil
+}
+
+func observationPredicateBindingEvidence(
+	predicate ObservationPredicate,
+	event Observation,
+) []RiskWitnessBindingEvidence {
+	result := make([]RiskWitnessBindingEvidence, 0, len(predicate.Constraints))
+	for _, constraint := range predicate.Constraints {
+		if constraint.BindAs == "" {
+			continue
+		}
+		value, ok := observationFieldValue(event, constraint.Field)
+		if !ok {
+			continue
+		}
+		result = append(result, RiskWitnessBindingEvidence{
+			Name: constraint.BindAs, Field: constraint.Field, Value: value,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Name != result[j].Name {
+			return result[i].Name < result[j].Name
+		}
+		return result[i].Field < result[j].Field
+	})
+	return result
 }
 
 func linearWitnessStateKey(predicateIndex, eventIndex int, bindings map[string]string) string {

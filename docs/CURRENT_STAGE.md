@@ -2,7 +2,7 @@
 
 更新时间：2026-08-20
 分支：`feature/agentic-consensus-testing`
-阶段：M4n7 qualification 成本与 Cargo evaluator Replay 闭环
+阶段：M4n8 Agent 语义、portfolio 调查与中立源码导航收口
 
 ## 一句话状态
 
@@ -11,14 +11,56 @@
 ```text
 知识包/源码目录/Target 能力
         ↓
-Risk Agent 生成并修订候选
+Risk Agent 生成并修订候选 portfolio
         ↓
-Scenario Agent 生成语义计划
+机械 executable 审查 → Scenario Agent 单路径选择一个战略 Action
         ↓
 可信绑定 → Runtime → Trace → fresh Replay
         ↓
-Target-local Observation/PSS/Oracle → 结果与成本
+Target-local Observation/PSS/Oracle → witness-instantiated / finding 与成本
 ```
+
+M4n8 修正了活动 Agent 语义。Risk 候选通过类型、Observation 与 Action 能力审查后称为
+`executable`；执行轨迹满足全部可信 milestone 时称为 `witness-instantiated`；只有独立
+Oracle violation 才称为 `finding`。底层历史 Bundle 的 `qualified/reached` 枚举仍为只读
+兼容字段，不能在新报告中解释为候选正确或发现问题。
+
+默认 Scenario Agent 现在是单路径、单战略 Action 协议：每次只提出一个当前前沿选择，
+只使用 `continue/revise/abandon`，不能默认创建 branch/control/ablate/select 状态机。
+公共自然推进每次最多执行 4 个非干预 Action，并在新 milestone 或新的可干预语义前沿
+出现时立即返回可信 `ProgressDelta`。Target closure 仍可持续拥有已接管的因果闭合，且
+只能消费公共 Runtime 已 enabled 的 Effect/Deliver/Temporal。
+
+`RiskWitnessProgress` v2 将实际 milestone participant、related participant 和跨 milestone
+binding 的可信解析结果反馈给 Scenario Agent，避免模型从摘要猜测“同一请求/参与者”。
+closure 仅在 Target 明确支持当前 Risk 且真实干预已执行后暴露，不再把“Target 存在某个
+factory”误报为“当前候选可闭合”。
+
+Risk Agent portfolio 的全部机械 executable 候选都会进入 Episode summary。多 Episode
+Investigation 在现有统一 calls/tokens/runtime-decision 总预算内，按 Agent 原优先级依次
+调查尚未执行的语义不同候选；只修改显示 ID 的重复候选不会获得额外调查额度。候选只有在
+`scenario_attempts > 0` 后才算已经调查；若 Risk 响应使 Episode 越过 token 阈值、候选已经
+accepted 但 Scenario 尚未开始，下一 Episode 仍从同一候选继续，不会错误跳到 portfolio 下一项。
+
+源码能力改为显式 mount 内的中立关键词检索和后续限行读取：搜索最多检查 4096 个源码
+文件/8 MiB，返回至多 20 个路径与行号；读取仍受 80 行 Agent 请求上限和 24 KiB 摘要上限。
+`.git`、build target、vendor、artifacts/benchmarks 等目录不进入搜索。五节点 etcd 输入中
+指向选举计票函数的实验定向材料已删除；Agent 不获得本地修改文件、变更函数或候选差异提示。
+新运行的 MethodSpec implementation identity 为
+`m4n8-agent-semantics-portfolio-search-v1`，源码暴露模式为
+`mounted-repository-search-readonly-v3`。
+
+活动 `scenarioTestingResult.outcome` 只使用 `oracle-clean/oracle-finding`，不再把“当前
+Oracle 没有 violation”写成 `passed`。最终 finding 仍只来自 registry Oracle；
+`witness-instantiated` 但缺少对应 property monitor 时保持 unverified。
+
+下一项实验是四 Episode、无定向提示的源码发现与 witness 编译试验，而不是正式 finding
+实验：使用五节点 etcd 知识、完整 Target surface、显式本地 SUT mount 和统一 Investigation
+预算；不提供变更文件、变更函数、control/candidate diff 或相关性质词。为避免注释和专用
+测试名直接泄露修改意图，Agent 与执行器必须共同使用一个独立的盲测 checkout；该 checkout
+保留生产行为，但不包含解释性修改注释和专用验证 `_test.go`。原用户 SUT 工作区不改写。
+当前选举场景缺少完整分组控制与 election-safety Oracle，因此本轮只能评价源码导航、Risk
+生成、executable 审查和 witness 编译，不能预注册或表述为端到端 finding。
 
 etcd/raft 与 OmniPaxos 两个真实 Target 已走通该链路。M4l2/M4l3 说明
 Target-local 消息 leaf type 可以在不扩展公共 ActionKind 的情况下减少
@@ -155,8 +197,9 @@ Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共�
 转换为 `closure-underdetermined`，不再作为执行错误。
 
 当前新运行的 MethodSpec implementation identity 已更新为
-`consensus-atlas/agentic-method/m4n7-qualification-cost-cargo-replay-v1`。旧
-`m4n6-causal-closure-build-evidence-v1`、`m4n5-multinode-closure-v1`、`m4m4-risk-fidelity-v1`、
+`consensus-atlas/agentic-method/m4n8-agent-semantics-portfolio-search-v1`。旧
+`m4n7-qualification-cost-cargo-replay-v1`、`m4n6-causal-closure-build-evidence-v1`、
+`m4n5-multinode-closure-v1`、`m4m4-risk-fidelity-v1`、
 `m4m1-closure-ownership-v1`、`m4l7-risk-input-closure-handoff-v1`、
 `m4l5-closure-v1` 与 `m4d-v1` 仅保留只读
 工件验证；新建和恢复运行仍必须与当前完整

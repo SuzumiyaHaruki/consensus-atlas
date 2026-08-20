@@ -98,7 +98,7 @@ func TestRiskWitnessProgressIsMinimalTraceBoundAndTamperEvident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if progress.Status != RiskWitnessNotReached ||
+	if progress.Status != RiskWitnessNotInstantiated ||
 		len(progress.SatisfiedMilestones) != 1 ||
 		progress.FirstMissingMilestone != "coordinator-changed" ||
 		progress.EvidencePrefixDigest != result.ExecutionDigest {

@@ -20,6 +20,7 @@ import (
 func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.T) {
 	target := agenticEpisodeTarget{
 		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
+		ClosureSupport:              etcdraftScenarioClosureSupports,
 		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(7),
 	}
 	if target.ClosureMinimumScenarioCalls != 4 {
@@ -29,6 +30,7 @@ func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.
 		t.Fatalf("insufficient target-local budget accepted: %v", err)
 	}
 	target.ClosureFactory = nil
+	target.ClosureSupport = nil
 	if err := validateClosureCallBudget(target, agenticEpisodeBudget{MaxScenarioCalls: 3}); err != nil {
 		t.Fatalf("public-fixed inherited closure lower bound: %v", err)
 	}
@@ -76,7 +78,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	}
 	transport := composition.Client.freeze()
 	if composition.Target.ID != "etcdraft-v2" ||
-		composition.Target.ClosureFactory != nil ||
+		composition.Target.ClosureFactory != nil || composition.Target.ClosureSupport != nil ||
 		composition.MethodSpec.Validate() != nil ||
 		composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
 		composition.MethodSpec.InvestigationEpisodes != 1 ||
@@ -106,7 +108,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		ClosureMode: controlexperiment.AgenticClosureModePublicFixed,
 	}
 	publicComposition, err := prepareAgenticEpisodeComposition(ctx, publicOptions)
-	if err != nil || publicComposition.Target.ClosureFactory != nil ||
+	if err != nil || publicComposition.Target.ClosureFactory != nil || publicComposition.Target.ClosureSupport != nil ||
 		publicComposition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModePublicFixed ||
 		publicComposition.MethodSpec.Digest != composition.MethodSpec.Digest {
 		t.Fatalf("public-fixed arm was not mechanically bound: %#v/%v",
@@ -126,6 +128,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	existingOptions.ClosureMode = controlexperiment.AgenticClosureModeTargetLocal
 	existingTargetLocal, err := prepareAgenticEpisodeComposition(ctx, existingOptions)
 	if err != nil || existingTargetLocal.Target.ClosureFactory == nil ||
+		existingTargetLocal.Target.ClosureSupport == nil ||
 		existingTargetLocal.RiskInputDigest != existingPublic.RiskInputDigest ||
 		existingTargetLocal.MethodSpec.Digest == existingPublic.MethodSpec.Digest {
 		t.Fatalf("existing Risk pair did not share Risk identity and isolate closure mode: %#v/%v",
@@ -355,7 +358,7 @@ func TestAgenticOracleRegistryRejectsMetadataExecutionDrift(t *testing.T) {
 	result := assessTestingEvidence(
 		assessment, testing, controlexperiment.ScenarioAgentResult{},
 	)
-	if result.Status != agenticEvidenceRiskUnverified ||
+	if result.Status != agenticEvidenceWitnessUnverified ||
 		result.ReasonCode != "property-oracle-not-executed" {
 		t.Fatalf("missing registered property monitor was accepted: %#v", result)
 	}
@@ -530,5 +533,55 @@ func TestUnselectedReplayStableBranchRunsIndependentOracle(t *testing.T) {
 	if err != nil || calls != 1 || len(branches) != 1 ||
 		assessment.Status != agenticEvidenceOracleFinding || assessment.ReasonCode != "agreement" {
 		t.Fatalf("unselected replay-stable branch bypassed the independent Oracle: %#v/%v", branches, err)
+	}
+}
+
+func TestInvestigationSelectsEveryDistinctExecutablePortfolioRiskInOrder(t *testing.T) {
+	first := controlexperiment.RiskCandidateAssessment{Candidate: controlexperiment.RiskCandidate{
+		ID: "first-risk", Summary: "Invoke an operation, then drop one message.",
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
+		},
+	}}
+	second := controlexperiment.RiskCandidateAssessment{Candidate: controlexperiment.RiskCandidate{
+		ID: "second-risk", Summary: "Invoke an operation, then observe a decision.",
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+		},
+	}}
+	duplicate := first
+	duplicate.Candidate.ID = "same-semantics-different-display-id"
+	tokenStopped := agenticEpisodeArtifact{
+		Status: agenticEpisodeTokenStopped, Accepted: &first,
+		ExecutableRisks:  []controlexperiment.RiskCandidateAssessment{first, second},
+		ScenarioAttempts: 0,
+	}
+	if agenticEpisodeRiskEnteredScenario(tokenStopped) {
+		t.Fatal("an accepted candidate with no Scenario attempt was marked investigated")
+	}
+	selected, err := selectNextAgenticPortfolioRisk(tokenStopped.ExecutableRisks, nil)
+	if err != nil || selected == nil || selected.Candidate.ID != first.Candidate.ID {
+		t.Fatalf("token-stopped candidate did not remain first in the queue: %#v/%v", selected, err)
+	}
+	tokenStopped.ScenarioAttempts = 1
+	if !agenticEpisodeRiskEnteredScenario(tokenStopped) {
+		t.Fatal("a candidate with a real Scenario attempt remained uninvestigated")
+	}
+
+	selected, err = selectNextAgenticPortfolioRisk(
+		[]controlexperiment.RiskCandidateAssessment{first, duplicate, second},
+		[]controlexperiment.RiskCandidateAssessment{first},
+	)
+	if err != nil || selected == nil || selected.Candidate.ID != second.Candidate.ID {
+		t.Fatalf("portfolio queue did not skip an investigated semantic duplicate: %#v/%v", selected, err)
+	}
+	selected, err = selectNextAgenticPortfolioRisk(
+		[]controlexperiment.RiskCandidateAssessment{first, second},
+		[]controlexperiment.RiskCandidateAssessment{first, second},
+	)
+	if err != nil || selected != nil {
+		t.Fatalf("exhausted portfolio produced another investigation: %#v/%v", selected, err)
 	}
 }

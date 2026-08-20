@@ -149,7 +149,7 @@ func agenticSourceExposureSpec(
 		return bindings[i].ReferencePrefix < bindings[j].ReferencePrefix
 	})
 	return controlexperiment.AgenticSourceExposureSpec{
-		Mode:              controlexperiment.AgenticSourceExposureDossierV2,
+		Mode:              controlexperiment.AgenticSourceExposureRepositorySearchV3,
 		ReferencePrefixes: prefixes, CatalogDigest: catalogDigest, SUTBindings: bindings,
 	}, nil
 }

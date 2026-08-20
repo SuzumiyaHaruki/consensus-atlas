@@ -25,11 +25,16 @@ const (
 	KnowledgeDiscoveryLocatorNotFound  = "locator-not-found"
 	KnowledgeDiscoveryLocatorAmbiguous = "locator-ambiguous"
 	KnowledgeDiscoveryRangeInvalid     = "line-range-invalid"
+	KnowledgeDiscoverySearchNoMatch    = "search-no-match"
 
-	KnowledgeDiscoveryMaxLines        = 160
-	knowledgeDiscoveryMaxSourceBytes  = 2 << 20
-	knowledgeDiscoveryMaxExcerptBytes = 24 << 10
-	knowledgeDiscoveryContextLines    = 12
+	KnowledgeDiscoveryMaxLines         = 160
+	KnowledgeDiscoveryMaxSearchResults = 20
+	KnowledgeDiscoveryMaxQueryBytes    = 128
+	knowledgeDiscoveryMaxSourceBytes   = 2 << 20
+	knowledgeDiscoveryMaxExcerptBytes  = 24 << 10
+	knowledgeDiscoveryContextLines     = 12
+	knowledgeDiscoverySearchFiles      = 4096
+	knowledgeDiscoverySearchBytes      = 8 << 20
 )
 
 // KnowledgeSource is derived from Target Dossier evidence_refs. MaterialIDs
@@ -42,9 +47,17 @@ type KnowledgeSource struct {
 }
 
 type KnowledgeReadRequest struct {
+	Reference  string `json:"reference"`
+	Query      string `json:"query,omitempty"`
+	StartLine  int    `json:"start_line,omitempty"`
+	MaxLines   int    `json:"max_lines,omitempty"`
+	MaxResults int    `json:"max_results,omitempty"`
+}
+
+type KnowledgeSearchMatch struct {
 	Reference string `json:"reference"`
-	StartLine int    `json:"start_line,omitempty"`
-	MaxLines  int    `json:"max_lines"`
+	Line      int    `json:"line"`
+	Preview   string `json:"preview"`
 }
 
 // KnowledgeSourceMount maps a virtual prefix used by evidence_refs to an
@@ -59,14 +72,16 @@ type KnowledgeSourceMount struct {
 }
 
 type KnowledgeReadResult struct {
-	Status     string          `json:"status"`
-	ReasonCode string          `json:"reason_code,omitempty"`
-	Source     KnowledgeSource `json:"source"`
-	StartLine  int             `json:"start_line,omitempty"`
-	EndLine    int             `json:"end_line,omitempty"`
-	TotalLines int             `json:"total_lines,omitempty"`
-	Text       string          `json:"text,omitempty"`
-	Truncated  bool            `json:"truncated,omitempty"`
+	Status     string                 `json:"status"`
+	ReasonCode string                 `json:"reason_code,omitempty"`
+	Source     KnowledgeSource        `json:"source"`
+	StartLine  int                    `json:"start_line,omitempty"`
+	EndLine    int                    `json:"end_line,omitempty"`
+	TotalLines int                    `json:"total_lines,omitempty"`
+	Text       string                 `json:"text,omitempty"`
+	Truncated  bool                   `json:"truncated,omitempty"`
+	Query      string                 `json:"query,omitempty"`
+	Matches    []KnowledgeSearchMatch `json:"matches,omitempty"`
 }
 
 // KnowledgeSourceCatalog exposes only references already present in the
@@ -116,8 +131,7 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 	pack ProtocolKnowledgePack,
 	request KnowledgeReadRequest,
 ) (KnowledgeReadResult, error) {
-	if ValidateKnowledgeSourceMounts(mounts) != nil || request.Reference == "" || request.StartLine < 0 ||
-		request.MaxLines <= 0 || request.MaxLines > KnowledgeDiscoveryMaxLines {
+	if ValidateKnowledgeSourceMounts(mounts) != nil || !validKnowledgeReadRequest(request) {
 		return KnowledgeReadResult{}, errors.New("EXPERIMENT_KNOWLEDGE_READ_INPUT_INVALID")
 	}
 	catalog, err := KnowledgeSourceCatalog(pack)
@@ -135,10 +149,34 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 	if source == nil {
 		return stoppedKnowledgeRead(KnowledgeSource{Reference: request.Reference}, KnowledgeDiscoveryReferenceUnknown), nil
 	}
-	result := KnowledgeReadResult{Status: KnowledgeDiscoveryStopped, Source: *source}
+	return readKnowledgeSourceFromMounts(mounts, *source, request)
+}
+
+// ReadMountedKnowledgeSourceFromMounts reads one path that trusted discovery
+// has already admitted. Callers must still keep the discovered source catalog
+// authoritative; this function only enforces mount and path safety plus the
+// ordinary excerpt bounds.
+func ReadMountedKnowledgeSourceFromMounts(
+	mounts []KnowledgeSourceMount,
+	source KnowledgeSource,
+	request KnowledgeReadRequest,
+) (KnowledgeReadResult, error) {
+	if ValidateKnowledgeSourceMounts(mounts) != nil || !validKnowledgeReadRequest(request) ||
+		source.Reference != request.Reference || source.Path == "" {
+		return KnowledgeReadResult{}, errors.New("EXPERIMENT_KNOWLEDGE_READ_INPUT_INVALID")
+	}
+	return readKnowledgeSourceFromMounts(mounts, source, request)
+}
+
+func readKnowledgeSourceFromMounts(
+	mounts []KnowledgeSourceMount,
+	source KnowledgeSource,
+	request KnowledgeReadRequest,
+) (KnowledgeReadResult, error) {
+	result := KnowledgeReadResult{Status: KnowledgeDiscoveryStopped, Source: source}
 	mount, relativeSource, mounted := selectKnowledgeSourceMount(mounts, source.Path)
 	if !mounted {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoveryMountUnavailable), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoveryMountUnavailable), nil
 	}
 	root, err := filepath.Abs(mount.Directory)
 	if err != nil {
@@ -147,30 +185,30 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 	root, err = filepath.EvalSymlinks(root)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return stoppedKnowledgeRead(*source, KnowledgeDiscoveryMountUnavailable), nil
+			return stoppedKnowledgeRead(source, KnowledgeDiscoveryMountUnavailable), nil
 		}
 		return result, err
 	}
 	path, safe := safeKnowledgeSourcePath(root, relativeSource)
 	if !safe {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoveryPathUnsafe), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoveryPathUnsafe), nil
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return stoppedKnowledgeRead(*source, KnowledgeDiscoverySourceNotFound), nil
+			return stoppedKnowledgeRead(source, KnowledgeDiscoverySourceNotFound), nil
 		}
 		return result, err
 	}
 	if _, safe = safeResolvedKnowledgeSourcePath(root, resolved); !safe {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoveryPathUnsafe), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoveryPathUnsafe), nil
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return result, err
 	}
 	if !info.Mode().IsRegular() {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoverySourceNotFound), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoverySourceNotFound), nil
 	}
 	file, err := os.Open(resolved)
 	if err != nil {
@@ -182,10 +220,10 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 		return result, err
 	}
 	if len(data) > knowledgeDiscoveryMaxSourceBytes {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoverySourceTooLarge), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoverySourceTooLarge), nil
 	}
 	if len(data) == 0 || !utf8.Valid(data) || strings.IndexByte(string(data), 0) >= 0 {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoverySourceNotText), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoverySourceNotText), nil
 	}
 	lines := splitKnowledgeLines(string(data))
 	start := request.StartLine
@@ -194,10 +232,10 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 		if source.Locator != "" {
 			located, ambiguous := locateKnowledgeLine(lines, source.Locator)
 			if ambiguous {
-				return stoppedKnowledgeRead(*source, KnowledgeDiscoveryLocatorAmbiguous), nil
+				return stoppedKnowledgeRead(source, KnowledgeDiscoveryLocatorAmbiguous), nil
 			}
 			if located == 0 {
-				return stoppedKnowledgeRead(*source, KnowledgeDiscoveryLocatorNotFound), nil
+				return stoppedKnowledgeRead(source, KnowledgeDiscoveryLocatorNotFound), nil
 			}
 			start = located - knowledgeDiscoveryContextLines
 			minimumStart := located - request.MaxLines + 1
@@ -210,7 +248,7 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 		}
 	}
 	if start > len(lines) {
-		return stoppedKnowledgeRead(*source, KnowledgeDiscoveryRangeInvalid), nil
+		return stoppedKnowledgeRead(source, KnowledgeDiscoveryRangeInvalid), nil
 	}
 	end := start + request.MaxLines - 1
 	if end > len(lines) {
@@ -234,6 +272,140 @@ func ReadDeclaredKnowledgeSourceFromMounts(
 	result.Text = text
 	result.Truncated = excerptTruncated || start > 1 || end < len(lines)
 	return result, nil
+}
+
+func validKnowledgeReadRequest(request KnowledgeReadRequest) bool {
+	return request.Query == "" && request.Reference != "" && request.StartLine >= 0 &&
+		request.MaxLines > 0 && request.MaxLines <= KnowledgeDiscoveryMaxLines && request.MaxResults == 0
+}
+
+func validKnowledgeSearchRequest(request KnowledgeReadRequest) bool {
+	return request.Reference == "" && request.StartLine == 0 && request.MaxLines == 0 &&
+		request.Query != "" && strings.TrimSpace(request.Query) == request.Query &&
+		len(request.Query) <= KnowledgeDiscoveryMaxQueryBytes && request.MaxResults > 0 &&
+		request.MaxResults <= KnowledgeDiscoveryMaxSearchResults
+}
+
+// SearchMountedKnowledgeSources performs a deterministic, bounded, read-only
+// substring search over explicitly mounted source trees. It does not use the
+// Target Dossier to choose files and therefore cannot encode an experiment-
+// specific source hint. Matches only authorize later bounded reads through the
+// trusted per-call catalog maintained by the Risk coordinator.
+func SearchMountedKnowledgeSources(
+	mounts []KnowledgeSourceMount,
+	request KnowledgeReadRequest,
+) (KnowledgeReadResult, error) {
+	if ValidateKnowledgeSourceMounts(mounts) != nil || !validKnowledgeSearchRequest(request) {
+		return KnowledgeReadResult{}, errors.New("EXPERIMENT_KNOWLEDGE_SEARCH_INPUT_INVALID")
+	}
+	result := KnowledgeReadResult{Status: KnowledgeDiscoveryCompleted, Query: request.Query}
+	query := strings.ToLower(request.Query)
+	ordered := append([]KnowledgeSourceMount(nil), mounts...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return ordered[i].ReferencePrefix < ordered[j].ReferencePrefix
+	})
+	files, consumed := 0, int64(0)
+	for _, mount := range ordered {
+		root, err := filepath.Abs(mount.Directory)
+		if err != nil {
+			return KnowledgeReadResult{}, err
+		}
+		root, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			return KnowledgeReadResult{}, err
+		}
+		err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if path == root {
+				return nil
+			}
+			relative, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				return relErr
+			}
+			if entry.IsDir() {
+				if entry.Type()&os.ModeSymlink != 0 || ignoredKnowledgeSearchDirectory(entry.Name()) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 || !entry.Type().IsRegular() ||
+				!searchableKnowledgeSource(path) {
+				return nil
+			}
+			files++
+			if files > knowledgeDiscoverySearchFiles {
+				result.Truncated = true
+				return filepath.SkipAll
+			}
+			info, infoErr := entry.Info()
+			if infoErr != nil {
+				return infoErr
+			}
+			if info.Size() <= 0 || info.Size() > knowledgeDiscoveryMaxSourceBytes ||
+				consumed+info.Size() > knowledgeDiscoverySearchBytes {
+				result.Truncated = true
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			consumed += int64(len(data))
+			if !utf8.Valid(data) || strings.IndexByte(string(data), 0) >= 0 {
+				return nil
+			}
+			reference := mount.ReferencePrefix + filepath.ToSlash(relative)
+			for lineIndex, line := range splitKnowledgeLines(string(data)) {
+				if !strings.Contains(strings.ToLower(line), query) {
+					continue
+				}
+				preview := strings.TrimSpace(line)
+				if len(preview) > 240 {
+					preview = preview[:240]
+				}
+				result.Matches = append(result.Matches, KnowledgeSearchMatch{
+					Reference: reference, Line: lineIndex + 1, Preview: preview,
+				})
+				if len(result.Matches) >= request.MaxResults {
+					result.Truncated = true
+					return filepath.SkipAll
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return KnowledgeReadResult{}, err
+		}
+		if len(result.Matches) >= request.MaxResults || files > knowledgeDiscoverySearchFiles {
+			break
+		}
+	}
+	if len(result.Matches) == 0 {
+		result.Status = KnowledgeDiscoveryStopped
+		result.ReasonCode = KnowledgeDiscoverySearchNoMatch
+	}
+	return result, nil
+}
+
+func ignoredKnowledgeSearchDirectory(name string) bool {
+	switch name {
+	case ".git", "target", "vendor", "node_modules", "artifacts", "benchmarks":
+		return true
+	default:
+		return false
+	}
+}
+
+func searchableKnowledgeSource(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go", ".rs", ".proto", ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".kt", ".py", ".toml":
+		return true
+	default:
+		return false
+	}
 }
 
 func ValidateKnowledgeSourceMounts(mounts []KnowledgeSourceMount) error {
@@ -426,13 +598,33 @@ func stoppedKnowledgeRead(source KnowledgeSource, reason string) KnowledgeReadRe
 
 func (result KnowledgeReadResult) Validate() error {
 	if result.Status == KnowledgeDiscoveryStopped {
-		if result.ReasonCode == "" || result.Text != "" || result.StartLine != 0 || result.EndLine != 0 {
+		if result.ReasonCode == "" || result.Text != "" || result.StartLine != 0 || result.EndLine != 0 ||
+			len(result.Matches) != 0 || result.Query != "" && result.Source.Reference != "" {
 			return errors.New("EXPERIMENT_KNOWLEDGE_READ_RESULT_INVALID")
 		}
 		return nil
 	}
-	if result.Status != KnowledgeDiscoveryCompleted || result.ReasonCode != "" || result.Source.Reference == "" ||
-		result.StartLine <= 0 || result.EndLine < result.StartLine || result.TotalLines < result.EndLine || result.Text == "" {
+	if result.Status != KnowledgeDiscoveryCompleted || result.ReasonCode != "" {
+		return fmt.Errorf("EXPERIMENT_KNOWLEDGE_READ_RESULT_INVALID: %s", result.Status)
+	}
+	if result.Query != "" {
+		if result.Source.Reference != "" || result.Text != "" || result.StartLine != 0 ||
+			result.EndLine != 0 || len(result.Matches) == 0 ||
+			len(result.Matches) > KnowledgeDiscoveryMaxSearchResults {
+			return errors.New("EXPERIMENT_KNOWLEDGE_SEARCH_RESULT_INVALID")
+		}
+		seen := make(map[string]bool, len(result.Matches))
+		for _, match := range result.Matches {
+			key := fmt.Sprintf("%s:%d", match.Reference, match.Line)
+			if match.Reference == "" || match.Line <= 0 || match.Preview == "" || seen[key] {
+				return errors.New("EXPERIMENT_KNOWLEDGE_SEARCH_RESULT_INVALID")
+			}
+			seen[key] = true
+		}
+		return nil
+	}
+	if result.Source.Reference == "" || result.StartLine <= 0 || result.EndLine < result.StartLine ||
+		result.TotalLines < result.EndLine || result.Text == "" || len(result.Matches) != 0 {
 		return fmt.Errorf("EXPERIMENT_KNOWLEDGE_READ_RESULT_INVALID: %s", result.Status)
 	}
 	return nil

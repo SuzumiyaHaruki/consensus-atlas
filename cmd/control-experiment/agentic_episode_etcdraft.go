@@ -196,6 +196,7 @@ func newEtcdraftAgenticEpisodeTarget(
 		OracleRegistry:              oracleRegistry,
 		ObservationProjector:        observationProjector,
 		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
+		ClosureSupport:              etcdraftScenarioClosureSupports,
 		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(len(surface.Nodes)),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
@@ -205,8 +206,9 @@ func newEtcdraftAgenticEpisodeTarget(
 				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis,
 				AcceptedHypothesis: &risk.AcceptedHypothesis, RiskSpec: risk.Spec,
 				Root: inputs.root, Runtime: inputs.experiment.Runtime,
-				FaultEnvelope:    inputs.experiment.faultEnvelope(),
-				SemanticExposure: inputs.experiment.ScenarioSemanticExposure,
+				FaultEnvelope:         inputs.experiment.faultEnvelope(),
+				SemanticExposure:      inputs.experiment.ScenarioSemanticExposure,
+				SingleStrategicAction: true,
 				NewAdapter: func() (control.Adapter, error) {
 					return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 				},

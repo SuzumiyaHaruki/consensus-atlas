@@ -12,7 +12,8 @@ const (
 	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                                                = "agentic-episode-v1"
-	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n7-qualification-cost-cargo-replay-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n8-agent-semantics-portfolio-search-v1"
+	agenticMethodM4n7LegacyID                                              = "consensus-atlas/agentic-method/m4n7-qualification-cost-cargo-replay-v1"
 	agenticMethodM4n6LegacyID                                              = "consensus-atlas/agentic-method/m4n6-causal-closure-build-evidence-v1"
 	agenticMethodM4n5LegacyID                                              = "consensus-atlas/agentic-method/m4n5-multinode-closure-v1"
 	agenticMethodM4n2LegacyID                                              = "consensus-atlas/agentic-method/m4n2-preparation-replay-attribution-v1"
@@ -25,6 +26,7 @@ const (
 	AgenticSourceExposureNone                                              = "none"
 	AgenticSourceExposureDossierV1                                         = "dossier-declared-readonly-v1"
 	AgenticSourceExposureDossierV2                                         = "dossier-declared-readonly-navigation-v2"
+	AgenticSourceExposureRepositorySearchV3                                = "mounted-repository-search-readonly-v3"
 	AgenticCapabilityFeedbackReasonCodes                                   = "reason-codes"
 	AgenticCapabilityFeedbackStructuredGaps                                = "structured-gaps"
 	AgenticClosureModePublicFixed                                          = "public-fixed"
@@ -253,6 +255,7 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodM4n7LegacyID ||
 		id == agenticMethodM4n6LegacyID ||
 		id == agenticMethodM4n5LegacyID ||
 		id == agenticMethodM4n2LegacyID ||
@@ -316,7 +319,8 @@ func validAgenticSourceExposure(source AgenticSourceExposureSpec) bool {
 	case AgenticSourceExposureNone:
 		return len(source.ReferencePrefixes) == 0 && source.CatalogDigest == "" &&
 			len(source.SUTBindings) == 0
-	case AgenticSourceExposureDossierV1, AgenticSourceExposureDossierV2:
+	case AgenticSourceExposureDossierV1, AgenticSourceExposureDossierV2,
+		AgenticSourceExposureRepositorySearchV3:
 		if len(source.ReferencePrefixes) == 0 || !validSHA256(source.CatalogDigest) {
 			return false
 		}

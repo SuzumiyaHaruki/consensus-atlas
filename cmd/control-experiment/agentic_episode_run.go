@@ -34,9 +34,13 @@ type agenticEpisodeComposition struct {
 	CapabilityFeedbackMode  controlexperiment.AgenticCapabilityFeedbackMode
 	CapabilityFeedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe
 	ExistingRisk            *controlexperiment.RiskCandidateAssessment
-	RiskInputDigest         string
-	Preparation             controlexperiment.AgenticPreparationWork
-	PreparationCached       bool
+	// PortfolioRisk is selected from a previously persisted generated
+	// portfolio. Unlike ExistingRisk it is not user input and therefore does
+	// not alter MethodSpec risk-input identity.
+	PortfolioRisk     *controlexperiment.RiskCandidateAssessment
+	RiskInputDigest   string
+	Preparation       controlexperiment.AgenticPreparationWork
+	PreparationCached bool
 }
 
 type agenticEpisodeDirectoryOptions struct {
@@ -146,6 +150,11 @@ func runAgenticInvestigation(
 			return result, err
 		}
 		composition := prepared
+		portfolioRisk, queueErr := nextAgenticPortfolioRisk(result.Episodes)
+		if queueErr != nil {
+			return result, queueErr
+		}
+		composition.PortfolioRisk = portfolioRisk
 		remainingCalls := options.Budget.MaxModelCalls - result.ModelWork.Calls
 		remainingTokens := options.Budget.MaxModelTokens - result.ModelWork.TotalTokens
 		remainingDecisions := options.Budget.MaxRuntimeDecisionAllowance - result.RuntimeDecisionAllowance
@@ -227,6 +236,68 @@ func agenticInvestigationCapabilityAdaptation(
 		attempts = append(attempts, episode.Summary.ScenarioAttemptFeedback...)
 	}
 	return agenticCapabilityAdaptationFromAttempts(attempts)
+}
+
+// nextAgenticPortfolioRisk recovers the generated portfolio from ordinary
+// Episode summaries and selects the first semantically distinct candidate
+// that has not yet received its own Scenario Episode. The Investigation's
+// existing aggregate call/token/decision limits remain the only budget; this
+// queue creates no hidden work allowance or additional durable ledger.
+func nextAgenticPortfolioRisk(
+	episodes []recoveredAgenticEpisode,
+) (*controlexperiment.RiskCandidateAssessment, error) {
+	var offered []controlexperiment.RiskCandidateAssessment
+	var investigated []controlexperiment.RiskCandidateAssessment
+	for _, episode := range episodes {
+		if episode.Summary.validateCompact() != nil {
+			return nil, errors.New("AGENTIC_INVESTIGATION_PORTFOLIO_EPISODE_INVALID")
+		}
+		offered = append(offered, episode.Summary.ExecutableRisks...)
+		if !agenticEpisodeRiskEnteredScenario(episode.Summary) {
+			continue
+		}
+		investigated = append(investigated, *episode.Summary.Accepted)
+	}
+	return selectNextAgenticPortfolioRisk(offered, investigated)
+}
+
+// agenticEpisodeRiskEnteredScenario distinguishes accepting an executable
+// candidate from actually spending Scenario work on it. In particular, a
+// charged Risk response can cross the Episode token threshold after Accepted
+// has been persisted but before the first Scenario attempt. Such a candidate
+// must remain at the head of the Investigation queue in the next Episode.
+func agenticEpisodeRiskEnteredScenario(artifact agenticEpisodeArtifact) bool {
+	return artifact.Accepted != nil && artifact.ScenarioAttempts > 0
+}
+
+func selectNextAgenticPortfolioRisk(
+	offered []controlexperiment.RiskCandidateAssessment,
+	investigatedValues []controlexperiment.RiskCandidateAssessment,
+) (*controlexperiment.RiskCandidateAssessment, error) {
+	investigated := make(map[string]bool, len(investigatedValues))
+	for _, assessment := range investigatedValues {
+		identity, err := controlexperiment.RiskCandidateSemanticIdentity(assessment.Candidate)
+		if err != nil {
+			return nil, errors.New("AGENTIC_INVESTIGATION_PORTFOLIO_CANDIDATE_INVALID")
+		}
+		investigated[identity] = true
+	}
+	seenOffered := make(map[string]bool)
+	for _, assessment := range offered {
+		identity, err := controlexperiment.RiskCandidateSemanticIdentity(assessment.Candidate)
+		if err != nil {
+			return nil, errors.New("AGENTIC_INVESTIGATION_PORTFOLIO_CANDIDATE_INVALID")
+		}
+		if seenOffered[identity] {
+			continue
+		}
+		seenOffered[identity] = true
+		if !investigated[identity] {
+			selected := assessment
+			return &selected, nil
+		}
+	}
+	return nil, nil
 }
 
 func recoverAgenticInvestigationEpisodes(
@@ -316,6 +387,8 @@ func runAgenticEpisodeDirectory(
 	methodBound := composition.MethodSpec.Digest != ""
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 		!riskInputValid ||
+		composition.PortfolioRisk != nil &&
+			validateAgenticEpisodeAssessment(*composition.PortfolioRisk) != nil ||
 		methodBound && (composition.MethodSpec.Validate() != nil ||
 			sourceExposureErr != nil ||
 			!reflect.DeepEqual(composition.MethodSpec.SourceExposure, sourceExposure) ||
@@ -389,8 +462,28 @@ func runAgenticEpisodeDirectory(
 			if err := verifyKnowledgeSourceMountIdentities(composition.KnowledgeSourceMounts); err != nil {
 				return controlexperiment.KnowledgeReadResult{}, err
 			}
-			return controlexperiment.ReadDeclaredKnowledgeSourceFromMounts(
-				composition.KnowledgeSourceMounts, composition.Target.Knowledge, request,
+			if request.Query != "" {
+				return controlexperiment.SearchMountedKnowledgeSources(
+					composition.KnowledgeSourceMounts, request,
+				)
+			}
+			catalog, catalogErr := controlexperiment.KnowledgeSourceCatalog(composition.Target.Knowledge)
+			if catalogErr != nil {
+				return controlexperiment.KnowledgeReadResult{}, catalogErr
+			}
+			for _, source := range catalog {
+				if source.Reference == request.Reference {
+					return controlexperiment.ReadMountedKnowledgeSourceFromMounts(
+						composition.KnowledgeSourceMounts, source, request,
+					)
+				}
+			}
+			return controlexperiment.ReadMountedKnowledgeSourceFromMounts(
+				composition.KnowledgeSourceMounts,
+				controlexperiment.KnowledgeSource{
+					Reference: request.Reference, Path: request.Reference,
+				},
+				request,
 			)
 		}
 	}
@@ -399,11 +492,18 @@ func runAgenticEpisodeDirectory(
 		return recoveredAgenticEpisode{}, err
 	}
 	defer cancelSession()
+	presetRisk := composition.ExistingRisk
+	if composition.PortfolioRisk != nil {
+		if presetRisk != nil {
+			return recoveredAgenticEpisode{}, errors.New("AGENTIC_EPISODE_RISK_SOURCE_AMBIGUOUS")
+		}
+		presetRisk = composition.PortfolioRisk
+	}
 	result, err := runAgenticEpisode(
 		sessionCtx, composition.Target, riskJournal, scenarioJournal, composition.Budget,
 		projectAgenticCapabilityFeedbackMemory(
 			composition.Memory, composition.CapabilityFeedbackMode,
-		), knowledgeReader, composition.ExistingRisk,
+		), knowledgeReader, presetRisk,
 		activateRiskKey, activateScenarioKey,
 	)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
 // closureScenarioCallLowerBound is shared by the two current leader-CFT
@@ -65,6 +66,10 @@ func newEtcdraftScenarioClosureFactory() controlexperiment.ScenarioClosureFactor
 		}
 		return etcdraftAlternateQuorumSetSelector(participants), true, nil
 	}
+}
+
+func etcdraftScenarioClosureSupports(spec semantic.RiskWitnessSpec) bool {
+	return spec.RiskID == "append-response-loss-with-alternate-quorum"
 }
 
 func etcdraftAlternateQuorumSetSelector(

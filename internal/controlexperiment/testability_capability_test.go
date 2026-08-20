@@ -307,7 +307,7 @@ func TestScenarioAgentRevisesMechanicalCapabilityGapWithoutRuntimeWork(t *testin
 			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
 		},
 	)
-	if err != nil || calls != 2 || result.StopReason != ScenarioAgentStopRiskReached ||
+	if err != nil || calls != 2 || result.StopReason != ScenarioAgentStopWitnessInstantiated ||
 		result.DecisionsUsed != 1 || result.Execution == nil || len(result.Attempts) != 2 ||
 		result.Attempts[0].Execution != nil || result.Attempts[0].Feedback.CapabilityGaps[0].Code != AgentCapabilityGapMissingAction {
 		t.Fatalf("capability repair did not preserve Runtime budget: %#v calls=%d err=%v", result, calls, err)

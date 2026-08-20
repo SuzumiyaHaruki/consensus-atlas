@@ -98,6 +98,25 @@ func TestMatchLinearRiskWitnessBacktracksParticipantBinding(t *testing.T) {
 	if len(matched) != 3 || matched[0].Step != 2 || matched[1].Step != 3 || matched[2].Step != 4 {
 		t.Fatalf("unexpected binding match: %+v", matched)
 	}
+	if len(matched[0].Bindings) != 1 || matched[0].Bindings[0].Name != "old" ||
+		matched[0].Bindings[0].Value != "n2@1" || len(matched[1].Bindings) != 2 {
+		t.Fatalf("trusted binding evidence was not retained: %+v", matched)
+	}
+	result, err := NewRiskWitnessResult(
+		"binding-result", spec, digest, digest, history.ProjectorID, matched,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress, err := NewRiskWitnessProgress(spec, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(progress.MilestoneEvidence) != 3 || len(progress.ResolvedBindings) != 2 ||
+		progress.ResolvedBindings[0].Name != "new" || progress.ResolvedBindings[0].Value != "n3@1" ||
+		progress.ResolvedBindings[1].Name != "old" || progress.ResolvedBindings[1].Value != "n2@1" {
+		t.Fatalf("Agent-facing trusted participant/binding projection drifted: %+v", progress)
+	}
 }
 
 func TestMatchLinearRiskWitnessBoundsAdversarialUnconstrainedSearch(t *testing.T) {

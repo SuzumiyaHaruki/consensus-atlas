@@ -30,7 +30,7 @@ const (
 
 	RiskMemoryOutcomeExecutionCompleted  = "execution-completed"
 	RiskMemoryOutcomeBudgetExhausted     = "budget-exhausted"
-	RiskMemoryOutcomeRiskNearMiss        = "risk-near-miss"
+	RiskMemoryOutcomeWitnessNearMiss     = "witness-near-miss"
 	RiskMemoryOutcomePlanningStopped     = "planning-stopped"
 	RiskMemoryOutcomeExecutionFailed     = "execution-failed"
 	RiskMemoryOutcomeHypothesisAbandoned = "hypothesis-abandoned"
@@ -47,9 +47,9 @@ const (
 	RiskAgentReasonAlignment            = "risk-candidate-mechanism-unaligned"
 	RiskAgentReasonSupport              = "risk-candidate-support-invisible"
 	RiskAgentReasonDuplicate            = "risk-candidate-existing-risk"
-	RiskAgentReasonUnqualified          = "risk-candidate-unqualified"
+	RiskAgentReasonNotExecutable        = "risk-candidate-not-executable"
 	RiskAgentReasonTokenBudget          = "risk-agent-token-budget-exceeded"
-	RiskAgentReasonPortfolio            = "risk-portfolio-no-qualified-candidate"
+	RiskAgentReasonPortfolio            = "risk-portfolio-no-executable-candidate"
 	RiskAgentReasonKnowledgeRead        = "risk-knowledge-read-completed"
 	RiskAgentReasonKnowledgeReadStopped = "risk-knowledge-read-stopped"
 	RiskAgentReasonKnowledgeInvalid     = "risk-knowledge-request-invalid"
@@ -57,7 +57,7 @@ const (
 	RiskAgentReasonKnowledgeBudget      = "risk-knowledge-request-budget-exceeded"
 	RiskAgentReasonFidelity             = AgentCapabilityGapTargetFidelity
 
-	RiskCandidateQualified = "qualified"
+	RiskCandidateExecutable = "executable"
 )
 
 func addModelWork(total *ModelWork, current ModelWork) {
@@ -103,8 +103,9 @@ type RiskCandidate struct {
 }
 
 // RiskCandidatePortfolio is one untrusted model proposal. Candidate order is
-// the Agent's priority; trusted code assesses every entry and selects the
-// first mechanically qualified candidate.
+// the Agent's priority; trusted code assesses every entry and retains every
+// mechanically executable candidate. Accepted remains the first entry for
+// single-Episode compatibility; an Investigation can consume the remainder.
 type RiskCandidatePortfolio struct {
 	Candidates                  []RiskCandidate `json:"candidates"`
 	requiresBoundMechanismSteps bool
@@ -248,10 +249,11 @@ type RiskAgentAttempt struct {
 }
 
 type RiskAgentResult struct {
-	Status    string                   `json:"status"`
-	Attempts  []RiskAgentAttempt       `json:"attempts"`
-	Accepted  *RiskCandidateAssessment `json:"accepted,omitempty"`
-	ModelWork ModelWork                `json:"model_work"`
+	Status     string                    `json:"status"`
+	Attempts   []RiskAgentAttempt        `json:"attempts"`
+	Accepted   *RiskCandidateAssessment  `json:"accepted,omitempty"`
+	Executable []RiskCandidateAssessment `json:"executable_candidates,omitempty"`
+	ModelWork  ModelWork                 `json:"model_work"`
 }
 
 type RiskPlanner func(context.Context, RiskAgentView) ([]byte, ModelWork, error)
@@ -382,8 +384,16 @@ func DiscoverRiskWithPlanner(
 				completedRead := false
 				for _, request := range requests {
 					read, readErr := knowledgeReader(request)
-					if readErr != nil || read.Validate() != nil || read.Source.Reference != request.Reference {
+					if readErr != nil || read.Validate() != nil ||
+						(request.Query == "" && read.Source.Reference != request.Reference) ||
+						(request.Query != "" && read.Query != request.Query) {
 						return result, errors.New("EXPERIMENT_RISK_AGENT_KNOWLEDGE_READ_INVALID")
+					}
+					for _, match := range read.Matches {
+						knowledgeSources = appendRiskKnowledgeSource(
+							knowledgeSources,
+							KnowledgeSource{Reference: match.Reference, Path: match.Reference},
+						)
 					}
 					knowledgeResults = append(knowledgeResults, read)
 					attempt.KnowledgeResults = append(attempt.KnowledgeResults, cloneKnowledgeReadResult(read))
@@ -402,8 +412,10 @@ func DiscoverRiskWithPlanner(
 		}
 		reviews := make([]RiskCandidateReview, 0, len(portfolio.Candidates))
 		seen := make(map[string]bool, len(portfolio.Candidates))
+		seenSemantic := make(map[string]bool, len(portfolio.Candidates))
 		var firstAssessment *RiskCandidateAssessment
 		var selected *RiskCandidateAssessment
+		var executable []RiskCandidateAssessment
 		for index, candidate := range portfolio.Candidates {
 			review := RiskCandidateReview{Ordinal: index + 1, CandidateID: candidate.ID, Outcome: RiskAgentStopped}
 			if seen[candidate.ID] {
@@ -432,6 +444,18 @@ func DiscoverRiskWithPlanner(
 				reviews = append(reviews, review)
 				continue
 			}
+			semanticIdentity, identityErr := RiskCandidateSemanticIdentity(candidate)
+			if identityErr != nil {
+				review.ReasonCode = RiskAgentReasonCandidate
+				reviews = append(reviews, review)
+				continue
+			}
+			if seenSemantic[semanticIdentity] {
+				review.ReasonCode = RiskAgentReasonDuplicate
+				reviews = append(reviews, review)
+				continue
+			}
+			seenSemantic[semanticIdentity] = true
 			assessment, assessErr := AssessRiskCandidateForTarget(
 				knowledge, candidate, capabilities, actions, targetSurface,
 			)
@@ -453,12 +477,13 @@ func DiscoverRiskWithPlanner(
 				continue
 			}
 			if !assessment.Qualification.Qualified {
-				review.ReasonCode = RiskAgentReasonUnqualified
+				review.ReasonCode = RiskAgentReasonNotExecutable
 				reviews = append(reviews, review)
 				continue
 			}
-			review.Outcome = RiskCandidateQualified
+			review.Outcome = RiskCandidateExecutable
 			reviews = append(reviews, review)
+			executable = append(executable, assessment)
 			if selected == nil {
 				value := assessment
 				selected = &value
@@ -495,6 +520,7 @@ func DiscoverRiskWithPlanner(
 		result.Attempts = append(result.Attempts, attempt)
 		accepted := *selected
 		result.Accepted = &accepted
+		result.Executable = executable
 		result.Status = RiskAgentAccepted
 		return result, nil
 	}
@@ -952,7 +978,7 @@ func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
 func validRiskMemoryOutcome(outcome string) bool {
 	switch outcome {
 	case RiskMemoryOutcomeExecutionCompleted, RiskMemoryOutcomeBudgetExhausted,
-		RiskMemoryOutcomeRiskNearMiss, RiskMemoryOutcomePlanningStopped,
+		RiskMemoryOutcomeWitnessNearMiss, RiskMemoryOutcomePlanningStopped,
 		RiskMemoryOutcomeExecutionFailed, RiskMemoryOutcomeHypothesisAbandoned:
 		return true
 	default:
@@ -970,16 +996,27 @@ func validRiskKnowledgeView(view RiskAgentView) bool {
 		return false
 	}
 	want, err := KnowledgeSourceCatalog(view.Knowledge)
-	if err != nil || !reflect.DeepEqual(view.KnowledgeSources, want) {
+	if err != nil || len(view.KnowledgeSources) < len(want) ||
+		!reflect.DeepEqual(view.KnowledgeSources[:len(want)], want) {
 		return false
 	}
-	declared := make(map[string]bool, len(want))
-	for _, source := range want {
+	declared := make(map[string]bool, len(view.KnowledgeSources))
+	for index, source := range view.KnowledgeSources {
+		if source.Reference == "" || source.Path == "" || declared[source.Reference] ||
+			index >= len(want) && (source.Reference != source.Path || len(source.MaterialIDs) != 0) {
+			return false
+		}
 		declared[source.Reference] = true
 	}
 	for _, result := range view.KnowledgeResults {
-		if result.Validate() != nil || !declared[result.Source.Reference] {
+		if result.Validate() != nil ||
+			result.Query == "" && !declared[result.Source.Reference] {
 			return false
+		}
+		for _, match := range result.Matches {
+			if !declared[match.Reference] {
+				return false
+			}
 		}
 	}
 	return true
@@ -1049,7 +1086,7 @@ func VisibleRiskSupportRefs(
 		}
 	}
 	for _, result := range results {
-		if result.Status == KnowledgeDiscoveryCompleted {
+		if result.Status == KnowledgeDiscoveryCompleted && result.Query == "" {
 			refs = append(refs, "source/"+result.Source.Reference)
 		}
 	}
@@ -1073,7 +1110,7 @@ func validRiskKnowledgeRequests(
 	current := make(map[string]bool, len(requests))
 	windows := make(map[string][]knowledgeReadWindow)
 	for _, result := range results {
-		if result.Status == KnowledgeDiscoveryCompleted {
+		if result.Status == KnowledgeDiscoveryCompleted && result.Query == "" {
 			windows[result.Source.Reference] = append(
 				windows[result.Source.Reference],
 				knowledgeReadWindow{start: result.StartLine, end: result.EndLine},
@@ -1082,8 +1119,18 @@ func validRiskKnowledgeRequests(
 	}
 	for _, request := range requests {
 		key := riskKnowledgeRequestKey(request)
-		if !declared[request.Reference] || request.StartLine < 0 || request.MaxLines <= 0 ||
-			request.MaxLines > RiskKnowledgeRequestMaxLines || current[key] || seen[key] {
+		if current[key] || seen[key] {
+			return false
+		}
+		if request.Query != "" {
+			if !validKnowledgeSearchRequest(request) {
+				return false
+			}
+			current[key] = true
+			continue
+		}
+		if !declared[request.Reference] || !validKnowledgeReadRequest(request) ||
+			request.MaxLines > RiskKnowledgeRequestMaxLines {
 			return false
 		}
 		if request.StartLine == 0 {
@@ -1116,7 +1163,19 @@ func (window knowledgeReadWindow) overlaps(other knowledgeReadWindow) bool {
 }
 
 func riskKnowledgeRequestKey(request KnowledgeReadRequest) string {
+	if request.Query != "" {
+		return "search\x00" + request.Query + "\x00" + fmt.Sprintf("%d", request.MaxResults)
+	}
 	return request.Reference + "\x00" + fmt.Sprintf("%d:%d", request.StartLine, request.MaxLines)
+}
+
+func appendRiskKnowledgeSource(values []KnowledgeSource, source KnowledgeSource) []KnowledgeSource {
+	for _, existing := range values {
+		if existing.Reference == source.Reference {
+			return values
+		}
+	}
+	return append(values, source)
 }
 
 func cloneObservationCapabilities(
@@ -1155,6 +1214,7 @@ func cloneKnowledgeSources(values []KnowledgeSource) []KnowledgeSource {
 func cloneKnowledgeReadResult(value KnowledgeReadResult) KnowledgeReadResult {
 	result := value
 	result.Source.MaterialIDs = append([]string(nil), value.Source.MaterialIDs...)
+	result.Matches = append([]KnowledgeSearchMatch(nil), value.Matches...)
 	return result
 }
 

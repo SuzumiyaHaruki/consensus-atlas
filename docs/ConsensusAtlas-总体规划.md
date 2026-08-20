@@ -45,15 +45,15 @@ formal build audit 对 staged source 与二进制的封存，也不能自动推�
 
 ```text
 Risk Agent
-  读取知识/源码/历史机械反馈，生成候选 portfolio
-        ↓ typed qualification
+  读取知识/中立源码查询/历史机械反馈，生成候选 portfolio
+        ↓ typed executable assessment
 Scenario Agent
-  生成语义 selector 与有限计划，按反馈 continue/revise/abandon
+  单路径选择一个战略 Action，按可信反馈 continue/revise/abandon
         ↓ trusted binding
 Control Runtime
   执行 enabled Action，保存完整 Trace 和成本
         ↓
-fresh Replay → Observation/PSS/Risk 重算 → Oracle registry
+fresh Replay → Observation/PSS/witness 重算 → Oracle registry
         ↓
 artifact/evaluator → finding、探索、能力缺口和完整成本
 ```
@@ -65,7 +65,7 @@ Agent 可以提出不确定或错误的候选；本地类型、capability 和 en
 
 - 可 Replay 的 Action Trace 与 Execution Bundle；
 - 独立 Oracle finding、首次违例位置及 control false positive；
-- Risk milestone、PSS state/transition 和探索增量；
+- witness milestone、PSS state/transition 和探索增量；
 - missing-action/observation/oracle、fidelity gap 和预算停止原因；
 - Agent calls/tokens、primary/replay work、时间和资源成本；
 - 可用于同预算方法对照的结构化结果。
@@ -107,12 +107,17 @@ profile；少数无 leader 协议通过可选字段扩展，不为了假想协�
 
 ### Risk Agent
 
-根据知识、源码窗口和 Exploration Memory 生成多个可检验风险，说明前置条件、
+根据知识、中立源码搜索/窗口和 Exploration Memory 生成多个可检验风险，说明前置条件、
 milestone、需要的能力和 fidelity。它不能编写 Oracle 或预设 verdict。
+
+一个 portfolio 中所有机械 `executable` 候选都必须保留。多 Episode Investigation
+按 Agent 优先级、语义去重后，在同一总 calls/tokens/Runtime decision 预算内依次调查，
+不能只保留第一个候选或 cherry-pick 成功 Episode。
 
 ### Scenario Agent
 
-把已接受 Risk 逐步变为语义计划。它获得当前 target surface、enabled frontier
+把 executable Risk 逐步实例化为语义轨迹。默认协议是单路径、每次一个战略 Action；
+它获得当前 target surface、enabled frontier
 摘要、首个缺失 milestone、附近 Trace slice、ProgressDelta、循环深度和能力
 缺口。正常主线只需 `continue`、`revise`、`abandon`；复杂分支实验由真实需求
 驱动，不默认扩展状态机。
@@ -258,11 +263,22 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
 - closure handoff、正式 Risk 输入、节点规模/调用预算和因果实例绑定属于方法实现变化，当前
-  MethodSpec implementation identity 为 `m4n7-qualification-cost-cargo-replay-v1`；旧
+  MethodSpec implementation identity 为 `m4n8-agent-semantics-portfolio-search-v1`；旧
   `m4n6-causal-closure-build-evidence-v1`/`m4n5-multinode-closure-v1`/`m4m4-risk-fidelity-v1`/
   `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
   `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
+- M4n8 的新工件只使用 `executable → witness-instantiated → oracle-finding` 三层结论；
+  `scenarioTestingResult.outcome` 为 `oracle-clean|oracle-finding`，不能再用 `passed`
+  暗示实现或性质正确。底层历史 Bundle 的枚举只作兼容读取；
+- Investigation 保留 Risk Agent 返回的全部 executable portfolio 候选，并在统一总预算内
+  依次调查。accepted 候选只有在至少产生一次 Scenario attempt 后才算已调查；Risk 调用越过
+  token 阈值而 Scenario 尚未开始时，下一 Episode 必须继续同一候选；
+- Risk 源码导航采用显式 mount 内的中立搜索和随后 bounded read，不接受变更文件、函数、
+  diff 或性质提示。盲测试运行必须让 Agent 读取与执行器编译使用同一独立 SUT checkout，
+  并从该 checkout 排除解释性修改注释和专用验证测试。当前五节点选举差异仅作为四 Episode
+  discovery/witness-compilation pilot；因现有分组控制和 election-safety Oracle 不完整，
+  不作为正式端到端 finding；
 - 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
   factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
   composition 与字段不一致时拒绝运行，两个 arm 使用不同 digest；
@@ -270,7 +286,8 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   独立候选、assessment 或已有 Episode summary 读取。已有 qualification 不复用，必须
   按当前 Target 重算；规范化候选 digest 进入 MethodSpec，并允许跨 Episode、closure、
   搜索策略或模型进行同 Risk 对比；
-- 扩大但仍声明式的只读源码查询；
+- 使用显式 mount 内的中立关键词搜索与限行只读源码窗口；不提供修改文件、变更函数、
+  control/candidate 差异或实验定向函数提示；
 - 利用真实 ProgressDelta 做多轮 revise；
 - 让 Risk Agent 根据执行 capability gap 切换假设；
 - 在隔离工作区探索 native-test candidate，但可信 verdict 仍来自主执行链。

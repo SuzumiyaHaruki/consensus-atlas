@@ -202,9 +202,11 @@ fresh 单 Episode 校准使用新的空 `-campaign-dir`。最低闭环条件不�
 -knowledge-source-mount crates.io/omnipaxos@0.2.2/=/home/nitro/Desktop/consensus-atlas/suts/omnipaxos
 ```
 
-Agent 只能读取 Dossier 已声明的精确 reference；本地路径不会进入 prompt 或 verdict。一次 Risk 调查最多读取
-4 个片段、每次调用最多 2 个、每个最多 80 行。成功片段不会关闭入口：Agent 可以用前一结果的
-`end_line + 1` 继续非重叠窗口，也可以查看另一个声明 reference；重复或重叠窗口由可信代码拒绝。
+Risk Agent 只能搜索显式挂载的只读源码目录；搜索结果仅返回有界的路径、行号和单行预览。只有搜索实际
+返回的精确路径或 Dossier 原有 reference 才能在后续调用中进行 bounded read，本地绝对路径不会进入
+prompt 或 verdict。一次 Risk 调查最多读取 4 个片段、每次调用最多 2 个、每个最多 80 行；源码搜索词
+最多 128 bytes、每次最多返回 20 项。重复/重叠窗口、未搜索得到的任意路径和越过挂载根目录的引用由
+可信代码拒绝。
 `-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
 公开反馈校准可指定 `-capability-feedback-probe`；探针只由真实 TargetSurface 预检，不执行 Action，并进入

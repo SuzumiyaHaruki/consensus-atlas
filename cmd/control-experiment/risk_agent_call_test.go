@@ -57,7 +57,7 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	memory := []controlexperiment.RiskExplorationMemoryEntry{{
 		Episode: 1, CandidateID: "earlier-risk", Summary: "Earlier candidate.",
 		SuspectedMechanism: "An earlier ordering was already investigated.",
-		EpisodeOutcome:     controlexperiment.RiskMemoryOutcomeRiskNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
+		EpisodeOutcome:     controlexperiment.RiskMemoryOutcomeWitnessNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
 		ProtocolPSSStates: 2, NewProtocolPSSStates: 1,
 		CapabilityGaps: []controlexperiment.AgentCapabilityGap{{
