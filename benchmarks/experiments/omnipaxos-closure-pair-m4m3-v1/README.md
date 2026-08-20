@@ -20,6 +20,10 @@
 
 ## 运行命令
 
+`run-plan.json` 和 `final-summary.json` 保留运行当时的原路径
+`plans/agent/omnipaxos-message-loss-risk-v1.json`。该弱语义输入现已退出活动
+`plans/agent/`；下面复现命令使用内容逐字节一致的归档副本 `risk-input-v1.json`。
+
 先构建只读 worker：
 
 ```bash
@@ -33,7 +37,7 @@ go run ./cmd/control-experiment -strategy agentic-episode-v1 -target omnipaxos-v
   -worker adapters/omnipaxosv2/worker/target/debug/consensus-atlas-omnipaxos-worker \
   -campaign-dir artifacts/agentic/omnipaxos-closure-pair-m4m3-v1/g01-public-fixed \
   -semantic-input plans/agent/omnipaxos-agentic-calibration-v1.json \
-  -risk-input plans/agent/omnipaxos-message-loss-risk-v1.json \
+  -risk-input benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/risk-input-v1.json \
   -agent-key-file /home/nitro/Desktop/ds.txt -agent-provider deepseek \
   -agent-model deepseek-v4-flash -capability-feedback structured-gaps \
   -closure-mode public-fixed
@@ -42,7 +46,7 @@ go run ./cmd/control-experiment -strategy agentic-episode-v1 -target omnipaxos-v
   -worker adapters/omnipaxosv2/worker/target/debug/consensus-atlas-omnipaxos-worker \
   -campaign-dir artifacts/agentic/omnipaxos-closure-pair-m4m3-v1/g01-target-local \
   -semantic-input plans/agent/omnipaxos-agentic-calibration-v1.json \
-  -risk-input plans/agent/omnipaxos-message-loss-risk-v1.json \
+  -risk-input benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/risk-input-v1.json \
   -agent-key-file /home/nitro/Desktop/ds.txt -agent-provider deepseek \
   -agent-model deepseek-v4-flash -capability-feedback structured-gaps \
   -closure-mode target-local
@@ -51,7 +55,7 @@ go run ./cmd/control-experiment -strategy agentic-episode-v1 -target omnipaxos-v
   -worker adapters/omnipaxosv2/worker/target/debug/consensus-atlas-omnipaxos-worker \
   -campaign-dir artifacts/agentic/omnipaxos-closure-pair-m4m3-v1/g02-target-local \
   -semantic-input plans/agent/omnipaxos-agentic-calibration-v1.json \
-  -risk-input plans/agent/omnipaxos-message-loss-risk-v1.json \
+  -risk-input benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/risk-input-v1.json \
   -agent-key-file /home/nitro/Desktop/ds.txt -agent-provider deepseek \
   -agent-model deepseek-v4-flash -capability-feedback structured-gaps \
   -closure-mode target-local
@@ -60,7 +64,7 @@ go run ./cmd/control-experiment -strategy agentic-episode-v1 -target omnipaxos-v
   -worker adapters/omnipaxosv2/worker/target/debug/consensus-atlas-omnipaxos-worker \
   -campaign-dir artifacts/agentic/omnipaxos-closure-pair-m4m3-v1/g02-public-fixed \
   -semantic-input plans/agent/omnipaxos-agentic-calibration-v1.json \
-  -risk-input plans/agent/omnipaxos-message-loss-risk-v1.json \
+  -risk-input benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/risk-input-v1.json \
   -agent-key-file /home/nitro/Desktop/ds.txt -agent-provider deepseek \
   -agent-model deepseek-v4-flash -capability-feedback structured-gaps \
   -closure-mode public-fixed

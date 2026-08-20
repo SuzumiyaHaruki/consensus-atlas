@@ -1,12 +1,10 @@
 package controlexperiment
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"reflect"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -103,26 +101,6 @@ type ScenarioActionPreparer func(
 	controlruntime.Trace,
 	*controlruntime.Runtime,
 ) (control.ActionID, bool, error)
-
-func ParseScenarioPlan(data []byte) (ScenarioPlan, error) {
-	if len(data) == 0 || len(data) > ScenarioPlanMaxBytes {
-		return ScenarioPlan{}, errors.New("EXPERIMENT_SCENARIO_PLAN_JSON_INVALID")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var plan ScenarioPlan
-	if err := decoder.Decode(&plan); err != nil {
-		return ScenarioPlan{}, errors.New("EXPERIMENT_SCENARIO_PLAN_JSON_INVALID")
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return ScenarioPlan{}, errors.New("EXPERIMENT_SCENARIO_PLAN_JSON_TRAILING")
-	}
-	if err := plan.Validate(); err != nil {
-		return ScenarioPlan{}, err
-	}
-	return plan, nil
-}
 
 func (plan ScenarioPlan) Validate() error {
 	if !validMethodToken(plan.ID) || len(plan.Steps) == 0 || len(plan.Steps) > ScenarioPlanMaxSteps {

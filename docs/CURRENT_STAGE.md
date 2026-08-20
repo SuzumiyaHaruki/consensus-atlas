@@ -1,8 +1,8 @@
 # 当前阶段
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 分支：`feature/agentic-consensus-testing`
-阶段：M4m4 OmniPaxos Risk fidelity 修复完成
+阶段：M4m4R OmniPaxos Risk fidelity 收口与精确瘦身完成
 
 ## 一句话状态
 
@@ -169,7 +169,7 @@ M4m2 已完成 OmniPaxos 第二协议垂直切片。真实首请求产生 operat
 结果见 `benchmarks/experiments/omnipaxos-message-loss-closure-m4m2-v1/`。
 
 M4m2R 已补齐真实 Scenario Agent 协调主路径。新增 existing Risk
-`plans/agent/omnipaxos-message-loss-risk-v1.json`，每次加载均针对当前 Target 重新资格
+历史 v1 输入（现归档于 M4m3 实验目录），每次加载均针对当前 Target 重新资格
 审查，并保持 factory 精确要求的规范 Risk ID `message-loss-before-decision`。零模型
 Planner 只调用一次，执行 `prepare→promise→Drop accept-sync` 三个计划 Action；随后
 factory handoff 并执行四个 closure Action。最终与脚本消融得到相同 Trace/Bundle
@@ -208,6 +208,14 @@ M4m3 预注册结果保持不变，严格输入新增为
 `plans/agent/omnipaxos-message-loss-risk-v2.json`。新 implementation identity 防止旧
 `m4m1` Investigation 在相同运行参数下被当前语义恢复。本阶段没有调用模型，也没有运行真实
 问题版本；结果见 `benchmarks/experiments/omnipaxos-risk-fidelity-m4m4-v1/`。
+
+M4m4R 修复了严格 Risk 引出的过期全仓测试：测试桩现在先投递
+`prepare→promise`，再丢弃携带请求的 `accept-sync`，不再以首个 `prepare` Drop
+冒充正确干预。OmniPaxos closure factory 仅在 post-intervention Risk 中的 Drop
+milestone 精确对应当前 intervention decision、且 Trace 中唯一 Invoke 的 RequestID
+与消息一致时接管。当前明确限定为单 outstanding request；批量消息的 RequestID
+投影仍只支持单 entry，因此多请求/批量 workload 尚未宣称支持。closure 对
+`entry_count` 也统一使用无符号数值解析。
 
 saved Bundle Oracle audit 保持 v1 工件兼容：Go 字段仍名为
 `RecordedReplayStable`，JSON 继续使用 `replay_stable`。该字段只表示 Bundle 已封存的
@@ -259,14 +267,23 @@ fresh Replay 结果；evaluator audit 不重新启动 Runtime。
 - M4l3 使用 `final-summary.json` 取代有歧义的原始 summary；三份 canonical Bundle
   以确定性 gzip 保留，展开 Bundle、Scenario result、root Trace 和 provider journal
   不进入 HEAD；
-- 清理所有本轮遗留的空目录。
+- 清理所有本轮遗留的空目录；
+- 删除零生产调用的 `ClearKey`、`DecisionLog`、公开 identity/parser 包装和未使用
+  decision schema 常量；测试直接覆盖活动的 proposal inspection 入口；
+- 删除 `controlentropy` 内只由自身测试使用的第二套 replay 模式；正式
+  `controlruntime.Replay`、entropy tape、digest/prefix 校验和 Adapter entropy provider
+  保持不变；
+- etcd/OmniPaxos 共用一份 Scenario Bundle/Risk/Oracle 复核函数，CLI 共用
+  composition finalizer；复核函数要求 Oracle registry 的 projector ID 与实际
+  Decision Projector 一致，交叉错配由普通测试拒绝；Target-local projector、closure
+  和 Oracle 语义仍独立；
+- 弱语义 OmniPaxos v1 Risk 已从活动 `plans/agent/` 迁入 M4m3 实验目录，活动输入只保留 v2。
 
-验证已完成：`go test ./...`、`go vet ./...`、`audit-no-v1`、
-`audit-race-shards`、受影响 Scenario/消息语义聚焦 race、Rust fmt/clippy 和
-全仓 JSON/压缩 Bundle 解析、`git diff --check` 全部通过。仓库工作区（含 Git）
-约 55MB（清理可重建 OmniPaxos worker target 后）；Go 代码 55,884 行，其中测试
-19,447 行；`benchmarks/` 当前为 93 个文件、约 1.9MB，新增部分主要是
-M4l7--M4m2 的 canonical Bundle、audit 与精简报告。
+本轮验证已完成：`go test ./...`、`go vet ./...`、`audit-no-v1`、
+`audit-race-shards`、受影响 OmniPaxos Agent/closure 聚焦 race、全仓 JSON 解析和
+`git diff --check` 全部通过。本轮未修改 Rust。当前 Go 代码：生产代码
+36,598 行、测试 19,737 行、合计 56,335 行；相对审计基线净减少 125 行，同时增加了
+RequestID、无效 `entry_count`、多 Invoke 和 registry/projector 错配回归。
 
 ## 当前结果边界
 

@@ -173,14 +173,6 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		target, err = bindRequestedClosureMode(target, options.ClosureMode)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.experiment.ScenarioMaxCalls, inputs.experiment.ScenarioMaxSteps,
 			inputs.experiment.ScenarioMaxDecisions, inputs.experiment.SessionBudget,
@@ -188,35 +180,11 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		budget, err = agenticEpisodeBudgetForCapabilityProbe(budget, feedbackProbe)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		memory, err := agenticCapabilityFeedbackProbeMemory(target.Surface, feedbackProbe)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		spec, err := buildAgenticMethodSpec(
+		return finalizeAgenticEpisodeComposition(
 			options, target, budget, inputs.client, scenarioClient, etcdraftSemanticInputSchema,
 			inputs.experiment.ScenarioSemanticExposure, inputs.experiment.SessionWallClockMS,
-			knowledgeSourceMounts, feedbackProbe, riskInputDigest,
+			knowledgeSourceMounts, feedbackMode, feedbackProbe,
 		)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		target.MethodSpecDigest = spec.Digest
-		return agenticEpisodeComposition{
-			Target: target, Budget: budget, MethodSpec: spec,
-			KnowledgeSourceMounts:   knowledgeSourceMounts,
-			Client:                  inputs.client,
-			ScenarioClient:          scenarioClient,
-			SessionWallClockMS:      inputs.experiment.SessionWallClockMS,
-			CapabilityFeedbackMode:  feedbackMode,
-			CapabilityFeedbackProbe: feedbackProbe,
-			ExistingRisk:            existingRisk,
-			RiskInputDigest:         riskInputDigest,
-			Memory:                  memory,
-		}, nil
 	case "omnipaxos-v2":
 		if options.WorkerPath == "" {
 			return agenticEpisodeComposition{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_WORKER_REQUIRED")
@@ -229,14 +197,6 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		target, err = bindRequestedClosureMode(target, options.ClosureMode)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
 		budget, err := agenticEpisodeBudgetFromExperiment(
 			inputs.Experiment.ScenarioMaxCalls, inputs.Experiment.ScenarioMaxSteps,
 			inputs.Experiment.ScenarioMaxDecisions, inputs.Experiment.SessionBudget,
@@ -244,37 +204,67 @@ func prepareAgenticEpisodeComposition(
 		if err != nil {
 			return agenticEpisodeComposition{}, err
 		}
-		budget, err = agenticEpisodeBudgetForCapabilityProbe(budget, feedbackProbe)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		memory, err := agenticCapabilityFeedbackProbeMemory(target.Surface, feedbackProbe)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		spec, err := buildAgenticMethodSpec(
+		return finalizeAgenticEpisodeComposition(
 			options, target, budget, client, scenarioClient, omnipaxosSemanticInputSchema,
 			inputs.Experiment.ScenarioSemanticExposure, inputs.Experiment.SessionWallClockMS,
-			knowledgeSourceMounts, feedbackProbe, riskInputDigest,
+			knowledgeSourceMounts, feedbackMode, feedbackProbe,
 		)
-		if err != nil {
-			return agenticEpisodeComposition{}, err
-		}
-		target.MethodSpecDigest = spec.Digest
-		return agenticEpisodeComposition{
-			Target: target, Budget: budget, MethodSpec: spec,
-			KnowledgeSourceMounts: knowledgeSourceMounts, Client: client,
-			ScenarioClient:          scenarioClient,
-			SessionWallClockMS:      inputs.Experiment.SessionWallClockMS,
-			CapabilityFeedbackMode:  feedbackMode,
-			CapabilityFeedbackProbe: feedbackProbe,
-			ExistingRisk:            existingRisk,
-			RiskInputDigest:         riskInputDigest,
-			Memory:                  memory,
-		}, nil
 	default:
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")
 	}
+}
+
+func finalizeAgenticEpisodeComposition(
+	options controlExperimentOptions,
+	target agenticEpisodeTarget,
+	budget agenticEpisodeBudget,
+	client agentIntentTransport,
+	scenarioClient agentIntentTransport,
+	semanticInputSchema string,
+	semanticExposure controlexperiment.ScenarioSemanticExposureMode,
+	sessionWallClockMS int64,
+	knowledgeSourceMounts []controlexperiment.KnowledgeSourceMount,
+	feedbackMode controlexperiment.AgenticCapabilityFeedbackMode,
+	feedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe,
+) (agenticEpisodeComposition, error) {
+	var err error
+	target, err = bindRequestedClosureMode(target, options.ClosureMode)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	budget, err = agenticEpisodeBudgetForCapabilityProbe(budget, feedbackProbe)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	memory, err := agenticCapabilityFeedbackProbeMemory(target.Surface, feedbackProbe)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	spec, err := buildAgenticMethodSpec(
+		options, target, budget, client, scenarioClient, semanticInputSchema,
+		semanticExposure, sessionWallClockMS, knowledgeSourceMounts, feedbackProbe,
+		riskInputDigest,
+	)
+	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	target.MethodSpecDigest = spec.Digest
+	return agenticEpisodeComposition{
+		Target: target, Budget: budget, MethodSpec: spec,
+		KnowledgeSourceMounts:   knowledgeSourceMounts,
+		Client:                  client,
+		ScenarioClient:          scenarioClient,
+		SessionWallClockMS:      sessionWallClockMS,
+		CapabilityFeedbackMode:  feedbackMode,
+		CapabilityFeedbackProbe: feedbackProbe,
+		ExistingRisk:            existingRisk,
+		RiskInputDigest:         riskInputDigest,
+		Memory:                  memory,
+	}, nil
 }
 
 // bindRequestedClosureMode resolves the experiment arm against the actual

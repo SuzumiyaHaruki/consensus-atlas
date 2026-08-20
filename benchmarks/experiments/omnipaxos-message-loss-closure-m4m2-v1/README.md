@@ -42,8 +42,9 @@ finding，也不能证明对所有 Paxos/OmniPaxos 场景有效。
 
 ## Scenario Agent 主路径收口
 
-审计后的 M4m2R 回归使用
-`plans/agent/omnipaxos-message-loss-risk-v1.json` 作为 existing Risk。该候选每次加载都
+M4m2R 运行时使用 `plans/agent/omnipaxos-message-loss-risk-v1.json`；结构化摘要保留该
+历史路径，内容逐字节一致的当前归档副本位于
+`benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/risk-input-v1.json`。该候选每次加载都
 针对当前 OmniPaxos Target 重新资格审查，规范 Risk ID 为
 `message-loss-before-decision`，因此 factory 不需要放宽到任意消息丢失候选。
 

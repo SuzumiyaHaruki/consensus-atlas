@@ -88,14 +88,6 @@ type ScenarioInvestigationProposal struct {
 	Plan              ScenarioPlan `json:"plan"`
 }
 
-func ParseScenarioInvestigationProposal(data []byte) (ScenarioInvestigationProposal, error) {
-	proposal, issue := InspectScenarioInvestigationProposal(data)
-	if issue != nil {
-		return ScenarioInvestigationProposal{}, errors.New("EXPERIMENT_SCENARIO_PROPOSAL_INVALID")
-	}
-	return proposal, nil
-}
-
 // InspectScenarioInvestigationProposal preserves a successfully decoded,
 // bounded proposal when its conditional contract is invalid. Callers can feed
 // the issue and the known proposal fields back to an Agent; malformed or

@@ -18,8 +18,9 @@ workload-invoked(request-id = R, role = coordinator)
 及其可信 item dependency 链回溯到对应 operation-carrying message；找不到唯一请求时不
 生成 RequestID，不以当前客户端请求作猜测性回填。
 
-为保留 M4m3 的预注册身份，旧
-`plans/agent/omnipaxos-message-loss-risk-v1.json` 不修改；当前严格输入新增为
+为保留 M4m3 的预注册身份，结构化结果继续记录运行当时的旧路径
+`plans/agent/omnipaxos-message-loss-risk-v1.json`；内容逐字节一致的当前归档副本为
+`benchmarks/experiments/omnipaxos-closure-pair-m4m3-v1/risk-input-v1.json`，当前活动严格输入为
 `plans/agent/omnipaxos-message-loss-risk-v2.json`。M4m3 的原始结果也不覆盖。
 
 ## 回归与重投影

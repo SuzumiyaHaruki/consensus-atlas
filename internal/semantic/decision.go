@@ -9,8 +9,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 )
 
-const DecisionObservationSchemaVersion = "consensus-atlas/decision-observation/v1"
-
 // DecisionObservation is the smallest protocol-neutral input accepted by the
 // Agreement monitor. Position and ValueDigest retain exact target semantics;
 // the trusted target Binding owns their projection from opaque Evidence.

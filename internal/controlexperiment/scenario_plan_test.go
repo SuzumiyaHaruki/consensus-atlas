@@ -764,7 +764,7 @@ func TestM4eScenarioProposalsRemainTypedRegressionInputs(t *testing.T) {
 		{ScenarioIntentRevise, 4, `{"intent":"revise","plan":{"id":"timer-symmetry-recovery-lapse-revise-3","steps":[{"id":"deliver-replication-to-n3","selector":{"action_id":"action-55a1a01c2ee286dc5b8c3daf3ea76d93b5ecc6ca790a6793de8cfa5317a52c98"}},{"id":"deliver-vote-to-n1","selector":{"kind":"deliver-message","node":"n1","item_kind":"message","message_source":"n3","message_target":"n1"}},{"id":"invoke-client-at-n1","selector":{"kind":"invoke","node":"n1"}},{"id":"drop-replication-to-n2","selector":{"kind":"drop-message","node":"n2","item_kind":"message","message_source":"n1","message_target":"n2"}}]}}`},
 	}
 	for index, response := range responses {
-		proposal, err := ParseScenarioInvestigationProposal([]byte(response.json))
+		proposal, err := parseScenarioInvestigationProposalForTest([]byte(response.json))
 		if err != nil || proposal.Intent != response.intent || len(proposal.Plan.Steps) != response.steps {
 			t.Fatalf("M4e proposal %d no longer crosses the typed parser: %#v err=%v", index+1, proposal, err)
 		}
@@ -1594,16 +1594,7 @@ func unknownScenarioSemantics(t *testing.T, frontier RiskFrontierView) ScenarioS
 	return exposure
 }
 
-func TestScenarioPlanParsingRejectsUnknownAuthorityAndMixedSelector(t *testing.T) {
-	valid := []byte(`{"id":"fixture-plan","steps":[{"id":"crash","after_milestone":"temporal-prefix","selector":{"kind":"crash","node":"n1"}}]}`)
-	if plan, err := ParseScenarioPlan(valid); err != nil || plan.Steps[0].Selector.Node != "n1" ||
-		plan.Steps[0].AfterMilestone != "temporal-prefix" {
-		t.Fatalf("valid scenario plan rejected: %#v/%v", plan, err)
-	}
-	unknown := []byte(`{"id":"fixture-plan","steps":[{"id":"crash","selector":{"kind":"crash"}}],"verdict":"safe"}`)
-	if _, err := ParseScenarioPlan(unknown); err == nil {
-		t.Fatal("Agent-authored verdict field was accepted")
-	}
+func TestScenarioPlanValidationRejectsMixedSelector(t *testing.T) {
 	mixed := ScenarioPlan{ID: "fixture-mixed", Steps: []ScenarioStep{{
 		ID: "mixed", Selector: FrontierActionSelector{ActionID: "action-1", Kind: control.ActionCrash},
 	}}}
@@ -1614,45 +1605,45 @@ func TestScenarioPlanParsingRejectsUnknownAuthorityAndMixedSelector(t *testing.T
 
 func TestScenarioInvestigationProposalParsingSeparatesStrategyFromPlan(t *testing.T) {
 	valid := []byte(`{"intent":"control","branch_id":"control-a","reference_branch_id":"treatment-a","plan":{"id":"control-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
-	proposal, err := ParseScenarioInvestigationProposal(valid)
+	proposal, err := parseScenarioInvestigationProposalForTest(valid)
 	if err != nil || proposal.Intent != ScenarioIntentControl ||
 		proposal.ReferenceBranchID != "treatment-a" || proposal.Plan.ID != "control-plan" {
 		t.Fatalf("valid investigation proposal rejected: %#v/%v", proposal, err)
 	}
 	barePlan := []byte(`{"id":"old-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}`)
-	if _, err := ParseScenarioInvestigationProposal(barePlan); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest(barePlan); err == nil {
 		t.Fatal("bare ScenarioPlan bypassed the investigation intent protocol")
 	}
 	verdict := []byte(`{"intent":"continue","verdict":"unsafe","plan":{"id":"bad-authority","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
-	if _, err := ParseScenarioInvestigationProposal(verdict); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest(verdict); err == nil {
 		t.Fatal("Agent-authored verdict field was accepted by the investigation protocol")
 	}
 	exactControl := []byte(`{"intent":"control","branch_id":"control-b","reference_branch_id":"treatment-a","plan":{"id":"control-exact","steps":[{"id":"crash","selector":{"action_id":"stale-action"}}]}}`)
-	if _, err := ParseScenarioInvestigationProposal(exactControl); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest(exactControl); err == nil {
 		t.Fatal("control accepted a checkpoint-local exact ActionID")
 	}
 	exactAblation := []byte(`{"intent":"ablate","branch_id":"ablation-b","reference_branch_id":"treatment-a","omitted_step_ids":["restart"],"plan":{"id":"ablation-exact","steps":[{"id":"crash","selector":{"action_id":"stale-action"}}]}}`)
-	if _, err := ParseScenarioInvestigationProposal(exactAblation); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest(exactAblation); err == nil {
 		t.Fatal("ablation accepted a checkpoint-local exact ActionID")
 	}
 	reviseBranch := []byte(`{"intent":"revise","from_branch_id":"treatment-a","plan":{"id":"revise-branch","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
-	if _, err := ParseScenarioInvestigationProposal(reviseBranch); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest(reviseBranch); err == nil {
 		t.Fatal("revise implicitly promoted an experimental branch")
 	}
 	selectBranch := []byte(`{"intent":"select","from_branch_id":"treatment-a"}`)
-	selected, err := ParseScenarioInvestigationProposal(selectBranch)
+	selected, err := parseScenarioInvestigationProposalForTest(selectBranch)
 	if err != nil || selected.Intent != ScenarioIntentSelect || selected.FromBranchID != "treatment-a" {
 		t.Fatalf("zero-Action branch selection was rejected: %#v/%v", selected, err)
 	}
 	selectWithPlan := []byte(`{"intent":"select","from_branch_id":"treatment-a","plan":{"id":"not-zero-cost","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
-	if _, err := ParseScenarioInvestigationProposal(selectWithPlan); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest(selectWithPlan); err == nil {
 		t.Fatal("select accepted a Runtime plan")
 	}
-	abandoned, err := ParseScenarioInvestigationProposal([]byte(`{"intent":"abandon"}`))
+	abandoned, err := parseScenarioInvestigationProposalForTest([]byte(`{"intent":"abandon"}`))
 	if err != nil || abandoned.Intent != ScenarioIntentAbandon {
 		t.Fatalf("zero-Action hypothesis abandonment was rejected: %#v/%v", abandoned, err)
 	}
-	if _, err := ParseScenarioInvestigationProposal([]byte(`{"intent":"abandon","plan":{"id":"work","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)); err == nil {
+	if _, err := parseScenarioInvestigationProposalForTest([]byte(`{"intent":"abandon","plan":{"id":"work","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)); err == nil {
 		t.Fatal("abandon accepted a Runtime plan")
 	}
 	reference := ScenarioInvestigationBranch{
@@ -1674,6 +1665,16 @@ func TestScenarioInvestigationProposalParsingSeparatesStrategyFromPlan(t *testin
 		containsString(scenarioAvailableIntents(nil, []ScenarioInvestigationBranch{reference}), ScenarioIntentAblate) {
 		t.Fatal("a non-applied intervention was accepted as an ablation reference")
 	}
+}
+
+func parseScenarioInvestigationProposalForTest(
+	data []byte,
+) (ScenarioInvestigationProposal, error) {
+	proposal, issue := InspectScenarioInvestigationProposal(data)
+	if issue != nil {
+		return ScenarioInvestigationProposal{}, errors.New(issue.Code)
+	}
+	return proposal, nil
 }
 
 func TestM4dRealDeepSeekProposalsReceivePreciseRepairFeedback(t *testing.T) {

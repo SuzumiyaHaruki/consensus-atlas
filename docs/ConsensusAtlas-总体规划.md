@@ -258,6 +258,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   Drop 和 Decision。四个 M4m3 Bundle 离线重投影后，旧谓词 4/4 reached，严格谓词为
   public 0/2、target-local 2/2。该结果只作事后 fidelity 诊断，不覆盖预注册结论；
   implementation identity 同步更新为 `m4m4-risk-fidelity-v1`，旧 `m4m1` 只读有效；
+- M4m4R 将 closure 激活收紧到可信 Risk 中与当前 intervention decision 相同的 Drop
+  milestone，并要求当前 Trace 只有一个、且 RequestID 与被丢消息一致的 Invoke。
+  这使现有单请求能力闭合，同时把多请求/批量消息明确保留为未支持边界；没有新增
+  公共 Action、gate 或第二套执行器；
 - 上述证据支持“Agent 选干预 + Target-local 闭合”的窄 capability 结论，但仍不是
   跨协议普适性、缺陷发现能力或总体方法优越性证据；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；

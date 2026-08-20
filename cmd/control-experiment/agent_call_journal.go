@@ -233,12 +233,6 @@ func (journal *statelessAgentCallJournal) ActivateKey(key string) error {
 	return nil
 }
 
-func (journal *statelessAgentCallJournal) ClearKey() {
-	if journal != nil {
-		journal.key = ""
-	}
-}
-
 func (journal *statelessAgentCallJournal) SetRoot(rootID string) error {
 	if journal == nil || strings.TrimSpace(rootID) == "" {
 		return errors.New("STATELESS_AGENT_CALL_ROOT_INVALID")

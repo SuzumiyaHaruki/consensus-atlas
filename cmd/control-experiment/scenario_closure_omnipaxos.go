@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -32,7 +34,9 @@ func newOmnipaxosScenarioClosureFactory() controlexperiment.ScenarioClosureFacto
 			return nil, false, nil
 		}
 		dropped := context.Intervention.Action
-		if !omnipaxosClosureReplicationIntervention(dropped) {
+		if !omnipaxosClosureReplicationIntervention(dropped) ||
+			!omnipaxosClosureDropMilestoneMatches(context) ||
+			!omnipaxosClosureSingleRequestMatches(context.Trace, dropped.MessageMetadata["request_id"]) {
 			return nil, false, nil
 		}
 		selector, _, err := newOmnipaxosDecisionClosureSelector(context.Trace, dropped)
@@ -125,11 +129,56 @@ func omnipaxosClosureReplicationLeaf(leaf string) bool {
 }
 
 func omnipaxosClosureReplicationIntervention(action controlexperiment.FrontierActionRef) bool {
+	entryCount, err := strconv.ParseUint(action.MessageMetadata["entry_count"], 10, 64)
 	return action.Kind == control.ActionDropMessage &&
 		omnipaxosClosureReplicationLeaf(action.MessageTypeHint) &&
 		action.MessageMetadata["request_id"] != "" &&
-		action.MessageMetadata["entry_count"] != "" &&
-		action.MessageMetadata["entry_count"] != "0"
+		err == nil && entryCount > 0
+}
+
+// The closure is intentionally scoped to the current single-request Target.
+// It activates only when the trusted Risk projection selected this exact Drop
+// as its operation-replication milestone. This prevents a later, unrelated
+// request from borrowing an earlier Risk prefix in a multi-request trace.
+func omnipaxosClosureDropMilestoneMatches(context controlexperiment.ScenarioClosureContext) bool {
+	if context.Risk.Validate(context.Spec) != nil || context.Intervention.Decision <= 0 {
+		return false
+	}
+	for _, milestone := range context.Risk.Milestones {
+		if milestone.MilestoneID == omnipaxosMilestoneMessageDropped {
+			return milestone.Step == uint64(context.Intervention.Decision)
+		}
+	}
+	return false
+}
+
+func omnipaxosClosureSingleRequestMatches(trace controlruntime.Trace, requestID string) bool {
+	if requestID == "" || trace.Validate() != nil {
+		return false
+	}
+	return omnipaxosClosureInvokeRecordsMatch(trace.Records, requestID)
+}
+
+func omnipaxosClosureInvokeRecordsMatch(
+	records []controlruntime.ActionRecord,
+	requestID string,
+) bool {
+	invocations := 0
+	for _, record := range records {
+		if record.Action.Kind != control.ActionInvoke {
+			continue
+		}
+		invocations++
+		var parameters control.AdapterInvokeParameters
+		if json.Unmarshal(record.Action.Parameters, &parameters) != nil {
+			return false
+		}
+		input, err := omnipaxosv2.ProjectInput(parameters.Input)
+		if err != nil || input.RequestID != requestID {
+			return false
+		}
+	}
+	return invocations == 1
 }
 
 func omnipaxosClosureMessage(

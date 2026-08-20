@@ -118,55 +118,12 @@ func executeEtcdraftScenarioQualifiedRisk(
 		!reflect.DeepEqual(bundle.Qualification, executionInputs.qualification) {
 		return scenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
-	result := newEtcdraftScenarioTestingResult(execution.PlanID, bundle, risk)
-	if err := validateEtcdraftScenarioTestingRisk(result, spec, projector); err != nil {
+	registry := etcdraftAgenticOracleRegistry()
+	result := newScenarioTestingResult(execution.PlanID, bundle, risk, registry)
+	if err := validateScenarioTestingRisk(
+		result, spec, projector, etcdraftv2.DecisionProjector{}, registry,
+	); err != nil {
 		return scenarioTestingResult{}, err
 	}
 	return result, nil
-}
-
-func newEtcdraftScenarioTestingResult(
-	planID string,
-	bundle controlexperiment.ExecutionBundle,
-	risk semantic.RiskWitnessResult,
-) scenarioTestingResult {
-	registry := etcdraftAgenticOracleRegistry()
-	verdict := registry.Check(bundle)
-	outcome := scenarioTestingPassed
-	if len(verdict.Violations) > 0 {
-		outcome = scenarioTestingViolation
-	}
-	return scenarioTestingResult{
-		PlanID: planID, Bundle: bundle, Risk: risk,
-		CorePSSSamples: bundle.Run.CorePSSSamples, UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
-		Replay: bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
-	}
-}
-
-func validateEtcdraftScenarioTestingRisk(
-	result scenarioTestingResult,
-	spec semantic.RiskWitnessSpec,
-	projector controlexperiment.SemanticPrefixProjector,
-) error {
-	if spec.Validate() != nil || projector == nil || result.validateExecutionStructure() != nil ||
-		result.Bundle.ValidateProjection(etcdraftv2.DecisionProjector{}) != nil {
-		return errors.New("ETCDRAFT_SCENARIO_TESTING_EXECUTION_INVALID")
-	}
-	risk, err := projector.Project(result.Risk.ID, spec, result.Bundle.Trace)
-	if err != nil || !reflect.DeepEqual(result.Risk, risk) {
-		return errors.New("ETCDRAFT_SCENARIO_TESTING_RISK_INVALID")
-	}
-	registry := etcdraftAgenticOracleRegistry()
-	if registryErr := registry.Validate(); registryErr != nil {
-		return registryErr
-	}
-	verdict := registry.Check(result.Bundle)
-	outcome := scenarioTestingPassed
-	if len(verdict.Violations) > 0 {
-		outcome = scenarioTestingViolation
-	}
-	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome {
-		return errors.New("ETCDRAFT_SCENARIO_TESTING_ORACLE_INVALID")
-	}
-	return nil
 }

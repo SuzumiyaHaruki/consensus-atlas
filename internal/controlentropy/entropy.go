@@ -148,28 +148,11 @@ func (record DrawRecord) validate() error {
 	return nil
 }
 
-type ReplayDivergenceError struct {
-	Code     string
-	Sequence uint64
-	Detail   string
-}
-
-func (e *ReplayDivergenceError) Error() string {
-	return fmt.Sprintf("%s at entropy sequence %d: %s", e.Code, e.Sequence, e.Detail)
-}
-
-func IsReplayDivergence(err error) bool {
-	var target *ReplayDivergenceError
-	return errors.As(err, &target)
-}
-
 type Provider struct {
 	masterSeed []byte
 	seedDigest string
 	ordinals   map[string]uint64
 	draws      []DrawRecord
-	expected   *Tape
-	next       int
 }
 
 func New(seed []byte) (*Provider, error) {
@@ -182,25 +165,6 @@ func New(seed []byte) (*Provider, error) {
 		seedDigest: hex.EncodeToString(sum[:]),
 		ordinals:   make(map[string]uint64),
 	}, nil
-}
-
-func NewReplay(seed []byte, expected Tape) (*Provider, error) {
-	provider, err := New(seed)
-	if err != nil {
-		return nil, err
-	}
-	if err := expected.Validate(); err != nil {
-		return nil, err
-	}
-	if expected.Algorithm != Algorithm {
-		return nil, fmt.Errorf("ENTROPY_ALGORITHM_UNSUPPORTED: %s", expected.Algorithm)
-	}
-	if expected.SeedDigest != provider.seedDigest {
-		return nil, errors.New("ENTROPY_REPLAY_SEED_MISMATCH")
-	}
-	copyTape := cloneTape(expected)
-	provider.expected = &copyTape
-	return provider, nil
 }
 
 func (provider *Provider) Intn(domain Domain, n int) (int, error) {
@@ -284,36 +248,7 @@ func (provider *Provider) accept(record DrawRecord) error {
 	if err := record.validate(); err != nil {
 		return err
 	}
-	if provider.expected != nil {
-		if provider.next >= len(provider.expected.Draws) {
-			return &ReplayDivergenceError{
-				Code: "ENTROPY_REPLAY_EXTRA_DRAW", Sequence: record.Sequence,
-				Detail: string(record.ID),
-			}
-		}
-		expected := provider.expected.Draws[provider.next]
-		if !equalRecord(expected, record) {
-			return &ReplayDivergenceError{
-				Code: "ENTROPY_REPLAY_DRAW_MISMATCH", Sequence: record.Sequence,
-				Detail: fmt.Sprintf("expected %s, got %s", expected.ID, record.ID),
-			}
-		}
-		provider.next++
-	}
 	provider.draws = append(provider.draws, cloneRecord(record))
-	return nil
-}
-
-func (provider *Provider) CompleteReplay() error {
-	if provider.expected == nil {
-		return nil
-	}
-	if provider.next != len(provider.expected.Draws) {
-		return &ReplayDivergenceError{
-			Code: "ENTROPY_REPLAY_MISSING_DRAW", Sequence: uint64(provider.next),
-			Detail: fmt.Sprintf("consumed %d of %d", provider.next, len(provider.expected.Draws)),
-		}
-	}
 	return nil
 }
 
@@ -370,12 +305,6 @@ func writePart(writer partWriter, value string) {
 	_, _ = writer.Write([]byte(value))
 }
 
-func equalRecord(left, right DrawRecord) bool {
-	leftDigest, leftErr := control.CanonicalDigest(left)
-	rightDigest, rightErr := control.CanonicalDigest(right)
-	return leftErr == nil && rightErr == nil && leftDigest == rightDigest
-}
-
 func cloneRecord(record DrawRecord) DrawRecord {
 	copyRecord := record
 	if record.IntResult != nil {
@@ -392,10 +321,4 @@ func cloneRecords(records []DrawRecord) []DrawRecord {
 		result[index] = cloneRecord(record)
 	}
 	return result
-}
-
-func cloneTape(tape Tape) Tape {
-	copyTape := tape
-	copyTape.Draws = cloneRecords(tape.Draws)
-	return copyTape
 }

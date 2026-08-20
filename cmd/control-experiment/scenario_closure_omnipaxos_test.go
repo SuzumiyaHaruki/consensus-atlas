@@ -69,6 +69,35 @@ func TestOmnipaxosMessageLossClosureSharedPrefix(t *testing.T) {
 		}) {
 		t.Fatalf("OmniPaxos intervention prefix invalid: %#v", intervention)
 	}
+	factory := newOmnipaxosScenarioClosureFactory()
+	closureContext := controlexperiment.ScenarioClosureContext{
+		Spec: spec, Risk: intervention.FinalRisk, Trace: intervention.FinalTrace,
+		Intervention: *intervention.Steps[0].Choice,
+	}
+	if selector, active, err := factory(closureContext); err != nil || !active || selector == nil {
+		t.Fatalf("matching operation Drop did not activate closure: active=%t selector=%v err=%v",
+			active, selector != nil, err)
+	}
+	mismatchedRequest := closureContext
+	mismatchedRequest.Intervention = controlexperiment.FrontierChoice{
+		SchemaVersion: closureContext.Intervention.SchemaVersion,
+		ID:            closureContext.Intervention.ID, ViewDigest: closureContext.Intervention.ViewDigest,
+		Decision: closureContext.Intervention.Decision, Digest: closureContext.Intervention.Digest,
+		Action: closureContext.Intervention.Action,
+	}
+	mismatchedRequest.Intervention.Action.MessageMetadata = map[string]string{
+		"entry_count": closureContext.Intervention.Action.MessageMetadata["entry_count"],
+		"request_id":  "different-request",
+	}
+	if selector, active, err := factory(mismatchedRequest); err != nil || active || selector != nil {
+		t.Fatalf("Drop for a different RequestID activated closure: active=%t selector=%v err=%v",
+			active, selector != nil, err)
+	}
+	closureContext.Intervention.Decision++
+	if selector, active, err := factory(closureContext); err != nil || active || selector != nil {
+		t.Fatalf("Drop outside the trusted Risk milestone activated closure: active=%t selector=%v err=%v",
+			active, selector != nil, err)
+	}
 	_, participants, err := newOmnipaxosDecisionClosureSelector(
 		intervention.FinalTrace, intervention.Steps[0].Choice.Action,
 	)
@@ -164,6 +193,15 @@ func TestOmnipaxosMessageLossClosureSharedPrefix(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	mismatchedRegistry := etcdraftAgenticOracleRegistry()
+	mismatchedResult := newScenarioTestingResult(
+		target.PlanID, qualified.Bundle, qualified.Risk, mismatchedRegistry,
+	)
+	if validateScenarioTestingRisk(
+		mismatchedResult, spec, projector, omnipaxosv2.DecisionProjector{}, mismatchedRegistry,
+	) == nil {
+		t.Fatal("OmniPaxos Decision Projector was accepted with the etcd Oracle registry")
 	}
 	droppedRequestID := intervention.Steps[0].Choice.Action.MessageMetadata["request_id"]
 	if !qualified.Replay.Stable || qualified.Risk.Status != semantic.RiskWitnessReached ||
@@ -516,6 +554,38 @@ func TestOmnipaxosClosureFactoryRejectsUnrecognizedInputs(t *testing.T) {
 	}); err != nil || active || selector != nil {
 		t.Fatalf("non-operation message activated closure: active=%t selector=%v err=%v",
 			active, selector != nil, err)
+	}
+}
+
+func TestOmnipaxosClosureRejectsInvalidEntryCountAndMultipleInvokes(t *testing.T) {
+	for _, entryCount := range []string{"-1", "garbage", "0"} {
+		action := controlexperiment.FrontierActionRef{
+			Kind: control.ActionDropMessage, MessageTypeHint: "sequence-paxos/accept-sync",
+			MessageMetadata: map[string]string{
+				"entry_count": entryCount, "request_id": "request-1",
+			},
+		}
+		if omnipaxosClosureReplicationIntervention(action) {
+			t.Fatalf("invalid entry_count %q activated operation replication", entryCount)
+		}
+	}
+	payload, err := omnipaxosv2.InputPayload(omnipaxosv2.Input{
+		RequestID: "request-1", Value: []byte("value"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := json.Marshal(control.AdapterInvokeParameters{Input: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := controlruntime.ActionRecord{Action: control.Action{
+		Kind: control.ActionInvoke, Parameters: parameters,
+	}}
+	if omnipaxosClosureInvokeRecordsMatch(
+		[]controlruntime.ActionRecord{record, record}, "request-1",
+	) {
+		t.Fatal("multiple Invoke records were accepted by the single-request closure")
 	}
 }
 

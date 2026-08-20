@@ -208,29 +208,29 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				strings.Contains(payload.Messages[1].Content, `"hypothesis":`) {
 				t.Fatal("Scenario provider prompt retained the full knowledge/hypothesis contracts")
 			}
-			var selector controlexperiment.FrontierActionSelector
-			for index, action := range view.Frontier.Actions {
-				if action.Kind != control.ActionDropMessage {
-					continue
-				}
-				if selector.ActionID == "" {
-					selector.ActionID = action.ActionID
-				}
-				if view.Semantics.ActionHints[index].MessageClass == controlexperiment.ConsensusMessageReplication {
-					selector = controlexperiment.FrontierActionSelector{
-						Kind: control.ActionDropMessage, MessageTarget: action.MessageTarget,
-						MessageClass: controlexperiment.ConsensusMessageReplication,
-					}
-					break
-				}
+			hasPrepare := false
+			for _, action := range view.Frontier.Actions {
+				hasPrepare = hasPrepare || action.Kind == control.ActionDeliverMessage &&
+					action.MessageTypeHint == "sequence-paxos/prepare"
 			}
-			if selector.ActionID != "" || selector.Kind != "" {
+			if hasPrepare {
 				content, err = json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 					Intent: controlexperiment.ScenarioIntentContinue,
 					Plan: controlexperiment.ScenarioPlan{
-						ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{{
-							ID: "drop-replication", Selector: selector,
-						}},
+						ID: "agentic-episode-scenario", Steps: []controlexperiment.ScenarioStep{
+							{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
+								Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
+								MessageTypeHint: "sequence-paxos/prepare",
+							}},
+							{ID: "deliver-promise", Selector: controlexperiment.FrontierActionSelector{
+								Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
+								MessageTypeHint: "sequence-paxos/promise",
+							}},
+							{ID: "drop-replication", Selector: controlexperiment.FrontierActionSelector{
+								Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
+								MessageTypeHint: "sequence-paxos/accept-sync",
+							}},
+						},
 					},
 				})
 			}

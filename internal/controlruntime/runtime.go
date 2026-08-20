@@ -614,14 +614,6 @@ func (runtime *Runtime) successfulPrefixTrace() (Trace, error) {
 	return copyTrace.Seal()
 }
 
-func (runtime *Runtime) DecisionLog() []control.ActionID {
-	result := make([]control.ActionID, len(runtime.trace.Records))
-	for index, record := range runtime.trace.Records {
-		result[index] = record.Action.ID
-	}
-	return result
-}
-
 func (runtime *Runtime) TerminalOutcome() (TerminalOutcome, bool) {
 	if runtime == nil || runtime.terminal == nil {
 		return TerminalOutcome{}, false

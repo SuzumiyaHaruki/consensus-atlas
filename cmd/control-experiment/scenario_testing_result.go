@@ -2,10 +2,12 @@ package main
 
 import (
 	"errors"
+	"reflect"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
+	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
 const (
@@ -35,6 +37,52 @@ func (result scenarioTestingResult) validateExecutionStructure() error {
 		result.Replay != result.Bundle.Run.Replay || !result.Replay.Required || !result.Replay.Stable ||
 		(result.Outcome != scenarioTestingPassed && result.Outcome != scenarioTestingViolation) {
 		return errors.New("SCENARIO_TESTING_EXECUTION_INVALID")
+	}
+	return nil
+}
+
+func newScenarioTestingResult(
+	planID string,
+	bundle controlexperiment.ExecutionBundle,
+	risk semantic.RiskWitnessResult,
+	registry targetoracles.Registry,
+) scenarioTestingResult {
+	verdict := registry.Check(bundle)
+	outcome := scenarioTestingPassed
+	if len(verdict.Violations) > 0 {
+		outcome = scenarioTestingViolation
+	}
+	return scenarioTestingResult{
+		PlanID: planID, Bundle: bundle, Risk: risk,
+		CorePSSSamples: bundle.Run.CorePSSSamples, UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
+		Replay: bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
+	}
+}
+
+func validateScenarioTestingRisk(
+	result scenarioTestingResult,
+	spec semantic.RiskWitnessSpec,
+	projector controlexperiment.SemanticPrefixProjector,
+	decisionProjector semantic.DecisionProjector,
+	registry targetoracles.Registry,
+) error {
+	if spec.Validate() != nil || projector == nil || decisionProjector == nil ||
+		result.validateExecutionStructure() != nil ||
+		result.Bundle.ValidateProjection(decisionProjector) != nil || registry.Validate() != nil ||
+		registry.ProjectorID() != decisionProjector.ID() {
+		return errors.New("SCENARIO_TESTING_EXECUTION_INVALID")
+	}
+	risk, err := projector.Project(result.Risk.ID, spec, result.Bundle.Trace)
+	if err != nil || !reflect.DeepEqual(result.Risk, risk) {
+		return errors.New("SCENARIO_TESTING_RISK_INVALID")
+	}
+	verdict := registry.Check(result.Bundle)
+	outcome := scenarioTestingPassed
+	if len(verdict.Violations) > 0 {
+		outcome = scenarioTestingViolation
+	}
+	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome {
+		return errors.New("SCENARIO_TESTING_ORACLE_INVALID")
 	}
 	return nil
 }

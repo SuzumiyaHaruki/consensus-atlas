@@ -214,8 +214,11 @@ func etcdraftAgenticEpisodeRecoveryBinding() agenticEpisodeRecoveryBinding {
 			spec semantic.RiskWitnessSpec,
 			riskProjector controlexperiment.SemanticPrefixProjector,
 		) (scenarioTestingResult, error) {
-			result := newEtcdraftScenarioTestingResult(planID, bundle, risk)
-			return result, validateEtcdraftScenarioTestingRisk(result, spec, riskProjector)
+			registry := etcdraftAgenticOracleRegistry()
+			result := newScenarioTestingResult(planID, bundle, risk, registry)
+			return result, validateScenarioTestingRisk(
+				result, spec, riskProjector, etcdraftv2.DecisionProjector{}, registry,
+			)
 		},
 	}
 }

@@ -71,10 +71,6 @@ func (hypothesis TestHypothesis) Validate(
 	return errors.New("EXPERIMENT_TEST_HYPOTHESIS_RISK_UNKNOWN")
 }
 
-func (hypothesis TestHypothesis) ValidateIdentity() error {
-	return hypothesis.validateIdentity()
-}
-
 func (hypothesis TestHypothesis) validateIdentity() error {
 	if hypothesis.SchemaVersion != TestHypothesisSchemaVersion || !validMethodToken(hypothesis.ID) ||
 		!validSHA256(hypothesis.KnowledgeDigest) || !validMethodToken(hypothesis.RiskID) ||
