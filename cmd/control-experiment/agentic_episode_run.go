@@ -35,15 +35,18 @@ type agenticEpisodeComposition struct {
 	CapabilityFeedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe
 	ExistingRisk            *controlexperiment.RiskCandidateAssessment
 	RiskInputDigest         string
+	Preparation             controlexperiment.AgenticPreparationWork
+	PreparationCached       bool
 }
 
 type agenticEpisodeDirectoryOptions struct {
-	Directory    string
-	Resume       bool
-	AgentKeyFile string
-	ReadKey      agentKeyReader
-	Recovery     agenticEpisodeRecoveryBinding
-	Prepare      func(context.Context) (agenticEpisodeComposition, error)
+	Directory              string
+	Resume                 bool
+	AgentKeyFile           string
+	ReadKey                agentKeyReader
+	Recovery               agenticEpisodeRecoveryBinding
+	Prepare                func(context.Context) (agenticEpisodeComposition, error)
+	PreparationWallClockMS int64
 }
 
 type agenticInvestigationBudget struct {
@@ -54,13 +57,14 @@ type agenticInvestigationBudget struct {
 }
 
 type agenticInvestigationOptions struct {
-	Directory    string
-	Resume       bool
-	AgentKeyFile string
-	ReadKey      agentKeyReader
-	Recovery     agenticEpisodeRecoveryBinding
-	Budget       agenticInvestigationBudget
-	Prepare      func(context.Context) (agenticEpisodeComposition, error)
+	Directory              string
+	Resume                 bool
+	AgentKeyFile           string
+	ReadKey                agentKeyReader
+	Recovery               agenticEpisodeRecoveryBinding
+	Budget                 agenticInvestigationBudget
+	Prepare                func(context.Context) (agenticEpisodeComposition, error)
+	PreparationWallClockMS int64
 }
 
 type agenticInvestigationResult struct {
@@ -113,6 +117,26 @@ func runAgenticInvestigation(
 	if startOrdinal > options.Budget.MaxEpisodes {
 		result.StopReason = agenticInvestigationEpisodeLimit
 	}
+	var prepared agenticEpisodeComposition
+	if result.StopReason == "" {
+		prepared, err = prepareAgenticCompositionWithinDeadline(
+			ctx, options.PreparationWallClockMS, options.Prepare,
+		)
+		if err != nil {
+			return result, err
+		}
+		if prepared.Target.validate() != nil || prepared.Budget.validate() != nil ||
+			prepared.Target.ID != options.Recovery.TargetID {
+			return result, errors.New("AGENTIC_INVESTIGATION_COMPOSITION_INVALID")
+		}
+		if prepared.MethodSpec.Digest != "" {
+			for _, recovered := range result.Episodes {
+				if recovered.MethodSpec == nil || recovered.MethodSpec.Digest != prepared.MethodSpec.Digest {
+					return result, errors.New("AGENTIC_INVESTIGATION_METHOD_SPEC_DRIFT")
+				}
+			}
+		}
+	}
 	for ordinal := startOrdinal; ordinal <= options.Budget.MaxEpisodes; ordinal++ {
 		if result.StopReason != "" {
 			break
@@ -121,18 +145,7 @@ func runAgenticInvestigation(
 		if err != nil {
 			return result, err
 		}
-		composition, err := options.Prepare(ctx)
-		if err != nil || composition.Target.validate() != nil || composition.Budget.validate() != nil ||
-			composition.Target.ID != options.Recovery.TargetID {
-			return result, errors.New("AGENTIC_INVESTIGATION_COMPOSITION_INVALID")
-		}
-		if composition.MethodSpec.Digest != "" {
-			for _, recovered := range result.Episodes {
-				if recovered.MethodSpec == nil || recovered.MethodSpec.Digest != composition.MethodSpec.Digest {
-					return result, errors.New("AGENTIC_INVESTIGATION_METHOD_SPEC_DRIFT")
-				}
-			}
-		}
+		composition := prepared
 		remainingCalls := options.Budget.MaxModelCalls - result.ModelWork.Calls
 		remainingTokens := options.Budget.MaxModelTokens - result.ModelWork.TotalTokens
 		remainingDecisions := options.Budget.MaxRuntimeDecisionAllowance - result.RuntimeDecisionAllowance
@@ -151,7 +164,13 @@ func runAgenticInvestigation(
 		if composition.CapabilityFeedbackProbe != nil && len(memory) > 0 {
 			return result, errors.New("AGENTIC_INVESTIGATION_CAPABILITY_PROBE_REQUIRES_ONE_EPISODE")
 		}
-		composition.Memory = append(composition.Memory, memory...)
+		composition.Memory = append(
+			append([]controlexperiment.RiskExplorationMemoryEntry(nil), prepared.Memory...), memory...,
+		)
+		if ordinal > startOrdinal {
+			composition.Preparation = controlexperiment.AgenticPreparationWork{}
+			composition.PreparationCached = true
+		}
 		directory := filepath.Join(clean, fmt.Sprintf("episode-%04d", ordinal))
 		resumeEpisode := partial && ordinal == startOrdinal
 		partialEpisode, runErr := runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
@@ -161,6 +180,7 @@ func runAgenticInvestigation(
 			Prepare: func(context.Context) (agenticEpisodeComposition, error) {
 				return composition, nil
 			},
+			PreparationWallClockMS: options.PreparationWallClockMS,
 		})
 		if runErr != nil {
 			result.UnreconciledModelCalls += partialEpisode.UnreconciledModelCalls
@@ -275,12 +295,20 @@ func runAgenticEpisodeDirectory(
 	if !validateAgentKeyFileName(options.AgentKeyFile) || options.ReadKey == nil || options.Prepare == nil {
 		return recoveredAgenticEpisode{}, errors.New("AGENTIC_EPISODE_ACTIVE_OPTIONS_INVALID")
 	}
-	composition, err := options.Prepare(ctx)
+	composition, err := prepareAgenticCompositionWithinDeadline(
+		ctx, options.PreparationWallClockMS, options.Prepare,
+	)
 	if err != nil {
+		return recoveredAgenticEpisode{}, err
+	}
+	if err := verifyKnowledgeSourceMountIdentities(composition.KnowledgeSourceMounts); err != nil {
 		return recoveredAgenticEpisode{}, err
 	}
 	probeMemory, probeErr := agenticCapabilityFeedbackProbeMemory(
 		composition.Target.Surface, composition.CapabilityFeedbackProbe,
+	)
+	sourceExposure, sourceExposureErr := agenticSourceExposureSpec(
+		composition.Target.Knowledge, composition.KnowledgeSourceMounts,
 	)
 	riskInputMode, riskInputDigest, riskInputValid := agenticRiskInputIdentity(
 		composition.ExistingRisk, composition.RiskInputDigest,
@@ -289,8 +317,13 @@ func runAgenticEpisodeDirectory(
 	if composition.Target.validate() != nil || composition.Budget.validate() != nil ||
 		!riskInputValid ||
 		methodBound && (composition.MethodSpec.Validate() != nil ||
+			sourceExposureErr != nil ||
+			!reflect.DeepEqual(composition.MethodSpec.SourceExposure, sourceExposure) ||
 			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
 			composition.MethodSpec.ClosureMode != agenticClosureModeForTarget(composition.Target) ||
+			composition.MethodSpec.EpisodeLimits.PreparationWallClockMS <= 0 ||
+			composition.Preparation.Validate() != nil ||
+			composition.Preparation.WallClockMS > composition.MethodSpec.EpisodeLimits.PreparationWallClockMS ||
 			composition.MethodSpec.RiskInputMode != riskInputMode ||
 			composition.MethodSpec.RiskInputDigest != riskInputDigest ||
 			composition.MethodSpec.CapabilityFeedbackMode != composition.CapabilityFeedbackMode ||
@@ -353,6 +386,9 @@ func runAgenticEpisodeDirectory(
 		knowledgeReader = func(request controlexperiment.KnowledgeReadRequest) (
 			controlexperiment.KnowledgeReadResult, error,
 		) {
+			if err := verifyKnowledgeSourceMountIdentities(composition.KnowledgeSourceMounts); err != nil {
+				return controlexperiment.KnowledgeReadResult{}, err
+			}
 			return controlexperiment.ReadDeclaredKnowledgeSourceFromMounts(
 				composition.KnowledgeSourceMounts, composition.Target.Knowledge, request,
 			)
@@ -375,6 +411,10 @@ func runAgenticEpisodeDirectory(
 			riskJournal, scenarioJournal,
 		)}, err
 	}
+	result.Work.Preparation = composition.Preparation
+	if err := verifyKnowledgeSourceMountIdentities(composition.KnowledgeSourceMounts); err != nil {
+		return recoveredAgenticEpisode{}, err
+	}
 	artifact, err := persistAgenticEpisodeArtifacts(
 		clean, composition.Target.ID, composition.Budget, result,
 	)
@@ -394,6 +434,39 @@ func runAgenticEpisodeDirectory(
 		[]agenticBranchTestingResult(nil), result.BranchTesting...,
 	)
 	return recovered, nil
+}
+
+func prepareAgenticCompositionWithinDeadline(
+	parent context.Context,
+	wallClockMS int64,
+	prepare func(context.Context) (agenticEpisodeComposition, error),
+) (agenticEpisodeComposition, error) {
+	if parent == nil || prepare == nil {
+		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_PREPARATION_OPTIONS_INVALID")
+	}
+	if wallClockMS == 0 {
+		wallClockMS = 1_200_000
+	}
+	if wallClockMS < 0 {
+		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_PREPARATION_DEADLINE_INVALID")
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(wallClockMS)*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	composition, err := prepare(ctx)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_PREPARATION_DEADLINE_EXCEEDED")
+		}
+		return agenticEpisodeComposition{}, err
+	}
+	if composition.Preparation.WallClockMS == 0 && !composition.PreparationCached {
+		composition.Preparation.WallClockMS = time.Since(started).Milliseconds()
+		if composition.Preparation.WallClockMS == 0 {
+			composition.Preparation.WallClockMS = 1
+		}
+	}
+	return composition, nil
 }
 
 func projectAgenticCapabilityFeedbackMemory(

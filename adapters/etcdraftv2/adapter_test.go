@@ -4,6 +4,8 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
@@ -261,6 +263,46 @@ func TestCustomStaticNodeCountNeedsNoAdapterChange(t *testing.T) {
 	drainClusterEffects(t, ctx, runtime, 32)
 	if got := len(actionsOfKind(mustEnabled(t, ctx, runtime), control.ActionFireTemporal)); got != 4 {
 		t.Fatalf("custom cluster pulses = %d, want 4", got)
+	}
+}
+
+func TestCompactNodeCountBuildsConventionalStaticMembership(t *testing.T) {
+	ctx := context.Background()
+	adapter := mustAdapter(t, etcdraftv2.Config{
+		NodeCount: 5, ElectionTick: 7, HeartbeatTick: 2,
+	})
+	manifest, err := adapter.Manifest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []control.NodeID{"n1", "n2", "n3", "n4", "n5"}
+	if !reflect.DeepEqual(manifest.Nodes, want) {
+		t.Fatalf("compact membership = %v, want %v", manifest.Nodes, want)
+	}
+	if _, err := etcdraftv2.NewWithConfig(etcdraftv2.Config{
+		NodeCount:    3,
+		Nodes:        []etcdraftv2.NodeConfig{{Node: "custom", RaftID: 11}},
+		ElectionTick: 5, HeartbeatTick: 1,
+	}); err == nil || !strings.Contains(err.Error(), "NODE_CONFIG_AMBIGUOUS") {
+		t.Fatalf("ambiguous compact and explicit membership accepted: %v", err)
+	}
+}
+
+func TestNodeCountIsBoundedBeforeMembershipExpansion(t *testing.T) {
+	for _, config := range []etcdraftv2.Config{
+		{NodeCount: etcdraftv2.MaxStaticNodes + 1, ElectionTick: 5, HeartbeatTick: 1},
+		{NodeCount: int(^uint(0) >> 1), ElectionTick: 5, HeartbeatTick: 1},
+		{
+			Nodes:         make([]etcdraftv2.NodeConfig, etcdraftv2.MaxStaticNodes+1),
+			ElectionTick:  5,
+			HeartbeatTick: 1,
+		},
+	} {
+		if _, err := etcdraftv2.NewWithConfig(config); err == nil ||
+			!strings.Contains(err.Error(), "NODE_COUNT_INVALID") {
+			t.Fatalf("oversized membership accepted: nodes=%d count=%d err=%v",
+				len(config.Nodes), config.NodeCount, err)
+		}
 	}
 }
 

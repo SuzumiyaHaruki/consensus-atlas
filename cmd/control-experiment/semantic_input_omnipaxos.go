@@ -58,6 +58,7 @@ func (source omnipaxosWorkloadAuthoringSource) build() (controlexperiment.Worklo
 // omnipaxosScenarioExperimentConfig contains target execution and Agent
 // budget inputs. Worker location remains a runtime input.
 type omnipaxosScenarioExperimentConfig struct {
+	AdapterConfig            omnipaxosv2.Config                             `json:"adapter_config"`
 	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
 	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
 	ScenarioMaxCalls         int                                            `json:"scenario_max_calls"`
@@ -70,7 +71,8 @@ type omnipaxosScenarioExperimentConfig struct {
 
 func (config omnipaxosScenarioExperimentConfig) validate() error {
 	seed, seedErr := hex.DecodeString(config.Runtime.SeedHex)
-	if seedErr != nil || len(seed) == 0 || config.Runtime.ClockError != 0 ||
+	if seedErr != nil || len(seed) == 0 || config.AdapterConfig.ValidateNodeConfiguration() != nil ||
+		config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.FaultEnvelope.MaxMessageDrops <= 0 ||
 		config.FaultEnvelope.MaxCrashes != 0 || config.FaultEnvelope.MaxConcurrentCrashes != 0 ||
 		config.FaultEnvelope.MaxMessageDuplicates != 0 ||
@@ -85,6 +87,12 @@ func (config omnipaxosScenarioExperimentConfig) validate() error {
 		return errors.New("OMNIPAXOS_SCENARIO_EXPERIMENT_CONFIG_INVALID")
 	}
 	return nil
+}
+
+func (config omnipaxosScenarioExperimentConfig) adapterConfig(workerPath string) omnipaxosv2.Config {
+	result := config.AdapterConfig
+	result.WorkerPath = workerPath
+	return result
 }
 
 func (config omnipaxosScenarioExperimentConfig) faultEnvelope() *controlexperiment.FaultEnvelope {

@@ -145,6 +145,51 @@ Execute(risk, projector, scenarioExecution)
 
 这些扩展是“薄但不虚假的适配”，而不是追求所有协议只有一个同构接口。
 
+成员配置属于 Target configuration，而不是公共 Action。活动 Target 从 JSON 读取配置，
+Adapter 先在任何成员数组或 worker cluster 分配前校验界限，再生成规范成员列表。省略
+配置只是在同一解析函数中选择文档化默认值，不形成第二套三节点执行器。解析后的成员集
+必须同时进入 Manifest、qualification、root、Runtime factory 和 Replay recipe；否则 N 节点
+Trace 不能借用三节点资格或在 evaluator 中退回默认集群。
+
+### 4.1 本地 SUT 源码与身份
+
+Target Adapter 与目标源码是两个边界。Go Adapter 仍通过上游 module path 调用原始
+API，但根 `go.mod` 将该 module path 定向到 `suts/` 下的固定 Git submodule：
+
+```text
+Adapter import go.etcd.io/raft/v3
+        ↓ go.mod replace
+suts/etcdraft (pinned upstream commit, locally editable)
+```
+
+这样修改协议实现不需要复制 Adapter、修改公共 Core 或污染 module cache。submodule
+pointer 给出上游基线，工作树 diff 给出本地变化；二者都不自动成为正式实验身份。
+普通进程只声明 `local-source-unsealed:*`。需要进入 evaluator 的变体必须由已有 SUT
+builder 对解析后的完整源码树计算 digest、复制到隔离 staging、构建二进制并通过
+linker variable 写入 opaque build identity。builder 忽略 checkout 自身的 `.git`
+管理文件，但保留并度量 `.gitignore`、`.github` 与所有普通源码。
+
+正式 builder 会用 staging replacement 覆盖项目 `go.mod` 中对应的本地 replacement，
+因此编译输入是已经度量的副本，而不是构建期间仍可被编辑的工作树。公共 Runtime、
+Trace、Replay 和 Oracle 不感知 Git，也不根据仓库状态改变执行语义。
+
+Agent source exposure 与执行输入在 etcd/raft 和 OmniPaxos composition 中进一步绑定。
+源码读取是显式授权能力：没有 module/crate mount 就没有源码查询；存在 mount 时，可信
+准备阶段要求语言构建系统的解析目录和 mount 目录均为同一个 `suts/` checkout。etcd/raft
+核对可执行文件的 Go replacement 与 `go list`；OmniPaxos 核对锁定离线 Cargo metadata，
+从本地 path dependency 重建规范 worker，并核对 worker 路径。MethodSpec 只记录
+module path/version/reference prefix 与完整 tree
+digest，不记录机器路径。运行开始、每次读取和封存前重新计算 digest，避免相同前缀指向
+另一 checkout 或运行中源码漂移。这个开发态绑定证明“执行与 Agent 看到的是同一工作树”；
+它不替代 formal build audit 对 staged source 与最终 binary 的封存。
+已封存二进制当前允许关闭 SUT source exposure 运行；若请求读取 SUT 源码而 composition
+没有相应 build-audit 证据，则明确拒绝。后续正式源码导航应复用现有 Audit，而不是根据
+opaque BuildID 或相同 Git 路径猜测二进制内容。
+
+HashiCorp Raft 使用同一 Go 接入方式，但仍只是能力边界样本。OmniPaxos worker 仍是
+外部进程边界，但其协议库、storage 和宏均来自固定的本地 submodule，而不是 Cargo
+registry cache。
+
 ## 5. Agent 子系统
 
 ### 5.1 Risk Agent
@@ -207,6 +252,13 @@ Episode 剩余的全局 decision allowance；per-call 自然推进 quantum 不�
 Agent。只有歧义、无合格 enabled Action 或全局预算真正耗尽才结束接管。etcd/raft 与
 OmniPaxos 都通过同一接口提供窄 selector；公共层仍复核权威 frontier membership 与
 ActionKind，selector 只能选择当前 enabled 的 Effect/Deliver/Temporal，fresh Replay 不调用 selector。
+
+多节点 Target 不把“选哪个多数派子集”隐藏在 selector 的节点 ID 排序中。Target 先按实际
+membership 计算 quorum，再把能够绑定未选参与者的 exact enabled Action 作为
+`closure_candidates` 返回 Agent。Agent 执行其中一项后，下一轮 factory 只从已物化的
+`FrontierChoice` 恢复已选参与者。候选列表仍由公共层对 authoritative frontier、Action digest
+和允许类型做普通校验；它不是新 Action、新 Runtime 或新 admission gate。已选 quorum 内的
+并发因果步骤才使用 Runtime 的稳定 Action 顺序，该顺序不再改变 quorum 成员身份。
 
 真实 Target 的长轨迹回归从同一 Adapter 的确定性初态开始，以 exact policy 将最终 Scenario Trace 再执行为
 qualified Bundle。测试同时要求 target-local epoch/ballot Observation、protocol/control/joint PSS、stable Replay
@@ -323,11 +375,20 @@ qualified primary work 和 replay work；decisions/primary work 任一超过 for
 正式 Agentic 路径只接受 V3 Bundle；summary 必须声明主路径和每个 branch evidence，而且
 Plan/Risk ID、Trace digest、work 与 `MethodSpecDigest` 都要与文件和 formal contract 交叉一致。
 因此未声明分支和其他方法生成的 Bundle 不能借 Agentic Episode 目录获得 finding credit。
+当前方法生成的 Bundle 还必须封存 `execution_recipe`；formal private input 为每个 trial
+提供 build audit、SUT binary 和 executor。evaluator 使用 `evaluator-replay-v1` 调用现有
+qualified executor，fresh Trace 必须与提交 Trace 逐 Action 一致，之后 Oracle 才可产生正式结果。
+这条路径的 Replay authority 是 `evaluator-owned-sut-replay`；saved-Bundle Oracle audit 仍只是轻量
+离线检查，不获得该 authority。
 活动 CLI 根据真实 transport/model、prompt 版本、semantic input、源码暴露、Episode 数、预算和
 Target composition 实际启用的 `public-fixed|target-local` closure mode 派生
 typed `AgenticMethodSpec`；调用者提供的 digest 只能作为预期值。多 Episode formal trial 必须包含连续
 `episode-0001..N` 并聚合每轮成本；单 Episode 入口只兼容明确声明一轮的方法。搜索中的
 child verification 是 fresh replay，和最终 Bundle replay 一起受 Replay 预算约束。
+模型调用前的 Target preparation 也有独立 deadline 和 ledger：qualification 检查数单独报告，
+root 构造的 primary/replay work 进入 formal 总预算。`public-fixed` 是默认 closure mode；
+`target-local` 是显式复合方法。Agent-selected、Target-closure 和 public-progress decisions 均保留
+独立 provenance，不使用 closure 成本夸大 Agent 自主调度能力。
 旧 A8 paired launcher/session 不参与此路径。
 
 评价面保持分离：

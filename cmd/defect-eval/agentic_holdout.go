@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -16,12 +18,17 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
-const agenticHoldoutInputsSchemaVersion = "consensus-atlas/agentic-holdout-inputs/v2"
+// v4 retains the v3 durable provider-journal requirement and additionally
+// requires private build/SUT/executor inputs for evaluator-owned Replay.
+const agenticHoldoutInputsSchemaVersion = "consensus-atlas/agentic-holdout-inputs/v4"
 
 type agenticHoldoutTrialInput struct {
 	TrialID          string `json:"trial_id"`
 	EpisodeDir       string `json:"episode_dir,omitempty"`
 	InvestigationDir string `json:"investigation_dir,omitempty"`
+	BuildAuditPath   string `json:"build_audit_path"`
+	SUTBinaryPath    string `json:"sut_binary_path"`
+	ExecutorPath     string `json:"executor_path"`
 }
 
 // agenticHoldoutInputs is private evaluator I/O. Directory paths never enter
@@ -31,19 +38,22 @@ type agenticHoldoutInputs struct {
 	Trials        []agenticHoldoutTrialInput `json:"trials"`
 }
 
-// agenticEpisodeSummaryProjection deliberately reads only method-reported
-// navigation/accounting fields. Unknown summary fields remain outside the
-// trusted verdict path; the full Bundle is validated independently.
+// agenticEpisodeSummaryProjection reads the narrow persisted accounting view.
+// Provider work is reconstructed from the two durable journals and Scenario
+// work is cross-checked against the per-attempt ledger below. Unknown summary
+// fields remain outside the trusted verdict path; Bundles are validated
+// independently.
 type agenticEpisodeSummaryProjection struct {
-	TargetID              string `json:"target_id"`
-	MethodSpecDigest      string `json:"method_spec_digest"`
-	Status                string `json:"status"`
-	RiskAttempts          int    `json:"risk_attempts"`
-	ScenarioAttempts      int    `json:"scenario_attempts"`
-	ScenarioDecisionsUsed int    `json:"scenario_decisions_used"`
-	PlanID                string `json:"plan_id"`
-	RiskResultID          string `json:"risk_result_id"`
-	TraceDigest           string `json:"trace_digest"`
+	TargetID              string                                      `json:"target_id"`
+	MethodSpecDigest      string                                      `json:"method_spec_digest"`
+	Status                string                                      `json:"status"`
+	RiskAttempts          int                                         `json:"risk_attempts"`
+	ScenarioAttempts      int                                         `json:"scenario_attempts"`
+	ScenarioDecisionsUsed int                                         `json:"scenario_decisions_used"`
+	DecisionProvenance    controlexperiment.AgenticDecisionProvenance `json:"decision_provenance"`
+	PlanID                string                                      `json:"plan_id"`
+	RiskResultID          string                                      `json:"risk_result_id"`
+	TraceDigest           string                                      `json:"trace_digest"`
 	Budget                struct {
 		MaxRiskCalls         int                                     `json:"max_risk_calls"`
 		MaxScenarioCalls     int                                     `json:"max_scenario_calls"`
@@ -53,17 +63,27 @@ type agenticEpisodeSummaryProjection struct {
 		MaxRuntimeDecisions  int                                     `json:"max_runtime_decisions"`
 		Logical              *controlexperiment.AgenticLogicalBudget `json:"logical_budget"`
 	} `json:"budget"`
-	BranchEvidence []agenticBranchSummaryProjection `json:"branch_evidence"`
-	Work           struct {
-		Model                     controlexperiment.ModelWork        `json:"model"`
-		ScenarioFrontier          controlexperiment.PhaseWork        `json:"scenario_frontier"`
-		ScenarioSearch            controlexperiment.ScenarioExecutionWork `json:"scenario_search"`
-		QualifiedExecution        controlexperiment.WorkLedger       `json:"qualified_execution"`
-		BranchQualifiedExecutions []agenticBranchWorkProjection      `json:"branch_qualified_executions"`
+	BranchEvidence          []agenticBranchSummaryProjection            `json:"branch_evidence"`
+	RiskProviderCalls       []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
+	ScenarioProviderCalls   []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls"`
+	ScenarioAttemptFeedback []agenticScenarioAttemptWorkProjection      `json:"scenario_attempt_feedback"`
+	Work                    struct {
+		Preparation               controlexperiment.AgenticPreparationWork `json:"preparation"`
+		Model                     controlexperiment.ModelWork              `json:"model"`
+		ScenarioFrontier          controlexperiment.PhaseWork              `json:"scenario_frontier"`
+		ScenarioSearch            controlexperiment.ScenarioExecutionWork  `json:"scenario_search"`
+		QualifiedExecution        controlexperiment.WorkLedger             `json:"qualified_execution"`
+		BranchQualifiedExecutions []agenticBranchWorkProjection            `json:"branch_qualified_executions"`
 	} `json:"work"`
 	Assessment struct {
 		Status string `json:"status"`
 	} `json:"evidence_assessment"`
+}
+
+type agenticScenarioAttemptWorkProjection struct {
+	Ordinal          int                                      `json:"ordinal"`
+	EnteredExecution bool                                     `json:"entered_execution"`
+	ExecutionWork    *controlexperiment.ScenarioExecutionWork `json:"execution_work"`
 }
 
 type agenticBranchSummaryProjection struct {
@@ -99,11 +119,45 @@ type agenticTestingProjection struct {
 	} `json:"risk"`
 }
 
+func runAgenticHoldoutFreshEvaluation(
+	contractPath string,
+	exposurePath string,
+	inputsPath string,
+	freshArtifacts string,
+	outPath string,
+) error {
+	var inputs agenticHoldoutInputs
+	if err := readStrictJSON(inputsPath, &inputs); err != nil {
+		return err
+	}
+	var contract defectbench.FormalBenchmarkContract
+	if err := readStrictJSON(contractPath, &contract); err != nil {
+		return err
+	}
+	replaySources, err := loadAgenticReplaySources(inputsPath, inputs, contract)
+	if err != nil {
+		return err
+	}
+	if err := requireNewFormalOutputs(freshArtifacts, outPath); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(freshArtifacts, 0o755); err != nil {
+		return err
+	}
+	return runAgenticHoldoutEvaluation(
+		contractPath, exposurePath, inputsPath, outPath,
+		func(evidence map[string]defectbench.AgenticTrialEvidence) defectbench.AgenticReplayRunner {
+			return newAgenticEvaluatorReplayRunner(replaySources, evidence, freshArtifacts)
+		},
+	)
+}
+
 func runAgenticHoldoutEvaluation(
 	contractPath string,
 	exposurePath string,
 	inputsPath string,
 	outPath string,
+	replayFactory func(map[string]defectbench.AgenticTrialEvidence) defectbench.AgenticReplayRunner,
 ) error {
 	var contract defectbench.FormalBenchmarkContract
 	if err := readStrictJSON(contractPath, &contract); err != nil {
@@ -129,8 +183,12 @@ func runAgenticHoldoutEvaluation(
 	if err != nil {
 		return errors.New("AGENTIC_HOLDOUT_CLI_TARGET_ORACLE_COMPOSITION_UNSUPPORTED")
 	}
+	if replayFactory == nil {
+		return errors.New("AGENTIC_HOLDOUT_CLI_REPLAY_RUNNER_REQUIRED")
+	}
+	replay := replayFactory(evidence)
 	report, err := defectbench.EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, projector, registry.EvaluationMonitors()...,
+		contract, exposure, evidence, replay, projector, registry.EvaluationMonitors()...,
 	)
 	if err != nil {
 		return err
@@ -305,6 +363,18 @@ func loadAgenticEpisodeEvidence(
 	if err != nil {
 		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("load Agentic summary %s: %w", trialID, err)
 	}
+	riskAudits, err := loadAgenticProviderJournalAudits(filepath.Join(directory, "risk-agent"))
+	if err != nil {
+		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_RISK_JOURNAL_INVALID: %s", trialID)
+	}
+	scenarioAudits, err := loadAgenticProviderJournalAudits(filepath.Join(directory, "scenario-agent"))
+	if err != nil {
+		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_SCENARIO_JOURNAL_INVALID: %s", trialID)
+	}
+	if !agenticProviderAuditsEqual(riskAudits, summary.RiskProviderCalls) ||
+		!agenticProviderAuditsEqual(scenarioAudits, summary.ScenarioProviderCalls) {
+		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_PROVIDER_JOURNAL_MISMATCH: %s", trialID)
+	}
 	if !validAgenticEpisodeSummaryProjection(summary, contract, methodSpec) {
 		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_SUMMARY_INVALID: %s", trialID)
 	}
@@ -313,8 +383,9 @@ func loadAgenticEpisodeEvidence(
 		EpisodeStatus: summary.Status, EvidenceStatus: summary.Assessment.Status,
 		Budget: methodSpec.EpisodeBudget, RiskAttempts: summary.RiskAttempts,
 		ScenarioAttempts: summary.ScenarioAttempts, ScenarioDecisionsUsed: summary.ScenarioDecisionsUsed,
-		ModelWork: summary.Work.Model, ScenarioFrontier: summary.Work.ScenarioFrontier,
-		ScenarioSearch: summary.Work.ScenarioSearch,
+		DecisionProvenance: summary.DecisionProvenance,
+		ModelWork:          summary.Work.Model, ScenarioFrontier: summary.Work.ScenarioFrontier,
+		ScenarioSearch: summary.Work.ScenarioSearch, Preparation: summary.Work.Preparation,
 	}
 	bundlePath := filepath.Join(directory, "bundle.json")
 	if bundleInfo, bundleErr := os.Lstat(bundlePath); bundleErr == nil {
@@ -369,6 +440,111 @@ func loadAgenticEpisodeEvidence(
 	return current, nil
 }
 
+func agenticProviderAuditsEqual(
+	left []controlexperiment.StatelessAgentCallAudit,
+	right []controlexperiment.StatelessAgentCallAudit,
+) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if !reflect.DeepEqual(left[index], right[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func loadAgenticProviderJournalAudits(
+	directory string,
+) ([]controlexperiment.StatelessAgentCallAudit, error) {
+	info, err := os.Lstat(directory)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_JOURNAL_INVALID")
+	}
+	callRoot := filepath.Join(directory, "model-calls")
+	info, err = os.Lstat(callRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_JOURNAL_INVALID")
+	}
+	entries, err := os.ReadDir(callRoot)
+	if err != nil || len(entries) > controlexperiment.ScenarioAgentMaxCalls {
+		return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_JOURNAL_INVALID")
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	audits := make([]controlexperiment.StatelessAgentCallAudit, 0, len(entries))
+	for index, entry := range entries {
+		ordinal, rootID, ok := parseAgenticProviderCallDirectory(entry.Name())
+		if !ok || ordinal != index+1 || entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+			return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_JOURNAL_INVALID")
+		}
+		callDirectory := filepath.Join(callRoot, entry.Name())
+		files, readErr := os.ReadDir(callDirectory)
+		if readErr != nil || len(files) == 0 || len(files) > 3 {
+			return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_CALL_INVALID")
+		}
+		seen := make(map[string]bool, len(files))
+		for _, file := range files {
+			if file.Type()&os.ModeSymlink != 0 || file.IsDir() ||
+				(file.Name() != "intent.json" && file.Name() != "dispatch.json" && file.Name() != "result.json") {
+				return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_CALL_INVALID")
+			}
+			seen[file.Name()] = true
+		}
+		if !seen["intent.json"] {
+			return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_CALL_INVALID")
+		}
+		var intent controlexperiment.StatelessAgentCallIntent
+		if !readBoundedAgenticJournalJSON(filepath.Join(callDirectory, "intent.json"), 128<<10, &intent) ||
+			intent.Ordinal != ordinal || intent.RootID != rootID || intent.Validate() != nil {
+			return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_INTENT_INVALID")
+		}
+		var dispatch *controlexperiment.StatelessAgentCallDispatch
+		if seen["dispatch.json"] {
+			dispatch = new(controlexperiment.StatelessAgentCallDispatch)
+			if !readBoundedAgenticJournalJSON(filepath.Join(callDirectory, "dispatch.json"), 16<<10, dispatch) ||
+				dispatch.ValidateIntent(intent) != nil {
+				return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_DISPATCH_INVALID")
+			}
+		}
+		var result *controlexperiment.StatelessAgentCallResult
+		if seen["result.json"] {
+			if dispatch == nil {
+				return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_RESULT_INVALID")
+			}
+			result = new(controlexperiment.StatelessAgentCallResult)
+			if !readBoundedAgenticJournalJSON(filepath.Join(callDirectory, "result.json"), 2<<20, result) ||
+				result.ValidateInputs(intent, *dispatch) != nil {
+				return nil, errors.New("AGENTIC_HOLDOUT_PROVIDER_RESULT_INVALID")
+			}
+		}
+		audit, auditErr := controlexperiment.NewStatelessAgentCallAudit(intent, dispatch, result)
+		if auditErr != nil {
+			return nil, auditErr
+		}
+		audits = append(audits, audit)
+	}
+	return audits, nil
+}
+
+func parseAgenticProviderCallDirectory(name string) (int, string, bool) {
+	parts := strings.SplitN(name, "-", 2)
+	if len(parts) != 2 || len(parts[0]) != 3 || parts[1] == "" || filepath.Base(parts[1]) != parts[1] {
+		return 0, "", false
+	}
+	ordinal, err := strconv.Atoi(parts[0])
+	return ordinal, parts[1], err == nil && ordinal > 0
+}
+
+func readBoundedAgenticJournalJSON(path string, maxBytes int64, target any) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
+		info.Size() <= 0 || info.Size() > maxBytes {
+		return false
+	}
+	return readStrictJSON(path, target) == nil
+}
+
 func mergeAgenticEpisodeEvidence(
 	total *defectbench.AgenticTrialEvidence,
 	episode defectbench.AgenticTrialEvidence,
@@ -384,9 +560,11 @@ func mergeAgenticEpisodeEvidence(
 	if !add(&total.RiskAttempts, episode.RiskAttempts) ||
 		!add(&total.ScenarioAttempts, episode.ScenarioAttempts) ||
 		!add(&total.ScenarioDecisionsUsed, episode.ScenarioDecisionsUsed) ||
+		!mergeAgenticDecisionProvenance(&total.DecisionProvenance, episode.DecisionProvenance) ||
 		!mergeAgenticModelWork(&total.ModelWork, episode.ModelWork) ||
 		!mergeAgenticPhaseWork(&total.ScenarioFrontier, episode.ScenarioFrontier) ||
-		!mergeAgenticSearchWork(&total.ScenarioSearch, episode.ScenarioSearch) {
+		!mergeAgenticSearchWork(&total.ScenarioSearch, episode.ScenarioSearch) ||
+		!mergeAgenticPreparationWork(&total.Preparation, episode.Preparation) {
 		return false
 	}
 	bundles := make([]controlexperiment.ExecutionBundle, 0, len(episode.CandidateBundles)+1)
@@ -400,6 +578,48 @@ func mergeAgenticEpisodeEvidence(
 		bundles = bundles[1:]
 	}
 	total.CandidateBundles = append(total.CandidateBundles, bundles...)
+	return true
+}
+
+func mergeAgenticDecisionProvenance(
+	total *controlexperiment.AgenticDecisionProvenance,
+	current controlexperiment.AgenticDecisionProvenance,
+) bool {
+	add := func(target *int, value int) bool {
+		maxInt := int(^uint(0) >> 1)
+		if *target < 0 || value < 0 || value > maxInt-*target {
+			return false
+		}
+		*target += value
+		return true
+	}
+	return add(&total.AgentSelected, current.AgentSelected) &&
+		add(&total.TargetClosure, current.TargetClosure) &&
+		add(&total.PublicProgress, current.PublicProgress)
+}
+
+func mergeAgenticPreparationWork(
+	total *controlexperiment.AgenticPreparationWork,
+	current controlexperiment.AgenticPreparationWork,
+) bool {
+	add := func(target *int, value int) bool {
+		maxInt := int(^uint(0) >> 1)
+		if *target < 0 || value < 0 || value > maxInt-*target {
+			return false
+		}
+		*target += value
+		return true
+	}
+	if !add(&total.QualificationReports, current.QualificationReports) ||
+		!add(&total.QualificationCases, current.QualificationCases) ||
+		current.WallClockMS < 0 || total.WallClockMS < 0 ||
+		current.WallClockMS > int64(^uint64(0)>>1)-total.WallClockMS ||
+		!mergeAgenticPhaseWork(&total.Qualification, current.Qualification) ||
+		!mergeAgenticPhaseWork(&total.Root.Primary, current.Root.Primary) ||
+		!mergeAgenticPhaseWork(&total.Root.Replay, current.Root.Replay) {
+		return false
+	}
+	total.WallClockMS += current.WallClockMS
 	return true
 }
 
@@ -486,6 +706,9 @@ func validAgenticEpisodeSummaryProjection(
 		len(summary.BranchEvidence) > controlexperiment.ScenarioAgentMaxCalls {
 		return false
 	}
+	if !agenticSummaryProviderWorkValid(summary) || !agenticSummaryScenarioWorkValid(summary) {
+		return false
+	}
 	for index, branch := range summary.BranchEvidence {
 		work := summary.Work.BranchQualifiedExecutions[index]
 		if branch.BranchID == "" || branch.Intent == "" || branch.PlanID == "" ||
@@ -495,6 +718,50 @@ func validAgenticEpisodeSummaryProjection(
 		}
 	}
 	return true
+}
+
+func agenticSummaryProviderWorkValid(summary agenticEpisodeSummaryProjection) bool {
+	if len(summary.RiskProviderCalls) != summary.RiskAttempts ||
+		(len(summary.ScenarioProviderCalls) != summary.ScenarioAttempts &&
+			len(summary.ScenarioProviderCalls) != summary.ScenarioAttempts+1) {
+		return false
+	}
+	var work controlexperiment.ModelWork
+	for _, calls := range [][]controlexperiment.StatelessAgentCallAudit{
+		summary.RiskProviderCalls, summary.ScenarioProviderCalls,
+	} {
+		for index, audit := range calls {
+			if audit.Validate() != nil || audit.Ordinal != index+1 ||
+				work.Calls > int(^uint(0)>>1)-audit.Work.Calls ||
+				work.InputTokens > int(^uint(0)>>1)-audit.Work.InputTokens ||
+				work.OutputTokens > int(^uint(0)>>1)-audit.Work.OutputTokens ||
+				work.TotalTokens > int(^uint(0)>>1)-audit.Work.TotalTokens {
+				return false
+			}
+			work.Calls += audit.Work.Calls
+			work.InputTokens += audit.Work.InputTokens
+			work.OutputTokens += audit.Work.OutputTokens
+			work.TotalTokens += audit.Work.TotalTokens
+		}
+	}
+	return reflect.DeepEqual(work, summary.Work.Model)
+}
+
+func agenticSummaryScenarioWorkValid(summary agenticEpisodeSummaryProjection) bool {
+	if len(summary.ScenarioAttemptFeedback) != summary.ScenarioAttempts {
+		return false
+	}
+	works := make([]controlexperiment.ScenarioExecutionWork, 0, len(summary.ScenarioAttemptFeedback))
+	for index, attempt := range summary.ScenarioAttemptFeedback {
+		if attempt.Ordinal != index+1 || attempt.EnteredExecution != (attempt.ExecutionWork != nil) {
+			return false
+		}
+		if attempt.ExecutionWork != nil {
+			works = append(works, *attempt.ExecutionWork)
+		}
+	}
+	total, err := controlexperiment.AggregateScenarioExecutionWork(works)
+	return err == nil && reflect.DeepEqual(total, summary.Work.ScenarioSearch)
 }
 
 func agenticSummaryBundleMatches(

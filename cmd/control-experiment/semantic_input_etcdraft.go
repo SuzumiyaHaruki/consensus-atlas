@@ -92,6 +92,14 @@ func (config etcdraftAgentExperimentConfig) validateAgentic() error {
 	return nil
 }
 
+func (config etcdraftAgentExperimentConfig) withDefaultAdapterConfig() etcdraftAgentExperimentConfig {
+	if config.AdapterConfig.NodeCount == 0 && len(config.AdapterConfig.Nodes) == 0 &&
+		config.AdapterConfig.ElectionTick == 0 && config.AdapterConfig.HeartbeatTick == 0 {
+		config.AdapterConfig = etcdraftv2.ThreeNodeConfig()
+	}
+	return config
+}
+
 func validAgenticBudget(budget controlexperiment.AgenticLogicalBudget, wallClockMS int64) bool {
 	return budget.Validate() == nil && wallClockMS > 0
 }
@@ -114,6 +122,7 @@ func loadEtcdraftAgenticAuthoringSource(
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
 			controlexperiment.WorkloadPlan{}, errors.New("ETCDRAFT_AGENTIC_INPUT_FILE_INVALID")
 	}
+	source.Experiment = source.Experiment.withDefaultAdapterConfig()
 	if source.Experiment.validateAgentic() != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
 			controlexperiment.WorkloadPlan{}, errors.New("ETCDRAFT_AGENTIC_INPUT_EXPERIMENT_INVALID")

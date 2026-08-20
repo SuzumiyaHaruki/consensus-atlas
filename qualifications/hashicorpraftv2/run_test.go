@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func TestPartialQualificationIsStableAndMechanical(t *testing.T) {
 	}
 }
 
-func TestCheckedBundleMatchesFreshRun(t *testing.T) {
+func TestCheckedBundleRemainsReadableHistoricalEvidence(t *testing.T) {
 	encoded, err := os.ReadFile("../../benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json")
 	if err != nil {
 		t.Fatal(err)
@@ -58,8 +59,12 @@ func TestCheckedBundleMatchesFreshRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fresh.Digest != checked.Digest {
-		t.Fatalf("checked bundle is stale: %s != %s", checked.Digest, fresh.Digest)
+	if fresh.Qualification.BuildID == checked.Qualification.BuildID {
+		t.Fatal("editable local checkout reused the historical sealed build identity")
+	}
+	if fresh.Qualification.Summary != checked.Qualification.Summary ||
+		!reflect.DeepEqual(fresh.Qualification.Capabilities, checked.Qualification.Capabilities) {
+		t.Fatal("local checkout changed the historical capability result")
 	}
 }
 

@@ -18,15 +18,28 @@
 
 接入一个新 Target 时提供：
 
-1. 协议知识包：角色、轮次/任期、消息族、关键边界和待检验性质；
-2. 薄 Adapter：将官方实现 API 翻译为统一 Action/Item/Observation；
-3. capability/fidelity 声明：实际可控、可观测、可 Replay 的边界；
-4. Target composition：语义投影、PSS 映射和确定性 Oracle registry；
-5. Agent 可查询的只读源码目录；
-6. 模型、时间、调用、token 和 Runtime 工作预算。
+1. 固定提交的本地 SUT 源码；允许实验性修改，但正式运行必须封存内容身份；
+2. 协议知识包：角色、轮次/任期、消息族、关键边界和待检验性质；
+3. 薄 Adapter：将目标实现 API 翻译为统一 Action/Item/Observation；
+4. capability/fidelity 声明：实际可控、可观测、可 Replay 的边界；
+5. Target composition：语义投影、PSS 映射和确定性 Oracle registry；
+6. Agent 可查询的只读源码目录；
+7. 模型、时间、调用、token 和 Runtime 工作预算。
 
 协议知识、预算和可变实验配置优先使用 JSON；必须调用官方 API 或实现复杂
 证据转换的部分使用 Go/Rust。公共 Core 不包含具体协议分支。
+
+Go SUT 使用 Git submodule 固定上游提交，并通过根 `go.mod replace` 强制普通构建
+解析本地 checkout。Adapter import path 保持官方路径，因此修改 SUT 不要求改写
+控制层。未封存本地构建只能用于开发和公开能力校准；正式 finding/control 对比须由
+build audit 对实际源码树和二进制建立内容身份。共享修改时，子模块提交必须存在于
+可获取的远端 fork，不能只在主仓库记录一个其他机器无法获取的本地对象。
+
+Agent 源码读取必须显式授权，并与实际 SUT 输入一致。对于已完成绑定的 etcd/raft，
+可信 composition 校验可执行文件 local replacement、Go 解析目录和源码 mount 为同一
+checkout，再将 module path/version/reference prefix 与完整 tree digest 纳入 MethodSpec；
+运行中继续检查 tree digest。未提供 mount 时 Agent 不读取源码。该开发态一致性不能替代
+formal build audit 对 staged source 与二进制的封存，也不能自动推广到尚未接入的 Target。
 
 ### 2.2 处理
 
@@ -143,13 +156,45 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 已完成：
 
-- etcd/raft 与 OmniPaxos 两个真实 Target；
+- etcd/raft 与 OmniPaxos 两个真实 Target，均由仓库内固定、可修改的 SUT checkout 构建；
 - 统一 Action、自然时间、消息所有权、crash/restart 与 Replay；
+- etcd/raft 静态成员规模由 Target JSON 的 `adapter_config.node_count` 配置（当前最多 64），生成
+  `n1..nN`/Raft ID `1..N`；显式 `nodes` 继续服务自定义身份。qualification、admission、
+  root Trace 与正式 Runtime 必须绑定同一份成员配置，不能用三节点资格运行 N 节点实验；
+  活动 Agent 输入完全省略该对象时解析成三节点默认值，不保留独立的固定三节点执行器；
+- OmniPaxos 使用相同的“显式 `node_count` 优先、缺省为 3”规则（当前 3–64）；配置必须
+  贯穿本地 worker reset、Manifest、qualification、Agent root、Scenario、Bundle recipe
+  和 evaluator-owned Replay。HashiCorp 能力样本的底层 Adapter 同样可配置，但在成为
+  活动 Agent Target 前不为它增加独立的 Agent 输入路径；
 - target-local Observation/Oracle registry；
 - Risk portfolio、受限源码导航、机械资格和 feedback repair；
 - live Scenario、ProgressDelta、durable journal 和完整成本；
 - Agentic artifact 到 formal/private evaluator；
 - 两个协议上的 target-local 消息 leaf type 选择校准。
+
+可信评测边界：
+
+- Agent 生成的 ordered witness 在可信侧按固定操作额度匹配，不能用合法输入触发组合爆炸；
+- 模型调用成本由正式 evaluator 从 Episode durable journal 重建，并与 summary 交叉核对；
+- Scenario 搜索成本由逐尝试 ledger 聚合，最终 Bundle 成本单独核算；
+- 当前 Agentic formal evaluator 的 Replay authority 是 `evaluator-owned-sut-replay`：
+  当前方法的 V3 Bundle 必须封存机器无关的可执行 recipe（完整 Config、seed、
+  policy、workload 与 Target config）；private input 额外提供 build audit、SUT binary
+  和可信 executor。evaluator 在隔离子进程中调用现有 qualified executor，逐 Action
+  比较 fresh Trace，然后才重新投影并运行 Oracle；
+- Target preparation 受独立 wall-clock deadline 约束；qualification report/case 数量、
+  root 构造的 primary/replay work 和实际耗时进入 Episode 工件。root work 进入 formal
+  primary/replay 成本；qualification 通过协议中立 Adapter `WorkMeter` 记录真实 Reset、
+  Submit 和 ApplyRuntimeAction，并进入 formal primary decisions/work。只读 Adapter 查询不
+  冒充 scheduler work，仍由 wall time 表达；report/case 数只作为结构统计。
+  多 Episode CLI 只构造一次重准备，并只在实际承担该成本的首个新 Episode 记账；
+- `public-fixed` 是 CLI 默认方法；`target-local` 必须显式选择，且两者的 MethodSpec
+  identity 不同。Agent 选择、Target closure 和公共自然推进的 decisions 在 Episode
+  与 formal trial 中分开报告，不将 closure 动作归功于 Agent；Risk 重复按结构语义判断，
+  不按 Agent 自报 CandidateID 判断。
+
+长轨迹证据先通过 etcd/OmniPaxos prefix 增量缓存减少重复计算。Trace 仍保存完整 Evidence，
+存储 delta 化必须在有真实长时瓶颈并能保持 Replay/Oracle 兼容时再做，不为压缩体积引入第二套轨迹语义。
 
 主线收敛决定：
 
@@ -171,6 +216,37 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 ### S2：Agent 能力释放（当前）
 
+- etcd/raft 与 OmniPaxos Target 均支持可配置静态节点数；协议专属 closure
+  按实际多数派计算所需参与者。多个等价 quorum 子集存在时，后端只返回当前
+  enabled/admissible 且能够绑定候选参与者的 `closure_candidates`；Agent 通过
+  `revise` 执行 exact Action 后，可信代码从真实 `FrontierChoice` 恢复选择。不把任意
+  节点排序写进公共 Core，也不允许 closure 候选引入新干预；
+
+- 五节点零模型垂直回归已证明两个协议的多参与者路径可进入 Agent 主流程：
+  etcd/raft 由 Agent 选择两个备用 follower；OmniPaxos 在已有 prepare quorum 基础上
+  选择额外闭合参与者。两者均以同一 RequestID 达到 Risk，fresh Replay stable，
+  Target Oracle clean。`public-fixed` 仍是任意配置节点数的默认路径；
+
+- OmniPaxos 0.2.2 已固定到 `suts/omnipaxos` 的上游提交 `e3e989b...`；Rust worker
+  通过本地 Cargo path dependency、锁定离线构建和规范 worker 路径校验使用该源码。
+  Agent 若获显式源码读取授权，只能挂载同一 checkout，源码树身份沿用 MethodSpec
+  的既有 SUT binding，不为此增加第二套 hash 或 contract；
+
+- 现有 SUT Audit 已扩展 Cargo producer：它绑定协议源码树、worker 源码/锁文件、
+  精确离线 Cargo 命令和 worker binary，并复用正式 evaluator 已消费的 build-audit
+  结构。worker BuildID 必须等于 Audit 的 `sha256:<binary>` identity；这不是新的
+  evidence ledger。首次克隆只显式执行一次 `cargo fetch --locked`，实验构建保持
+  `--locked --offline`。端到端回归使用该 Audit 构建 worker、生成 OmniPaxos V3 Bundle，
+  再从 sealed recipe 运行 evaluator-owned Replay，并同时核对 fresh Trace 与 BuildID；
+
+- target-local closure 的方法资格同时受节点规模和调用预算约束；预算不足以容纳一次
+  干预及必要 quorum 参与者选择时，在 Agent 调用前拒绝。etcd/raft 后续消息绑定原干预
+  term/index，OmniPaxos 绑定 ballot/sequence/RequestID，避免换届、重试或旧消息被误消费；
+
+- semantic input 的文件位置不再决定本地 SUT 身份：CLI 可用 `-repository-root` 显式
+  指向 ConsensusAtlas 工作区，原有向上发现只作为兼容默认。OmniPaxos worker 在响应中
+  回传实际规范化配置，Adapter 与 Manifest 使用同一配置事实，避免 Go/Rust 常量漂移；
+
 - 已用 target-local closure selector 闭合 Agent 已正确选择的协议因果路径，并将
   可选 factory 接入 Scenario Agent 的 `after_milestone` 与计划结束推进；公共
   Runtime 只提供 enabled frontier、执行、Trace 和 fresh Replay，不解释闭合语义；
@@ -181,8 +257,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
-- closure handoff、正式 Risk 输入与 closure 全局预算所有权属于方法实现变化，当前
-  MethodSpec implementation identity 为 `m4m4-risk-fidelity-v1`；旧
+- closure handoff、正式 Risk 输入、节点规模/调用预算和因果实例绑定属于方法实现变化，当前
+  MethodSpec implementation identity 为 `m4n7-qualification-cost-cargo-replay-v1`；旧
+  `m4n6-causal-closure-build-evidence-v1`/`m4n5-multinode-closure-v1`/`m4m4-risk-fidelity-v1`/
   `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
   `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
@@ -273,6 +350,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 选择 HotStuff/Tendermint 类非 Raft/Paxos 日志复制实现，测量新增代码是否主要
 局限于 Adapter、target-local Observation 和 Oracle。目标是薄且可解释的适配，
 不是承诺零代码黑盒接入。
+
+接入成本分别统计：SUT checkout/构建配置、Adapter、Target-local 语义和 Oracle；
+上游源码本身不计入 ConsensusAtlas 主仓库代码行。需要修改协议时只改变 SUT 子模块，
+不应因此向公共 Core 增加该协议专用分支。
 
 ## 10. 可行性检查
 

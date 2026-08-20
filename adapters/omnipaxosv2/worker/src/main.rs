@@ -13,7 +13,13 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
 
-const SCHEMA: &str = "consensus-atlas/omnipaxos-worker/v3";
+const SCHEMA: &str = "consensus-atlas/omnipaxos-worker/v5";
+const DEFAULT_NODE_COUNT: u64 = 3;
+const MAX_NODE_COUNT: u64 = 64;
+const ELECTION_TICK_TIMEOUT: u64 = 2;
+const RESEND_MESSAGE_TICK_TIMEOUT: u64 = 100;
+const BUFFER_SIZE: usize = 1024;
+const BATCH_SIZE: usize = 1;
 
 #[derive(Entry, Clone, Debug, Serialize, Deserialize)]
 struct WorkerEntry {
@@ -27,6 +33,14 @@ type Node = OmniPaxos<WorkerEntry, MemoryStorage<WorkerEntry>>;
 struct Cluster {
     nodes: BTreeMap<u64, Node>,
     reported: BTreeMap<u64, u64>,
+    prefix_caches: BTreeMap<u64, DecisionPrefixCache>,
+    configuration: WorkerConfiguration,
+}
+
+struct DecisionPrefixCache {
+    decided: u64,
+    digest: Sha256,
+    prefixes: Vec<DecisionPrefixView>,
 }
 
 #[derive(Deserialize)]
@@ -35,6 +49,8 @@ struct Request {
     op: String,
     #[serde(default)]
     node: u64,
+    #[serde(default)]
+    node_count: u64,
     #[serde(default)]
     payload: String,
 }
@@ -46,9 +62,21 @@ struct Response {
     ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    configuration: Option<WorkerConfiguration>,
     nodes: Vec<NodeView>,
     messages: Vec<MessageView>,
     decisions: Vec<DecisionView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct WorkerConfiguration {
+    node_count: u64,
+    election_tick_timeout: u64,
+    resend_message_tick_timeout: u64,
+    buffer_size: usize,
+    batch_size: usize,
+    leader_priorities: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -63,7 +91,7 @@ struct NodeView {
     promise_pid: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct DecisionPrefixView {
     index: u64,
     digest: String,
@@ -102,6 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 id,
                 ok: false,
                 error: Some(error.to_string()),
+                configuration: None,
                 nodes: Vec::new(),
                 messages: Vec::new(),
                 decisions: Vec::new(),
@@ -119,7 +148,7 @@ fn handle(
     request: Request,
 ) -> Result<Response, Box<dyn std::error::Error>> {
     match request.op.as_str() {
-        "reset" => *cluster = Some(Cluster::new()?),
+        "reset" => *cluster = Some(Cluster::new(request.node_count)?),
         "tick" => cluster
             .as_mut()
             .ok_or("OMNIPAXOS_WORKER_RESET_REQUIRED")?
@@ -140,6 +169,7 @@ fn handle(
         id: request.id,
         ok: true,
         error: None,
+        configuration: Some(cluster.configuration.clone()),
         nodes: cluster.views()?,
         messages: cluster.take_messages()?,
         decisions: cluster.take_decisions()?,
@@ -147,22 +177,25 @@ fn handle(
 }
 
 impl Cluster {
-    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(requested_node_count: u64) -> Result<Self, Box<dyn std::error::Error>> {
+        let configuration = normalized_configuration(requested_node_count)?;
+        let node_count = configuration.node_count;
+        let node_ids: Vec<u64> = (1..=node_count).collect();
         let mut nodes = BTreeMap::new();
-        for id in 1..=3 {
+        for id in node_ids.iter().copied() {
             let config = OmniPaxosConfig {
                 cluster_config: ClusterConfig {
                     configuration_id: 1,
-                    nodes: vec![1, 2, 3],
+                    nodes: node_ids.clone(),
                     flexible_quorum: None,
                 },
                 server_config: ServerConfig {
                     pid: id,
-                    election_tick_timeout: 2,
-                    resend_message_tick_timeout: 100,
-                    buffer_size: 1024,
-                    batch_size: 1,
-                    leader_priority: 4 - id as u32,
+                    election_tick_timeout: configuration.election_tick_timeout,
+                    resend_message_tick_timeout: configuration.resend_message_tick_timeout,
+                    buffer_size: configuration.buffer_size,
+                    batch_size: configuration.batch_size,
+                    leader_priority: configuration.leader_priorities[(id - 1) as usize],
                 },
             };
             nodes.insert(id, config.build(MemoryStorage::default())?);
@@ -170,6 +203,8 @@ impl Cluster {
         Ok(Self {
             nodes,
             reported: BTreeMap::new(),
+            prefix_caches: BTreeMap::new(),
+            configuration,
         })
     }
 
@@ -207,30 +242,30 @@ impl Cluster {
         Ok(())
     }
 
-    fn views(&self) -> Result<Vec<NodeView>, Box<dyn std::error::Error>> {
-        self.nodes
-            .iter()
-            .map(
-                |(id, node)| -> Result<NodeView, Box<dyn std::error::Error>> {
-                    let promise = node.get_promise();
-                    let decided_prefixes = decided_prefixes(node)?;
-                    let decided_prefix_digest = decided_prefixes
-                        .last()
-                        .map(|prefix| prefix.digest.clone())
-                        .unwrap_or_else(empty_decided_prefix_digest);
-                    Ok(NodeView {
-                        id: *id,
-                        leader: node.get_current_leader().unwrap_or(0),
-                        decided_index: node.get_decided_idx(),
-                        decided_prefix_digest,
-                        decided_prefixes,
-                        promise_number: promise.n,
-                        promise_priority: promise.priority,
-                        promise_pid: promise.pid,
-                    })
-                },
-            )
-            .collect()
+    fn views(&mut self) -> Result<Vec<NodeView>, Box<dyn std::error::Error>> {
+        let nodes = &self.nodes;
+        let caches = &mut self.prefix_caches;
+        let mut views = Vec::with_capacity(nodes.len());
+        for (id, node) in nodes {
+            let promise = node.get_promise();
+            let cache = caches.entry(*id).or_insert_with(new_decision_prefix_cache);
+            let decided_prefixes = decided_prefixes(node, cache)?;
+            let decided_prefix_digest = decided_prefixes
+                .last()
+                .map(|prefix| prefix.digest.clone())
+                .unwrap_or_else(empty_decided_prefix_digest);
+            views.push(NodeView {
+                id: *id,
+                leader: node.get_current_leader().unwrap_or(0),
+                decided_index: node.get_decided_idx(),
+                decided_prefix_digest,
+                decided_prefixes,
+                promise_number: promise.n,
+                promise_priority: promise.priority,
+                promise_pid: promise.pid,
+            });
+        }
+        Ok(views)
     }
 
     fn take_messages(&mut self) -> Result<Vec<MessageView>, Box<dyn std::error::Error>> {
@@ -277,36 +312,89 @@ impl Cluster {
     }
 }
 
-fn decided_prefixes(node: &Node) -> Result<Vec<DecisionPrefixView>, Box<dyn std::error::Error>> {
-    let decided = node.get_decided_idx();
-    if decided == 0 {
-        return Ok(Vec::new());
+fn normalized_configuration(
+    requested_node_count: u64,
+) -> Result<WorkerConfiguration, Box<dyn std::error::Error>> {
+    let node_count = if requested_node_count == 0 {
+        DEFAULT_NODE_COUNT
+    } else {
+        requested_node_count
+    };
+    if !(DEFAULT_NODE_COUNT..=MAX_NODE_COUNT).contains(&node_count) {
+        return Err("OMNIPAXOS_WORKER_NODE_COUNT_INVALID".into());
     }
+    Ok(WorkerConfiguration {
+        node_count,
+        election_tick_timeout: ELECTION_TICK_TIMEOUT,
+        resend_message_tick_timeout: RESEND_MESSAGE_TICK_TIMEOUT,
+        buffer_size: BUFFER_SIZE,
+        batch_size: BATCH_SIZE,
+        leader_priorities: (1..=node_count)
+            .map(|id| (node_count + 1 - id) as u32)
+            .collect(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configuration_is_normalized_and_bounded() {
+        let default = normalized_configuration(0).expect("default configuration");
+        assert_eq!(default.node_count, 3);
+        assert_eq!(default.leader_priorities, vec![3, 2, 1]);
+        let five = normalized_configuration(5).expect("five-node configuration");
+        assert_eq!(five.leader_priorities, vec![5, 4, 3, 2, 1]);
+        assert!(normalized_configuration(2).is_err());
+        assert!(normalized_configuration(MAX_NODE_COUNT + 1).is_err());
+    }
+}
+
+fn new_decision_prefix_cache() -> DecisionPrefixCache {
     let mut digest = Sha256::new();
     digest.update(b"consensus-atlas/omnipaxos-decided-prefix/v2\0");
+    DecisionPrefixCache {
+        decided: 0,
+        digest,
+        prefixes: Vec::new(),
+    }
+}
+
+fn decided_prefixes(
+    node: &Node,
+    cache: &mut DecisionPrefixCache,
+) -> Result<Vec<DecisionPrefixView>, Box<dyn std::error::Error>> {
+    let decided = node.get_decided_idx();
+    if decided < cache.decided {
+        *cache = new_decision_prefix_cache();
+    }
+    if decided == cache.decided {
+        return Ok(cache.prefixes.clone());
+    }
     let entries = node
-        .read_decided_suffix(0)
+        .read_decided_suffix(cache.decided)
         .ok_or("OMNIPAXOS_WORKER_DECIDED_PREFIX_MISSING")?;
-    if entries.len() as u64 != decided {
+    if entries.len() as u64 != decided - cache.decided {
         return Err("OMNIPAXOS_WORKER_DECIDED_PREFIX_LENGTH_MISMATCH".into());
     }
-    let mut result = Vec::with_capacity(entries.len());
     for (offset, entry) in entries.into_iter().enumerate() {
         let LogEntry::Decided(value) = entry else {
             return Err("OMNIPAXOS_WORKER_DECIDED_PREFIX_NOT_EXACT".into());
         };
-        digest_field(&mut digest, value.request_id.as_bytes());
-        digest.update(value.origin.to_be_bytes());
-        digest_field(&mut digest, value.value.as_bytes());
-        let index = offset as u64 + 1;
-        let mut prefix = digest.clone();
+        digest_field(&mut cache.digest, value.request_id.as_bytes());
+        cache.digest.update(value.origin.to_be_bytes());
+        digest_field(&mut cache.digest, value.value.as_bytes());
+        let index = cache.decided + offset as u64 + 1;
+        let mut prefix = cache.digest.clone();
         prefix.update(index.to_be_bytes());
-        result.push(DecisionPrefixView {
+        cache.prefixes.push(DecisionPrefixView {
             index,
             digest: format!("{:x}", prefix.finalize()),
         });
     }
-    Ok(result)
+    cache.decided = decided;
+    Ok(cache.prefixes.clone())
 }
 
 fn empty_decided_prefix_digest() -> String {

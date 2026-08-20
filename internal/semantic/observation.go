@@ -249,6 +249,8 @@ type ObservationPredicate struct {
 	Constraints []ObservationConstraint `json:"constraints,omitempty"`
 }
 
+const LinearWitnessMaxMatchOperations = 1 << 20
+
 // MatchLinearRiskWitness finds the earliest complete ordered match. If no
 // complete chain exists, it returns the longest deterministic prefix so the
 // Agent can see honest progress without controlling execution closure.
@@ -257,8 +259,23 @@ func MatchLinearRiskWitness(
 	predicates []ObservationPredicate,
 	history ObservationHistory,
 ) ([]RiskWitnessMilestoneEvidence, error) {
+	return MatchLinearRiskWitnessBounded(
+		spec, predicates, history, LinearWitnessMaxMatchOperations,
+	)
+}
+
+// MatchLinearRiskWitnessBounded preserves the deterministic, lexicographic
+// backtracking semantics while memoizing failed states and charging every
+// inspected event. A syntactically valid Agent predicate set therefore cannot
+// make trusted matching perform unbounded combinatorial work.
+func MatchLinearRiskWitnessBounded(
+	spec RiskWitnessSpec,
+	predicates []ObservationPredicate,
+	history ObservationHistory,
+	maxOperations int,
+) ([]RiskWitnessMilestoneEvidence, error) {
 	if err := spec.Validate(); err != nil || history.ProjectorID == "" || history.TraceDigest == "" ||
-		len(predicates) != len(spec.Milestones) {
+		len(predicates) != len(spec.Milestones) || maxOperations <= 0 {
 		return nil, errors.New("LINEAR_WITNESS_INPUT_INVALID")
 	}
 	if err := validateObservationPredicates(predicates); err != nil {
@@ -276,6 +293,9 @@ func MatchLinearRiskWitness(
 	}
 
 	best := make([]RiskWitnessMilestoneEvidence, 0, len(predicates))
+	failed := make(map[string]struct{})
+	operations := 0
+	budgetExhausted := false
 	var search func(int, int, map[string]string, []RiskWitnessMilestoneEvidence) bool
 	search = func(predicateIndex, eventIndex int, bindings map[string]string, path []RiskWitnessMilestoneEvidence) bool {
 		if len(path) > len(best) {
@@ -284,8 +304,17 @@ func MatchLinearRiskWitness(
 		if predicateIndex == len(predicates) {
 			return true
 		}
+		stateKey := linearWitnessStateKey(predicateIndex, eventIndex, bindings)
+		if _, seen := failed[stateKey]; seen {
+			return false
+		}
 		predicate := predicates[predicateIndex]
 		for index := eventIndex; index < len(history.Events); index++ {
+			operations++
+			if operations > maxOperations {
+				budgetExhausted = true
+				return false
+			}
 			event := history.Events[index]
 			if len(path) > 0 && event.Step <= path[len(path)-1].Step {
 				continue
@@ -302,14 +331,45 @@ func MatchLinearRiskWitness(
 			if search(predicateIndex+1, index+1, nextBindings, append(path, matched)) {
 				return true
 			}
+			if budgetExhausted {
+				return false
+			}
 		}
+		failed[stateKey] = struct{}{}
 		return false
 	}
 	search(0, 0, map[string]string{}, nil)
+	if budgetExhausted {
+		return nil, errors.New("LINEAR_WITNESS_MATCH_BUDGET_EXHAUSTED")
+	}
 	if best == nil {
 		best = make([]RiskWitnessMilestoneEvidence, 0)
 	}
 	return best, nil
+}
+
+func linearWitnessStateKey(predicateIndex, eventIndex int, bindings map[string]string) string {
+	keys := make([]string, 0, len(bindings))
+	for key := range bindings {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var result strings.Builder
+	result.WriteString(strconv.Itoa(predicateIndex))
+	result.WriteByte('/')
+	result.WriteString(strconv.Itoa(eventIndex))
+	for _, key := range keys {
+		value := bindings[key]
+		result.WriteByte('/')
+		result.WriteString(strconv.Itoa(len(key)))
+		result.WriteByte(':')
+		result.WriteString(key)
+		result.WriteByte('=')
+		result.WriteString(strconv.Itoa(len(value)))
+		result.WriteByte(':')
+		result.WriteString(value)
+	}
+	return result.String()
 }
 
 func validateObservationPredicates(predicates []ObservationPredicate) error {

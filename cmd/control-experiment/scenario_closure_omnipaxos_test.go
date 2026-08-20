@@ -402,6 +402,159 @@ func TestOmnipaxosExistingRiskRunsThroughScenarioAgentClosure(t *testing.T) {
 	t.Logf("OMNIPAXOS_AGENT_CLOSURE_RESULT %s", summary)
 }
 
+func TestOmnipaxosFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), controlExperimentTestTimeout(240*time.Second),
+	)
+	defer cancel()
+	var source omnipaxosAgenticAuthoringSource
+	if err := readStrictJSONFile(
+		"../../plans/agent/omnipaxos-agentic-calibration-v1.json",
+		omnipaxosSemanticInputLimit, &source,
+	); err != nil {
+		t.Fatal(err)
+	}
+	source.Experiment.AdapterConfig = omnipaxosv2.Config{NodeCount: 5}
+	inputPath := writeAgenticInputFixture(t, source)
+	workerPath := buildOmnipaxosScenarioWorker(t)
+	inputs, err := prepareOmnipaxosAgenticEpisode(ctx, workerPath, inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := newOmnipaxosAgenticEpisodeTarget(inputs)
+	if err != nil || len(target.Surface.Nodes) != 5 {
+		t.Fatalf("prepare five-node OmniPaxos target: nodes=%v err=%v", target.Surface.Nodes, err)
+	}
+	existingRisk, _, err := loadExistingRiskInput(
+		"../../plans/agent/omnipaxos-message-loss-risk-v2.json", target,
+	)
+	if err != nil || existingRisk == nil {
+		t.Fatalf("load five-node OmniPaxos Risk: %#v/%v", existingRisk, err)
+	}
+	risk, err := controlexperiment.BuildScenarioRiskHypothesis(
+		target.Knowledge, *existingRisk, target.ObservationProjector.Capabilities(),
+		target.Surface.Capabilities.ComposableActions, &target.Surface,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector, err := controlexperiment.NewLinearObservationRiskProjector(
+		risk.Spec, risk.Predicates, target.ObservationProjector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, err := target.ScenarioInputs(risk, projector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core.ClosureFactory = target.ClosureFactory
+	core.RootID = "omnipaxos-five-node-agent-closure"
+	core.TargetSurface = &target.Surface
+	plannerCalls := 0
+	selectedTargets := make(map[control.NodeID]struct{})
+	scenario, err := runScenarioEpisodeCore(
+		ctx, core, 4, 5, 64,
+		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
+			[]byte, controlexperiment.ModelWork, error,
+		) {
+			plannerCalls++
+			proposal := controlexperiment.ScenarioInvestigationProposal{
+				Intent: controlexperiment.ScenarioIntentContinue,
+				Plan: controlexperiment.ScenarioPlan{
+					ID: "omnipaxos-five-node-intervention",
+					Steps: []controlexperiment.ScenarioStep{
+						{ID: "deliver-prepare-to-n2", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
+							MessageTypeHint: "sequence-paxos/prepare",
+						}},
+						{ID: "deliver-promise-to-n1", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
+							MessageTypeHint: "sequence-paxos/promise",
+						}},
+						{ID: "deliver-prepare-to-n3", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n3",
+							MessageTypeHint: "sequence-paxos/prepare",
+						}},
+						{ID: "deliver-promise-from-n3", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDeliverMessage, MessageSource: "n3", MessageTarget: "n1",
+							MessageTypeHint: "sequence-paxos/promise",
+						}},
+						{ID: "drop-operation-replication", Selector: controlexperiment.FrontierActionSelector{
+							Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
+							MessageTypeHint: "sequence-paxos/accept-sync",
+						}},
+					},
+				},
+			}
+			if plannerCalls > 1 {
+				if view.Prior == nil ||
+					view.Prior.NaturalProgressStop != controlexperiment.ScenarioProgressClosureUnderdetermined ||
+					len(view.Prior.ClosureCandidates) < 2 {
+					var intervention any
+					if view.Prior != nil && len(view.Prior.Steps) > 0 &&
+						view.Prior.Steps[len(view.Prior.Steps)-1].Choice != nil {
+						intervention = view.Prior.Steps[len(view.Prior.Steps)-1].Choice.Action
+					}
+					t.Fatalf("five-node OmniPaxos Agent did not receive closure candidates: intervention=%#v feedback=%#v",
+						intervention, view.Prior)
+				}
+				var selected controlexperiment.FrontierActionRef
+				for _, action := range view.Prior.ClosureCandidates {
+					candidate := action.MessageTarget
+					if candidate == "n1" {
+						candidate = action.MessageSource.Node
+					}
+					if _, used := selectedTargets[candidate]; !used {
+						selected = action
+						selectedTargets[candidate] = struct{}{}
+						break
+					}
+				}
+				if selected.ActionID == "" {
+					t.Fatalf("no new OmniPaxos quorum path in %#v", view.Prior.ClosureCandidates)
+				}
+				proposal.Intent = controlexperiment.ScenarioIntentRevise
+				proposal.Plan = controlexperiment.ScenarioPlan{
+					ID: fmt.Sprintf("choose-omnipaxos-quorum-%d", plannerCalls-1),
+					Steps: []controlexperiment.ScenarioStep{{
+						ID:       fmt.Sprintf("choose-omnipaxos-action-%d", plannerCalls-1),
+						Selector: controlexperiment.FrontierActionSelector{ActionID: selected.ActionID},
+					}},
+				}
+			}
+			encoded, marshalErr := json.Marshal(proposal)
+			return encoded, controlexperiment.ModelWork{
+				Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5,
+			}, marshalErr
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// n3 already participated in the prepare quorum before the intervention;
+	// the Agent selects one additional path (n4 here), after which the trusted
+	// closure has the two followers required by the five-node majority.
+	if plannerCalls != 2 || len(selectedTargets) != 1 || scenario.Agent.Execution == nil ||
+		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopRiskReached ||
+		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
+		t.Fatalf("five-node OmniPaxos closure did not complete: calls=%d selected=%v result=%#v",
+			plannerCalls, selectedTargets, scenario.Agent)
+	}
+	qualified, err := target.Execute(
+		ctx, risk, projector, *scenario.Agent.Execution, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !qualified.Replay.Stable || len(qualified.Oracle.Violations) != 0 ||
+		len(qualified.Bundle.ClientHistory) != 1 ||
+		qualified.Bundle.ClientHistory[0].Response.RequestID != "omnipaxos-a9e1-request" ||
+		qualified.Bundle.ClientHistory[0].State != control.ItemCompleted {
+		t.Fatalf("five-node OmniPaxos closure evidence did not replay: %#v", qualified)
+	}
+}
+
 func assertOmnipaxosClientDecisionBinding(
 	t *testing.T,
 	bundle controlexperiment.ExecutionBundle,
@@ -557,6 +710,43 @@ func TestOmnipaxosClosureFactoryRejectsUnrecognizedInputs(t *testing.T) {
 	}
 }
 
+func TestOmnipaxosClosureRejectsAnotherBallotOrRequest(t *testing.T) {
+	participants := omnipaxosClosureParticipantSet{
+		BallotConfigID: "1", BallotNumber: "4", BallotPID: "1",
+		SequenceSession: "4", SequenceCounter: "2", RequestID: "request-a",
+	}
+	base := controlexperiment.FrontierActionRef{
+		Kind: control.ActionDeliverMessage, MessageTypeHint: "sequence-paxos/accept-sync",
+		MessageMetadata: map[string]string{
+			"ballot_config_id": "1", "ballot_number": "4", "ballot_pid": "1",
+			"sequence_session": "4", "sequence_counter": "2", "request_id": "request-a",
+		},
+	}
+	if !omnipaxosClosureMessageCausallyMatches(base, participants) {
+		t.Fatal("matching ballot/request was rejected")
+	}
+	wrongBallot := base
+	wrongBallot.MessageMetadata = cloneStringMap(base.MessageMetadata)
+	wrongBallot.MessageMetadata["ballot_number"] = "5"
+	if omnipaxosClosureMessageCausallyMatches(wrongBallot, participants) {
+		t.Fatal("another ballot entered the active closure")
+	}
+	wrongRequest := base
+	wrongRequest.MessageMetadata = cloneStringMap(base.MessageMetadata)
+	wrongRequest.MessageMetadata["request_id"] = "request-b"
+	if omnipaxosClosureMessageCausallyMatches(wrongRequest, participants) {
+		t.Fatal("another request entered the active closure")
+	}
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
 func TestOmnipaxosClosureRejectsInvalidEntryCountAndMultipleInvokes(t *testing.T) {
 	for _, entryCount := range []string{"-1", "garbage", "0"} {
 		action := controlexperiment.FrontierActionRef{
@@ -604,6 +794,38 @@ func TestOmnipaxosClosureSelectorReportsAmbiguousTier(t *testing.T) {
 	}})
 	if err != nil || selection.Status != controlexperiment.ScenarioClosureUnderdetermined {
 		t.Fatalf("ambiguous tier was not preserved: %#v/%v", selection, err)
+	}
+}
+
+func TestOmnipaxosFiveNodeClosureRequiresExecutedQuorumChoices(t *testing.T) {
+	participants := omnipaxosClosureParticipantSet{
+		Leader: "n1", DroppedFollower: "n2",
+		Candidates: []control.NodeID{"n3", "n4", "n5"}, Required: 2,
+		ReplicationLeaf: "sequence-paxos/accept-sync",
+	}
+	actions := []controlexperiment.FrontierActionRef{
+		{ActionID: "prepare-n3", Kind: control.ActionDeliverMessage,
+			MessageSource: control.NodeRef{Node: "n1"}, MessageTarget: "n3",
+			MessageTypeHint: "sequence-paxos/prepare"},
+		{ActionID: "prepare-n4", Kind: control.ActionDeliverMessage,
+			MessageSource: control.NodeRef{Node: "n1"}, MessageTarget: "n4",
+			MessageTypeHint: "sequence-paxos/prepare"},
+		{ActionID: "prepare-n5", Kind: control.ActionDeliverMessage,
+			MessageSource: control.NodeRef{Node: "n1"}, MessageTarget: "n5",
+			MessageTypeHint: "sequence-paxos/prepare"},
+	}
+	selection, err := omnipaxosDecisionClosureSetSelector(participants)(
+		controlexperiment.ActionFrontierView{Actions: actions},
+	)
+	if err != nil || selection.Status != controlexperiment.ScenarioClosureUnderdetermined ||
+		len(selection.Candidates) != 3 {
+		t.Fatalf("five-node closure hid quorum ambiguity: %#v/%v", selection, err)
+	}
+	selected, err := selectedOmnipaxosClosureAlternates([]controlexperiment.FrontierChoice{
+		{Decision: 11, Action: actions[0]}, {Decision: 12, Action: actions[2]},
+	}, 10, participants)
+	if err != nil || !reflect.DeepEqual(selected, []control.NodeID{"n3", "n5"}) {
+		t.Fatalf("executed OmniPaxos quorum set was not bound: %v/%v", selected, err)
 	}
 }
 

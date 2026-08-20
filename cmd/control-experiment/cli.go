@@ -14,6 +14,7 @@ import (
 type controlExperimentOptions struct {
 	Out                     string
 	BundleOut               string
+	BundleIn                string
 	BundleEvidenceVersion   int
 	MethodSpecDigest        string
 	AgentKeyFile            string
@@ -22,12 +23,14 @@ type controlExperimentOptions struct {
 	WorkerPath              string
 	Target                  string
 	SemanticInput           string
+	RepositoryRoot          string
 	RiskInput               string
 	KnowledgeSourceMounts   []string
 	CampaignDirectory       string
 	CampaignResume          bool
 	InvestigationEpisodes   int
 	ClosureMode             string
+	PreparationWallClockMS  int64
 	CapabilityFeedbackMode  string
 	CapabilityFeedbackProbe string
 	Strategy                string
@@ -36,9 +39,9 @@ type controlExperimentOptions struct {
 }
 
 func (options controlExperimentOptions) hasNonSessionFlags() bool {
-	return options.Out != "" || options.BundleOut != "" ||
+	return options.Out != "" || options.BundleOut != "" || options.BundleIn != "" ||
 		options.BundleEvidenceVersion != 0 || options.MethodSpecDigest != "" || options.Target != "" ||
-		options.RiskInput != "" ||
+		options.RiskInput != "" || options.RepositoryRoot != "" ||
 		len(options.KnowledgeSourceMounts) != 0 || options.InvestigationEpisodes != 1 ||
 		options.Decisions != 96 || options.PolicySeed != 1
 }
@@ -85,14 +88,15 @@ func runEtcdraftQualifiedCLI(
 }
 
 func validateQualifiedCLIOptions(options controlExperimentOptions) error {
-	if options.CampaignDirectory != "" || options.CampaignResume {
+	if options.CampaignDirectory != "" || options.CampaignResume || options.BundleIn != "" {
 		return errors.New("Agentic Episode flags require -strategy agentic-episode-v1")
 	}
 	if options.AgentKeyFile != "" || options.AgentModel != "" || options.SemanticInput != "" ||
-		options.RiskInput != "" ||
+		options.RiskInput != "" || options.RepositoryRoot != "" ||
 		options.AgentProvider != "" && options.AgentProvider != openRouterProvider ||
 		options.WorkerPath != "" || options.Target != "" || len(options.KnowledgeSourceMounts) != 0 ||
 		options.InvestigationEpisodes != 1 || options.ClosureMode != "" ||
+		options.PreparationWallClockMS != 1_200_000 ||
 		options.CapabilityFeedbackMode != "" &&
 			options.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
 		options.CapabilityFeedbackProbe != "" {

@@ -14,14 +14,26 @@ import (
 type Bundle = conformance.QualificationBundle
 
 func Run(ctx context.Context) (Bundle, error) {
-	factory := func() control.Adapter {
-		adapter, err := adapterv2.NewWithConfig(adapterv2.ThreeNodeConfig())
+	return RunWithConfig(ctx, adapterv2.ThreeNodeConfig())
+}
+
+// RunWithConfig qualifies the same concrete membership that will be used by
+// the experiment. This prevents an N-node execution from borrowing the
+// Manifest and entropy evidence of the historical three-node target.
+func RunWithConfig(ctx context.Context, config adapterv2.Config) (Bundle, error) {
+	prototype, err := adapterv2.NewWithConfig(config)
+	if err != nil {
+		return Bundle{}, err
+	}
+	baseFactory := func() control.Adapter {
+		adapter, err := adapterv2.NewWithConfig(config)
 		if err != nil {
 			panic(err)
 		}
 		return adapter
 	}
-	manifest, err := factory().Manifest(ctx)
+	factory, workMeter := conformance.MeterFactory(baseFactory)
+	manifest, err := prototype.Manifest(ctx)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -31,7 +43,7 @@ func Run(ctx context.Context) (Bundle, error) {
 	}
 	core, err := conformance.EvaluateCore(ctx, factory, conformance.CorePlan{
 		Seed:                 []byte("portable-v2-etcd-core"),
-		ExpectedEntropyNodes: []control.NodeID{"n1", "n2", "n3"},
+		ExpectedEntropyNodes: append([]control.NodeID(nil), manifest.Nodes...),
 	})
 	if err != nil {
 		return Bundle{}, err
@@ -56,7 +68,7 @@ func Run(ctx context.Context) (Bundle, error) {
 		return Bundle{}, err
 	}
 	invokePlan := conformance.OpaqueInvokePlan{
-		Seed: []byte("portable-v2-etcd-invoke"), Node: "n1", Input: input, DecisionBound: 256,
+		Seed: []byte("portable-v2-etcd-invoke"), Node: manifest.Nodes[0], Input: input, DecisionBound: 256,
 	}
 	invokeReplay, err := conformance.EvaluateOpaqueInvoke(ctx, factory, invokePlan)
 	if err != nil {
@@ -75,8 +87,13 @@ func Run(ctx context.Context) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
+	work := workMeter.Snapshot()
+	if err := work.Validate(); err != nil {
+		return Bundle{}, err
+	}
 	return (Bundle{
 		SchemaVersion: conformance.QualificationBundleSchemaVersion, Profile: profile, Manifest: manifest,
 		ConformanceReports: reports, Unsupported: unsupported, Qualification: qualification,
+		Work: &work,
 	}).Seal()
 }

@@ -29,7 +29,7 @@ func (WorkloadRouter) Route(
 	route := controlexperiment.WorkloadRoute{LogicalTime: snapshot.LogicalTime}
 	for _, node := range snapshot.Nodes {
 		if node.Leader == node.ID {
-			route.Candidates = append(route.Candidates, nodeNames[node.ID])
+			route.Candidates = append(route.Candidates, nodeName(node.ID))
 		}
 	}
 	return route, nil

@@ -54,6 +54,17 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		spec.ImplementationID != AgenticMethodImplementationID {
 		t.Fatalf("Agentic MethodSpec invalid: %#v/%v", spec, err)
 	}
+	m4n2Legacy := spec
+	m4n2Legacy.ImplementationID = agenticMethodM4n2LegacyID
+	m4n2Legacy.Digest = ""
+	m4n2LegacyDigest, err := control.CanonicalDigest(m4n2Legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m4n2Legacy.Digest = m4n2LegacyDigest
+	if m4n2Legacy.Validate() != nil || m4n2Legacy.Digest == spec.Digest {
+		t.Fatalf("M4n2 legacy MethodSpec lost read-only validation: %#v", m4n2Legacy)
+	}
 	closureOwnershipLegacy := spec
 	closureOwnershipLegacy.ImplementationID = agenticMethodM4m1LegacyID
 	closureOwnershipLegacy.Digest = ""
@@ -64,6 +75,17 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	closureOwnershipLegacy.Digest = closureOwnershipLegacyDigest
 	if closureOwnershipLegacy.Validate() != nil || closureOwnershipLegacy.Digest == spec.Digest {
 		t.Fatalf("closure ownership legacy MethodSpec lost read-only validation: %#v", closureOwnershipLegacy)
+	}
+	riskFidelityLegacy := spec
+	riskFidelityLegacy.ImplementationID = agenticMethodRiskFidelityLegacyID
+	riskFidelityLegacy.Digest = ""
+	riskFidelityLegacyDigest, err := control.CanonicalDigest(riskFidelityLegacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	riskFidelityLegacy.Digest = riskFidelityLegacyDigest
+	if riskFidelityLegacy.Validate() != nil || riskFidelityLegacy.Digest == spec.Digest {
+		t.Fatalf("risk-fidelity legacy MethodSpec lost read-only validation: %#v", riskFidelityLegacy)
 	}
 	legacy := spec
 	legacy.ImplementationID = agenticMethodLegacyImplementationID
@@ -166,6 +188,26 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 	tampered.Transport.Model = "openai/gpt-5"
 	if tampered.Validate() == nil {
 		t.Fatal("changed model retained the old method identity")
+	}
+	boundSourceInput := spec
+	boundSourceInput.SourceExposure.ReferencePrefixes = append(
+		boundSourceInput.SourceExposure.ReferencePrefixes, "go.etcd.io/raft/v3@v3.6.0/",
+	)
+	boundSourceInput.SourceExposure.SUTBindings = []AgenticSUTSourceBinding{{
+		ReferencePrefix: "go.etcd.io/raft/v3@v3.6.0/", ModulePath: "go.etcd.io/raft/v3",
+		ModuleVersion: "v3.6.0",
+		ContentDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+	}}
+	boundSourceInput.Digest = ""
+	boundSource, err := NewAgenticMethodSpec(boundSourceInput)
+	if err != nil || boundSource.Validate() != nil || boundSource.Digest == spec.Digest {
+		t.Fatalf("bound SUT source did not acquire distinct method identity: %#v/%v", boundSource, err)
+	}
+	tamperedSource := boundSource
+	tamperedSource.SourceExposure.SUTBindings[0].ContentDigest =
+		"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	if tamperedSource.Validate() == nil {
+		t.Fatal("changed SUT source retained the old method identity")
 	}
 	tampered = spec
 	tamperedScenario := *tampered.ScenarioTransport

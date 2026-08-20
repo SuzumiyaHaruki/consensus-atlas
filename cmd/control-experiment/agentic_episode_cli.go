@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
@@ -40,6 +41,7 @@ func runAgenticEpisodeCLI(
 		Prepare: func(ctx context.Context) (agenticEpisodeComposition, error) {
 			return prepareAgenticEpisodeComposition(ctx, options)
 		},
+		PreparationWallClockMS: normalizedPreparationWallClockMS(options.PreparationWallClockMS),
 	})
 	if result.Summary.TargetID != "" {
 		fmt.Fprintf(stdout,
@@ -78,7 +80,8 @@ func runAgenticInvestigationCLI(
 	result, err := runAgenticInvestigation(ctx, agenticInvestigationOptions{
 		Directory: options.CampaignDirectory, Resume: options.CampaignResume,
 		AgentKeyFile: options.AgentKeyFile, ReadKey: readAgentKey, Recovery: recovery,
-		Budget: budget,
+		Budget:                 budget,
+		PreparationWallClockMS: normalizedPreparationWallClockMS(options.PreparationWallClockMS),
 		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
 			return composition, nil
 		},
@@ -130,6 +133,37 @@ func prepareAgenticEpisodeComposition(
 	ctx context.Context,
 	options controlExperimentOptions,
 ) (agenticEpisodeComposition, error) {
+	preparationWallClockMS := options.PreparationWallClockMS
+	if preparationWallClockMS == 0 {
+		preparationWallClockMS = 1_200_000
+	}
+	if ctx == nil || preparationWallClockMS <= 0 {
+		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_PREPARATION_DEADLINE_INVALID")
+	}
+	preparationCtx, cancel := context.WithTimeout(
+		ctx, time.Duration(preparationWallClockMS)*time.Millisecond,
+	)
+	defer cancel()
+	started := time.Now()
+	composition, err := prepareAgenticEpisodeCompositionBounded(preparationCtx, options)
+	if err != nil {
+		if errors.Is(preparationCtx.Err(), context.DeadlineExceeded) {
+			return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_PREPARATION_DEADLINE_EXCEEDED")
+		}
+		return agenticEpisodeComposition{}, err
+	}
+	elapsed := time.Since(started).Milliseconds()
+	if elapsed == 0 {
+		elapsed = 1
+	}
+	composition.Preparation.WallClockMS = elapsed
+	return composition, nil
+}
+
+func prepareAgenticEpisodeCompositionBounded(
+	ctx context.Context,
+	options controlExperimentOptions,
+) (agenticEpisodeComposition, error) {
 	if options.AgentModel == "" || options.AgentKeyFile == "" || options.SemanticInput == "" {
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_ACTIVE_INPUT_REQUIRED")
 	}
@@ -163,6 +197,12 @@ func prepareAgenticEpisodeComposition(
 		if options.WorkerPath != "" {
 			return agenticEpisodeComposition{}, errors.New("ETCDRAFT_AGENTIC_EPISODE_WORKER_UNEXPECTED")
 		}
+		knowledgeSourceMounts, err = bindEtcdraftLocalSUTSource(
+			ctx, options.RepositoryRoot, options.SemanticInput, knowledgeSourceMounts,
+		)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
+		}
 		inputs, err := prepareEtcdraftAgenticEpisode(
 			ctx, "", options.SemanticInput, client,
 		)
@@ -183,11 +223,17 @@ func prepareAgenticEpisodeComposition(
 		return finalizeAgenticEpisodeComposition(
 			options, target, budget, inputs.client, scenarioClient, etcdraftSemanticInputSchema,
 			inputs.experiment.ScenarioSemanticExposure, inputs.experiment.SessionWallClockMS,
-			knowledgeSourceMounts, feedbackMode, feedbackProbe,
+			knowledgeSourceMounts, feedbackMode, feedbackProbe, inputs.preparation,
 		)
 	case "omnipaxos-v2":
 		if options.WorkerPath == "" {
 			return agenticEpisodeComposition{}, errors.New("OMNIPAXOS_AGENTIC_EPISODE_WORKER_REQUIRED")
+		}
+		knowledgeSourceMounts, err = bindOmnipaxosLocalSUTSource(
+			ctx, options.RepositoryRoot, options.SemanticInput, options.WorkerPath, knowledgeSourceMounts,
+		)
+		if err != nil {
+			return agenticEpisodeComposition{}, err
 		}
 		inputs, err := prepareOmnipaxosAgenticEpisode(ctx, options.WorkerPath, options.SemanticInput)
 		if err != nil {
@@ -207,7 +253,7 @@ func prepareAgenticEpisodeComposition(
 		return finalizeAgenticEpisodeComposition(
 			options, target, budget, client, scenarioClient, omnipaxosSemanticInputSchema,
 			inputs.Experiment.ScenarioSemanticExposure, inputs.Experiment.SessionWallClockMS,
-			knowledgeSourceMounts, feedbackMode, feedbackProbe,
+			knowledgeSourceMounts, feedbackMode, feedbackProbe, inputs.Preparation,
 		)
 	default:
 		return agenticEpisodeComposition{}, errors.New("AGENTIC_EPISODE_TARGET_UNSUPPORTED")
@@ -226,10 +272,14 @@ func finalizeAgenticEpisodeComposition(
 	knowledgeSourceMounts []controlexperiment.KnowledgeSourceMount,
 	feedbackMode controlexperiment.AgenticCapabilityFeedbackMode,
 	feedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe,
+	preparation controlexperiment.AgenticPreparationWork,
 ) (agenticEpisodeComposition, error) {
 	var err error
 	target, err = bindRequestedClosureMode(target, options.ClosureMode)
 	if err != nil {
+		return agenticEpisodeComposition{}, err
+	}
+	if err := validateClosureCallBudget(target, budget); err != nil {
 		return agenticEpisodeComposition{}, err
 	}
 	existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
@@ -264,7 +314,16 @@ func finalizeAgenticEpisodeComposition(
 		ExistingRisk:            existingRisk,
 		RiskInputDigest:         riskInputDigest,
 		Memory:                  memory,
+		Preparation:             preparation,
 	}, nil
+}
+
+func validateClosureCallBudget(target agenticEpisodeTarget, budget agenticEpisodeBudget) error {
+	if target.ClosureFactory != nil &&
+		target.ClosureMinimumScenarioCalls > budget.MaxScenarioCalls {
+		return errors.New("AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_CALL_BUDGET_INSUFFICIENT")
+	}
+	return nil
 }
 
 // bindRequestedClosureMode resolves the experiment arm against the actual
@@ -276,6 +335,7 @@ func bindRequestedClosureMode(
 ) (agenticEpisodeTarget, error) {
 	switch controlexperiment.AgenticClosureMode(requested) {
 	case "":
+		target.ClosureFactory = nil
 		return target, nil
 	case controlexperiment.AgenticClosureModePublicFixed:
 		target.ClosureFactory = nil

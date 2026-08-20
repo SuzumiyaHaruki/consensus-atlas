@@ -28,9 +28,19 @@ const (
 	runtimeRPCSchema = "consensus-atlas/hashicorp-raft-runtime-rpc/v1"
 	inputSchema      = "consensus-atlas/hashicorp-raft-input/v1"
 	evidenceSchema   = "consensus-atlas/hashicorp-raft-evidence/v1"
+	defaultBuildID   = "local-source-unsealed:hashicorpraft"
+	defaultNodeCount = 3
+	maxStaticNodes   = 64
 )
 
+// SUTBuildIdentity is deliberately unsealed for ordinary local builds.  The
+// pinned moduleRevision remains the upstream baseline provenance used by the
+// package audits, but it must not describe an editable checkout after a local
+// source change.
+var SUTBuildIdentity = defaultBuildID
+
 type Adapter struct {
+	config      Config
 	nodes       map[control.NodeID]*runtimeNode
 	outbound    chan *rpcCall
 	applied     chan appliedRecord
@@ -45,6 +55,36 @@ type Adapter struct {
 	applyDigest string
 	applyOpen   bool
 	appliedLog  []appliedRecord
+}
+
+type Config struct {
+	NodeCount int `json:"node_count,omitempty"`
+}
+
+func (config Config) validate() error {
+	if config.NodeCount < 0 || config.NodeCount > maxStaticNodes ||
+		config.NodeCount > 0 && config.NodeCount < defaultNodeCount {
+		return errors.New("HASHICORP_RAFT_NODE_COUNT_INVALID")
+	}
+	return nil
+}
+
+func (config Config) resolvedNodeCount() int {
+	if config.NodeCount == 0 {
+		return defaultNodeCount
+	}
+	return config.NodeCount
+}
+
+func (config Config) nodeIDs() []control.NodeID {
+	if config.validate() != nil {
+		return nil
+	}
+	result := make([]control.NodeID, config.resolvedNodeCount())
+	for index := range result {
+		result[index] = control.NodeID("n" + strconv.Itoa(index+1))
+	}
+	return result
 }
 
 type runtimeNode struct {
@@ -72,21 +112,32 @@ type runtimeEvidence struct {
 	Applied       []appliedRecord `json:"applied"`
 }
 
-func NewAdapter() *Adapter { return &Adapter{} }
+func NewAdapter() *Adapter { return &Adapter{config: Config{}} }
+
+func NewWithConfig(config Config) (*Adapter, error) {
+	if err := config.validate(); err != nil {
+		return nil, err
+	}
+	return &Adapter{config: config}, nil
+}
 
 func (a *Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
+	if err := a.config.validate(); err != nil {
+		return control.AdapterManifest{}, err
+	}
+	nodes := a.config.nodeIDs()
 	configuration, err := control.CanonicalDigest(struct {
-		Nodes []string `json:"nodes"`
-		Fast  string   `json:"n1_timeout"`
-		Slow  string   `json:"n2_n3_timeout"`
-	}{[]string{"n1", "n2", "n3"}, "heartbeat=500ms,election=10s", "1h"})
+		Nodes []control.NodeID `json:"nodes"`
+		Fast  string           `json:"n1_timeout"`
+		Slow  string           `json:"other_node_timeout"`
+	}{nodes, "heartbeat=500ms,election=10s", "1h"})
 	if err != nil {
 		return control.AdapterManifest{}, err
 	}
 	return control.AdapterManifest{
 		SchemaVersion: control.SchemaVersion, AdapterID: "hashicorp-raft-v2",
-		ImplementationID: modulePath + "@" + moduleVersion, BuildID: moduleRevision,
-		ConfigurationDigest: configuration, Nodes: []control.NodeID{"n1", "n2", "n3"},
+		ImplementationID: modulePath + "@" + moduleVersion, BuildID: SUTBuildIdentity,
+		ConfigurationDigest: configuration, Nodes: nodes,
 		Capabilities: control.CapabilityManifest{
 			Actions: []control.ActionKind{
 				control.ActionInvoke, control.ActionDropMessage, control.ActionDeliverMessage,
@@ -105,20 +156,25 @@ func (a *Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
 
 func (a *Adapter) Reset(_ context.Context, seed []byte) error {
 	_ = a.Close()
+	if err := a.config.validate(); err != nil {
+		return err
+	}
+	nodeCount := a.config.resolvedNodeCount()
 	entropy, err := controlentropy.New(seed)
 	if err != nil {
 		return err
 	}
 	a.entropy = entropy
-	a.outbound = make(chan *rpcCall, 32)
-	a.applied = make(chan appliedRecord, 8)
+	a.outbound = make(chan *rpcCall, max(32, nodeCount*nodeCount*4))
+	a.applied = make(chan appliedRecord, max(8, nodeCount*4))
 	a.applyResult = make(chan error, 1)
-	a.nodes = make(map[control.NodeID]*runtimeNode, 3)
+	a.nodes = make(map[control.NodeID]*runtimeNode, nodeCount)
 	a.pendingRPC = make(map[control.ItemID]*rpcCall)
 	a.emissions = make(map[control.YieldID]control.Emission)
 	a.pending, a.current, a.evidence = nil, "", control.EvidenceEnvelope{}
 	a.yieldSeq, a.applyDigest, a.applyOpen, a.appliedLog = 0, "", false, nil
-	for _, id := range []control.NodeID{"n2", "n3", "n1"} {
+	nodes := a.config.nodeIDs()
+	for _, id := range append(append([]control.NodeID(nil), nodes[1:]...), nodes[0]) {
 		if err := a.startNode(id); err != nil {
 			_ = a.Close()
 			return err
@@ -140,7 +196,9 @@ func (a *Adapter) bootNode(id control.NodeID, node *runtimeNode, incarnation uin
 	if id == "n1" {
 		timing = raftTiming{500 * time.Millisecond, 10 * time.Second, 500 * time.Millisecond}
 	}
-	raftNode, _, err := startOfficialNode(id, timing, recordingFSM{id, a.applied}, transport, node.stores, bootstrap)
+	raftNode, _, err := startOfficialNode(
+		id, timing, recordingFSM{id, a.applied}, transport, node.stores, bootstrap, a.config.nodeIDs(),
+	)
 	if err != nil {
 		close(cancel)
 		return err
@@ -162,16 +220,23 @@ func startOfficialNode(
 	transport hraft.Transport,
 	stores *raftStores,
 	bootstrap bool,
+	membership ...[]control.NodeID,
 ) (*hraft.Raft, *hraft.Config, error) {
 	conf := hraft.DefaultConfig()
 	conf.LocalID, conf.PreVoteDisabled, conf.LogOutput = hraft.ServerID(id), true, io.Discard
 	conf.CommitTimeout, conf.SnapshotInterval = 5*time.Millisecond, time.Hour
 	conf.HeartbeatTimeout, conf.ElectionTimeout, conf.LeaderLeaseTimeout = timing.heartbeat, timing.election, timing.lease
-	cluster := hraft.Configuration{Servers: []hraft.Server{
-		{Suffrage: hraft.Voter, ID: "n1", Address: "n1"},
-		{Suffrage: hraft.Voter, ID: "n2", Address: "n2"},
-		{Suffrage: hraft.Voter, ID: "n3", Address: "n3"},
-	}}
+	nodes := Config{}.nodeIDs()
+	if len(membership) == 1 && len(membership[0]) > 0 {
+		nodes = membership[0]
+	}
+	servers := make([]hraft.Server, len(nodes))
+	for index, node := range nodes {
+		servers[index] = hraft.Server{
+			Suffrage: hraft.Voter, ID: hraft.ServerID(node), Address: hraft.ServerAddress(node),
+		}
+	}
+	cluster := hraft.Configuration{Servers: servers}
 	if bootstrap {
 		if err := hraft.BootstrapCluster(conf, stores.logs, stores.stable, stores.snapshots, transport, cluster); err != nil {
 			return nil, nil, fmt.Errorf("bootstrap %s: %w", id, err)
@@ -283,7 +348,7 @@ func (*Adapter) ApplyRuntimeAction(_ context.Context, action control.Action) err
 
 func (a *Adapter) RunUntilYield(ctx context.Context) (control.Yield, error) {
 	if a.current == "" {
-		items, err := a.collectCalls(ctx, 2)
+		items, err := a.collectCalls(ctx, a.config.resolvedNodeCount()-1)
 		if err != nil {
 			return control.Yield{}, err
 		}
@@ -311,7 +376,7 @@ func (a *Adapter) RunUntilYield(ctx context.Context) (control.Yield, error) {
 			return control.Yield{}, err
 		}
 		if call.kind == "request-vote" {
-			items, err = a.collectCalls(ctx, 2)
+			items, err = a.collectCalls(ctx, a.config.resolvedNodeCount()-1)
 		} else if a.applyOpen {
 			items, err = a.waitApplyProgress(ctx)
 		}

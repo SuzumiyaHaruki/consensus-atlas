@@ -66,6 +66,7 @@ type ScenarioAgentFeedback struct {
 	Steps                []ScenarioStepFeedback            `json:"steps,omitempty"`
 	NaturalProgress      []ScenarioStepFeedback            `json:"natural_progress,omitempty"`
 	NaturalProgressStop  string                            `json:"natural_progress_stop,omitempty"`
+	ClosureCandidates    []FrontierActionRef               `json:"closure_candidates,omitempty"`
 	ClosureHandoff       bool                              `json:"closure_handoff,omitempty"`
 	ClosureHandoffStepID string                            `json:"closure_handoff_step_id,omitempty"`
 	ProgressDelta        *ScenarioProgressDelta            `json:"progress_delta,omitempty"`
@@ -405,11 +406,13 @@ func exploreScenarioWithPlanner(
 			naturalProgressAllowance = attemptAllowance
 		}
 		inheritedIntervention := latestScenarioExecutionClosureIntervention(selected.execution)
+		inheritedClosureChoices := scenarioExecutionClosureChoices(selected.execution)
 		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
 			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, remaining,
 			spec, selected.risk, selected.trace,
 			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
-			closureFactory, inheritedIntervention, naturalProgressAllowance, preparer...,
+			closureFactory, inheritedIntervention, inheritedClosureChoices,
+			naturalProgressAllowance, preparer...,
 		)
 		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		if err != nil {
@@ -431,6 +434,7 @@ func exploreScenarioWithPlanner(
 			Steps:                cloneScenarioStepFeedback(execution.Steps),
 			NaturalProgress:      cloneScenarioStepFeedback(execution.AutomaticProgress),
 			NaturalProgressStop:  execution.NaturalProgressStop,
+			ClosureCandidates:    cloneFrontierActionRefs(execution.ClosureCandidates),
 			ClosureHandoff:       execution.ClosureHandoff,
 			ClosureHandoffStepID: execution.ClosureHandoffStepID,
 		}
@@ -771,6 +775,7 @@ func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecu
 		cloneScenarioStepFeedback(execution.AutomaticProgress)...,
 	)
 	result.Execution.NaturalProgressStop = execution.NaturalProgressStop
+	result.Execution.ClosureCandidates = cloneFrontierActionRefs(execution.ClosureCandidates)
 	result.Execution.FinalTrace = execution.FinalTrace
 	result.Execution.FinalRisk = execution.FinalRisk
 	addScenarioExecutionWork(&result.Execution.Work, execution.Work)
@@ -802,6 +807,7 @@ func cloneScenarioFeedback(feedback *ScenarioAgentFeedback) *ScenarioAgentFeedba
 	}
 	value.Steps = cloneScenarioStepFeedback(feedback.Steps)
 	value.NaturalProgress = cloneScenarioStepFeedback(feedback.NaturalProgress)
+	value.ClosureCandidates = cloneFrontierActionRefs(feedback.ClosureCandidates)
 	value.ProgressDelta = cloneScenarioProgressDelta(feedback.ProgressDelta)
 	return &value
 }
@@ -836,6 +842,7 @@ func cloneScenarioExecution(execution *ScenarioExecution) *ScenarioExecution {
 	value := *execution
 	value.Steps = cloneScenarioStepFeedback(execution.Steps)
 	value.AutomaticProgress = cloneScenarioStepFeedback(execution.AutomaticProgress)
+	value.ClosureCandidates = cloneFrontierActionRefs(execution.ClosureCandidates)
 	if execution.continuationFrontier != nil {
 		frontier := cloneScenarioFrontier(*execution.continuationFrontier)
 		value.continuationFrontier = &frontier

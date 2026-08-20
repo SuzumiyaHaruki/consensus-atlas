@@ -38,7 +38,7 @@ func (CorePSSMapper) Map(envelope control.EvidenceEnvelope) (psscore.SemanticObs
 			mode = psscore.ModeCoordinating
 		}
 		graph.Entities = append(graph.Entities, psscore.Entity{
-			ID: string(nodeNames[node.ID]), Kind: psscore.EntityParticipant, Mode: mode,
+			ID: string(nodeName(node.ID)), Kind: psscore.EntityParticipant, Mode: mode,
 		})
 	}
 	for index := range orderedPromises {
@@ -62,7 +62,7 @@ func (CorePSSMapper) Map(envelope control.EvidenceEnvelope) (psscore.SemanticObs
 		}
 	}
 	for _, node := range snapshot.Nodes {
-		participant := string(nodeNames[node.ID])
+		participant := string(nodeName(node.ID))
 		graph.Relations = append(graph.Relations, psscore.Relation{
 			Kind: psscore.RelationBelongsTo, From: participant,
 			To: epochID(promiseRanks[ballotOf(node)]),
@@ -123,11 +123,12 @@ func decodeEvidence(envelope control.EvidenceEnvelope) (adapterSnapshot, error) 
 	if err := json.Unmarshal(envelope.Payload.Bytes, &snapshot); err != nil {
 		return adapterSnapshot{}, err
 	}
-	if len(snapshot.Nodes) != 3 {
+	if len(snapshot.Nodes) < DefaultNodeCount || len(snapshot.Nodes) > MaxStaticNodes {
 		return adapterSnapshot{}, errors.New("OMNIPAXOS_EVIDENCE_NODE_SET_INVALID")
 	}
 	for index, node := range snapshot.Nodes {
-		if node.ID != uint64(index+1) || nodeNames[node.ID] == "" || node.Leader > 3 || node.PromisePID > 3 {
+		if node.ID != uint64(index+1) || nodeName(node.ID) == "" ||
+			node.Leader > uint64(len(snapshot.Nodes)) || node.PromisePID > uint64(len(snapshot.Nodes)) {
 			return adapterSnapshot{}, fmt.Errorf("OMNIPAXOS_EVIDENCE_NODE_INVALID:%d", node.ID)
 		}
 	}

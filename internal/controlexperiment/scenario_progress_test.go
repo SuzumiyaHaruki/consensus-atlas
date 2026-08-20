@@ -19,7 +19,7 @@ func TestScenarioClosureSelectionRejectsInterventionsAndForeignActions(t *testin
 			ActionID: control.ActionID("allowed-" + kind), ActionDigest: "digest-" + string(kind),
 			Kind: kind,
 		}
-		selected, ok, stop, frontier, err := scenarioClosureAction(
+		selected, ok, stop, frontier, _, err := scenarioClosureAction(
 			RiskFrontierView{Actions: []FrontierActionRef{action}},
 			func(ActionFrontierView) (ScenarioClosureSelection, error) {
 				return ScenarioClosureSelection{Status: ScenarioClosureSelected, Action: action}, nil
@@ -36,7 +36,7 @@ func TestScenarioClosureSelectionRejectsInterventionsAndForeignActions(t *testin
 			ActionID: control.ActionID("forbidden-" + kind), ActionDigest: "digest-" + string(kind),
 			Kind: kind,
 		}
-		_, _, _, _, err := scenarioClosureAction(
+		_, _, _, _, _, err := scenarioClosureAction(
 			RiskFrontierView{Actions: []FrontierActionRef{action}},
 			func(ActionFrontierView) (ScenarioClosureSelection, error) {
 				return ScenarioClosureSelection{Status: ScenarioClosureSelected, Action: action}, nil
@@ -52,7 +52,7 @@ func TestScenarioClosureSelectionRejectsInterventionsAndForeignActions(t *testin
 	}
 	foreign := enabled
 	foreign.ActionID = "foreign-delivery"
-	_, _, _, _, err := scenarioClosureAction(
+	_, _, _, _, _, err := scenarioClosureAction(
 		RiskFrontierView{Actions: []FrontierActionRef{enabled}},
 		func(ActionFrontierView) (ScenarioClosureSelection, error) {
 			return ScenarioClosureSelection{Status: ScenarioClosureSelected, Action: foreign}, nil
@@ -66,7 +66,7 @@ func TestScenarioClosureSelectionRejectsInterventionsAndForeignActions(t *testin
 		ActionID: "mutable-drop", ActionDigest: "mutable-drop-digest", Kind: control.ActionDropMessage,
 	}
 	view := RiskFrontierView{Actions: []FrontierActionRef{mutable}}
-	_, _, _, _, err = scenarioClosureAction(
+	_, _, _, _, _, err = scenarioClosureAction(
 		view,
 		func(frontier ActionFrontierView) (ScenarioClosureSelection, error) {
 			frontier.Actions[0].Kind = control.ActionDeliverMessage
@@ -78,6 +78,45 @@ func TestScenarioClosureSelectionRejectsInterventionsAndForeignActions(t *testin
 	if err == nil || err.Error() != "EXPERIMENT_SCENARIO_CLOSURE_ACTION_KIND_FORBIDDEN" ||
 		view.Actions[0].Kind != control.ActionDropMessage {
 		t.Fatalf("selector mutation bypassed the authoritative frontier: %#v/%v", view, err)
+	}
+}
+
+func TestScenarioClosureUnderdeterminedCandidatesAreAuthoritativeAndNarrow(t *testing.T) {
+	first := FrontierActionRef{
+		ActionID: "candidate-a", ActionDigest: "digest-a", Kind: control.ActionDeliverMessage,
+	}
+	second := FrontierActionRef{
+		ActionID: "candidate-b", ActionDigest: "digest-b", Kind: control.ActionCompleteEffect,
+	}
+	unrelated := FrontierActionRef{
+		ActionID: "unrelated", ActionDigest: "digest-c", Kind: control.ActionFireTemporal,
+	}
+	_, ok, stop, frontier, candidates, err := scenarioClosureAction(
+		RiskFrontierView{Actions: []FrontierActionRef{first, second, unrelated}},
+		func(ActionFrontierView) (ScenarioClosureSelection, error) {
+			return ScenarioClosureSelection{
+				Status: ScenarioClosureUnderdetermined, Candidates: []FrontierActionRef{first, second},
+			}, nil
+		},
+	)
+	if err != nil || ok || stop != ScenarioProgressClosureUnderdetermined || frontier == nil ||
+		len(frontier.Actions) != 3 || len(candidates) != 2 ||
+		candidates[0].ActionID != first.ActionID || candidates[1].ActionID != second.ActionID {
+		t.Fatalf("narrow closure candidates were not preserved: %#v/%#v/%v", frontier, candidates, err)
+	}
+
+	foreign := first
+	foreign.ActionID = "foreign"
+	_, _, _, _, _, err = scenarioClosureAction(
+		RiskFrontierView{Actions: []FrontierActionRef{first}},
+		func(ActionFrontierView) (ScenarioClosureSelection, error) {
+			return ScenarioClosureSelection{
+				Status: ScenarioClosureUnderdetermined, Candidates: []FrontierActionRef{foreign},
+			}, nil
+		},
+	)
+	if err == nil || err.Error() != "EXPERIMENT_SCENARIO_CLOSURE_CANDIDATE_NOT_ADMISSIBLE" {
+		t.Fatalf("foreign closure candidate was not rejected: %v", err)
 	}
 }
 

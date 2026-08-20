@@ -37,6 +37,76 @@ type ScenarioExecutionWork struct {
 	TotalWorkUnits         int       `json:"total_work_units"`
 }
 
+func (work ScenarioExecutionWork) Validate() error {
+	for _, phase := range []PhaseWork{
+		work.FrontierReconstruction, work.ChildMaterialization, work.ChildVerification,
+	} {
+		if phase.SetupAttempts < 0 || phase.RuntimeInitializations < 0 ||
+			phase.RuntimeInitializations > phase.SetupAttempts || phase.PrepareActions < 0 ||
+			phase.SchedulerDecisions < 0 || phase.WorkUnits < 0 ||
+			phase.SetupAttempts > int(^uint(0)>>1)-phase.PrepareActions ||
+			phase.SetupAttempts+phase.PrepareActions > int(^uint(0)>>1)-phase.SchedulerDecisions ||
+			phase.WorkUnits != phase.SetupAttempts+phase.PrepareActions+phase.SchedulerDecisions {
+			return errors.New("EXPERIMENT_SCENARIO_EXECUTION_WORK_INVALID")
+		}
+	}
+	total := work.FrontierReconstruction.WorkUnits
+	if total > int(^uint(0)>>1)-work.ChildMaterialization.WorkUnits {
+		return errors.New("EXPERIMENT_SCENARIO_EXECUTION_WORK_INVALID")
+	}
+	total += work.ChildMaterialization.WorkUnits
+	if total > int(^uint(0)>>1)-work.ChildVerification.WorkUnits {
+		return errors.New("EXPERIMENT_SCENARIO_EXECUTION_WORK_INVALID")
+	}
+	total += work.ChildVerification.WorkUnits
+	if work.TotalWorkUnits != total {
+		return errors.New("EXPERIMENT_SCENARIO_EXECUTION_WORK_INVALID")
+	}
+	return nil
+}
+
+func AggregateScenarioExecutionWork(values []ScenarioExecutionWork) (ScenarioExecutionWork, error) {
+	var total ScenarioExecutionWork
+	for _, value := range values {
+		if value.Validate() != nil || !mergeScenarioExecutionPhase(
+			&total.FrontierReconstruction, value.FrontierReconstruction,
+		) || !mergeScenarioExecutionPhase(
+			&total.ChildMaterialization, value.ChildMaterialization,
+		) || !mergeScenarioExecutionPhase(
+			&total.ChildVerification, value.ChildVerification,
+		) {
+			return ScenarioExecutionWork{}, errors.New("EXPERIMENT_SCENARIO_EXECUTION_WORK_OVERFLOW")
+		}
+	}
+	total.TotalWorkUnits = total.FrontierReconstruction.WorkUnits
+	for _, units := range []int{
+		total.ChildMaterialization.WorkUnits, total.ChildVerification.WorkUnits,
+	} {
+		if total.TotalWorkUnits > int(^uint(0)>>1)-units {
+			return ScenarioExecutionWork{}, errors.New("EXPERIMENT_SCENARIO_EXECUTION_WORK_OVERFLOW")
+		}
+		total.TotalWorkUnits += units
+	}
+	return total, total.Validate()
+}
+
+func mergeScenarioExecutionPhase(total *PhaseWork, value PhaseWork) bool {
+	pairs := [][2]*int{
+		{&total.SetupAttempts, &value.SetupAttempts},
+		{&total.RuntimeInitializations, &value.RuntimeInitializations},
+		{&total.PrepareActions, &value.PrepareActions},
+		{&total.SchedulerDecisions, &value.SchedulerDecisions},
+		{&total.WorkUnits, &value.WorkUnits},
+	}
+	for _, pair := range pairs {
+		if *pair[1] < 0 || *pair[0] > int(^uint(0)>>1)-*pair[1] {
+			return false
+		}
+		*pair[0] += *pair[1]
+	}
+	return true
+}
+
 // ScenarioExecutionError preserves work already performed before a frontier,
 // Action, or replay failure. Callers may charge the work but cannot treat the
 // partial execution as a resumable or qualified result.

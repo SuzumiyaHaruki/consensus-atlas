@@ -18,6 +18,7 @@ type QualificationBundle struct {
 	ConformanceReports []Report                 `json:"conformance_reports"`
 	Unsupported        []UnsupportedDeclaration `json:"unsupported,omitempty"`
 	Qualification      QualificationReport      `json:"qualification"`
+	Work               *QualificationWork       `json:"work,omitempty"`
 	Digest             string                   `json:"digest"`
 }
 
@@ -55,6 +56,11 @@ func (bundle QualificationBundle) Validate() error {
 	}
 	if err := bundle.Qualification.Validate(); err != nil {
 		return err
+	}
+	if bundle.Work != nil {
+		if err := bundle.Work.Validate(); err != nil {
+			return err
+		}
 	}
 	recomputed, err := Qualify(bundle.Manifest, bundle.Profile, bundle.Unsupported, bundle.ConformanceReports)
 	if err != nil {

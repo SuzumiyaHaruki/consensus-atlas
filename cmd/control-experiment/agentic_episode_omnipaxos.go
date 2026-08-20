@@ -11,8 +11,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-type omnipaxosAgenticEpisodeResult = agenticEpisodeResult
-
 type omnipaxosAgenticEpisodeInputs struct {
 	WorkerPath    string
 	Knowledge     controlexperiment.ProtocolKnowledgePack
@@ -20,6 +18,7 @@ type omnipaxosAgenticEpisodeInputs struct {
 	Workload      controlexperiment.WorkloadPlan
 	Root          controlruntime.Trace
 	Qualification omnipaxosScenarioQualification
+	Preparation   controlexperiment.AgenticPreparationWork
 }
 
 func prepareOmnipaxosAgenticEpisode(
@@ -35,33 +34,28 @@ func prepareOmnipaxosAgenticEpisode(
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
-	qualification, err := qualifyOmnipaxosScenario(ctx, workerPath)
+	qualification, err := qualifyOmnipaxosScenario(ctx, experiment.adapterConfig(workerPath))
+	if err != nil {
+		return omnipaxosAgenticEpisodeInputs{}, err
+	}
+	qualificationWork, err := qualificationPreparationWork(qualification.Bundle)
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
 	return omnipaxosAgenticEpisodeInputs{
 		WorkerPath: workerPath, Knowledge: knowledge, Experiment: experiment,
 		Workload: workload, Root: root, Qualification: qualification,
+		Preparation: controlexperiment.AgenticPreparationWork{
+			QualificationReports: len(qualification.Bundle.ConformanceReports),
+			QualificationCases:   qualificationCaseCount(qualification.Bundle),
+			Qualification:        qualificationWork,
+			Root: controlexperiment.WorkLedger{Primary: controlexperiment.PhaseWork{
+				SetupAttempts: 1, RuntimeInitializations: 1,
+				PrepareActions: 1, SchedulerDecisions: len(root.Records),
+				WorkUnits: 2 + len(root.Records),
+			}},
+		},
 	}, nil
-}
-
-func runOmnipaxosAgenticEpisode(
-	ctx context.Context,
-	inputs omnipaxosAgenticEpisodeInputs,
-	riskJournal *statelessAgentCallJournal,
-	scenarioJournal *scenarioAgentCallJournal,
-	budget agenticEpisodeBudget,
-	activateRiskKey func() error,
-	activateScenarioKey func() error,
-) (omnipaxosAgenticEpisodeResult, error) {
-	target, err := newOmnipaxosAgenticEpisodeTarget(inputs)
-	if err != nil {
-		return omnipaxosAgenticEpisodeResult{Status: agenticEpisodeRiskStopped}, err
-	}
-	return runAgenticEpisode(
-		ctx, target, riskJournal, scenarioJournal, budget, nil, nil, nil,
-		activateRiskKey, activateScenarioKey,
-	)
 }
 
 func omnipaxosAgenticEpisodeRecoveryBinding() agenticEpisodeRecoveryBinding {
@@ -119,15 +113,16 @@ func newOmnipaxosAgenticEpisodeTarget(
 	}
 	target := agenticEpisodeTarget{
 		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge, Surface: surface,
-		OracleRegistry:       oracleRegistry,
-		ObservationProjector: observationProjector,
-		ClosureFactory:       newOmnipaxosScenarioClosureFactory(),
+		OracleRegistry:              oracleRegistry,
+		ObservationProjector:        observationProjector,
+		ClosureFactory:              newOmnipaxosScenarioClosureFactory(),
+		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(len(surface.Nodes)),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
 		) (scenarioEpisodeCoreInputs, error) {
 			factory := func() (control.Adapter, error) {
-				return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: inputs.WorkerPath})
+				return omnipaxosv2.New(inputs.Experiment.adapterConfig(inputs.WorkerPath))
 			}
 			return scenarioEpisodeCoreInputs{
 				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis,

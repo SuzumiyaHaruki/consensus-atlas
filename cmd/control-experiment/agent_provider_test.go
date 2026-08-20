@@ -201,7 +201,7 @@ func TestOpenRouterProviderNeverRetriesAmbiguousPOST(t *testing.T) {
 	if err != nil || call.FailureCode != agentFailureTransport || call.TransportAttempts != 1 ||
 		attempts != 1 || call.Work != (controlexperiment.ModelWork{Calls: 1}) ||
 		call.UsageStatus != agentProviderUsageUnknown ||
-		openRouterTransportFreeze(client).MaxRetries != 0 {
+		client.freeze().MaxRetries != 0 {
 		t.Fatalf("ambiguous POST was retried or mis-accounted: %#v attempts=%d err=%v", call, attempts, err)
 	}
 
@@ -232,7 +232,7 @@ func TestOpenRouterModelSelectionUsesOneTransport(t *testing.T) {
 		}
 		var payload openRouterChatRequest
 		if err := json.Unmarshal(prepared.RequestBytes, &payload); err != nil ||
-			payload.Model != model || openRouterTransportFreeze(client).Validate() != nil {
+			payload.Model != model || client.freeze().Validate() != nil {
 			t.Fatalf("model %q changed transport shape: %#v/%v", model, payload, err)
 		}
 	}

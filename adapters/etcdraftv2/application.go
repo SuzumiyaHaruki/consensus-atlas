@@ -113,6 +113,7 @@ type applicationImage struct {
 	Applied       uint64           `json:"applied"`
 	Commands      []appliedCommand `json:"commands,omitempty"`
 	Digest        string           `json:"digest"`
+	prefixCache   []ApplicationPrefixEvidence
 }
 
 func newApplicationImage() (applicationImage, error) {
@@ -172,12 +173,21 @@ func decodeApplicationImage(encoded []byte) (applicationImage, error) {
 	for index := range image.Commands {
 		image.Commands[index].Value = append([]byte(nil), image.Commands[index].Value...)
 	}
+	prefixes, err := image.rebuildPrefixes()
+	if err != nil {
+		return applicationImage{}, err
+	}
+	image.prefixCache = prefixes
 	return image, nil
 }
 
 func (image applicationImage) applyNormal(entry pb.Entry) (applicationImage, *appliedCommand, error) {
 	if entry.Index <= image.Applied {
 		return image, nil, nil
+	}
+	previous, err := image.prefixes()
+	if err != nil {
+		return applicationImage{}, nil, err
 	}
 	var applied *appliedCommand
 	if len(entry.Data) > 0 {
@@ -197,6 +207,9 @@ func (image applicationImage) applyNormal(entry pb.Entry) (applicationImage, *ap
 	if err != nil {
 		return applicationImage{}, nil, err
 	}
+	sealed.prefixCache = append(append(
+		[]ApplicationPrefixEvidence(nil), previous...,
+	), ApplicationPrefixEvidence{Position: sealed.Applied, Digest: sealed.Digest})
 	return sealed, applied, nil
 }
 
@@ -204,8 +217,34 @@ func (image applicationImage) advance(index uint64) (applicationImage, error) {
 	if index <= image.Applied {
 		return image, nil
 	}
+	previous, err := image.prefixes()
+	if err != nil {
+		return applicationImage{}, err
+	}
+	oldApplied := image.Applied
 	image.Applied = index
-	return sealApplicationImage(image)
+	sealed, err := sealApplicationImage(image)
+	if err != nil {
+		return applicationImage{}, err
+	}
+	sealed.prefixCache = append([]ApplicationPrefixEvidence(nil), previous...)
+	for position := oldApplied + 1; position <= index; position++ {
+		digest := sealed.Digest
+		if position != index {
+			prefix, sealErr := sealApplicationImage(applicationImage{
+				SchemaVersion: applicationImageSchema, Applied: position,
+				Commands: append([]appliedCommand(nil), image.Commands...),
+			})
+			if sealErr != nil {
+				return applicationImage{}, sealErr
+			}
+			digest = prefix.Digest
+		}
+		sealed.prefixCache = append(sealed.prefixCache, ApplicationPrefixEvidence{
+			Position: position, Digest: digest,
+		})
+	}
+	return sealed, nil
 }
 
 // prefixes returns one commitment for every applied log position. Each
@@ -216,6 +255,13 @@ func (image applicationImage) prefixes() ([]ApplicationPrefixEvidence, error) {
 	if err := image.validate(); err != nil {
 		return nil, err
 	}
+	if image.prefixCacheValid() {
+		return append([]ApplicationPrefixEvidence(nil), image.prefixCache...), nil
+	}
+	return image.rebuildPrefixes()
+}
+
+func (image applicationImage) rebuildPrefixes() ([]ApplicationPrefixEvidence, error) {
 	result := make([]ApplicationPrefixEvidence, 0, image.Applied)
 	commandEnd := 0
 	for position := uint64(1); position <= image.Applied; position++ {
@@ -236,6 +282,18 @@ func (image applicationImage) prefixes() ([]ApplicationPrefixEvidence, error) {
 		return nil, fmt.Errorf("ETCDRAFT_V2_APPLICATION_PREFIX_FINAL_MISMATCH")
 	}
 	return result, nil
+}
+
+func (image applicationImage) prefixCacheValid() bool {
+	if uint64(len(image.prefixCache)) != image.Applied {
+		return false
+	}
+	for index, prefix := range image.prefixCache {
+		if prefix.Position != uint64(index+1) || prefix.Digest == "" {
+			return false
+		}
+	}
+	return len(image.prefixCache) == 0 || image.prefixCache[len(image.prefixCache)-1].Digest == image.Digest
 }
 
 type clientResult struct {

@@ -12,7 +12,12 @@ const (
 	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                                                = "agentic-episode-v1"
-	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4m4-risk-fidelity-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n7-qualification-cost-cargo-replay-v1"
+	agenticMethodM4n6LegacyID                                              = "consensus-atlas/agentic-method/m4n6-causal-closure-build-evidence-v1"
+	agenticMethodM4n5LegacyID                                              = "consensus-atlas/agentic-method/m4n5-multinode-closure-v1"
+	agenticMethodM4n2LegacyID                                              = "consensus-atlas/agentic-method/m4n2-preparation-replay-attribution-v1"
+	agenticMethodM4n1LegacyID                                              = "consensus-atlas/agentic-method/m4n1-local-sut-source-binding-v1"
+	agenticMethodRiskFidelityLegacyID                                      = "consensus-atlas/agentic-method/m4m4-risk-fidelity-v1"
 	agenticMethodM4m1LegacyID                                              = "consensus-atlas/agentic-method/m4m1-closure-ownership-v1"
 	agenticMethodClosureHandoffLegacyImplementationID                      = "consensus-atlas/agentic-method/m4l7-risk-input-closure-handoff-v1"
 	agenticMethodClosureLegacyImplementationID                             = "consensus-atlas/agentic-method/m4l5-closure-v1"
@@ -35,22 +40,48 @@ const (
 // Risk Agent without recording machine-local directory paths. Exact excerpts
 // remain bound by the durable provider-call journal.
 type AgenticSourceExposureSpec struct {
-	Mode              string   `json:"mode"`
-	ReferencePrefixes []string `json:"reference_prefixes,omitempty"`
-	CatalogDigest     string   `json:"catalog_digest,omitempty"`
+	Mode              string                    `json:"mode"`
+	ReferencePrefixes []string                  `json:"reference_prefixes,omitempty"`
+	CatalogDigest     string                    `json:"catalog_digest,omitempty"`
+	SUTBindings       []AgenticSUTSourceBinding `json:"sut_bindings,omitempty"`
+}
+
+// AgenticSUTSourceBinding ties an Agent-visible module reference prefix to
+// the exact local source-tree identity used for this method run. Machine-local
+// directories stay outside MethodSpec; the runtime mount retains them.
+type AgenticSUTSourceBinding struct {
+	ReferencePrefix string `json:"reference_prefix"`
+	ModulePath      string `json:"module_path"`
+	ModuleVersion   string `json:"module_version"`
+	ContentDigest   string `json:"content_digest"`
+}
+
+func (binding AgenticSUTSourceBinding) Validate() error {
+	if strings.TrimSpace(binding.ReferencePrefix) == "" ||
+		strings.ContainsAny(binding.ReferencePrefix, " \\\r\n\x00") ||
+		!strings.HasSuffix(binding.ReferencePrefix, "/") ||
+		strings.TrimSpace(binding.ModulePath) == "" ||
+		strings.ContainsAny(binding.ModulePath, " \\\r\n\x00") ||
+		strings.TrimSpace(binding.ModuleVersion) == "" ||
+		strings.ContainsAny(binding.ModuleVersion, " \\\r\n\x00") ||
+		!validSHA256(binding.ContentDigest) {
+		return errors.New("EXPERIMENT_AGENTIC_SUT_SOURCE_BINDING_INVALID")
+	}
+	return nil
 }
 
 // AgenticEpisodeLimits binds execution-shaping limits that are more specific
 // than the logical budget. Different Risk/Scenario splits or plan depths are
 // different methods even when their total allowance is equal.
 type AgenticEpisodeLimits struct {
-	MaxRiskCalls         int   `json:"max_risk_calls"`
-	MaxScenarioCalls     int   `json:"max_scenario_calls"`
-	MaxTotalCalls        int   `json:"max_total_calls"`
-	MaxObservedTokens    int   `json:"max_observed_tokens"`
-	MaxScenarioPlanSteps int   `json:"max_scenario_plan_steps"`
-	MaxRuntimeDecisions  int   `json:"max_runtime_decisions"`
-	SessionWallClockMS   int64 `json:"session_wall_clock_ms"`
+	MaxRiskCalls           int   `json:"max_risk_calls"`
+	MaxScenarioCalls       int   `json:"max_scenario_calls"`
+	MaxTotalCalls          int   `json:"max_total_calls"`
+	MaxObservedTokens      int   `json:"max_observed_tokens"`
+	MaxScenarioPlanSteps   int   `json:"max_scenario_plan_steps"`
+	MaxRuntimeDecisions    int   `json:"max_runtime_decisions"`
+	SessionWallClockMS     int64 `json:"session_wall_clock_ms"`
+	PreparationWallClockMS int64 `json:"preparation_wall_clock_ms,omitempty"`
 }
 
 type AgenticCapabilityFeedbackMode string
@@ -132,8 +163,14 @@ func NewAgenticMethodSpec(spec AgenticMethodSpec) (AgenticMethodSpec, error) {
 	spec.ExecutorID = AgenticMethodExecutorID
 	spec.Strategy = AgenticMethodStrategyID
 	spec.ImplementationID = AgenticMethodImplementationID
+	if spec.EpisodeLimits.PreparationWallClockMS == 0 {
+		spec.EpisodeLimits.PreparationWallClockMS = 1_200_000
+	}
 	spec.SourceExposure.ReferencePrefixes = append(
 		[]string(nil), spec.SourceExposure.ReferencePrefixes...,
+	)
+	spec.SourceExposure.SUTBindings = append(
+		[]AgenticSUTSourceBinding(nil), spec.SourceExposure.SUTBindings...,
 	)
 	if spec.ScenarioTransport != nil {
 		transport := *spec.ScenarioTransport
@@ -145,6 +182,10 @@ func NewAgenticMethodSpec(spec AgenticMethodSpec) (AgenticMethodSpec, error) {
 		spec.CapabilityFeedbackProbe = &probe
 	}
 	sort.Strings(spec.SourceExposure.ReferencePrefixes)
+	sort.Slice(spec.SourceExposure.SUTBindings, func(i, j int) bool {
+		return spec.SourceExposure.SUTBindings[i].ReferencePrefix <
+			spec.SourceExposure.SUTBindings[j].ReferencePrefix
+	})
 	spec.Digest = ""
 	digest, err := control.CanonicalDigest(spec)
 	if err != nil {
@@ -165,6 +206,10 @@ func (spec AgenticMethodSpec) Validate() error {
 	riskInputValid := spec.RiskInputMode == AgenticRiskInputAgentGenerated &&
 		spec.RiskInputDigest == "" || spec.RiskInputMode == AgenticRiskInputExistingCandidate &&
 		validSHA256(spec.RiskInputDigest)
+	preparationLimitValid := spec.EpisodeLimits.PreparationWallClockMS > 0
+	if spec.ImplementationID != AgenticMethodImplementationID {
+		preparationLimitValid = spec.EpisodeLimits.PreparationWallClockMS >= 0
+	}
 	if spec.ImplementationID == agenticMethodClosureLegacyImplementationID {
 		riskInputValid = spec.RiskInputMode == "" && spec.RiskInputDigest == "" ||
 			spec.RiskInputMode == agenticRiskInputLegacyAgentDiscovery && spec.RiskInputDigest == "" ||
@@ -180,7 +225,7 @@ func (spec AgenticMethodSpec) Validate() error {
 		!validMethodToken(spec.RiskPromptVersion) ||
 		!validMethodToken(spec.ScenarioPromptVersion) || !validMethodToken(spec.SemanticInputSchema) ||
 		!validSHA256(spec.SemanticInputDigest) || spec.ScenarioSemanticExposure.Validate() != nil ||
-		!closureModeValid || !riskInputValid ||
+		!closureModeValid || !riskInputValid || !preparationLimitValid ||
 		spec.CapabilityFeedbackMode.Validate() != nil ||
 		spec.CapabilityFeedbackProbe != nil && spec.CapabilityFeedbackProbe.Validate() != nil ||
 		spec.CapabilityFeedbackProbe != nil && (spec.InvestigationEpisodes != 1 ||
@@ -208,6 +253,11 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodM4n6LegacyID ||
+		id == agenticMethodM4n5LegacyID ||
+		id == agenticMethodM4n2LegacyID ||
+		id == agenticMethodM4n1LegacyID ||
+		id == agenticMethodRiskFidelityLegacyID ||
 		id == agenticMethodM4m1LegacyID ||
 		id == agenticMethodClosureHandoffLegacyImplementationID ||
 		id == agenticMethodClosureLegacyImplementationID ||
@@ -215,11 +265,15 @@ func validAgenticMethodImplementationID(id string) bool {
 }
 
 func validAgenticEpisodeLimits(limits AgenticEpisodeLimits, budget AgenticLogicalBudget) bool {
+	preparationValid := limits.PreparationWallClockMS > 0
+	if limits.PreparationWallClockMS == 0 {
+		preparationValid = true // historical MethodSpecs predate bounded preparation
+	}
 	return limits.MaxRiskCalls > 0 && limits.MaxScenarioCalls > 0 && limits.MaxTotalCalls > 0 &&
 		limits.MaxRiskCalls+limits.MaxScenarioCalls <= limits.MaxTotalCalls &&
 		limits.MaxTotalCalls == budget.MaxModelCalls &&
 		limits.MaxObservedTokens == budget.MaxModelTokens && limits.MaxScenarioPlanSteps > 0 &&
-		limits.MaxRuntimeDecisions > 0 && limits.SessionWallClockMS > 0 &&
+		limits.MaxRuntimeDecisions > 0 && limits.SessionWallClockMS > 0 && preparationValid &&
 		limits.MaxRuntimeDecisions <= budget.MaxPrimarySchedulerDecisions
 }
 
@@ -260,7 +314,8 @@ func ScaleAgenticLogicalBudget(
 func validAgenticSourceExposure(source AgenticSourceExposureSpec) bool {
 	switch source.Mode {
 	case AgenticSourceExposureNone:
-		return len(source.ReferencePrefixes) == 0 && source.CatalogDigest == ""
+		return len(source.ReferencePrefixes) == 0 && source.CatalogDigest == "" &&
+			len(source.SUTBindings) == 0
 	case AgenticSourceExposureDossierV1, AgenticSourceExposureDossierV2:
 		if len(source.ReferencePrefixes) == 0 || !validSHA256(source.CatalogDigest) {
 			return false
@@ -274,5 +329,17 @@ func validAgenticSourceExposure(source AgenticSourceExposureSpec) bool {
 			return false
 		}
 	}
+	for index, binding := range source.SUTBindings {
+		if binding.Validate() != nil ||
+			(index > 0 && source.SUTBindings[index-1].ReferencePrefix >= binding.ReferencePrefix) ||
+			!sortedStringsContain(source.ReferencePrefixes, binding.ReferencePrefix) {
+			return false
+		}
+	}
 	return true
+}
+
+func sortedStringsContain(values []string, value string) bool {
+	index := sort.SearchStrings(values, value)
+	return index < len(values) && values[index] == value
 }

@@ -2,6 +2,7 @@ package controlexperiment
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -71,7 +72,45 @@ type ExecutionBundle struct {
 	Decisions        DecisionHistory                 `json:"decisions"`
 	Qualification    conformance.QualificationBundle `json:"qualification"`
 	Work             WorkLedger                      `json:"work"`
+	Recipe           *ExecutionRecipe                `json:"execution_recipe,omitempty"`
 	Digest           string                          `json:"digest"`
+}
+
+// ExecutionRecipe contains the public, machine-independent inputs required
+// to execute the exact policy again. TargetConfig is target-local JSON; local
+// executable paths remain private evaluator input.
+type ExecutionRecipe struct {
+	TargetID     string          `json:"target_id"`
+	Config       Config          `json:"config"`
+	TargetConfig json.RawMessage `json:"target_config"`
+}
+
+func (recipe ExecutionRecipe) Validate(configDigest string) error {
+	if recipe.TargetID == "" || recipe.Config.Validate() != nil || len(recipe.TargetConfig) == 0 ||
+		!json.Valid(recipe.TargetConfig) {
+		return errors.New("EXECUTION_BUNDLE_RECIPE_INVALID")
+	}
+	digest, err := recipe.Config.Digest()
+	if err != nil || digest != configDigest {
+		return errors.New("EXECUTION_BUNDLE_RECIPE_CONFIG_MISMATCH")
+	}
+	return nil
+}
+
+// WithExecutionRecipe seals the recipe into an already qualified Bundle.
+// It does not alter Trace or Replay evidence.
+func (bundle ExecutionBundle) WithExecutionRecipe(recipe ExecutionRecipe) (ExecutionBundle, error) {
+	if bundle.Validate() != nil || recipe.Validate(bundle.Identity.ConfigDigest) != nil {
+		return ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_RECIPE_BINDING_INVALID")
+	}
+	copyRecipe := recipe
+	copyRecipe.TargetConfig = append(json.RawMessage(nil), recipe.TargetConfig...)
+	bundle.Recipe = &copyRecipe
+	sealed, err := bundle.seal()
+	if err != nil || sealed.Validate() != nil {
+		return ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_RECIPE_BINDING_INVALID")
+	}
+	return sealed, nil
 }
 
 // ExecuteQualifiedBundle is the sole bundle-producing path. It reuses the
@@ -247,6 +286,9 @@ func (bundle ExecutionBundle) Validate() error {
 		}
 	} else if bundle.Identity.MethodSpecDigest != "" || bundle.OperationHistory != nil {
 		return errors.New("EXECUTION_BUNDLE_LEGACY_V3_EVIDENCE_FORBIDDEN")
+	}
+	if bundle.Recipe != nil && bundle.Recipe.Validate(bundle.Identity.ConfigDigest) != nil {
+		return errors.New("EXECUTION_BUNDLE_RECIPE_INVALID")
 	}
 	if err := bundle.Qualification.Validate(); err != nil {
 		return err

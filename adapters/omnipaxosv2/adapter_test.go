@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -248,6 +249,87 @@ func TestManifestKeepsM521wBoundary(t *testing.T) {
 		risk.Issues[1].Code != semantic.RiskIssueMissingObservationKind ||
 		risk.Issues[1].Kind != semantic.ObservationNodeRestarted {
 		t.Fatalf("unsupported restart Risk was not rejected mechanically: %#v", risk)
+	}
+}
+
+func TestConfiguredFiveNodeMembershipElectsAndReplays(t *testing.T) {
+	workerPath := buildWorker(t)
+	config := Config{WorkerPath: workerPath, NodeCount: 5}
+	adapter, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := adapter.Manifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantNodes := []control.NodeID{"n1", "n2", "n3", "n4", "n5"}
+	if !reflect.DeepEqual(manifest.Nodes, wantNodes) {
+		t.Fatalf("manifest nodes=%v, want %v", manifest.Nodes, wantNodes)
+	}
+	defaultAdapter, err := New(Config{WorkerPath: workerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultManifest, err := defaultAdapter.Manifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultManifest.ConfigurationDigest == manifest.ConfigurationDigest ||
+		len(defaultManifest.Nodes) != DefaultNodeCount {
+		t.Fatalf("configured membership did not change manifest identity: default=%+v configured=%+v",
+			defaultManifest, manifest)
+	}
+	explicitDefault, err := New(Config{WorkerPath: workerPath, NodeCount: DefaultNodeCount})
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicitManifest, err := explicitDefault.Manifest(context.Background())
+	if err != nil || explicitManifest.ConfigurationDigest != defaultManifest.ConfigurationDigest {
+		t.Fatalf("omitted and explicit default membership diverged: omitted=%s explicit=%s err=%v",
+			defaultManifest.ConfigurationDigest, explicitManifest.ConfigurationDigest, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	runtime, err := controlruntime.New(ctx, adapter, controlruntime.Config{Seed: []byte("omnipaxos-five-node")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adapter.last.Nodes) != 5 {
+		t.Fatalf("worker nodes=%d, want 5", len(adapter.last.Nodes))
+	}
+	driveToLeader(t, ctx, runtime, adapter)
+	trace, err := runtime.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	replayAdapter, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := controlruntime.Replay(
+		ctx, replayAdapter, controlruntime.Config{Seed: []byte("omnipaxos-five-node")}, trace,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedTrace, err := replayed.Trace()
+	if err != nil || replayedTrace.Digest != trace.Digest {
+		t.Fatalf("five-node replay drift: got=%s want=%s err=%v", replayedTrace.Digest, trace.Digest, err)
+	}
+	if err := replayAdapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNodeCountIsRejectedBeforeWorkerAccess(t *testing.T) {
+	_, err := New(Config{WorkerPath: "/not/read/for/invalid/node/count", NodeCount: MaxStaticNodes + 1})
+	if err == nil || !strings.Contains(err.Error(), "OMNIPAXOS_NODE_COUNT_INVALID") {
+		t.Fatalf("oversized membership was not rejected before worker access: %v", err)
 	}
 }
 
@@ -631,7 +713,7 @@ func cloneOf(snapshot controlruntime.Snapshot, message control.MessageID) (contr
 }
 
 func consensusLeader(adapter *Adapter) control.NodeID {
-	if len(adapter.last.Nodes) != 3 || adapter.last.Nodes[0].Leader == 0 {
+	if len(adapter.last.Nodes) != adapter.config.ResolvedNodeCount() || adapter.last.Nodes[0].Leader == 0 {
 		return ""
 	}
 	leader := adapter.last.Nodes[0].Leader
@@ -640,7 +722,7 @@ func consensusLeader(adapter *Adapter) control.NodeID {
 			return ""
 		}
 	}
-	return nodeNames[leader]
+	return nodeName(leader)
 }
 
 func traceHasAction(trace controlruntime.Trace, kind control.ActionKind) bool {

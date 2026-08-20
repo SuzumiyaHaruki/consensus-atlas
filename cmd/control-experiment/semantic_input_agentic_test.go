@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
@@ -49,6 +54,53 @@ func TestEtcdraftAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 	}
 }
 
+func TestEtcdraftAgenticNodeCountFlowsIntoQualificationAndRoot(t *testing.T) {
+	var source etcdraftAgenticAuthoringSource
+	if err := readStrictJSONFile(etcdraftAgenticTestInputPath, etcdraftSemanticInputLimit, &source); err != nil {
+		t.Fatal(err)
+	}
+	source.Experiment.AdapterConfig = etcdraftv2.Config{
+		NodeCount: 5, ElectionTick: 7, HeartbeatTick: 2,
+	}
+	path := writeAgenticInputFixture(t, source)
+	_, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(30*time.Second))
+	defer cancel()
+	execution, root, err := prepareEtcdraftAgenticExecutionInputs(ctx, workload, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []control.NodeID{"n1", "n2", "n3", "n4", "n5"}
+	if !reflect.DeepEqual(execution.qualification.Manifest.Nodes, want) {
+		t.Fatalf("qualified nodes = %v, want %v", execution.qualification.Manifest.Nodes, want)
+	}
+	if root.ManifestDigest != execution.admission.ManifestDigest ||
+		execution.qualification.Qualification.ManifestDigest != execution.admission.ManifestDigest {
+		t.Fatalf("five-node identity drift: root=%s admission=%s qualification=%s",
+			root.ManifestDigest, execution.admission.ManifestDigest,
+			execution.qualification.Qualification.ManifestDigest)
+	}
+}
+
+func TestEtcdraftAgenticMissingMembershipUsesThreeNodeDefault(t *testing.T) {
+	var source etcdraftAgenticAuthoringSource
+	if err := readStrictJSONFile(etcdraftAgenticTestInputPath, etcdraftSemanticInputLimit, &source); err != nil {
+		t.Fatal(err)
+	}
+	source.Experiment.AdapterConfig = etcdraftv2.Config{}
+	path := writeAgenticInputFixture(t, source)
+	_, experiment, _, err := loadEtcdraftAgenticAuthoringSource(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(experiment.AdapterConfig, etcdraftv2.ThreeNodeConfig()) {
+		t.Fatalf("missing etcd/raft membership resolved to %#v", experiment.AdapterConfig)
+	}
+}
+
 func TestOmnipaxosAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 	knowledge, experiment, workload, err := loadOmnipaxosAgenticAuthoringSource(
 		omnipaxosAgenticTestInputPath,
@@ -79,6 +131,32 @@ func TestOmnipaxosAgenticAuthoringHasNoSeededRiskOrHypothesis(t *testing.T) {
 	if _, _, _, err := loadOmnipaxosAgenticAuthoringSource(withRisk); err == nil ||
 		!strings.Contains(err.Error(), "INPUT_MATERIALS_INVALID") {
 		t.Fatalf("pre-seeded OmniPaxos Risk was accepted: %v", err)
+	}
+}
+
+func TestOmnipaxosAgenticNodeCountFlowsIntoQualificationAndRoot(t *testing.T) {
+	var source omnipaxosAgenticAuthoringSource
+	if err := readStrictJSONFile(omnipaxosAgenticTestInputPath, omnipaxosSemanticInputLimit, &source); err != nil {
+		t.Fatal(err)
+	}
+	source.Experiment.AdapterConfig = omnipaxosv2.Config{NodeCount: 5}
+	path := writeAgenticInputFixture(t, source)
+	workerPath := buildOmnipaxosScenarioWorker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(90*time.Second))
+	defer cancel()
+	inputs, err := prepareOmnipaxosAgenticEpisode(ctx, workerPath, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []control.NodeID{"n1", "n2", "n3", "n4", "n5"}
+	if !reflect.DeepEqual(inputs.Qualification.Bundle.Manifest.Nodes, want) {
+		t.Fatalf("qualified nodes = %v, want %v", inputs.Qualification.Bundle.Manifest.Nodes, want)
+	}
+	if inputs.Root.ManifestDigest != inputs.Qualification.Admission.ManifestDigest ||
+		inputs.Qualification.Bundle.Qualification.ManifestDigest != inputs.Qualification.Admission.ManifestDigest {
+		t.Fatalf("five-node OmniPaxos identity drift: root=%s admission=%s qualification=%s",
+			inputs.Root.ManifestDigest, inputs.Qualification.Admission.ManifestDigest,
+			inputs.Qualification.Bundle.Qualification.ManifestDigest)
 	}
 }
 

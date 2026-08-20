@@ -31,6 +31,32 @@ func TestRiskMechanismAllowsBoundedAgentRationale(t *testing.T) {
 	}
 }
 
+func TestRiskCandidateSemanticIdentityIgnoresAgentDisplayID(t *testing.T) {
+	left := RiskCandidate{
+		ID: "candidate-left", Summary: "First wording.",
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
+		},
+	}
+	right := left
+	right.ID = "candidate-right"
+	right.Summary = "Different prose for the same executable hypothesis."
+	leftIdentity, err := RiskCandidateSemanticIdentity(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightIdentity, err := RiskCandidateSemanticIdentity(right)
+	if err != nil || leftIdentity != rightIdentity {
+		t.Fatalf("display ID changed semantic reuse: %q/%q/%v", leftIdentity, rightIdentity, err)
+	}
+	right.Predicates[1].Kind = semantic.ObservationMessageDelivered
+	different, err := RiskCandidateSemanticIdentity(right)
+	if err != nil || different == leftIdentity {
+		t.Fatalf("different executable predicate reused semantic identity: %q/%v", different, err)
+	}
+}
+
 func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	capabilities := []semantic.ObservationCapability{

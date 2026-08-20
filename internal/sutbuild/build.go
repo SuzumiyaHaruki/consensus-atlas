@@ -29,9 +29,17 @@ const (
 	AuditVersion  = 2
 	AuditVersion3 = 3
 	AuditVersion4 = 4
+	// AuditVersion5 reuses the same source/binary/command evidence for an
+	// unmodified Cargo worker build. It does not introduce another identity
+	// scheme: the worker's existing sha256:<binary> BuildID is the audit SUT ID.
+	AuditVersion5 = 5
 
-	CommandGoListModule = "go-list-module"
-	CommandGoBuild      = "go-build"
+	CommandGoListModule  = "go-list-module"
+	CommandGoBuild       = "go-build"
+	CommandCargoVersion  = "cargo-version"
+	CommandRustcVersion  = "rustc-version"
+	CommandCargoMetadata = "cargo-metadata"
+	CommandCargoBuild    = "cargo-build"
 )
 
 type Spec struct {
@@ -116,7 +124,9 @@ type Audit struct {
 // trial evidence. The expected digests still come from the private benchmark
 // manifest; this method only proves internal structure and self-consistency.
 func (audit Audit) Validate() error {
-	if (audit.Version != AuditVersion && audit.Version != AuditVersion3 && audit.Version != AuditVersion4) || audit.TrialID == "" || audit.Module.Path == "" ||
+	if (audit.Version != AuditVersion && audit.Version != AuditVersion3 &&
+		audit.Version != AuditVersion4 && audit.Version != AuditVersion5) ||
+		audit.TrialID == "" || audit.Module.Path == "" ||
 		audit.Module.Version == "" || audit.SourcePath == "" || audit.SUTBuildIdentity == "" ||
 		audit.BinaryPath == "" || audit.ToolchainIdentity == "" {
 		return errors.New("build audit requires version 2 and complete identities")
@@ -159,12 +169,34 @@ func (audit Audit) Validate() error {
 			return errors.New("version-4 build audit does not prove an unmodified module")
 		}
 	}
-	if len(audit.Commands) != 2 || audit.Commands[0].Identity != CommandGoListModule ||
-		audit.Commands[1].Identity != CommandGoBuild {
+	if audit.Version == AuditVersion5 {
+		if audit.SourcePath != "<unmodified-cargo>" || audit.ExactMatchCount != 0 ||
+			len(audit.Sources) != 0 || audit.InputSourceDigest != audit.OutputSourceDigest ||
+			audit.InputModuleDigest != audit.OutputModuleDigest ||
+			audit.SUTBuildIdentity != "sha256:"+audit.BinaryDigest {
+			return errors.New("version-5 build audit does not prove an unmodified Cargo worker")
+		}
+	}
+	expectedCommands := []struct {
+		identity   string
+		executable string
+	}{{CommandGoListModule, "go"}, {CommandGoBuild, "go"}}
+	if audit.Version == AuditVersion5 {
+		expectedCommands = []struct {
+			identity   string
+			executable string
+		}{
+			{CommandCargoVersion, "cargo"}, {CommandRustcVersion, "rustc"},
+			{CommandCargoMetadata, "cargo"}, {CommandCargoBuild, "cargo"},
+		}
+	}
+	if len(audit.Commands) != len(expectedCommands) {
 		return errors.New("build audit must contain the exact ordered command allowlist")
 	}
-	for _, command := range audit.Commands {
-		if command.Executable != "go" || command.CommandPolicy != "exact-allowlist-v1" ||
+	for index, command := range audit.Commands {
+		if command.Identity != expectedCommands[index].identity ||
+			command.Executable != expectedCommands[index].executable ||
+			command.CommandPolicy != "exact-allowlist-v1" ||
 			len(command.LogicalArgs) == 0 || !isDigest(command.Digest) {
 			return fmt.Errorf("build command %q is incomplete", command.Identity)
 		}
@@ -583,7 +615,6 @@ func Build(repoRoot string, spec Spec) (Audit, error) {
 		return Audit{}, err
 	}
 	modFilePath := filepath.Join(temporary, "build.mod")
-	modFile := append([]byte(nil), projectMod...)
 	// The relative replacement is interpreted from the generated modfile and
 	// recorded verbatim in Go build info. Unlike an absolute temporary path it
 	// gives repeated builds the same binary identity.
@@ -591,7 +622,10 @@ func Build(repoRoot string, spec Spec) (Audit, error) {
 	if err != nil || strings.HasPrefix(replacementPath, "..") {
 		return Audit{}, errors.New("staged module is outside the ConsensusAtlas repository")
 	}
-	modFile = append(modFile, []byte("\nreplace "+spec.Module.Path+" => ./"+filepath.ToSlash(replacementPath)+"\n")...)
+	modFile, err := replaceModuleSource(projectMod, spec.Module.Path, "./"+filepath.ToSlash(replacementPath))
+	if err != nil {
+		return Audit{}, err
+	}
 	if err := os.WriteFile(modFilePath, modFile, 0o600); err != nil {
 		return Audit{}, err
 	}
@@ -687,6 +721,35 @@ func Build(repoRoot string, spec Spec) (Audit, error) {
 	return audit, nil
 }
 
+// replaceModuleSource swaps the repository's editable local checkout for the
+// builder's audited staging copy.  ConsensusAtlas intentionally keeps its two
+// SUT replacements as single-line directives; rejecting a replace block is
+// safer than silently retaining two competing sources for the same module.
+func replaceModuleSource(projectMod []byte, modulePath, replacement string) ([]byte, error) {
+	lines := strings.Split(string(projectMod), "\n")
+	kept := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 1 && fields[0] == "replace" && (len(fields) == 1 || fields[1] == "(") {
+			return nil, errors.New("audited SUT build does not accept replace blocks in the project go.mod")
+		}
+		if len(fields) >= 4 && fields[0] == "replace" && fields[2] == "=>" {
+			// The generated modfile lives below artifacts/build-work, so the
+			// project's relative suts/ paths would resolve in the wrong place.
+			// Drop every ordinary local SUT replacement; the selected module is
+			// re-added below as the one audited staging source. Other required
+			// modules resolve from the locked module cache.
+			if fields[1] == modulePath || strings.HasPrefix(filepath.ToSlash(fields[3]), "./suts/") {
+				continue
+			}
+		}
+		kept = append(kept, line)
+	}
+	result := strings.TrimRight(strings.Join(kept, "\n"), "\n")
+	result += "\n\nreplace " + modulePath + " => " + replacement + "\n"
+	return []byte(result), nil
+}
+
 func resolveOutput(repoRoot, requested string) (string, error) {
 	resolved := requested
 	if !filepath.IsAbs(resolved) {
@@ -749,6 +812,12 @@ func copyModule(source, destination string) error {
 		if err != nil {
 			return err
 		}
+		if moduleVCSMetadata(relative) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		target := filepath.Join(destination, relative)
 		info, err := entry.Info()
 		if err != nil {
@@ -782,6 +851,16 @@ func digestTree(root string) (string, error) {
 		if walkErr != nil {
 			return walkErr
 		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if moduleVCSMetadata(relative) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if entry.IsDir() {
 			return nil
 		}
@@ -796,10 +875,6 @@ func digestTree(root string) (string, error) {
 		if err != nil {
 			return err
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
 		entries = append(entries, treeEntry{Path: filepath.ToSlash(relative), Digest: digestBytes(data)})
 		return nil
 	})
@@ -807,6 +882,32 @@ func digestTree(root string) (string, error) {
 		return "", err
 	}
 	return digestJSON(entries)
+}
+
+// SourceTreeDigest returns the same content identity used by audited SUT
+// builds. Callers can bind an Agent-visible local checkout to a MethodSpec
+// without duplicating tree hashing rules. Git administrative metadata is
+// excluded by digestTree; all ordinary module files remain covered.
+func SourceTreeDigest(root string) (string, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	return digestTree(root)
+}
+
+// moduleVCSMetadata excludes only the checkout's own Git administrative
+// entry.  Submodules use either a .git directory or a .git text file; neither
+// participates in a Go build and both contain machine-local paths/state.  We
+// deliberately keep .gitignore, .github and nested source files in the module
+// digest.
+func moduleVCSMetadata(relative string) bool {
+	relative = filepath.ToSlash(relative)
+	return relative == ".git" || strings.HasPrefix(relative, ".git/")
 }
 
 func commandDigest(command CommandAudit) (string, error) {

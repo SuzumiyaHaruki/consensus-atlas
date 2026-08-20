@@ -84,6 +84,7 @@ type ScenarioExecution struct {
 	ClosureHandoffStepID string                     `json:"closure_handoff_step_id,omitempty"`
 	AutomaticProgress    []ScenarioStepFeedback     `json:"automatic_progress,omitempty"`
 	NaturalProgressStop  string                     `json:"natural_progress_stop,omitempty"`
+	ClosureCandidates    []FrontierActionRef        `json:"closure_candidates,omitempty"`
 	FinalTrace           controlruntime.Trace       `json:"final_trace"`
 	FinalRisk            semantic.RiskWitnessResult `json:"final_risk"`
 	Work                 ScenarioExecutionWork      `json:"work"`
@@ -140,7 +141,7 @@ func ExecuteBoundedScenarioPlan(
 ) (ScenarioExecution, error) {
 	return executeBoundedScenarioPlan(
 		ctx, executionID, plan, maxSteps, maxDecisions, maxDecisions, spec, rootRisk, root,
-		runtimeConfig, faultEnvelope, newAdapter, projector, nil, nil, nil,
+		runtimeConfig, faultEnvelope, newAdapter, projector, nil, nil, nil, nil,
 		naturalProgressLimit, preparers...,
 	)
 }
@@ -169,7 +170,7 @@ func ExecuteSemanticBoundedScenarioPlan(
 	return executeSemanticBoundedScenarioPlanWithClosureContext(
 		ctx, executionID, plan, maxSteps, maxDecisions, maxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
-		closureFactory, nil, naturalProgressLimit, preparers...,
+		closureFactory, nil, nil, naturalProgressLimit, preparers...,
 	)
 }
 
@@ -190,6 +191,7 @@ func executeSemanticBoundedScenarioPlanWithClosureContext(
 	semanticProjector ScenarioSemanticProjector,
 	closureFactory ScenarioClosureFactory,
 	inheritedIntervention *FrontierChoice,
+	inheritedClosureChoices []FrontierChoice,
 	naturalProgressLimit int,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
@@ -199,7 +201,8 @@ func executeSemanticBoundedScenarioPlanWithClosureContext(
 	return executeBoundedScenarioPlan(
 		ctx, executionID, plan, maxSteps, maxDecisions, closureMaxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
-		closureFactory, inheritedIntervention, naturalProgressLimit, preparers...,
+		closureFactory, inheritedIntervention, inheritedClosureChoices,
+		naturalProgressLimit, preparers...,
 	)
 }
 
@@ -220,6 +223,7 @@ func executeBoundedScenarioPlan(
 	semanticProjector ScenarioSemanticProjector,
 	closureFactory ScenarioClosureFactory,
 	inheritedIntervention *FrontierChoice,
+	inheritedClosureChoices []FrontierChoice,
 	naturalProgressLimit int,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
@@ -283,6 +287,12 @@ func executeBoundedScenarioPlan(
 		return nil
 	}
 	var activeClosureSelector ScenarioClosureSelector
+	closureExecuted := func() []FrontierChoice {
+		values := cloneScenarioFrontierChoices(inheritedClosureChoices)
+		values = append(values, scenarioFeedbackChoices(result.Steps)...)
+		values = append(values, scenarioFeedbackChoices(result.AutomaticProgress)...)
+		return values
+	}
 	closureSelector := func() (ScenarioClosureSelector, error) {
 		if activeClosureSelector != nil {
 			return activeClosureSelector, nil
@@ -300,6 +310,7 @@ func executeBoundedScenarioPlan(
 		selector, active, factoryErr := closureFactory(ScenarioClosureContext{
 			Spec: spec, Risk: result.FinalRisk, Trace: result.FinalTrace,
 			Intervention: intervention,
+			Executed:     closureExecuted(),
 		})
 		if factoryErr != nil {
 			return nil, factoryErr
@@ -375,7 +386,7 @@ func executeBoundedScenarioPlan(
 					})
 					break
 				}
-				action, ok, stopReason, stopFrontier, closureErr := scenarioClosureAction(view, selector)
+				action, ok, stopReason, stopFrontier, closureCandidates, closureErr := scenarioClosureAction(view, selector)
 				if closureErr != nil {
 					return ScenarioExecution{}, closeWith(closureErr)
 				}
@@ -386,8 +397,8 @@ func executeBoundedScenarioPlan(
 					if stopReason == ScenarioProgressClosureUnderdetermined {
 						reason = ScenarioReasonMilestoneWaitClosureUnderdetermined
 					}
-					available := []FrontierActionRef(nil)
-					if stopFrontier != nil {
+					available := cloneFrontierActionRefs(closureCandidates)
+					if len(available) == 0 && stopFrontier != nil {
 						available = cloneFrontierActionRefs(stopFrontier.Actions)
 					}
 					result.Steps = append(result.Steps, ScenarioStepFeedback{
@@ -604,6 +615,7 @@ func executeBoundedScenarioPlan(
 			)
 			addScenarioPhase(&result.Work.ChildMaterialization, live.Work.ChildMaterialization)
 			result.NaturalProgressStop = live.StopReason
+			result.ClosureCandidates = cloneFrontierActionRefs(live.ClosureCandidates)
 			result.AutomaticProgress = append(result.AutomaticProgress, live.Steps...)
 			result.FinalTrace, result.FinalRisk = live.FinalTrace, live.FinalRisk
 			if liveErr != nil {
@@ -674,10 +686,37 @@ func latestScenarioExecutionClosureIntervention(execution *ScenarioExecution) *F
 	return &choice
 }
 
+func scenarioExecutionClosureChoices(execution *ScenarioExecution) []FrontierChoice {
+	if execution == nil {
+		return nil
+	}
+	result := scenarioFeedbackChoices(execution.Steps)
+	result = append(result, scenarioFeedbackChoices(execution.AutomaticProgress)...)
+	return result
+}
+
 func cloneScenarioFrontierChoice(choice FrontierChoice) FrontierChoice {
 	action := cloneFrontierActionRefs([]FrontierActionRef{choice.Action})
 	choice.Action = action[0]
 	return choice
+}
+
+func cloneScenarioFrontierChoices(choices []FrontierChoice) []FrontierChoice {
+	result := make([]FrontierChoice, len(choices))
+	for index, choice := range choices {
+		result[index] = cloneScenarioFrontierChoice(choice)
+	}
+	return result
+}
+
+func scenarioFeedbackChoices(steps []ScenarioStepFeedback) []FrontierChoice {
+	result := make([]FrontierChoice, 0, len(steps))
+	for _, step := range steps {
+		if step.Outcome == ScenarioStepApplied && step.Choice != nil {
+			result = append(result, cloneScenarioFrontierChoice(*step.Choice))
+		}
+	}
+	return result
 }
 
 func scenarioSpecHasMilestone(spec semantic.RiskWitnessSpec, id string) bool {

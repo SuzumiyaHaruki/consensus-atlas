@@ -79,12 +79,20 @@ func auditOfficialModule(t *testing.T) determinismAudit {
 	}
 	var module struct {
 		Path, Version, Sum, Dir string
-		Replace                 *json.RawMessage
+		Replace                 *struct {
+			Path string
+			Dir  string
+		}
 	}
 	if err := json.Unmarshal(encoded, &module); err != nil {
 		t.Fatal(err)
 	}
-	if module.Path != modulePath || module.Version != moduleVersion || module.Sum != moduleSum || module.Replace != nil {
+	wantDir, err := filepath.Abs("../../suts/hashicorpraft")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if module.Path != modulePath || module.Version != moduleVersion || module.Sum != "" || module.Replace == nil ||
+		module.Replace.Path != "./suts/hashicorpraft" || module.Replace.Dir != wantDir || module.Dir != wantDir {
 		t.Fatalf("unexpected module identity: %+v", module)
 	}
 

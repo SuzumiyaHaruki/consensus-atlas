@@ -13,7 +13,7 @@ const (
 	adapterID       = "official-etcdraft-v2alpha1"
 	implementation  = "go.etcd.io/raft/v3"
 	implementationV = "v3.6.0"
-	defaultBuildID  = "go.etcd.io/raft/v3@v3.6.0"
+	defaultBuildID  = "local-source-unsealed:etcdraft"
 
 	evidenceSchema = "consensus-atlas/etcdraft-v2-evidence/v2"
 	readySchema    = "consensus-atlas/etcdraft-v2-ready-effect/v1"
@@ -23,6 +23,12 @@ const (
 
 	effectReadyPersist = "raft-ready-persist"
 	effectReadyAdvance = "raft-ready-advance"
+
+	// MaxStaticNodes bounds compact and explicit membership before any slice
+	// allocation. Larger experiments need a separately reviewed Runtime and
+	// conformance budget instead of turning a small JSON integer into an
+	// unbounded trusted-side allocation.
+	MaxStaticNodes = 64
 )
 
 // These are the official raftpb MessageType names for the pinned etcd/raft
@@ -37,8 +43,10 @@ var messageTypeHints = []string{
 
 var messageMetadataKeys = []string{"commit", "index", "term"}
 
-// SUTBuildIdentity is replaced only by the audited source-variation builder.
-// The official in-process control retains defaultBuildID byte-for-byte.
+// SUTBuildIdentity is replaced by the audited SUT builder for formal runs.
+// Ordinary in-process builds intentionally identify themselves as unsealed:
+// go.mod resolves the editable local checkout, which may differ from its
+// pinned submodule commit before the user records that change in Git.
 var SUTBuildIdentity = defaultBuildID
 
 type NodeConfig struct {
@@ -47,7 +55,12 @@ type NodeConfig struct {
 }
 
 type Config struct {
-	Nodes         []NodeConfig `json:"nodes"`
+	// NodeCount is the compact authoring form for the conventional static
+	// membership n1..nN with matching Raft IDs 1..N. Nodes remains available
+	// for targets that need explicit names or Raft IDs. The two forms are
+	// intentionally mutually exclusive.
+	NodeCount     int          `json:"node_count,omitempty"`
+	Nodes         []NodeConfig `json:"nodes,omitempty"`
 	ElectionTick  int          `json:"election_tick"`
 	HeartbeatTick int          `json:"heartbeat_tick"`
 }
@@ -72,15 +85,22 @@ func ThreeNodeConfig() Config {
 }
 
 func (config Config) validate() error {
-	if len(config.Nodes) == 0 {
+	if config.NodeCount < 0 || config.NodeCount > MaxStaticNodes || len(config.Nodes) > MaxStaticNodes {
+		return fmt.Errorf("ETCDRAFT_V2_NODE_COUNT_INVALID")
+	}
+	if config.NodeCount > 0 && len(config.Nodes) > 0 {
+		return fmt.Errorf("ETCDRAFT_V2_NODE_CONFIG_AMBIGUOUS")
+	}
+	resolved := config.resolved()
+	if len(resolved.Nodes) == 0 {
 		return fmt.Errorf("ETCDRAFT_V2_NODES_REQUIRED")
 	}
-	if config.ElectionTick <= config.HeartbeatTick || config.HeartbeatTick <= 0 {
+	if resolved.ElectionTick <= resolved.HeartbeatTick || resolved.HeartbeatTick <= 0 {
 		return fmt.Errorf("ETCDRAFT_V2_TICK_CONFIG_INVALID")
 	}
-	names := make(map[control.NodeID]struct{}, len(config.Nodes))
-	ids := make(map[uint64]struct{}, len(config.Nodes))
-	for _, node := range config.Nodes {
+	names := make(map[control.NodeID]struct{}, len(resolved.Nodes))
+	ids := make(map[uint64]struct{}, len(resolved.Nodes))
+	for _, node := range resolved.Nodes {
 		if node.Node == "" || node.RaftID == 0 {
 			return fmt.Errorf("ETCDRAFT_V2_NODE_IDENTITY_REQUIRED")
 		}
@@ -96,9 +116,23 @@ func (config Config) validate() error {
 	return nil
 }
 
+func (config Config) resolved() Config {
+	resolved := config
+	if config.NodeCount > 0 {
+		resolved.Nodes = make([]NodeConfig, config.NodeCount)
+		for index := range resolved.Nodes {
+			resolved.Nodes[index] = NodeConfig{
+				Node: control.NodeID(fmt.Sprintf("n%d", index+1)), RaftID: uint64(index + 1),
+			}
+		}
+	}
+	resolved.NodeCount = 0
+	return resolved
+}
+
 func (config Config) normalized() Config {
-	normalized := config
-	normalized.Nodes = append([]NodeConfig(nil), config.Nodes...)
+	normalized := config.resolved()
+	normalized.Nodes = append([]NodeConfig(nil), normalized.Nodes...)
 	sort.Slice(normalized.Nodes, func(i, j int) bool {
 		return normalized.Nodes[i].Node < normalized.Nodes[j].Node
 	})

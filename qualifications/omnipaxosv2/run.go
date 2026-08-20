@@ -15,17 +15,22 @@ import (
 type Bundle = conformance.QualificationBundle
 
 func Run(ctx context.Context, workerPath string) (Bundle, error) {
-	if workerPath == "" {
+	return RunWithConfig(ctx, adapterv2.Config{WorkerPath: workerPath})
+}
+
+func RunWithConfig(ctx context.Context, adapterConfig adapterv2.Config) (Bundle, error) {
+	if adapterConfig.WorkerPath == "" || adapterConfig.ValidateNodeConfiguration() != nil {
 		return Bundle{}, errors.New("OMNIPAXOS_QUALIFICATION_WORKER_PATH_REQUIRED")
 	}
-	factory := func() control.Adapter {
-		adapter, err := adapterv2.New(adapterv2.Config{WorkerPath: workerPath})
+	baseFactory := func() control.Adapter {
+		adapter, err := adapterv2.New(adapterConfig)
 		if err != nil {
 			panic(err)
 		}
 		return adapter
 	}
-	manifestAdapter, err := adapterv2.New(adapterv2.Config{WorkerPath: workerPath})
+	factory, workMeter := conformance.MeterFactory(baseFactory)
+	manifestAdapter, err := adapterv2.New(adapterConfig)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -49,7 +54,7 @@ func Run(ctx context.Context, workerPath string) (Bundle, error) {
 	}
 	core, err := conformance.EvaluateCore(ctx, factory, conformance.CorePlan{
 		Seed:                 []byte("portable-v2-omnipaxos-core"),
-		ExpectedEntropyNodes: []control.NodeID{"n1", "n2", "n3"},
+		ExpectedEntropyNodes: adapterConfig.NodeIDs(),
 	})
 	if err != nil {
 		return Bundle{}, err
@@ -77,9 +82,14 @@ func Run(ctx context.Context, workerPath string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
+	work := workMeter.Snapshot()
+	if err := work.Validate(); err != nil {
+		return Bundle{}, err
+	}
 	return (Bundle{
 		SchemaVersion: conformance.QualificationBundleSchemaVersion,
 		Profile:       profile, Manifest: manifest, ConformanceReports: reports,
 		Unsupported: unsupported, Qualification: qualification,
+		Work: &work,
 	}).Seal()
 }

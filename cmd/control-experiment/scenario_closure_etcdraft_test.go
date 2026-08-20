@@ -234,9 +234,8 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if participants != (etcdraftAlternateQuorumParticipants{
-		Leader: "n1", DroppedFollower: "n2", Alternate: "n3",
-	}) {
+	if participants.Leader != "n1" || participants.DroppedFollower != "n2" ||
+		participants.Alternate != "n3" || participants.Term == "" || participants.ResponseIndex == 0 {
 		t.Fatalf("closure participants were not derived from the intervention: %#v", participants)
 	}
 	closed, err := controlexperiment.ExecuteScenarioNaturalProgressWithClosure(
@@ -652,6 +651,119 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 	}
 }
 
+func TestEtcdraftFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), controlExperimentTestTimeout(180*time.Second),
+	)
+	defer cancel()
+	inputs, err := prepareEtcdraftAgenticEpisode(
+		ctx, "", "../../plans/agent/etcdraft-agentic-five-node-v1.json",
+		fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
+	if err != nil || len(target.Surface.Nodes) != 5 {
+		t.Fatalf("prepare five-node target: nodes=%v err=%v", target.Surface.Nodes, err)
+	}
+	candidate := etcdraftAlternateQuorumRiskCandidate()
+	assessment, err := controlexperiment.AssessRiskCandidateForTarget(
+		target.Knowledge, candidate, target.ObservationProjector.Capabilities(),
+		target.Surface.Capabilities.ComposableActions, &target.Surface,
+	)
+	if err != nil || !assessment.Qualification.Qualified {
+		t.Fatalf("five-node Risk qualification: %#v/%v", assessment, err)
+	}
+	risk, err := controlexperiment.BuildScenarioRiskHypothesis(
+		target.Knowledge, assessment, target.ObservationProjector.Capabilities(),
+		target.Surface.Capabilities.ComposableActions, &target.Surface,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector, err := controlexperiment.NewLinearObservationRiskProjector(
+		risk.Spec, risk.Predicates, target.ObservationProjector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, err := target.ScenarioInputs(risk, projector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core.ClosureFactory = target.ClosureFactory
+	core.RootID = "etcdraft-five-node-agent-closure"
+	core.TargetSurface = &target.Surface
+	plannerCalls := 0
+	selectedTargets := make(map[control.NodeID]struct{})
+	scenario, err := runScenarioEpisodeCore(
+		ctx, core, 4, 5, 64,
+		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
+			[]byte, controlexperiment.ModelWork, error,
+		) {
+			plannerCalls++
+			proposal := controlexperiment.ScenarioInvestigationProposal{
+				Intent: controlexperiment.ScenarioIntentContinue,
+				Plan:   etcdraftAppendResponseInterventionPlan(),
+			}
+			if plannerCalls > 1 {
+				if view.Prior == nil ||
+					view.Prior.NaturalProgressStop != controlexperiment.ScenarioProgressClosureUnderdetermined ||
+					len(view.Prior.ClosureCandidates) < 2 {
+					t.Fatalf("five-node Agent did not receive narrow closure candidates: %#v", view.Prior)
+				}
+				var selected controlexperiment.FrontierActionRef
+				for _, action := range view.Prior.ClosureCandidates {
+					candidate := action.MessageTarget
+					if candidate == "" {
+						candidate = action.MessageSource.Node
+					}
+					if _, used := selectedTargets[candidate]; !used {
+						selected = action
+						selectedTargets[candidate] = struct{}{}
+						break
+					}
+				}
+				if selected.ActionID == "" {
+					t.Fatalf("no new quorum path in %#v", view.Prior.ClosureCandidates)
+				}
+				proposal.Intent = controlexperiment.ScenarioIntentRevise
+				proposal.Plan = controlexperiment.ScenarioPlan{
+					ID: fmt.Sprintf("choose-five-node-quorum-%d", plannerCalls-1),
+					Steps: []controlexperiment.ScenarioStep{{
+						ID:       fmt.Sprintf("choose-quorum-action-%d", plannerCalls-1),
+						Selector: controlexperiment.FrontierActionSelector{ActionID: selected.ActionID},
+					}},
+				}
+			}
+			encoded, marshalErr := json.Marshal(proposal)
+			return encoded, controlexperiment.ModelWork{
+				Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5,
+			}, marshalErr
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plannerCalls != 3 || len(selectedTargets) != 2 || scenario.Agent.Execution == nil ||
+		scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopRiskReached ||
+		scenario.Agent.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
+		t.Fatalf("five-node quorum closure did not complete: calls=%d selected=%v result=%#v",
+			plannerCalls, selectedTargets, scenario.Agent)
+	}
+	qualified, err := target.Execute(ctx, risk, projector, *scenario.Agent.Execution, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !qualified.Replay.Stable || len(qualified.Oracle.Violations) != 0 ||
+		len(qualified.Bundle.ClientHistory) != 1 ||
+		qualified.Bundle.ClientHistory[0].Response.RequestID != inputs.execution.workload.Invocations[0].ID ||
+		qualified.Bundle.ClientHistory[0].Response.Status != "committed" {
+		t.Fatalf("five-node closure evidence did not replay: %#v", qualified)
+	}
+}
+
 func etcdraftAlternateQuorumRisk() (
 	semantic.RiskWitnessSpec,
 	[]semantic.ObservationPredicate,
@@ -801,5 +913,71 @@ func TestEtcdraftAlternateQuorumClosureReportsAmbiguousFrontier(t *testing.T) {
 	if err != nil || selection.Status != controlexperiment.ScenarioClosureUnderdetermined ||
 		selection.Action.ActionID != "" {
 		t.Fatalf("ambiguous closure frontier = %#v/%v", selection, err)
+	}
+}
+
+func TestEtcdraftFiveNodeClosureRequiresExecutedQuorumChoices(t *testing.T) {
+	participants := etcdraftAlternateQuorumSet{
+		Leader: "n1", DroppedFollower: "n2",
+		Candidates: []control.NodeID{"n3", "n4", "n5"}, Required: 2,
+	}
+	actions := []controlexperiment.FrontierActionRef{
+		{ActionID: "to-n3", Kind: control.ActionDeliverMessage,
+			MessageSource: control.NodeRef{Node: "n1"}, MessageTarget: "n3", MessageTypeHint: "MsgApp"},
+		{ActionID: "to-n4", Kind: control.ActionDeliverMessage,
+			MessageSource: control.NodeRef{Node: "n1"}, MessageTarget: "n4", MessageTypeHint: "MsgApp"},
+		{ActionID: "to-n5", Kind: control.ActionDeliverMessage,
+			MessageSource: control.NodeRef{Node: "n1"}, MessageTarget: "n5", MessageTypeHint: "MsgApp"},
+	}
+	selection, err := etcdraftAlternateQuorumSetSelector(participants)(
+		controlexperiment.ActionFrontierView{Actions: actions},
+	)
+	if err != nil || selection.Status != controlexperiment.ScenarioClosureUnderdetermined ||
+		len(selection.Candidates) != 3 {
+		t.Fatalf("five-node closure hid quorum ambiguity: %#v/%v", selection, err)
+	}
+
+	selected, err := selectedEtcdraftClosureAlternates([]controlexperiment.FrontierChoice{
+		{Decision: 11, Action: actions[1]},
+	}, 10, participants)
+	if err != nil || !reflect.DeepEqual(selected, []control.NodeID{"n4"}) {
+		t.Fatalf("first executed quorum choice was not bound: %v/%v", selected, err)
+	}
+	participants.Selected = selected
+	selection, err = etcdraftAlternateQuorumSetSelector(participants)(
+		controlexperiment.ActionFrontierView{Actions: []controlexperiment.FrontierActionRef{
+			actions[0], actions[2],
+		}},
+	)
+	if err != nil || selection.Status != controlexperiment.ScenarioClosureUnderdetermined ||
+		len(selection.Candidates) != 2 {
+		t.Fatalf("remaining quorum alternatives were not exposed: %#v/%v", selection, err)
+	}
+	selected, err = selectedEtcdraftClosureAlternates([]controlexperiment.FrontierChoice{
+		{Decision: 11, Action: actions[1]}, {Decision: 12, Action: actions[2]},
+	}, 10, participants)
+	if err != nil || !reflect.DeepEqual(selected, []control.NodeID{"n4", "n5"}) {
+		t.Fatalf("executed quorum set was not bound: %v/%v", selected, err)
+	}
+}
+
+func TestEtcdraftClosureRejectsAnotherTermOrOldIndex(t *testing.T) {
+	participants := etcdraftAlternateQuorumSet{Term: "7", ResponseIndex: 9}
+	base := controlexperiment.FrontierActionRef{
+		Kind: control.ActionDeliverMessage, MessageTypeHint: "MsgAppResp",
+		MessageMetadata: map[string]string{"term": "7", "index": "9"},
+	}
+	if !etcdraftClosureMessageCausallyMatches(base, participants) {
+		t.Fatal("matching term/index was rejected")
+	}
+	wrongTerm := base
+	wrongTerm.MessageMetadata = map[string]string{"term": "8", "index": "9"}
+	if etcdraftClosureMessageCausallyMatches(wrongTerm, participants) {
+		t.Fatal("another term entered the active closure")
+	}
+	oldIndex := base
+	oldIndex.MessageMetadata = map[string]string{"term": "7", "index": "7"}
+	if etcdraftClosureMessageCausallyMatches(oldIndex, participants) {
+		t.Fatal("an old same-term response entered the request-adjacent closure")
 	}
 }

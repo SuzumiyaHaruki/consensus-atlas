@@ -2,6 +2,7 @@ package defectbench
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
@@ -15,7 +16,7 @@ import (
 func TestAgenticHoldoutRecomputesVerdictsFromCompletedEpisodeBundles(t *testing.T) {
 	contract, exposure, evidence := agenticHoldoutFixture(t)
 	report, err := EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -27,15 +28,24 @@ func TestAgenticHoldoutRecomputesVerdictsFromCompletedEpisodeBundles(t *testing.
 	if report.Summary != want || len(report.Results) != 6 || len(report.Pairs) != 3 {
 		t.Fatalf("agentic holdout summary = %#v", report)
 	}
+	if report.ReplayAuthority != AgenticReplayAuthorityEvaluatorOwned {
+		t.Fatalf("Agentic Replay trust boundary is missing: %#v", report)
+	}
 	for _, result := range report.Results {
 		wantStatus := BundleStatusSurvived
 		if result.Result.Kind == BundleKindControl {
 			wantStatus = BundleStatusControlPass
 		}
 		if result.Result.Status != wantStatus || result.Result.Finding != nil ||
+			result.ReplayAuthority != report.ReplayAuthority ||
 			result.Result.Oracle.Violations != nil && len(result.Result.Oracle.Violations) != 0 {
 			t.Fatalf("method-reported finding affected trusted result: %#v", result)
 		}
+	}
+	tampered := report
+	tampered.ReplayAuthority = "evaluator-owned"
+	if tampered.Validate() == nil {
+		t.Fatal("Agentic report accepted a false Replay authority")
 	}
 }
 
@@ -47,7 +57,7 @@ func TestAgenticHoldoutClassifiesIncompleteEpisodeAsInvalidTrial(t *testing.T) {
 	incomplete.Bundle, incomplete.CandidateBundles = nil, nil
 	evidence[trialID] = incomplete
 	report, err := EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +86,27 @@ func TestAgenticHoldoutChargesSearchModelAndMethodIdentity(t *testing.T) {
 	}
 	evidence[trialID] = highSearch
 	report, err := EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAgenticInvalidReason(
+		t, report, trialID, "AGENTIC_HOLDOUT_AGGREGATE_BUDGET_EXCEEDED",
+	)
+
+	highQualification := original
+	highQualification.Preparation = controlexperiment.AgenticPreparationWork{
+		WallClockMS: 1,
+		Qualification: controlexperiment.PhaseWork{
+			SetupAttempts:          contract.Budget.MaxPrimaryWorkUnits,
+			RuntimeInitializations: contract.Budget.MaxPrimaryWorkUnits,
+			WorkUnits:              contract.Budget.MaxPrimaryWorkUnits,
+		},
+	}
+	evidence[trialID] = highQualification
+	report, err = EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +124,7 @@ func TestAgenticHoldoutChargesSearchModelAndMethodIdentity(t *testing.T) {
 		highSearchReplay.ScenarioSearch.ChildVerification.WorkUnits
 	evidence[trialID] = highSearchReplay
 	report, err = EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +145,7 @@ func TestAgenticHoldoutChargesSearchModelAndMethodIdentity(t *testing.T) {
 	}
 	evidence[trialID] = overModel
 	report, err = EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +160,7 @@ func TestAgenticHoldoutChargesSearchModelAndMethodIdentity(t *testing.T) {
 	otherMethod.Bundle = &otherBundle
 	evidence[trialID] = otherMethod
 	report, err = EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +224,7 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 	evidence[findingID] = withBranch
 
 	report, err := EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{},
 		digestFindingMonitor{digest: branchBundle.Digest},
 	)
 	if err != nil {
@@ -226,7 +256,7 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 	}
 	evidence[findingID] = withBranch
 	report, err = EvaluateAgenticHoldoutBundles(
-		contract, exposure, evidence, etcdraftv2.DecisionProjector{},
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{},
 		digestFindingMonitor{digest: branchBundle.Digest},
 	)
 	if err != nil {
@@ -334,6 +364,7 @@ func agenticHoldoutFixture(
 				MethodSpec: methodSpec, EpisodeCount: 1,
 				EpisodeStatus: AgenticEpisodeCompleted, EvidenceStatus: "oracle-finding",
 				Budget: budget, ModelWork: controlexperiment.ModelWork{}, Bundle: &copyBundle,
+				Preparation: controlexperiment.AgenticPreparationWork{WallClockMS: 1},
 			}
 		}
 	}
@@ -373,7 +404,7 @@ func agenticHoldoutTestMethodSpec(
 			MaxRiskCalls: 3, MaxScenarioCalls: 3, MaxTotalCalls: episodeBudget.MaxModelCalls,
 			MaxObservedTokens: episodeBudget.MaxModelTokens, MaxScenarioPlanSteps: 4,
 			MaxRuntimeDecisions: episodeBudget.MaxPrimarySchedulerDecisions,
-			SessionWallClockMS:  600_000,
+			SessionWallClockMS:  600_000, PreparationWallClockMS: 600_000,
 		},
 		InvestigationEpisodes: episodes, EpisodeBudget: episodeBudget, InvestigationBudget: total,
 	})
@@ -440,5 +471,22 @@ func agenticHoldoutTestBundle(
 	if err != nil {
 		t.Fatal(err)
 	}
+	targetConfig, err := json.Marshal(etcdraftv2.ThreeNodeConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err = bundle.WithExecutionRecipe(controlexperiment.ExecutionRecipe{
+		TargetID: "etcdraft-v2", Config: config, TargetConfig: targetConfig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return bundle
+}
+
+func agenticReplayFixture(
+	_ string,
+	bundle controlexperiment.ExecutionBundle,
+) (controlexperiment.ExecutionBundle, error) {
+	return bundle, nil
 }

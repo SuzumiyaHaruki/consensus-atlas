@@ -3,6 +3,7 @@ package defectbench
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -12,22 +13,28 @@ import (
 )
 
 const (
-	// v2 records the formal method identity and evaluates complete Agentic
-	// search, model and qualified-execution cost. Keeping the old v1 label
-	// would make reports with materially different accounting semantics
-	// indistinguishable to downstream readers.
-	AgenticHoldoutEvaluationSchemaVersion = "consensus-atlas/agentic-holdout-evaluation/v2"
+	// v4 requires evaluator-owned SUT replay. Historical v3 reports only
+	// recorded which side claimed Replay authority and remain read-only data.
+	AgenticHoldoutEvaluationSchemaVersion = "consensus-atlas/agentic-holdout-evaluation/v4"
 
 	AgenticEpisodeCompleted       = "completed"
 	AgenticEpisodeRiskStopped     = "risk-agent-stopped"
 	AgenticEpisodeScenarioStopped = "scenario-agent-stopped"
 	AgenticEpisodeTokenStopped    = "model-token-threshold-reached"
 	AgenticEpisodeExecutionFailed = "execution-failed"
+
+	AgenticReplayAuthorityEvaluatorOwned = "evaluator-owned-sut-replay"
 )
 
+type AgenticReplayRunner func(
+	trialID string,
+	bundle controlexperiment.ExecutionBundle,
+) (controlexperiment.ExecutionBundle, error)
+
 // AgenticTrialEvidence is the narrow evaluator projection of one Episode.
-// EpisodeStatus, EvidenceStatus and ModelWork are method-reported explanatory
-// data. Only the evaluator's projector and monitors may determine Result.
+// EpisodeStatus and EvidenceStatus are method-reported explanatory data.
+// The CLI reconstructs ModelWork from the durable provider-call journals;
+// only the evaluator's projector and monitors may determine Result.
 type AgenticTrialEvidence struct {
 	TargetID              string
 	MethodSpecDigest      string
@@ -42,17 +49,22 @@ type AgenticTrialEvidence struct {
 	ModelWork             controlexperiment.ModelWork
 	ScenarioFrontier      controlexperiment.PhaseWork
 	ScenarioSearch        controlexperiment.ScenarioExecutionWork
+	Preparation           controlexperiment.AgenticPreparationWork
+	DecisionProvenance    controlexperiment.AgenticDecisionProvenance
 	Bundle                *controlexperiment.ExecutionBundle
 	CandidateBundles      []controlexperiment.ExecutionBundle
 }
 
 type AgenticHoldoutTrialResult struct {
-	TrialID        string                      `json:"trial_id"`
-	TargetID       string                      `json:"target_id"`
-	EpisodeStatus  string                      `json:"episode_status"`
-	EvidenceStatus string                      `json:"reported_evidence_status"`
-	ModelWork      controlexperiment.ModelWork `json:"model_work"`
-	Result         BundleTrialResult           `json:"trusted_result"`
+	TrialID               string                                      `json:"trial_id"`
+	TargetID              string                                      `json:"target_id"`
+	EpisodeStatus         string                                      `json:"episode_status"`
+	EvidenceStatus        string                                      `json:"reported_evidence_status"`
+	ModelWork             controlexperiment.ModelWork                 `json:"model_work"`
+	ReplayAuthority       string                                      `json:"replay_authority"`
+	ScenarioDecisionsUsed int                                         `json:"scenario_decisions_used"`
+	DecisionProvenance    controlexperiment.AgenticDecisionProvenance `json:"decision_provenance"`
+	Result                BundleTrialResult                           `json:"trusted_result"`
 }
 
 type AgenticHoldoutEvaluation struct {
@@ -62,22 +74,27 @@ type AgenticHoldoutEvaluation struct {
 	MethodSpecDigest    string                      `json:"method_spec_digest"`
 	ExposureAuditDigest string                      `json:"exposure_audit_digest"`
 	TargetID            string                      `json:"target_id"`
+	ReplayAuthority     string                      `json:"replay_authority"`
 	Pairs               []FormalPairEvaluation      `json:"pairs"`
 	Results             []AgenticHoldoutTrialResult `json:"results"`
 	Summary             FormalEvaluationSummary     `json:"summary"`
 }
 
-// EvaluateAgenticHoldoutBundles consumes already-produced Agentic artifacts.
-// It does not execute a second search method. The existing formal contract
-// supplies private pairing, budget, build identity and monitor composition;
-// the existing Bundle evaluator recomputes every verdict.
+// EvaluateAgenticHoldoutBundles consumes Agentic search artifacts but never
+// trusts their recorded Replay as the final execution authority. The supplied
+// private runner starts the trial SUT and executes each sealed recipe again;
+// projection and Oracle evaluation consume only that fresh Bundle.
 func EvaluateAgenticHoldoutBundles(
 	contract FormalBenchmarkContract,
 	exposure FormalExposureAudit,
 	evidence map[string]AgenticTrialEvidence,
+	replay AgenticReplayRunner,
 	projector semantic.DecisionProjector,
 	registeredMonitors ...oracle.BundleMonitor,
 ) (AgenticHoldoutEvaluation, error) {
+	if replay == nil {
+		return AgenticHoldoutEvaluation{}, errors.New("AGENTIC_HOLDOUT_REPLAY_RUNNER_REQUIRED")
+	}
 	monitors, err := admitAgenticHoldoutEvaluation(
 		contract, exposure, projector, registeredMonitors...,
 	)
@@ -101,6 +118,7 @@ func EvaluateAgenticHoldoutBundles(
 		BenchmarkID:   contract.ID, ContractDigest: contract.Digest,
 		MethodSpecDigest:    contract.MethodSpecDigest,
 		ExposureAuditDigest: exposure.Digest, TargetID: targetID,
+		ReplayAuthority: AgenticReplayAuthorityEvaluatorOwned,
 	}
 	budget := BundleBenchmark{Budget: contract.Budget}
 	trusted := make([]BundleTrialResult, 0, len(evidence))
@@ -125,13 +143,16 @@ func EvaluateAgenticHoldoutBundles(
 			}
 			variant := formalBundleVariant(input.variant, input.kind, input.root)
 			result := evaluateAgenticHoldoutTrial(
-				contract, budget, variant, current, projector, monitors,
+				contract, budget, variant, current, replay, projector, monitors,
 			)
 			trusted = append(trusted, result)
 			report.Results = append(report.Results, AgenticHoldoutTrialResult{
 				TrialID: input.variant.TrialID, TargetID: current.TargetID,
 				EpisodeStatus: current.EpisodeStatus, EvidenceStatus: current.EvidenceStatus,
-				ModelWork: current.ModelWork, Result: result,
+				ModelWork:             current.ModelWork,
+				ScenarioDecisionsUsed: current.ScenarioDecisionsUsed,
+				DecisionProvenance:    current.DecisionProvenance,
+				ReplayAuthority:       AgenticReplayAuthorityEvaluatorOwned, Result: result,
 			})
 		}
 	}
@@ -179,6 +200,7 @@ func evaluateAgenticHoldoutTrial(
 	budget BundleBenchmark,
 	variant BundleVariant,
 	evidence AgenticTrialEvidence,
+	replay AgenticReplayRunner,
 	projector semantic.DecisionProjector,
 	monitors []oracle.BundleMonitor,
 ) BundleTrialResult {
@@ -196,6 +218,9 @@ func evaluateAgenticHoldoutTrial(
 	}
 	if !validAgenticTrialEvidence(evidence) {
 		return invalid("AGENTIC_HOLDOUT_EPISODE_METADATA_INVALID")
+	}
+	if evidence.DecisionProvenance.Validate(evidence.ScenarioDecisionsUsed) != nil {
+		return invalid("AGENTIC_HOLDOUT_DECISION_PROVENANCE_INVALID")
 	}
 	if evidence.EpisodeStatus != AgenticEpisodeCompleted {
 		if len(bundles) != 0 {
@@ -231,15 +256,53 @@ func evaluateAgenticHoldoutTrial(
 		evidence.ScenarioSearch.ChildMaterialization.SchedulerDecisions {
 		return invalid("AGENTIC_HOLDOUT_SEARCH_WORK_INVALID")
 	}
+	if evidence.Preparation.Validate() != nil ||
+		evidence.MethodSpec.EpisodeLimits.PreparationWallClockMS <= 0 ||
+		evidence.Preparation.WallClockMS > evidence.MethodSpec.EpisodeLimits.PreparationWallClockMS {
+		return invalid("AGENTIC_HOLDOUT_PREPARATION_WORK_INVALID")
+	}
+	var preparationOK bool
+	searchDecisions, preparationOK = addAgenticPreparationWork(
+		searchDecisions, evidence.Preparation.Qualification.SchedulerDecisions,
+	)
+	if preparationOK {
+		searchPrimary, preparationOK = addAgenticPreparationWork(
+			searchPrimary, evidence.Preparation.Qualification.WorkUnits,
+		)
+	}
+	if !preparationOK {
+		return invalid("AGENTIC_HOLDOUT_PREPARATION_WORK_INVALID")
+	}
+	searchDecisions, preparationOK = addAgenticPreparationWork(
+		searchDecisions, evidence.Preparation.Root.Primary.SchedulerDecisions,
+	)
+	if preparationOK {
+		searchPrimary, preparationOK = addAgenticPreparationWork(
+			searchPrimary, evidence.Preparation.Root.Primary.WorkUnits,
+		)
+	}
+	if preparationOK {
+		searchReplay, preparationOK = addAgenticPreparationWork(
+			searchReplay, evidence.Preparation.Root.Replay.WorkUnits,
+		)
+	}
+	if !preparationOK {
+		return invalid("AGENTIC_HOLDOUT_PREPARATION_WORK_INVALID")
+	}
 	results := make([]BundleTrialResult, 0, len(bundles))
 	for _, bundle := range bundles {
 		if bundle.SchemaVersion != contract.RequiredBundleSchema ||
 			bundle.Qualification.Profile.Digest != contract.ProfileDigest ||
-			bundle.Identity.MethodSpecDigest != contract.MethodSpecDigest {
+			bundle.Identity.MethodSpecDigest != contract.MethodSpecDigest || bundle.Recipe == nil ||
+			bundle.Recipe.TargetID != evidence.TargetID {
 			return invalid("AGENTIC_HOLDOUT_BUNDLE_CONTRACT_MISMATCH")
 		}
+		fresh, err := replay(variant.TrialID, bundle)
+		if err != nil || !sameAgenticReplayEvidence(bundle, fresh) {
+			return invalid("AGENTIC_HOLDOUT_EVALUATOR_REPLAY_MISMATCH")
+		}
 		result := evaluateBundleVariantWithMonitors(
-			budget, variant, bundle, projector, monitors,
+			budget, variant, fresh, projector, monitors,
 		)
 		results = append(results, result)
 	}
@@ -278,6 +341,20 @@ func evaluateAgenticHoldoutTrial(
 	result := results[0]
 	result.Decisions, result.PrimaryWork, result.ReplayWork = totalDecisions, totalPrimary, totalReplay
 	return result
+}
+
+func sameAgenticReplayEvidence(
+	source, fresh controlexperiment.ExecutionBundle,
+) bool {
+	return source.Validate() == nil && fresh.Validate() == nil && source.Recipe != nil && fresh.Recipe != nil &&
+		fresh.SchemaVersion == source.SchemaVersion && fresh.Identity == source.Identity &&
+		fresh.Trace.Digest == source.Trace.Digest && len(fresh.Trace.Records) == len(source.Trace.Records) &&
+		reflect.DeepEqual(fresh.Recipe, source.Recipe) &&
+		reflect.DeepEqual(fresh.Qualification, source.Qualification)
+}
+
+func addAgenticPreparationWork(left, right int) (int, bool) {
+	return safeAgenticAdd(left, right)
 }
 
 func agenticSearchWork(evidence AgenticTrialEvidence) (int, int, int, bool) {
@@ -413,13 +490,17 @@ func (report AgenticHoldoutEvaluation) Validate() error {
 		!validBundleID(report.BenchmarkID) || !bundleDigestValid(report.ContractDigest) ||
 		!bundleDigestValid(report.MethodSpecDigest) ||
 		!bundleDigestValid(report.ExposureAuditDigest) || strings.TrimSpace(report.TargetID) == "" ||
+		report.ReplayAuthority != AgenticReplayAuthorityEvaluatorOwned ||
 		len(report.Pairs) < 3 || len(report.Results) != len(report.Pairs)*2 {
 		return errors.New("AGENTIC_HOLDOUT_EVALUATION_INVALID")
 	}
 	trusted := make([]BundleTrialResult, 0, len(report.Results))
 	seen := make(map[string]bool, len(report.Results))
 	for _, current := range report.Results {
+		_, provenanceOK := current.DecisionProvenance.Total()
 		if !validBundleID(current.TrialID) || seen[current.TrialID] || current.TargetID != report.TargetID ||
+			current.ReplayAuthority != report.ReplayAuthority ||
+			!provenanceOK || current.DecisionProvenance.Validate(current.ScenarioDecisionsUsed) != nil ||
 			current.TrialID != current.Result.TrialID || !validAgenticTrialMetadata(
 			current.TargetID, current.EpisodeStatus, current.EvidenceStatus, current.ModelWork,
 		) {

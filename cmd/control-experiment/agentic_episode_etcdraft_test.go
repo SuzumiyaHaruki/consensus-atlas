@@ -17,6 +17,26 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
+func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.T) {
+	target := agenticEpisodeTarget{
+		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
+		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(7),
+	}
+	if target.ClosureMinimumScenarioCalls != 4 {
+		t.Fatalf("seven-node lower bound = %d, want 4", target.ClosureMinimumScenarioCalls)
+	}
+	if err := validateClosureCallBudget(target, agenticEpisodeBudget{MaxScenarioCalls: 3}); err == nil || err.Error() != "AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_CALL_BUDGET_INSUFFICIENT" {
+		t.Fatalf("insufficient target-local budget accepted: %v", err)
+	}
+	target.ClosureFactory = nil
+	if err := validateClosureCallBudget(target, agenticEpisodeBudget{MaxScenarioCalls: 3}); err != nil {
+		t.Fatalf("public-fixed inherited closure lower bound: %v", err)
+	}
+	if got := closureScenarioCallLowerBound(3); got != 1 {
+		t.Fatalf("three-node lower bound = %d, want 1", got)
+	}
+}
+
 func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
@@ -56,13 +76,13 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	}
 	transport := composition.Client.freeze()
 	if composition.Target.ID != "etcdraft-v2" ||
-		composition.Target.ClosureFactory == nil ||
+		composition.Target.ClosureFactory != nil ||
 		composition.MethodSpec.Validate() != nil ||
 		composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
 		composition.MethodSpec.InvestigationEpisodes != 1 ||
 		composition.MethodSpec.Transport.Model != openRouterFixtureModel ||
 		composition.MethodSpec.SemanticInputSchema != etcdraftSemanticInputSchema ||
-		composition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModeTargetLocal ||
+		composition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModePublicFixed ||
 		composition.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputAgentGenerated ||
 		composition.MethodSpec.RiskInputDigest != "" || composition.ExistingRisk != nil ||
 		composition.MethodSpec.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||
@@ -88,7 +108,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	publicComposition, err := prepareAgenticEpisodeComposition(ctx, publicOptions)
 	if err != nil || publicComposition.Target.ClosureFactory != nil ||
 		publicComposition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModePublicFixed ||
-		publicComposition.MethodSpec.Digest == composition.MethodSpec.Digest {
+		publicComposition.MethodSpec.Digest != composition.MethodSpec.Digest {
 		t.Fatalf("public-fixed arm was not mechanically bound: %#v/%v",
 			publicComposition.MethodSpec, err)
 	}
@@ -151,7 +171,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		t.Fatalf("composition accepted substituted existing Risk content: %v", err)
 	}
 	tamperedClosure := composition
-	tamperedClosure.Target.ClosureFactory = nil
+	tamperedClosure.Target.ClosureFactory = newEtcdraftScenarioClosureFactory()
 	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
 		Directory:    filepath.Join(t.TempDir(), "closure-mode-mismatch"),
 		AgentKeyFile: "fixture-key.txt",

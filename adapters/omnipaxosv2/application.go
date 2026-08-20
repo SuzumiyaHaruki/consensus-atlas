@@ -73,9 +73,8 @@ func ProjectClientResult(response control.ClientResponse) (ClientResult, error) 
 	if err := json.Unmarshal(response.Payload.Bytes, &decision); err != nil {
 		return ClientResult{}, err
 	}
-	node, nodeOK := nodeNames[decision.Node]
-	origin, originOK := nodeNames[decision.Origin]
-	if !nodeOK || !originOK || decision.Index == 0 || decision.RequestID == "" ||
+	node, origin := nodeName(decision.Node), nodeName(decision.Origin)
+	if node == "" || origin == "" || decision.Index == 0 || decision.RequestID == "" ||
 		node != origin || response.Status != "decided" || response.RequestID != decision.RequestID ||
 		response.Owner.Validate() != nil || response.Owner.Node != origin {
 		return ClientResult{}, errors.New("OMNIPAXOS_CLIENT_RESULT_IDENTITY_MISMATCH")

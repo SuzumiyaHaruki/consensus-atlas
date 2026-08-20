@@ -13,10 +13,22 @@ import (
 type Bundle = conformance.QualificationBundle
 
 func Run(ctx context.Context) (Bundle, error) {
-	factory := func() control.Adapter {
-		return adapterv2.NewAdapter()
+	return RunWithConfig(ctx, adapterv2.Config{})
+}
+
+func RunWithConfig(ctx context.Context, adapterConfig adapterv2.Config) (Bundle, error) {
+	baseFactory := func() control.Adapter {
+		adapter, err := adapterv2.NewWithConfig(adapterConfig)
+		if err != nil {
+			panic(err)
+		}
+		return adapter
 	}
-	manifestAdapter := adapterv2.NewAdapter()
+	factory, workMeter := conformance.MeterFactory(baseFactory)
+	manifestAdapter, err := adapterv2.NewWithConfig(adapterConfig)
+	if err != nil {
+		return Bundle{}, err
+	}
 	manifest, err := manifestAdapter.Manifest(ctx)
 	closeErr := manifestAdapter.Close()
 	if err != nil {
@@ -58,9 +70,14 @@ func Run(ctx context.Context) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
+	work := workMeter.Snapshot()
+	if err := work.Validate(); err != nil {
+		return Bundle{}, err
+	}
 	return (Bundle{
 		SchemaVersion: conformance.QualificationBundleSchemaVersion,
 		Profile:       profile, Manifest: manifest, ConformanceReports: reports,
 		Unsupported: unsupported, Qualification: qualification,
+		Work: &work,
 	}).Seal()
 }

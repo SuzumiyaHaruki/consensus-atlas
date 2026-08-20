@@ -23,16 +23,27 @@ func main() {
 func run() error {
 	repoPath := flag.String("repo", ".", "ConsensusAtlas repository root")
 	specPath := flag.String("spec", "", "controlled SUT build spec v1")
+	cargoSpecPath := flag.String("cargo-spec", "", "controlled Cargo worker build spec v1")
 	auditPath := flag.String("audit-out", "", "build audit output")
 	flag.Parse()
-	if *specPath == "" || *auditPath == "" {
-		return errors.New("-spec and -audit-out are required")
+	if (*specPath == "") == (*cargoSpecPath == "") || *auditPath == "" {
+		return errors.New("exactly one of -spec or -cargo-spec and -audit-out are required")
 	}
-	var spec sutbuild.Spec
-	if err := readStrictJSON(*specPath, &spec); err != nil {
-		return err
+	var audit sutbuild.Audit
+	var err error
+	if *cargoSpecPath != "" {
+		var spec sutbuild.CargoSpec
+		if err := readStrictJSON(*cargoSpecPath, &spec); err != nil {
+			return err
+		}
+		audit, err = sutbuild.BuildCargo(*repoPath, spec)
+	} else {
+		var spec sutbuild.Spec
+		if err := readStrictJSON(*specPath, &spec); err != nil {
+			return err
+		}
+		audit, err = sutbuild.Build(*repoPath, spec)
 	}
-	audit, err := sutbuild.Build(*repoPath, spec)
 	if err != nil {
 		return err
 	}

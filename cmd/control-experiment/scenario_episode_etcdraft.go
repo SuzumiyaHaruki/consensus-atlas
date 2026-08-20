@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 
@@ -111,6 +112,18 @@ func executeEtcdraftScenarioQualifiedRisk(
 	}
 	if err != nil {
 		return scenarioTestingResult{}, err
+	}
+	if methodSpecDigest != "" {
+		targetConfig, marshalErr := json.Marshal(experiment.AdapterConfig)
+		if marshalErr != nil {
+			return scenarioTestingResult{}, marshalErr
+		}
+		bundle, err = bundle.WithExecutionRecipe(controlexperiment.ExecutionRecipe{
+			TargetID: "etcdraft-v2", Config: config, TargetConfig: targetConfig,
+		})
+		if err != nil {
+			return scenarioTestingResult{}, err
+		}
 	}
 	risk, err := projector.Project(execution.FinalRisk.ID, spec, bundle.Trace)
 	if err != nil || bundle.Trace.Digest != execution.FinalTrace.Digest ||

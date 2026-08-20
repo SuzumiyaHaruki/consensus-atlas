@@ -72,9 +72,10 @@ func buildAgenticMethodSpec(
 		EpisodeLimits: controlexperiment.AgenticEpisodeLimits{
 			MaxRiskCalls: budget.MaxRiskCalls, MaxScenarioCalls: budget.MaxScenarioCalls,
 			MaxTotalCalls: budget.MaxTotalCalls, MaxObservedTokens: budget.MaxObservedTokens,
-			MaxScenarioPlanSteps: budget.MaxScenarioPlanSteps,
-			MaxRuntimeDecisions:  budget.MaxRuntimeDecisions,
-			SessionWallClockMS:   sessionWallClockMS,
+			MaxScenarioPlanSteps:   budget.MaxScenarioPlanSteps,
+			MaxRuntimeDecisions:    budget.MaxRuntimeDecisions,
+			SessionWallClockMS:     sessionWallClockMS,
+			PreparationWallClockMS: normalizedPreparationWallClockMS(options.PreparationWallClockMS),
 		},
 		InvestigationEpisodes: options.InvestigationEpisodes,
 		EpisodeBudget:         *budget.Logical, InvestigationBudget: totalBudget,
@@ -86,6 +87,13 @@ func buildAgenticMethodSpec(
 		return controlexperiment.AgenticMethodSpec{}, errors.New("AGENTIC_METHOD_SPEC_EXPECTED_DIGEST_MISMATCH")
 	}
 	return spec, nil
+}
+
+func normalizedPreparationWallClockMS(value int64) int64 {
+	if value == 0 {
+		return 1_200_000
+	}
+	return value
 }
 
 func agenticClosureModeForTarget(
@@ -125,17 +133,24 @@ func agenticSourceExposureSpec(
 		return controlexperiment.AgenticSourceExposureSpec{}, err
 	}
 	prefixes := make([]string, 0, len(mounts))
+	bindings := make([]controlexperiment.AgenticSUTSourceBinding, 0, len(mounts))
 	for _, mount := range mounts {
 		prefix := mount.ReferencePrefix
 		if prefix == "" {
 			prefix = "repo"
 		}
 		prefixes = append(prefixes, prefix)
+		if mount.SUTSource != nil {
+			bindings = append(bindings, *mount.SUTSource)
+		}
 	}
 	sort.Strings(prefixes)
+	sort.Slice(bindings, func(i, j int) bool {
+		return bindings[i].ReferencePrefix < bindings[j].ReferencePrefix
+	})
 	return controlexperiment.AgenticSourceExposureSpec{
 		Mode:              controlexperiment.AgenticSourceExposureDossierV2,
-		ReferencePrefixes: prefixes, CatalogDigest: catalogDigest,
+		ReferencePrefixes: prefixes, CatalogDigest: catalogDigest, SUTBindings: bindings,
 	}, nil
 }
 

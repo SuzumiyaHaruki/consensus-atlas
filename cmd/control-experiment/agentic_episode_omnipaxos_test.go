@@ -588,7 +588,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		investigation.RuntimeDecisionAllowance != 2*budget.MaxRuntimeDecisions ||
 		!investigation.ExplorationMemory[1].RepeatedCandidate ||
 		investigation.ExplorationMemory[1].NewProtocolPSSStates != 0 ||
-		memoryRiskRequests != 1 || providerCalls != 10 || keyReads != 6 || investigationPrepareCalls != 2 {
+		memoryRiskRequests != 1 || providerCalls != 10 || keyReads != 6 || investigationPrepareCalls != 1 {
 		t.Fatalf("two-round Investigation did not pass recovered Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
 			investigation, providerCalls, keyReads, memoryRiskRequests, investigationPrepareCalls, err)
 	}

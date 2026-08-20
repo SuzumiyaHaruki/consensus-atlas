@@ -91,11 +91,12 @@ type agenticEpisodeMetrics struct {
 }
 
 type agenticEpisodeWork struct {
-	Model                     controlexperiment.ModelWork             `json:"model"`
-	ScenarioFrontier          controlexperiment.PhaseWork             `json:"scenario_frontier"`
-	ScenarioSearch            controlexperiment.ScenarioExecutionWork `json:"scenario_search"`
-	QualifiedExecution        controlexperiment.WorkLedger            `json:"qualified_execution"`
-	BranchQualifiedExecutions []agenticBranchExecutionWork            `json:"branch_qualified_executions,omitempty"`
+	Preparation               controlexperiment.AgenticPreparationWork `json:"preparation"`
+	Model                     controlexperiment.ModelWork              `json:"model"`
+	ScenarioFrontier          controlexperiment.PhaseWork              `json:"scenario_frontier"`
+	ScenarioSearch            controlexperiment.ScenarioExecutionWork  `json:"scenario_search"`
+	QualifiedExecution        controlexperiment.WorkLedger             `json:"qualified_execution"`
+	BranchQualifiedExecutions []agenticBranchExecutionWork             `json:"branch_qualified_executions,omitempty"`
 }
 
 type agenticBranchExecutionWork struct {
@@ -158,7 +159,12 @@ type agenticEpisodeTarget struct {
 	ObservationProjector agenticEpisodeObservationProjector
 	OracleRegistry       targetoracles.Registry
 	ClosureFactory       controlexperiment.ScenarioClosureFactory
-	ScenarioInputs       func(
+	// ClosureMinimumScenarioCalls is a target-owned structural lower bound:
+	// one call selects the intervention and any remaining calls select an
+	// otherwise ambiguous quorum path. It does not promise success within that
+	// budget; it only prevents configurations that cannot possibly complete.
+	ClosureMinimumScenarioCalls int
+	ScenarioInputs              func(
 		controlexperiment.ScenarioRiskHypothesis,
 		controlexperiment.SemanticPrefixProjector,
 	) (scenarioEpisodeCoreInputs, error)
@@ -185,6 +191,7 @@ func (target agenticEpisodeTarget) validate() error {
 			reflect.ValueOf(target.ObservationProjector).IsNil() ||
 		semantic.ValidateObservationCapabilities(target.ObservationProjector.Capabilities()) != nil ||
 		!target.Surface.MatchesPlanningInputs(actions, target.ObservationProjector.Capabilities()) ||
+		target.ClosureMinimumScenarioCalls < 0 ||
 		len(actions) == 0 || target.ScenarioInputs == nil || target.Execute == nil {
 		return errors.New("AGENTIC_EPISODE_TARGET_INVALID")
 	}

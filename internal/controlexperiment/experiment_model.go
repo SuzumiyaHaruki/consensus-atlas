@@ -584,6 +584,66 @@ type ModelWork struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
+// AgenticPreparationWork records trusted work performed before the first
+// model call. Qualification contains mechanically metered Adapter resets and
+// selected Actions; report/case counts remain structural statistics. Root
+// records Scenario-root setup and its fresh replay when the Target uses one.
+type AgenticPreparationWork struct {
+	QualificationReports int        `json:"qualification_reports"`
+	QualificationCases   int        `json:"qualification_cases"`
+	Qualification        PhaseWork  `json:"qualification"`
+	Root                 WorkLedger `json:"root"`
+	WallClockMS          int64      `json:"wall_clock_ms"`
+}
+
+// AgenticDecisionProvenance separates model-selected scheduling work from
+// deterministic Target closure and protocol-neutral natural progress.
+type AgenticDecisionProvenance struct {
+	AgentSelected  int `json:"agent_selected"`
+	TargetClosure  int `json:"target_closure"`
+	PublicProgress int `json:"public_progress"`
+}
+
+func (provenance AgenticDecisionProvenance) Validate(total int) error {
+	computed, ok := provenance.Total()
+	if total < 0 || !ok ||
+		provenance.AgentSelected < 0 || provenance.TargetClosure < 0 ||
+		provenance.PublicProgress < 0 || provenance.AgentSelected > total ||
+		provenance.TargetClosure > total || provenance.PublicProgress > total ||
+		computed != total {
+		return errors.New("EXPERIMENT_AGENTIC_DECISION_PROVENANCE_INVALID")
+	}
+	return nil
+}
+
+func (provenance AgenticDecisionProvenance) Total() (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+	if provenance.AgentSelected < 0 || provenance.TargetClosure < 0 || provenance.PublicProgress < 0 ||
+		provenance.AgentSelected > maxInt-provenance.TargetClosure ||
+		provenance.AgentSelected+provenance.TargetClosure > maxInt-provenance.PublicProgress {
+		return 0, false
+	}
+	return provenance.AgentSelected + provenance.TargetClosure + provenance.PublicProgress, true
+}
+
+func (work AgenticPreparationWork) Validate() error {
+	if work.QualificationReports < 0 || work.QualificationCases < 0 || work.WallClockMS < 0 ||
+		!validPhaseWork(work.Qualification) || !validPhaseWork(work.Root.Primary) ||
+		!validPhaseWork(work.Root.Replay) ||
+		work.Root.Model != (ModelWork{}) {
+		return errors.New("EXPERIMENT_AGENTIC_PREPARATION_WORK_INVALID")
+	}
+	return nil
+}
+
+func validPhaseWork(work PhaseWork) bool {
+	return work.SetupAttempts >= 0 && work.RuntimeInitializations >= 0 &&
+		work.RuntimeInitializations <= work.SetupAttempts && work.PrepareActions >= 0 &&
+		work.SchedulerDecisions >= 0 && work.SetupAttempts <= int(^uint(0)>>1)-work.PrepareActions &&
+		work.SetupAttempts+work.PrepareActions <= int(^uint(0)>>1)-work.SchedulerDecisions &&
+		work.WorkUnits == work.SetupAttempts+work.PrepareActions+work.SchedulerDecisions
+}
+
 // AgenticLogicalBudget is editable investigation input. The active episode
 // converts it to its own bounded execution budget; it is not a durable
 // Campaign coordinator contract.

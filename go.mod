@@ -7,6 +7,13 @@ require (
 	go.etcd.io/raft/v3 v3.6.0
 )
 
+// Consensus implementations are checked out as pinned Git submodules.  The
+// version remains in require for module identity while every local build uses
+// the editable source tree below.
+replace github.com/hashicorp/raft => ./suts/hashicorpraft
+
+replace go.etcd.io/raft/v3 => ./suts/etcdraft
+
 require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/fatih/color v1.13.0 // indirect

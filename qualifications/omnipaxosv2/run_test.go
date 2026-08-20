@@ -46,6 +46,9 @@ func TestV3PartialQualificationCreditsIndependentControlPaths(t *testing.T) {
 	if left.Profile.ID != "portable-cft-control-v3" || len(left.Profile.RequiredCapabilityIDs()) != 8 {
 		t.Fatalf("portable profile was narrowed: %s/%d", left.Profile.ID, len(left.Profile.RequiredCapabilityIDs()))
 	}
+	if left.Work == nil || left.Work.Validate() != nil || left.Work.WorkUnits == 0 {
+		t.Fatalf("qualification work missing: %+v", left.Work)
+	}
 	for _, id := range []string{
 		conformance.CapabilityStrictYieldEvidence, conformance.CapabilityPureEnabledCheck,
 		conformance.CapabilityNaturalTemporal, conformance.CapabilityRuntimeOwnedMessage,

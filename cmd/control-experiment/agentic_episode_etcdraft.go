@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
@@ -16,14 +17,16 @@ type etcdraftAgenticExecutionInputs struct {
 	qualification etcdqualification.Bundle
 	admission     controlexperiment.ExecutionAdmission
 	workload      controlexperiment.WorkloadPlan
+	preparation   controlexperiment.AgenticPreparationWork
 }
 
 type etcdraftAgenticEpisodeInputs struct {
-	execution  etcdraftAgenticExecutionInputs
-	root       controlruntime.Trace
-	knowledge  controlexperiment.ProtocolKnowledgePack
-	experiment etcdraftAgentExperimentConfig
-	client     agentIntentTransport
+	execution   etcdraftAgenticExecutionInputs
+	root        controlruntime.Trace
+	knowledge   controlexperiment.ProtocolKnowledgePack
+	experiment  etcdraftAgentExperimentConfig
+	client      agentIntentTransport
+	preparation controlexperiment.AgenticPreparationWork
 }
 
 func prepareEtcdraftAgenticExecutionInputs(
@@ -35,7 +38,9 @@ func prepareEtcdraftAgenticExecutionInputs(
 	if workload.Validate() != nil || experiment.validateAgentic() != nil {
 		return empty, controlruntime.Trace{}, errors.New("ETCDRAFT_AGENTIC_ROOT_INPUT_INVALID")
 	}
-	qualification, admission, _, err := etcdraftQualifiedWorkload(ctx)
+	qualification, admission, _, err := etcdraftQualifiedWorkloadWithConfig(
+		ctx, experiment.AdapterConfig,
+	)
 	if err != nil {
 		return empty, controlruntime.Trace{}, err
 	}
@@ -82,8 +87,18 @@ func prepareEtcdraftAgenticExecutionInputs(
 	if err != nil || rootDecisions == 0 {
 		return empty, controlruntime.Trace{}, errors.New("ETCDRAFT_AGENTIC_ROOT_MILESTONE_MISSING")
 	}
+	qualificationWork, err := qualificationPreparationWork(qualification)
+	if err != nil {
+		return empty, controlruntime.Trace{}, err
+	}
 	return etcdraftAgenticExecutionInputs{
 		qualification: qualification, admission: admission, workload: workload,
+		preparation: controlexperiment.AgenticPreparationWork{
+			QualificationReports: len(qualification.ConformanceReports),
+			QualificationCases:   qualificationCaseCount(qualification),
+			Qualification:        qualificationWork,
+			Root:                 source.Work,
+		},
 	}, root, nil
 }
 
@@ -113,6 +128,29 @@ func prepareEtcdraftAgenticEpisode(
 	}
 	return etcdraftAgenticEpisodeInputs{
 		execution: execution, root: root, knowledge: knowledge, experiment: experiment, client: client,
+		preparation: execution.preparation,
+	}, nil
+}
+
+func qualificationCaseCount(bundle conformance.QualificationBundle) int {
+	total := 0
+	for _, report := range bundle.ConformanceReports {
+		total += len(report.Cases)
+	}
+	return total
+}
+
+func qualificationPreparationWork(
+	bundle conformance.QualificationBundle,
+) (controlexperiment.PhaseWork, error) {
+	if bundle.Work == nil || bundle.Work.Validate() != nil {
+		return controlexperiment.PhaseWork{}, errors.New("AGENTIC_QUALIFICATION_WORK_MISSING")
+	}
+	return controlexperiment.PhaseWork{
+		SetupAttempts:          bundle.Work.SetupAttempts,
+		RuntimeInitializations: bundle.Work.RuntimeInitializations,
+		SchedulerDecisions:     bundle.Work.SchedulerDecisions,
+		WorkUnits:              bundle.Work.WorkUnits,
 	}, nil
 }
 
@@ -155,9 +193,10 @@ func newEtcdraftAgenticEpisodeTarget(
 	}
 	target := agenticEpisodeTarget{
 		ID: "etcdraft-v2", Knowledge: inputs.knowledge, Surface: surface,
-		OracleRegistry:       oracleRegistry,
-		ObservationProjector: observationProjector,
-		ClosureFactory:       newEtcdraftScenarioClosureFactory(),
+		OracleRegistry:              oracleRegistry,
+		ObservationProjector:        observationProjector,
+		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
+		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(len(surface.Nodes)),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,

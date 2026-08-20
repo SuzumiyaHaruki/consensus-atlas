@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
@@ -11,15 +12,19 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 )
 
-var errOmnipaxosClosureAlternateUnderdetermined = errors.New(
-	"OMNIPAXOS_CLOSURE_ALTERNATE_UNDETERMINED",
-)
-
-type omnipaxosClosureParticipants struct {
+type omnipaxosClosureParticipantSet struct {
 	Leader          control.NodeID
 	DroppedFollower control.NodeID
-	Alternate       control.NodeID
+	Candidates      []control.NodeID
+	Selected        []control.NodeID
+	Required        int
 	ReplicationLeaf string
+	BallotConfigID  string
+	BallotNumber    string
+	BallotPID       string
+	SequenceSession string
+	SequenceCounter string
+	RequestID       string
 }
 
 // newOmnipaxosScenarioClosureFactory recognizes only the existing
@@ -39,82 +44,127 @@ func newOmnipaxosScenarioClosureFactory() controlexperiment.ScenarioClosureFacto
 			!omnipaxosClosureSingleRequestMatches(context.Trace, dropped.MessageMetadata["request_id"]) {
 			return nil, false, nil
 		}
-		selector, _, err := newOmnipaxosDecisionClosureSelector(context.Trace, dropped)
-		if errors.Is(err, errOmnipaxosClosureAlternateUnderdetermined) {
-			return func(controlexperiment.ActionFrontierView) (
-				controlexperiment.ScenarioClosureSelection, error,
-			) {
-				return controlexperiment.ScenarioClosureSelection{
-					Status: controlexperiment.ScenarioClosureUnderdetermined,
-				}, nil
-			}, true, nil
-		}
+		participants, err := deriveOmnipaxosClosureParticipantSet(context.Trace, dropped)
 		if err != nil {
 			return nil, false, err
 		}
-		return selector, true, nil
+		selected, err := selectedOmnipaxosClosureAlternates(
+			context.Executed, context.Intervention.Decision, participants,
+		)
+		if err != nil {
+			return nil, false, err
+		}
+		participants.Selected = selected
+		return omnipaxosDecisionClosureSetSelector(participants), true, nil
 	}
 }
 
-func newOmnipaxosDecisionClosureSelector(
-	trace controlruntime.Trace,
-	dropped controlexperiment.FrontierActionRef,
-) (controlexperiment.ScenarioClosureSelector, omnipaxosClosureParticipants, error) {
-	participants, err := deriveOmnipaxosClosureParticipants(trace, dropped)
-	if err != nil {
-		return nil, omnipaxosClosureParticipants{}, err
-	}
-	return omnipaxosDecisionClosureSelector(participants), participants, nil
-}
-
-func omnipaxosDecisionClosureSelector(
-	participants omnipaxosClosureParticipants,
+func omnipaxosDecisionClosureSetSelector(
+	participants omnipaxosClosureParticipantSet,
 ) controlexperiment.ScenarioClosureSelector {
+	candidates := make(map[control.NodeID]struct{}, len(participants.Candidates))
+	selectedAlternates := make(map[control.NodeID]struct{}, len(participants.Selected))
+	for _, candidate := range participants.Candidates {
+		candidates[candidate] = struct{}{}
+	}
+	for _, candidate := range participants.Selected {
+		selectedAlternates[candidate] = struct{}{}
+	}
 	return func(frontier controlexperiment.ActionFrontierView) (
 		controlexperiment.ScenarioClosureSelection, error,
 	) {
+		if len(selectedAlternates) < participants.Required {
+			selectionTiers := []string{
+				"sequence-paxos/prepare", "sequence-paxos/promise",
+				participants.ReplicationLeaf, "sequence-paxos/accepted",
+			}
+			for _, leaf := range selectionTiers {
+				var bindings []controlexperiment.FrontierActionRef
+				for _, action := range frontier.Actions {
+					candidate := omnipaxosClosureActionAlternate(
+						action, participants, candidates,
+					)
+					if candidate == "" || action.MessageTypeHint != leaf {
+						continue
+					}
+					if _, alreadySelected := selectedAlternates[candidate]; !alreadySelected {
+						bindings = append(bindings, action)
+					}
+				}
+				if len(bindings) > 1 {
+					return controlexperiment.ScenarioClosureSelection{
+						Status:     controlexperiment.ScenarioClosureUnderdetermined,
+						Candidates: bindings,
+					}, nil
+				}
+				if len(bindings) == 1 {
+					candidate := omnipaxosClosureActionAlternate(
+						bindings[0], participants, candidates,
+					)
+					selectedAlternates[candidate] = struct{}{}
+					return controlexperiment.ScenarioClosureSelection{
+						Status: controlexperiment.ScenarioClosureSelected, Action: bindings[0],
+					}, nil
+				}
+			}
+		}
 		tiers := []func(controlexperiment.FrontierActionRef) bool{
 			func(action controlexperiment.FrontierActionRef) bool {
-				return omnipaxosClosureMessage(action, participants.Leader, participants.Alternate,
-					"sequence-paxos/prepare")
+				_, ok := selectedAlternates[action.MessageTarget]
+				return ok && omnipaxosClosureMessage(action, participants,
+					participants.Leader, action.MessageTarget, "sequence-paxos/prepare")
 			},
 			func(action controlexperiment.FrontierActionRef) bool {
-				return omnipaxosClosureMessage(action, participants.Alternate, participants.Leader,
-					"sequence-paxos/promise")
+				_, ok := selectedAlternates[action.MessageSource.Node]
+				return ok && omnipaxosClosureMessage(action, participants,
+					action.MessageSource.Node, participants.Leader, "sequence-paxos/promise")
 			},
 			func(action controlexperiment.FrontierActionRef) bool {
-				return omnipaxosClosureMessage(action, participants.Leader, participants.Alternate,
-					participants.ReplicationLeaf)
+				_, ok := selectedAlternates[action.MessageTarget]
+				return ok && omnipaxosClosureMessage(action, participants,
+					participants.Leader, action.MessageTarget, participants.ReplicationLeaf)
 			},
 			func(action controlexperiment.FrontierActionRef) bool {
-				return omnipaxosClosureMessage(action, participants.Alternate, participants.Leader,
-					"sequence-paxos/accepted")
+				_, ok := selectedAlternates[action.MessageSource.Node]
+				return ok && omnipaxosClosureMessage(action, participants,
+					action.MessageSource.Node, participants.Leader, "sequence-paxos/accepted")
 			},
 			func(action controlexperiment.FrontierActionRef) bool {
+				_, selectedTarget := selectedAlternates[action.MessageTarget]
 				return action.Kind == control.ActionDeliverMessage &&
 					action.MessageSource.Node == participants.Leader &&
-					(action.MessageTarget == participants.Alternate ||
+					(selectedTarget ||
 						action.MessageTarget == participants.DroppedFollower) &&
-					action.MessageTypeHint == "sequence-paxos/decide"
+					action.MessageTypeHint == "sequence-paxos/decide" &&
+					omnipaxosClosureMessageCausallyMatches(action, participants)
 			},
 		}
 		for _, tier := range tiers {
-			var selected controlexperiment.FrontierActionRef
+			var selectedAction controlexperiment.FrontierActionRef
 			matches := 0
 			for _, action := range frontier.Actions {
 				if tier(action) {
-					selected = action
+					if selectedAction.ActionID == "" {
+						selectedAction = action
+					}
 					matches++
 				}
 			}
 			if matches > 1 {
+				if len(selectedAlternates) > 1 {
+					return controlexperiment.ScenarioClosureSelection{
+						Status: controlexperiment.ScenarioClosureSelected, Action: selectedAction,
+					}, nil
+				}
 				return controlexperiment.ScenarioClosureSelection{
 					Status: controlexperiment.ScenarioClosureUnderdetermined,
+					Candidates: append([]controlexperiment.FrontierActionRef(nil),
+						frontierTierMatches(frontier.Actions, tier)...),
 				}, nil
 			}
 			if matches == 1 {
 				return controlexperiment.ScenarioClosureSelection{
-					Status: controlexperiment.ScenarioClosureSelected, Action: selected,
+					Status: controlexperiment.ScenarioClosureSelected, Action: selectedAction,
 				}, nil
 			}
 		}
@@ -122,6 +172,19 @@ func omnipaxosDecisionClosureSelector(
 			Status: controlexperiment.ScenarioClosureNoEligible,
 		}, nil
 	}
+}
+
+func frontierTierMatches(
+	actions []controlexperiment.FrontierActionRef,
+	tier func(controlexperiment.FrontierActionRef) bool,
+) []controlexperiment.FrontierActionRef {
+	result := make([]controlexperiment.FrontierActionRef, 0, len(actions))
+	for _, action := range actions {
+		if tier(action) {
+			result = append(result, action)
+		}
+	}
+	return result
 }
 
 func omnipaxosClosureReplicationLeaf(leaf string) bool {
@@ -183,31 +246,44 @@ func omnipaxosClosureInvokeRecordsMatch(
 
 func omnipaxosClosureMessage(
 	action controlexperiment.FrontierActionRef,
+	participants omnipaxosClosureParticipantSet,
 	source control.NodeID,
 	target control.NodeID,
 	leafType string,
 ) bool {
 	return action.Kind == control.ActionDeliverMessage &&
 		action.MessageSource.Node == source && action.MessageTarget == target &&
-		action.MessageTypeHint == leafType
+		action.MessageTypeHint == leafType &&
+		omnipaxosClosureMessageCausallyMatches(action, participants)
 }
 
-func deriveOmnipaxosClosureParticipants(
+func deriveOmnipaxosClosureParticipantSet(
 	trace controlruntime.Trace,
 	dropped controlexperiment.FrontierActionRef,
-) (omnipaxosClosureParticipants, error) {
+) (omnipaxosClosureParticipantSet, error) {
 	if trace.Validate() != nil || !omnipaxosClosureReplicationIntervention(dropped) ||
 		dropped.MessageSource.Node == "" || dropped.MessageTarget == "" ||
-		dropped.MessageSource.Node == dropped.MessageTarget {
-		return omnipaxosClosureParticipants{}, errors.New("OMNIPAXOS_CLOSURE_INTERVENTION_INVALID")
+		dropped.MessageSource.Node == dropped.MessageTarget ||
+		dropped.MessageMetadata["ballot_config_id"] == "" ||
+		dropped.MessageMetadata["ballot_number"] == "" ||
+		dropped.MessageMetadata["ballot_pid"] == "" ||
+		dropped.MessageMetadata["sequence_session"] == "" ||
+		dropped.MessageMetadata["sequence_counter"] == "" {
+		return omnipaxosClosureParticipantSet{}, errors.New("OMNIPAXOS_CLOSURE_INTERVENTION_INVALID")
 	}
 	evidence, err := omnipaxosv2.ProjectEvidence(latestScenarioEvidence(trace))
 	if err != nil {
-		return omnipaxosClosureParticipants{}, err
+		return omnipaxosClosureParticipantSet{}, err
 	}
-	participants := omnipaxosClosureParticipants{
+	participants := omnipaxosClosureParticipantSet{
 		Leader: dropped.MessageSource.Node, DroppedFollower: dropped.MessageTarget,
 		ReplicationLeaf: dropped.MessageTypeHint,
+		BallotConfigID:  dropped.MessageMetadata["ballot_config_id"],
+		BallotNumber:    dropped.MessageMetadata["ballot_number"],
+		BallotPID:       dropped.MessageMetadata["ballot_pid"],
+		SequenceSession: dropped.MessageMetadata["sequence_session"],
+		SequenceCounter: dropped.MessageMetadata["sequence_counter"],
+		RequestID:       dropped.MessageMetadata["request_id"],
 	}
 	leaderFound, droppedFound := false, false
 	for _, node := range evidence.Nodes {
@@ -222,14 +298,114 @@ func deriveOmnipaxosClosureParticipants(
 			// Membership evidence is sufficient to identify the unique third
 			// participant; the selector still requires actual leader-originated
 			// enabled messages before it can advance that path.
-			if node.Node == "" || participants.Alternate != "" {
-				return omnipaxosClosureParticipants{}, errOmnipaxosClosureAlternateUnderdetermined
+			if node.Node == "" {
+				return omnipaxosClosureParticipantSet{},
+					errors.New("OMNIPAXOS_CLOSURE_PARTICIPANTS_INVALID")
 			}
-			participants.Alternate = node.Node
+			participants.Candidates = append(participants.Candidates, node.Node)
 		}
 	}
-	if !leaderFound || !droppedFound || participants.Alternate == "" {
-		return omnipaxosClosureParticipants{}, errors.New("OMNIPAXOS_CLOSURE_PARTICIPANTS_INVALID")
+	if !leaderFound || !droppedFound || len(participants.Candidates) == 0 {
+		return omnipaxosClosureParticipantSet{}, errors.New("OMNIPAXOS_CLOSURE_PARTICIPANTS_INVALID")
+	}
+	participants.Required = len(evidence.Nodes) / 2
+	if participants.Required <= 0 || len(participants.Candidates) < participants.Required {
+		return omnipaxosClosureParticipantSet{}, errors.New("OMNIPAXOS_CLOSURE_QUORUM_UNAVAILABLE")
+	}
+	sort.Slice(participants.Candidates, func(i, j int) bool {
+		return participants.Candidates[i] < participants.Candidates[j]
+	})
+	if len(participants.Candidates) == participants.Required {
+		participants.Selected = append([]control.NodeID(nil), participants.Candidates...)
 	}
 	return participants, nil
+}
+
+func selectedOmnipaxosClosureAlternates(
+	choices []controlexperiment.FrontierChoice,
+	interventionDecision int,
+	participants omnipaxosClosureParticipantSet,
+) ([]control.NodeID, error) {
+	candidates := make(map[control.NodeID]struct{}, len(participants.Candidates))
+	selected := make(map[control.NodeID]struct{}, len(participants.Selected))
+	for _, candidate := range participants.Candidates {
+		candidates[candidate] = struct{}{}
+	}
+	for _, candidate := range participants.Selected {
+		selected[candidate] = struct{}{}
+	}
+	for _, choice := range choices {
+		if choice.Decision <= interventionDecision {
+			continue
+		}
+		candidate := omnipaxosClosureActionAlternate(choice.Action, participants, candidates)
+		if candidate != "" {
+			selected[candidate] = struct{}{}
+		}
+	}
+	if len(selected) > participants.Required {
+		return nil, errors.New("OMNIPAXOS_CLOSURE_ALTERNATE_CONFLICT")
+	}
+	result := make([]control.NodeID, 0, len(selected))
+	for candidate := range selected {
+		result = append(result, candidate)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result, nil
+}
+
+func omnipaxosClosureActionAlternate(
+	action controlexperiment.FrontierActionRef,
+	participants omnipaxosClosureParticipantSet,
+	candidates map[control.NodeID]struct{},
+) control.NodeID {
+	if action.Kind != control.ActionDeliverMessage ||
+		!omnipaxosClosureMessageCausallyMatches(action, participants) {
+		return ""
+	}
+	if action.MessageSource.Node == participants.Leader &&
+		(action.MessageTypeHint == "sequence-paxos/prepare" ||
+			omnipaxosClosureReplicationLeaf(action.MessageTypeHint)) {
+		if _, ok := candidates[action.MessageTarget]; ok {
+			return action.MessageTarget
+		}
+	}
+	if action.MessageTarget == participants.Leader &&
+		(action.MessageTypeHint == "sequence-paxos/promise" ||
+			action.MessageTypeHint == "sequence-paxos/accepted") {
+		if _, ok := candidates[action.MessageSource.Node]; ok {
+			return action.MessageSource.Node
+		}
+	}
+	return ""
+}
+
+func omnipaxosClosureMessageCausallyMatches(
+	action controlexperiment.FrontierActionRef,
+	participants omnipaxosClosureParticipantSet,
+) bool {
+	// Direct selector tests may intentionally omit a protocol instance. Actual
+	// Target composition always derives these fields from the dropped message.
+	if participants.BallotConfigID == "" {
+		return true
+	}
+	metadata := action.MessageMetadata
+	if metadata["ballot_config_id"] != participants.BallotConfigID ||
+		metadata["ballot_number"] != participants.BallotNumber ||
+		metadata["ballot_pid"] != participants.BallotPID {
+		return false
+	}
+	switch action.MessageTypeHint {
+	case "sequence-paxos/accept-sync", "sequence-paxos/accept-decide":
+		return metadata["sequence_session"] == participants.SequenceSession &&
+			metadata["sequence_counter"] == participants.SequenceCounter &&
+			metadata["request_id"] == participants.RequestID
+	case "sequence-paxos/decide":
+		return metadata["sequence_session"] == participants.SequenceSession &&
+			metadata["sequence_counter"] == participants.SequenceCounter
+	case "sequence-paxos/prepare", "sequence-paxos/promise", "sequence-paxos/accepted":
+		return true
+	default:
+		return false
+	}
 }

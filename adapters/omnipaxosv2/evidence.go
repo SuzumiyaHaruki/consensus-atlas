@@ -39,11 +39,11 @@ func ProjectEvidence(envelope control.EvidenceEnvelope) (Evidence, error) {
 			prefixes = append(prefixes, DecisionPrefixEvidence{Index: prefix.Index, Digest: prefix.Digest})
 		}
 		result.Nodes = append(result.Nodes, NodeEvidence{
-			Node: nodeNames[node.ID], Leader: nodeNames[node.Leader],
+			Node: nodeName(node.ID), Leader: nodeName(node.Leader),
 			DecidedIndex: node.DecidedIndex, DecidedPrefixDigest: node.DecidedPrefixDigest,
 			DecidedPrefixes: prefixes,
 			PromiseNumber:   node.PromiseNumber, PromisePriority: node.PromisePriority,
-			PromiseNode: nodeNames[node.PromisePID],
+			PromiseNode: nodeName(node.PromisePID),
 		})
 	}
 	return result, nil

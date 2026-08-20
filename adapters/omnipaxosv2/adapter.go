@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -33,6 +34,9 @@ func New(config Config) (*Adapter, error) {
 	if config.WorkerPath == "" {
 		return nil, errors.New("OMNIPAXOS_WORKER_PATH_REQUIRED")
 	}
+	if err := config.ValidateNodeConfiguration(); err != nil {
+		return nil, err
+	}
 	info, err := os.Stat(config.WorkerPath)
 	if err != nil {
 		return nil, err
@@ -49,12 +53,13 @@ func New(config Config) (*Adapter, error) {
 }
 
 func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, error) {
+	nodes := adapter.config.NodeIDs()
+	configuration := expectedWorkerConfiguration(len(nodes))
 	configurationDigest, err := control.CanonicalDigest(struct {
-		WorkerDigest string   `json:"worker_digest"`
-		Nodes        []string `json:"nodes"`
-		ElectionTick uint64   `json:"election_tick_timeout"`
-		Priorities   []uint32 `json:"leader_priorities"`
-	}{adapter.workerDigest, []string{"n1", "n2", "n3"}, 2, []uint32{3, 2, 1}})
+		WorkerDigest  string              `json:"worker_digest"`
+		Nodes         []control.NodeID    `json:"nodes"`
+		Configuration workerConfiguration `json:"configuration"`
+	}{adapter.workerDigest, nodes, configuration})
 	if err != nil {
 		return control.AdapterManifest{}, err
 	}
@@ -62,7 +67,7 @@ func (adapter *Adapter) Manifest(context.Context) (control.AdapterManifest, erro
 		SchemaVersion: control.SchemaVersion,
 		AdapterID:     adapterID, ImplementationID: implementation,
 		BuildID: "sha256:" + adapter.workerDigest, ConfigurationDigest: configurationDigest,
-		Nodes: []control.NodeID{"n1", "n2", "n3"},
+		Nodes: nodes,
 		Capabilities: control.CapabilityManifest{
 			Actions: []control.ActionKind{
 				control.ActionInvoke,
@@ -102,7 +107,9 @@ func (adapter *Adapter) Reset(ctx context.Context, seed []byte) error {
 	if err != nil {
 		return err
 	}
-	response, err := worker.call(ctx, workerRequest{Op: "reset"})
+	response, err := worker.call(ctx, workerRequest{
+		Op: "reset", NodeCount: uint64(adapter.config.ResolvedNodeCount()),
+	})
 	if err != nil {
 		_ = worker.close()
 		return err
@@ -135,7 +142,8 @@ func (adapter *Adapter) Check(_ context.Context, command control.AdapterCommand)
 			return control.CommandEligibility{}, err
 		}
 		_, inputErr := decodeInput(parameters.Input)
-		if _, ok := protocolID(command.Node.Node); inputErr != nil || !ok || command.Node.Incarnation != 1 {
+		id, ok := protocolID(command.Node.Node)
+		if inputErr != nil || !ok || id > uint64(adapter.config.ResolvedNodeCount()) || command.Node.Incarnation != 1 {
 			return control.CommandEligibility{ReasonCode: "OMNIPAXOS_INVOKE_NOT_ELIGIBLE"}, nil
 		}
 	case control.ActionDropMessage:
@@ -148,7 +156,7 @@ func (adapter *Adapter) Check(_ context.Context, command control.AdapterCommand)
 			envelope.Item.Message.Payload.Encoding != "json" {
 			return control.CommandEligibility{ReasonCode: "OMNIPAXOS_MESSAGE_NOT_DELIVERABLE"}, nil
 		}
-		if _, ok := protocolID(command.Node.Node); !ok {
+		if id, ok := protocolID(command.Node.Node); !ok || id > uint64(adapter.config.ResolvedNodeCount()) {
 			return control.CommandEligibility{ReasonCode: "OMNIPAXOS_MESSAGE_TARGET_UNKNOWN"}, nil
 		}
 	case control.ActionFireTemporal:
@@ -317,7 +325,7 @@ func (adapter *Adapter) capture(
 			items = append(items, item)
 		}
 	}
-	for _, name := range []control.NodeID{"n1", "n2", "n3"} {
+	for _, name := range adapter.config.NodeIDs() {
 		if adapter.pulses[name] != "" {
 			continue
 		}
@@ -332,9 +340,9 @@ func (adapter *Adapter) capture(
 }
 
 func (adapter *Adapter) clientResultItem(decision workerDecision) (control.ProducedItem, bool, error) {
-	node, nodeOK := nodeNames[decision.Node]
-	origin, originOK := nodeNames[decision.Origin]
-	if !nodeOK || !originOK || decision.Index == 0 || decision.RequestID == "" {
+	node, origin := nodeName(decision.Node), nodeName(decision.Origin)
+	if node == "" || origin == "" || decision.Node > uint64(adapter.config.ResolvedNodeCount()) ||
+		decision.Origin > uint64(adapter.config.ResolvedNodeCount()) || decision.Index == 0 || decision.RequestID == "" {
 		return control.ProducedItem{}, false, errors.New("OMNIPAXOS_DECISION_IDENTITY_INVALID")
 	}
 	if node != origin {
@@ -362,9 +370,9 @@ func (adapter *Adapter) messageItem(
 	dependency control.ItemID,
 	ordinal int,
 ) (control.ProducedItem, error) {
-	source, sourceOK := nodeNames[message.From]
-	target, targetOK := nodeNames[message.To]
-	if !sourceOK || !targetOK || len(message.Bytes) == 0 {
+	source, target := nodeName(message.From), nodeName(message.To)
+	if source == "" || target == "" || message.From > uint64(adapter.config.ResolvedNodeCount()) ||
+		message.To > uint64(adapter.config.ResolvedNodeCount()) || len(message.Bytes) == 0 {
 		return control.ProducedItem{}, errors.New("OMNIPAXOS_MESSAGE_ROUTE_INVALID")
 	}
 	payload, err := control.NewPayload(messageSchema, "json", message.Bytes)
@@ -457,11 +465,15 @@ func (adapter *Adapter) nextIDs(node control.NodeID, kind, cause string) (contro
 }
 
 func (adapter *Adapter) validateResponse(response workerResponse) error {
-	if response.SchemaVersion != workerSchema || len(response.Nodes) != 3 {
+	nodeCount := adapter.config.ResolvedNodeCount()
+	expectedConfiguration := expectedWorkerConfiguration(nodeCount)
+	if response.SchemaVersion != workerSchema || len(response.Nodes) != nodeCount ||
+		response.Configuration == nil || !reflect.DeepEqual(*response.Configuration, expectedConfiguration) {
 		return errors.New("OMNIPAXOS_WORKER_STATE_INVALID")
 	}
 	for index, node := range response.Nodes {
-		if node.ID != uint64(index+1) || nodeNames[node.ID] == "" || node.Leader > 3 || node.PromisePID > 3 {
+		if node.ID != uint64(index+1) || nodeName(node.ID) == "" ||
+			node.Leader > uint64(nodeCount) || node.PromisePID > uint64(nodeCount) {
 			return errors.New("OMNIPAXOS_WORKER_NODE_SET_INVALID")
 		}
 		if !validDigest(node.DecidedPrefixDigest) {
@@ -481,18 +493,32 @@ func (adapter *Adapter) validateResponse(response workerResponse) error {
 		}
 	}
 	for _, message := range response.Messages {
-		if nodeNames[message.From] == "" || nodeNames[message.To] == "" || len(message.Bytes) == 0 ||
+		if nodeName(message.From) == "" || nodeName(message.To) == "" ||
+			message.From > uint64(nodeCount) || message.To > uint64(nodeCount) || len(message.Bytes) == 0 ||
 			!validWorkerMessageDescription(message) {
 			return errors.New("OMNIPAXOS_WORKER_MESSAGE_INVALID")
 		}
 	}
 	for _, decision := range response.Decisions {
-		if nodeNames[decision.Node] == "" || nodeNames[decision.Origin] == "" ||
+		if nodeName(decision.Node) == "" || nodeName(decision.Origin) == "" ||
+			decision.Node > uint64(nodeCount) || decision.Origin > uint64(nodeCount) ||
 			decision.Index == 0 || decision.RequestID == "" {
 			return errors.New("OMNIPAXOS_WORKER_DECISION_INVALID")
 		}
 	}
 	return nil
+}
+
+func expectedWorkerConfiguration(nodeCount int) workerConfiguration {
+	priorities := make([]uint32, nodeCount)
+	for index := range priorities {
+		priorities[index] = uint32(nodeCount - index)
+	}
+	return workerConfiguration{
+		NodeCount: uint64(nodeCount), ElectionTickTimeout: 2,
+		ResendMessageTickTimeout: 100, BufferSize: 1024, BatchSize: 1,
+		LeaderPriorities: priorities,
+	}
 }
 
 func validWorkerMessageDescription(message workerMessage) bool {
@@ -522,13 +548,4 @@ func containsString(values []string, want string) bool {
 
 func validMessageItem(command control.AdapterCommand, item *control.ProducedItem) bool {
 	return item != nil && item.Message != nil && item.ID == command.Item && item.Owner == item.Message.Source
-}
-
-func protocolID(node control.NodeID) (uint64, bool) {
-	for id, name := range nodeNames {
-		if name == node {
-			return id, true
-		}
-	}
-	return 0, false
 }

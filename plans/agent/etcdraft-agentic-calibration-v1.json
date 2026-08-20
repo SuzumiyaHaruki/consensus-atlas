@@ -213,11 +213,7 @@
   },
   "experiment": {
     "adapter_config": {
-      "nodes": [
-        {"node": "n1", "raft_id": 1},
-        {"node": "n2", "raft_id": 2},
-        {"node": "n3", "raft_id": 3}
-      ],
+      "node_count": 3,
       "election_tick": 5,
       "heartbeat_tick": 1
     },

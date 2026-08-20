@@ -99,14 +99,14 @@ func run(args []string) error {
 	}
 	if *agenticInputsPath != "" {
 		if *formalContractPath == "" || *formalExposurePath == "" || *outPath == "" ||
-			*formalInputsPath != "" || *methodSpecPath != "" || *freshArtifacts != "" ||
+			*formalInputsPath != "" || *methodSpecPath != "" || *freshArtifacts == "" ||
 			*manifestPath != "" || *controlPath != "" || *candidatePath != "" ||
 			*controlAuditPath != "" || *controlBinaryPath != "" ||
 			*candidateAuditPath != "" || *candidateBinaryPath != "" {
 			return errors.New("agentic holdout evaluation requires contract, exposure audit, agentic inputs, out, and no runner/public-pair flags")
 		}
-		return runAgenticHoldoutEvaluation(
-			*formalContractPath, *formalExposurePath, *agenticInputsPath, *outPath,
+		return runAgenticHoldoutFreshEvaluation(
+			*formalContractPath, *formalExposurePath, *agenticInputsPath, *freshArtifacts, *outPath,
 		)
 	}
 	formalMode := *formalContractPath != "" || *formalExposurePath != "" || *formalInputsPath != ""

@@ -30,10 +30,12 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		InvestigationEpisodes:  1,
 		AgentProvider:          openRouterProvider,
 		CapabilityFeedbackMode: controlexperiment.AgenticCapabilityFeedbackStructuredGaps,
+		PreparationWallClockMS: 1_200_000,
 	}
 	flags := flag.NewFlagSet("control-experiment", flag.ContinueOnError)
 	flags.StringVar(&options.Out, "out", "", "report output path")
 	flags.StringVar(&options.BundleOut, "bundle-out", "", "optional execution bundle output path")
+	flags.StringVar(&options.BundleIn, "bundle-in", "", "sealed execution Bundle recipe to replay")
 	flags.IntVar(&options.BundleEvidenceVersion, "bundle-evidence-version", 0, "optional trusted bundle evidence version")
 	flags.StringVar(&options.MethodSpecDigest, "method-spec-digest", "", "MethodSpec digest required by bundle evidence v3")
 	flags.StringVar(&options.AgentKeyFile, "agent-key-file", "", "key file for an explicit opt-in Agent strategy")
@@ -42,13 +44,15 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.StringVar(&options.WorkerPath, "worker", "", "target worker executable for a worker-backed Agent strategy")
 	flags.StringVar(&options.Target, "target", "", "target composition for an Agentic Episode")
 	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol and Agent-planning JSON")
+	flags.StringVar(&options.RepositoryRoot, "repository-root", "", "explicit ConsensusAtlas repository root for local SUT binding")
 	flags.StringVar(&options.RiskInput, "risk-input", "", "optional existing Risk candidate, assessment, or Agentic Episode summary")
 	var knowledgeSourceMounts repeatableStringFlag
 	flags.Var(&knowledgeSourceMounts, "knowledge-source-mount", "repeatable repo=<directory> or <reference-prefix>=<directory> read-only Agent source mount")
 	flags.StringVar(&options.CampaignDirectory, "campaign-dir", "", "Campaign directory")
 	flags.BoolVar(&options.CampaignResume, "campaign-resume", false, "resume an exact Campaign")
 	flags.IntVar(&options.InvestigationEpisodes, "investigation-episodes", options.InvestigationEpisodes, "Agentic Investigation episode limit")
-	flags.StringVar(&options.ClosureMode, "closure-mode", "", "Agent progress mode: public-fixed or target-local (default: Target composition)")
+	flags.StringVar(&options.ClosureMode, "closure-mode", "", "Agent progress mode: public-fixed or target-local (default: public-fixed)")
+	flags.Int64Var(&options.PreparationWallClockMS, "preparation-timeout-ms", options.PreparationWallClockMS, "bounded Target preparation time before Agent calls")
 	flags.StringVar(&options.CapabilityFeedbackMode, "capability-feedback", options.CapabilityFeedbackMode, "Agent capability feedback: reason-codes or structured-gaps")
 	flags.StringVar(&options.CapabilityFeedbackProbe, "capability-feedback-probe", "", "optional public mechanical capability-probe JSON")
 	flags.StringVar(&options.Strategy, "strategy", options.Strategy, "qualified or explicit opt-in Agent strategy")
@@ -61,6 +65,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	switch options.Strategy {
 	case agenticEpisodeStrategy:
 		return runAgenticEpisodeCLI(ctx, options, stdout)
+	case evaluatorReplayStrategy:
+		return runEvaluatorReplayCLI(ctx, options, stdout)
 	default:
 		return runEtcdraftQualifiedCLI(ctx, options, stdout)
 	}
@@ -196,7 +202,14 @@ func etcdraftExecutionWithMethodSpec(
 func etcdraftQualifiedWorkload(
 	ctx context.Context,
 ) (qualification.Bundle, controlexperiment.ExecutionAdmission, controlexperiment.WorkloadPlan, error) {
-	bundle, err := qualification.Run(ctx)
+	return etcdraftQualifiedWorkloadWithConfig(ctx, etcdraftv2.ThreeNodeConfig())
+}
+
+func etcdraftQualifiedWorkloadWithConfig(
+	ctx context.Context,
+	adapterConfig etcdraftv2.Config,
+) (qualification.Bundle, controlexperiment.ExecutionAdmission, controlexperiment.WorkloadPlan, error) {
+	bundle, err := qualification.RunWithConfig(ctx, adapterConfig)
 	if err != nil {
 		return qualification.Bundle{}, controlexperiment.ExecutionAdmission{}, controlexperiment.WorkloadPlan{}, err
 	}

@@ -48,13 +48,70 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
 每个唯一且 fresh-Replay 稳定的候选仍会独立运行 Target Oracle。跨 Episode Memory 不包含 Oracle finding
 或 Oracle 派生 outcome。
 
+## 本地 SUT 源码
+
+三个共识实现不再从语言包缓存直接参与构建，而是以固定提交的 Git
+submodule 位于：
+
+```text
+suts/etcdraft/       go.etcd.io/raft/v3 v3.6.0
+suts/hashicorpraft/  github.com/hashicorp/raft v1.7.3
+suts/omnipaxos/      github.com/haraldng/omnipaxos e3e989b (v0.2.2 source)
+```
+
+`go.mod` 保留上游版本身份，同时用 `replace` 强制所有 `go test/go run/go build`
+解析两个 Go 目录；OmniPaxos worker 的 `Cargo.toml` 则用 path dependency 强制解析
+`suts/omnipaxos/omnipaxos` 与 `suts/omnipaxos/omnipaxos_storage`。首次克隆应使用：
+
+```bash
+git clone --recurse-submodules git@github.com:SuzumiyaHaruki/consensus-atlas.git
+```
+
+已有工作区执行：
+
+```bash
+git submodule update --init --recursive
+go list -m -json go.etcd.io/raft/v3 github.com/hashicorp/raft
+cargo fetch --locked --manifest-path adapters/omnipaxosv2/worker/Cargo.toml
+```
+
+`cargo fetch` 是显式的一次性依赖准备；正式 preparation 和 build audit 继续使用
+`--locked --offline`，不会在实验中静默访问网络。若 semantic input 位于仓库外，使用
+`-repository-root /path/to/consensus-atlas` 显式指定本地 SUT 工作区；机器本地路径不进入
+MethodSpec，进入身份的仍是源码树内容摘要。
+
+因此可以直接修改 `suts/` 内源码并立即运行 Adapter/Runtime 测试。普通本地构建的
+Manifest 会使用 `local-source-unsealed:*`，不会把尚未封存的修改冒充成官方版本。
+正式实验仍须由 SUT build audit 对实际源码树和二进制计算内容身份。若要让另一台
+机器复现修改，应把子模块提交推送到可访问的 fork 并更新 submodule pointer；只在
+本机生成一个不可获取的子模块提交是不完整交付。
+
+etcd/raft 与 OmniPaxos 的 Agent 源码读取仍必须由 `-knowledge-source-mount` 显式授权；
+未提供 mount 时 Agent 只能使用知识包，不能读取本地源码。提供官方 module/crate reference
+prefix 后，CLI 会机械核对执行依赖、语言构建解析目录和 Agent mount 都指向同一 checkout。
+OmniPaxos preparation 还会使用 `cargo build --locked --offline` 从该 checkout 重建规范 worker，
+并拒绝传入另一条 worker 路径。完整源码树 digest 写入现有 MethodSpec；运行开始、每次源码
+读取和工件封存前都会重新检查。因而同一 reference prefix 不能挂载另一份源码，也不能在
+调用过程中静默改动本地 SUT。普通运行仍属于
+`local-source-unsealed`；正式 finding 继续要求 build audit 将源码 digest 与实际二进制绑定。
+当前 Cargo build audit 可用同一 evidence 模型封存协议源码树、worker 源码/锁文件、
+离线 Cargo 命令和最终 worker 二进制，并令 Audit `SUTBuildIdentity` 与 Adapter 的
+`sha256:<worker>` BuildID 一致。已封存二进制可以在不暴露 SUT 源码的情况下运行；若要同时向 Agent 暴露其 staged
+源码，还需把对应 build-audit 输入接入 composition，当前会明确拒绝而不会假定本地
+checkout 与该二进制相同。
+
 ## 当前 Target
 
-- `etcdraft-v2`：官方 `go.etcd.io/raft/v3` RawNode，支持消息调度、自然 Tick、crash/restart、partition/heal、
-  Ready persist/advance effect 和 target-local Oracle。它不是完整 etcd server/WAL 部署。
-- `omnipaxos-v2`：官方 OmniPaxos Rust 库的外部 worker，支持 produced-message 调度、自然 Tick、workload、
-  target-local Observation 和 Oracle；当前没有持久化 crash/restart 能力。
+- `etcdraft-v2`：固定官方提交的本地 `go.etcd.io/raft/v3` RawNode，支持可配置静态节点数、消息调度、自然 Tick、
+  crash/restart、partition/heal、Ready persist/advance effect 和 target-local Oracle。它不是完整
+  etcd server/WAL 部署。`adapter_config.node_count=N`（当前静态上限 64）会生成 `n1..nN`/Raft ID `1..N`；需要自定义
+  节点身份时仍可改用显式 `nodes`，两种写法不能同时出现；活动 Agent 输入完全省略
+  `adapter_config` 时解析为三节点默认配置。
+- `omnipaxos-v2`：固定本地 OmniPaxos 源码构建的外部 Rust worker，支持可配置静态节点数、produced-message
+  调度、自然 Tick、workload、target-local Observation 和 Oracle；当前没有持久化 crash/restart 能力。
+  `experiment.adapter_config.node_count=N` 生成 `n1..nN`（当前支持 3–64）；字段缺省时使用三节点默认值。
 - HashiCorp Raft 的资格/Adapter 代码保留为控制面能力边界样本，但尚未成为活动 Agentic Target。
+  其底层 `NewWithConfig(Config{NodeCount: N})` 已采用相同的缺省三节点规则，但当前没有对应 Agent JSON 入口。
 
 协议特有 Observation 和 monitor 位于 Target 边界；公共 Core 只理解 namespaced declaration、类型、匹配、Trace 和
 Replay，不理解 term、ballot 或具体消息语义。
@@ -94,6 +151,7 @@ internal/semantic/             通用/target-local Observation 和 RiskWitness
 internal/psscore/              protocol/control/joint PSS 投影
 internal/oracle/               独立 monitor
 internal/defectbench/          candidate/control Bundle 评测
+suts/                          固定提交、可本地修改的共识实现源码
 adapters/                      Target 薄适配
 qualifications/                Target 资格组合
 cmd/control-experiment/        活动 CLI、Agent coordinator 与 Target composition
@@ -140,7 +198,8 @@ fresh 单 Episode 校准使用新的空 `-campaign-dir`。最低闭环条件不�
 
 ```bash
 -knowledge-source-mount repo=/path/to/consensus-atlas
--knowledge-source-mount go.etcd.io/raft/v3@v3.6.0/=/path/to/etcd-raft-module
+-knowledge-source-mount go.etcd.io/raft/v3@v3.6.0/=/home/nitro/Desktop/consensus-atlas/suts/etcdraft
+-knowledge-source-mount crates.io/omnipaxos@0.2.2/=/home/nitro/Desktop/consensus-atlas/suts/omnipaxos
 ```
 
 Agent 只能读取 Dossier 已声明的精确 reference；本地路径不会进入 prompt 或 verdict。一次 Risk 调查最多读取
@@ -154,6 +213,8 @@ MethodSpec。
 `-closure-mode target-local`。该值不是自由标签：CLI 先改变实际 Target composition，
 再从 factory 是否存在机械派生到 MethodSpec；没有专属 factory 的 Target 会拒绝
 `target-local`。
+未提供 `-closure-mode` 时默认为 `public-fixed`；专属闭合后端不再默认代替 Agent
+完成后续时序。
 
 Risk 输入有两种正式模式。默认由 Risk Agent 生成；需要让不同方法使用同一个已有
 Risk 时，可增加：

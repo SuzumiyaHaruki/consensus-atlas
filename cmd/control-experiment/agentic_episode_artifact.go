@@ -47,7 +47,10 @@ type agenticScenarioAttemptArtifact struct {
 	ClosureHandoff       bool                                                `json:"closure_handoff,omitempty"`
 	ClosureHandoffStepID string                                              `json:"closure_handoff_step_id,omitempty"`
 	ProgressDelta        *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+	ExecutionWork        *controlexperiment.ScenarioExecutionWork            `json:"execution_work,omitempty"`
 }
+
+type agenticDecisionProvenance = controlexperiment.AgenticDecisionProvenance
 
 // agenticEpisodeArtifact is deliberately compact. Exact prompts and provider
 // responses remain in the two journals; full Traces remain in the selected
@@ -66,6 +69,7 @@ type agenticEpisodeArtifact struct {
 	ScenarioAttempts           int                                         `json:"scenario_attempts"`
 	ScenarioAttemptFeedback    []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
 	ScenarioDecisionsUsed      int                                         `json:"scenario_decisions_used"`
+	DecisionProvenance         agenticDecisionProvenance                   `json:"decision_provenance"`
 	SelectedPathDecisions      int                                         `json:"selected_path_decisions"`
 	BranchExplorationDecisions int                                         `json:"branch_exploration_decisions"`
 	BranchEvidence             []agenticBranchEvidenceArtifact             `json:"branch_evidence,omitempty"`
@@ -148,6 +152,20 @@ func newAgenticEpisodeArtifact(
 				ClosureHandoff:       attempt.Feedback.ClosureHandoff,
 				ClosureHandoffStepID: attempt.Feedback.ClosureHandoffStepID,
 				ProgressDelta:        attempt.Feedback.ProgressDelta,
+			}
+			if attempt.Execution != nil {
+				work := attempt.Execution.Work
+				compact.ExecutionWork = &work
+				for _, step := range attempt.Execution.Steps {
+					if step.Choice != nil {
+						artifact.DecisionProvenance.AgentSelected++
+					}
+				}
+				if attempt.Execution.ClosureHandoff {
+					artifact.DecisionProvenance.TargetClosure += len(attempt.Execution.AutomaticProgress)
+				} else {
+					artifact.DecisionProvenance.PublicProgress += len(attempt.Execution.AutomaticProgress)
+				}
 			}
 			if attempt.Feedback.FailedStep != nil {
 				compact.FailedStepID = attempt.Feedback.FailedStep.ID
@@ -402,6 +420,7 @@ func agenticEvidenceMethodMatches(
 
 func (artifact agenticEpisodeArtifact) validateCompact() error {
 	if artifact.TargetID == "" || artifact.Budget.validate() != nil ||
+		artifact.Work.Preparation.Validate() != nil ||
 		artifact.MethodSpecDigest != "" && !validAgenticSHA256(artifact.MethodSpecDigest) ||
 		artifact.RiskAttempts < 0 || artifact.ScenarioAttempts < 0 ||
 		artifact.RiskAttempts > artifact.Budget.MaxRiskCalls ||
@@ -412,6 +431,12 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.SelectedPathDecisions > artifact.ScenarioDecisionsUsed ||
 		artifact.BranchExplorationDecisions < 0 ||
 		artifact.BranchExplorationDecisions > artifact.ScenarioDecisionsUsed ||
+		artifact.DecisionProvenance.AgentSelected < 0 ||
+		artifact.DecisionProvenance.AgentSelected > artifact.ScenarioDecisionsUsed ||
+		artifact.DecisionProvenance.TargetClosure < 0 ||
+		artifact.DecisionProvenance.TargetClosure > artifact.ScenarioDecisionsUsed ||
+		artifact.DecisionProvenance.PublicProgress < 0 ||
+		artifact.DecisionProvenance.PublicProgress > artifact.ScenarioDecisionsUsed ||
 		!agenticProviderAttemptAccountingValid(artifact) ||
 		!agenticProviderUsageReconciled(append(
 			append([]controlexperiment.StatelessAgentCallAudit(nil), artifact.RiskProviderCalls...),
@@ -422,6 +447,11 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			artifact.ScenarioProviderCalls...,
 		)) {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_ACCOUNTING_INVALID")
+	}
+	provenanceDecisions := artifact.DecisionProvenance.AgentSelected +
+		artifact.DecisionProvenance.TargetClosure + artifact.DecisionProvenance.PublicProgress
+	if provenanceDecisions != 0 && provenanceDecisions != artifact.ScenarioDecisionsUsed {
+		return errors.New("AGENTIC_EPISODE_ARTIFACT_DECISION_PROVENANCE_INVALID")
 	}
 	expectedCandidates := len(artifact.BranchEvidence) + boolInt(artifact.PlanID != "")
 	legacyCandidateAccounting := len(artifact.BranchEvidence) == 0 && artifact.PlanID != "" &&
@@ -444,6 +474,9 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			attempt.ClosureHandoff && !attempt.EnteredExecution ||
 			!validAgenticScenarioAttemptIntents(attempt.AllowedIntents) {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+		}
+		if attempt.ExecutionWork != nil && attempt.ExecutionWork.Validate() != nil {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_WORK_INVALID")
 		}
 		previous := int(^uint(0) >> 1)
 		for _, filter := range attempt.SelectorTrace {
@@ -471,6 +504,25 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		}
 		if attempt.ProgressDelta != nil && !validAgenticScenarioProgress(*attempt.ProgressDelta) {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_FEEDBACK_INVALID")
+		}
+	}
+	if len(artifact.ScenarioAttemptFeedback) > 0 {
+		works := make([]controlexperiment.ScenarioExecutionWork, 0, len(artifact.ScenarioAttemptFeedback))
+		completeLedger := true
+		for _, attempt := range artifact.ScenarioAttemptFeedback {
+			if attempt.EnteredExecution && attempt.ExecutionWork == nil {
+				completeLedger = false
+				break
+			}
+			if attempt.ExecutionWork != nil {
+				works = append(works, *attempt.ExecutionWork)
+			}
+		}
+		if completeLedger {
+			total, err := controlexperiment.AggregateScenarioExecutionWork(works)
+			if err != nil || !reflect.DeepEqual(total, artifact.Work.ScenarioSearch) {
+				return errors.New("AGENTIC_EPISODE_ARTIFACT_SCENARIO_WORK_MISMATCH")
+			}
 		}
 	}
 	expectedAdaptation := agenticCapabilityAdaptationFromAttempts(artifact.ScenarioAttemptFeedback)
@@ -906,11 +958,15 @@ func deriveAgenticExplorationMemory(
 		}
 		if episode.Summary.Accepted != nil {
 			candidate := episode.Summary.Accepted.Candidate
+			semanticIdentity, err := controlexperiment.RiskCandidateSemanticIdentity(candidate)
+			if err != nil {
+				return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_CANDIDATE_INVALID")
+			}
 			entry.CandidateID = candidate.ID
 			entry.Summary = candidate.Summary
 			entry.SuspectedMechanism = candidate.SuspectedMechanism
-			entry.RepeatedCandidate = seenCandidates[candidate.ID]
-			seenCandidates[candidate.ID] = true
+			entry.RepeatedCandidate = seenCandidates[semanticIdentity]
+			seenCandidates[semanticIdentity] = true
 		} else if episode.Summary.RiskFeedback != nil {
 			entry.CandidateID = episode.Summary.RiskFeedback.CandidateID
 			entry.RepeatedCandidate = entry.CandidateID != "" && seenCandidates[entry.CandidateID]
@@ -1014,7 +1070,9 @@ func agenticMemoryEpisodeOutcome(
 }
 
 func agenticEvidenceExecutionWorkUnits(work agenticEpisodeWork) int {
-	result := work.QualifiedExecution.Primary.WorkUnits + work.QualifiedExecution.Replay.WorkUnits
+	result := work.Preparation.Qualification.WorkUnits +
+		work.Preparation.Root.Primary.WorkUnits + work.Preparation.Root.Replay.WorkUnits +
+		work.QualifiedExecution.Primary.WorkUnits + work.QualifiedExecution.Replay.WorkUnits
 	for _, branch := range work.BranchQualifiedExecutions {
 		result += branch.Work.Primary.WorkUnits + branch.Work.Replay.WorkUnits
 	}

@@ -31,17 +31,19 @@ var scenarioNaturalProgressPriority = []control.ActionKind{
 }
 
 type ScenarioProgressResult struct {
-	StopReason string              `json:"stop_reason"`
-	Execution  ScenarioExecution   `json:"execution"`
-	Frontier   *ActionFrontierView `json:"frontier,omitempty"`
+	StopReason        string              `json:"stop_reason"`
+	Execution         ScenarioExecution   `json:"execution"`
+	Frontier          *ActionFrontierView `json:"frontier,omitempty"`
+	ClosureCandidates []FrontierActionRef `json:"closure_candidates,omitempty"`
 }
 
 // ScenarioClosureSelection distinguishes an exact enabled closure Action from
 // a normal Target-local stop. Underdetermined and no-eligible results preserve
 // the current frontier for deterministic caller feedback.
 type ScenarioClosureSelection struct {
-	Status string            `json:"status"`
-	Action FrontierActionRef `json:"action,omitempty"`
+	Status     string              `json:"status"`
+	Action     FrontierActionRef   `json:"action,omitempty"`
+	Candidates []FrontierActionRef `json:"candidates,omitempty"`
 }
 
 // ScenarioClosureSelector is trusted target composition for one already
@@ -61,6 +63,11 @@ type ScenarioClosureContext struct {
 	Risk         semantic.RiskWitnessResult
 	Trace        controlruntime.Trace
 	Intervention FrontierChoice
+	// Executed contains trusted, already materialized choices from the current
+	// promoted path. Target composition may use post-intervention choices to
+	// bind one of several causally equivalent closure paths; Agent assertions
+	// and unexecuted plan text never enter this context.
+	Executed []FrontierChoice
 }
 
 // ScenarioClosureFactory may recognize one post-intervention prefix and
@@ -163,6 +170,7 @@ func executeScenarioNaturalProgress(
 	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
 	result.Frontier = live.Frontier
+	result.ClosureCandidates = cloneFrontierActionRefs(live.ClosureCandidates)
 	result.Execution.Steps = live.Steps
 	result.Execution.FinalTrace, result.Execution.FinalRisk = live.FinalTrace, live.FinalRisk
 	if liveErr != nil {
@@ -192,12 +200,13 @@ func executeScenarioNaturalProgress(
 }
 
 type scenarioLiveProgressResult struct {
-	StopReason string
-	Steps      []ScenarioStepFeedback
-	FinalTrace controlruntime.Trace
-	FinalRisk  semantic.RiskWitnessResult
-	Frontier   *ActionFrontierView
-	Work       ScenarioExecutionWork
+	StopReason        string
+	Steps             []ScenarioStepFeedback
+	FinalTrace        controlruntime.Trace
+	FinalRisk         semantic.RiskWitnessResult
+	Frontier          *ActionFrontierView
+	ClosureCandidates []FrontierActionRef
+	Work              ScenarioExecutionWork
 }
 
 func executeScenarioNaturalProgressOnLiveRuntime(
@@ -220,13 +229,14 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			result.StopReason = ScenarioProgressClientTerminal
 			break
 		}
-		action, ok, stopReason, stopFrontier, err := scenarioClosureAction(view, selector)
+		action, ok, stopReason, stopFrontier, closureCandidates, err := scenarioClosureAction(view, selector)
 		if err != nil {
 			return result, err
 		}
 		if stopReason != "" {
 			result.StopReason = stopReason
 			result.Frontier = stopFrontier
+			result.ClosureCandidates = cloneFrontierActionRefs(closureCandidates)
 			break
 		}
 		if !ok {
@@ -300,38 +310,54 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 func scenarioClosureAction(
 	view RiskFrontierView,
 	selector ScenarioClosureSelector,
-) (FrontierActionRef, bool, string, *ActionFrontierView, error) {
+) (FrontierActionRef, bool, string, *ActionFrontierView, []FrontierActionRef, error) {
 	if selector == nil {
 		action, ok := scenarioNaturalProgressAction(view.Actions)
-		return action, ok, "", nil, nil
+		return action, ok, "", nil, nil, nil
 	}
 	authoritative, err := scenarioActionFrontier(view)
 	if err != nil {
-		return FrontierActionRef{}, false, "", nil, err
+		return FrontierActionRef{}, false, "", nil, nil, err
 	}
 	selectorView := authoritative
 	selectorView.Actions = cloneFrontierActionRefs(authoritative.Actions)
 	selection, err := selector(selectorView)
 	if err != nil {
-		return FrontierActionRef{}, false, "", nil, err
+		return FrontierActionRef{}, false, "", nil, nil, err
 	}
 	switch selection.Status {
 	case ScenarioClosureUnderdetermined:
 		if selection.Action.ActionID != "" {
-			return FrontierActionRef{}, false, "", nil,
+			return FrontierActionRef{}, false, "", nil, nil,
 				errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
 		}
-		return FrontierActionRef{}, false, ScenarioProgressClosureUnderdetermined, &authoritative, nil
+		if len(selection.Candidates) == 0 {
+			return FrontierActionRef{}, false, ScenarioProgressClosureUnderdetermined,
+				&authoritative, nil, nil
+		}
+		candidates, candidateErr := validatedScenarioClosureCandidates(
+			authoritative.Actions, selection.Candidates,
+		)
+		if candidateErr != nil {
+			return FrontierActionRef{}, false, "", nil, nil, candidateErr
+		}
+		return FrontierActionRef{}, false, ScenarioProgressClosureUnderdetermined,
+			&authoritative, candidates, nil
 	case ScenarioClosureNoEligible:
-		if selection.Action.ActionID != "" {
-			return FrontierActionRef{}, false, "", nil,
+		if selection.Action.ActionID != "" || len(selection.Candidates) != 0 {
+			return FrontierActionRef{}, false, "", nil, nil,
 				errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
 		}
-		return FrontierActionRef{}, false, ScenarioProgressClosureQuiescent, &authoritative, nil
+		return FrontierActionRef{}, false, ScenarioProgressClosureQuiescent,
+			&authoritative, nil, nil
 	case ScenarioClosureSelected:
+		if len(selection.Candidates) != 0 {
+			return FrontierActionRef{}, false, "", nil, nil,
+				errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
+		}
 		// Continue with exact frontier and kind validation below.
 	default:
-		return FrontierActionRef{}, false, "", nil,
+		return FrontierActionRef{}, false, "", nil, nil,
 			errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
 	}
 	action := selection.Action
@@ -340,18 +366,44 @@ func scenarioClosureAction(
 			continue
 		}
 		if !scenarioClosureActionKind(candidate.Kind) {
-			return FrontierActionRef{}, false, "", nil,
+			return FrontierActionRef{}, false, "", nil, nil,
 				errors.New("EXPERIMENT_SCENARIO_CLOSURE_ACTION_KIND_FORBIDDEN")
 		}
 		if candidate.Kind != action.Kind || candidate.Node != action.Node ||
 			candidate.ItemID != action.ItemID {
-			return FrontierActionRef{}, false, "", nil,
+			return FrontierActionRef{}, false, "", nil, nil,
 				errors.New("EXPERIMENT_SCENARIO_CLOSURE_ACTION_NOT_ADMISSIBLE")
 		}
-		return candidate, true, "", nil, nil
+		return candidate, true, "", nil, nil, nil
 	}
-	return FrontierActionRef{}, false, "", nil,
+	return FrontierActionRef{}, false, "", nil, nil,
 		errors.New("EXPERIMENT_SCENARIO_CLOSURE_ACTION_NOT_ADMISSIBLE")
+}
+
+func validatedScenarioClosureCandidates(
+	authoritative []FrontierActionRef,
+	requested []FrontierActionRef,
+) ([]FrontierActionRef, error) {
+	byID := make(map[control.ActionID]FrontierActionRef, len(authoritative))
+	for _, candidate := range authoritative {
+		byID[candidate.ActionID] = candidate
+	}
+	result := make([]FrontierActionRef, 0, len(requested))
+	seen := make(map[control.ActionID]struct{}, len(requested))
+	for _, requestedCandidate := range requested {
+		candidate, ok := byID[requestedCandidate.ActionID]
+		if !ok || candidate.ActionDigest != requestedCandidate.ActionDigest ||
+			candidate.Kind != requestedCandidate.Kind || candidate.Node != requestedCandidate.Node ||
+			candidate.ItemID != requestedCandidate.ItemID || !scenarioClosureActionKind(candidate.Kind) {
+			return nil, errors.New("EXPERIMENT_SCENARIO_CLOSURE_CANDIDATE_NOT_ADMISSIBLE")
+		}
+		if _, duplicate := seen[candidate.ActionID]; duplicate {
+			return nil, errors.New("EXPERIMENT_SCENARIO_CLOSURE_CANDIDATE_DUPLICATE")
+		}
+		seen[candidate.ActionID] = struct{}{}
+		result = append(result, candidate)
+	}
+	return result, nil
 }
 
 func scenarioClosureActionKind(kind control.ActionKind) bool {

@@ -37,7 +37,7 @@ func (DecisionProjector) Project(envelope control.EvidenceEnvelope) ([]semantic.
 				return nil, errors.New("OMNIPAXOS_DECIDED_PREFIX_INVALID")
 			}
 			observation := semantic.DecisionObservation{
-				Participant: nodeNames[node.ID],
+				Participant: nodeName(node.ID),
 				Position:    strconv.FormatUint(prefix.Index, 10),
 				ValueDigest: prefix.Digest,
 			}

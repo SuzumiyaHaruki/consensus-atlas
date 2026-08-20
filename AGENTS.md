@@ -94,6 +94,12 @@ effect experiment showing that the change matters.
 - Preserve pre-existing user changes; inspect `git status` before editing.
 - Use `rg` for discovery and `apply_patch` for source/document edits.
 - Treat `/home/nitro/Desktop/raft` as read-only unless scope is changed.
+- `suts/etcdraft`, `suts/hashicorpraft`, and `suts/omnipaxos` are the active, editable SUT
+  submodules. Keep their pinned upstream commit explicit; do not edit a module
+  cache copy and assume it affects ConsensusAtlas.
+- Before handing off a modified SUT, ensure its submodule commit is available
+  from a configured remote. A main-repository gitlink to a local-only commit is
+  not a reproducible delivery.
 - Do not commit, push, publish, or run paid services unless requested.
 - Generated build caches stay outside Git and should preferably use `/tmp`.
 - Historical experiment output must not become a normal unit-test dependency.

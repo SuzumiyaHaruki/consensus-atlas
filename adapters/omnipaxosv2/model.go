@@ -1,11 +1,17 @@
 package omnipaxosv2
 
-import "github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
+)
 
 const (
 	adapterID      = "omnipaxos-v2alpha1"
-	implementation = "crates.io/omnipaxos@0.2.2"
-	workerSchema   = "consensus-atlas/omnipaxos-worker/v3"
+	implementation = "github.com/haraldng/omnipaxos@e3e989b6bb85762264dafb821b3e5c84c7de36a1"
+	workerSchema   = "consensus-atlas/omnipaxos-worker/v5"
 	evidenceSchema = "consensus-atlas/omnipaxos-v2-evidence/v2"
 	messageSchema  = "consensus-atlas/omnipaxos-v2-message/v1"
 	callbackSchema = "consensus-atlas/omnipaxos-v2-callback/v1"
@@ -13,7 +19,10 @@ const (
 	resultSchema   = "consensus-atlas/omnipaxos-v2-client-result/v1"
 )
 
-var nodeNames = map[uint64]control.NodeID{1: "n1", 2: "n2", 3: "n3"}
+const (
+	DefaultNodeCount = 3
+	MaxStaticNodes   = 64
+)
 
 var messageTypeHints = []string{
 	"ble/heartbeat-reply",
@@ -49,24 +58,81 @@ var messageMetadataKeys = []string{
 }
 
 type Config struct {
-	WorkerPath string
+	WorkerPath string `json:"-"`
+	// NodeCount is the conventional static membership n1..nN. Zero means the
+	// documented three-node default; there is only one resolved execution path.
+	NodeCount int `json:"node_count,omitempty"`
+}
+
+func (config Config) ValidateNodeConfiguration() error {
+	if config.NodeCount < 0 || config.NodeCount > MaxStaticNodes ||
+		config.NodeCount > 0 && config.NodeCount < DefaultNodeCount {
+		return fmt.Errorf("OMNIPAXOS_NODE_COUNT_INVALID")
+	}
+	return nil
+}
+
+func (config Config) ResolvedNodeCount() int {
+	if config.NodeCount == 0 {
+		return DefaultNodeCount
+	}
+	return config.NodeCount
+}
+
+func (config Config) NodeIDs() []control.NodeID {
+	count := config.ResolvedNodeCount()
+	if config.ValidateNodeConfiguration() != nil {
+		return nil
+	}
+	result := make([]control.NodeID, count)
+	for index := range result {
+		result[index] = nodeName(uint64(index + 1))
+	}
+	return result
+}
+
+func nodeName(id uint64) control.NodeID {
+	if id == 0 || id > MaxStaticNodes {
+		return ""
+	}
+	return control.NodeID("n" + strconv.FormatUint(id, 10))
+}
+
+func protocolID(node control.NodeID) (uint64, bool) {
+	value := string(node)
+	if len(value) < 2 || value[0] != 'n' || strings.HasPrefix(value[1:], "0") {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(value[1:], 10, 64)
+	return id, err == nil && id > 0 && id <= MaxStaticNodes && nodeName(id) == node
 }
 
 type workerRequest struct {
-	ID      uint64 `json:"id"`
-	Op      string `json:"op"`
-	Node    uint64 `json:"node,omitempty"`
-	Payload []byte `json:"payload,omitempty"`
+	ID        uint64 `json:"id"`
+	Op        string `json:"op"`
+	Node      uint64 `json:"node,omitempty"`
+	NodeCount uint64 `json:"node_count,omitempty"`
+	Payload   []byte `json:"payload,omitempty"`
 }
 
 type workerResponse struct {
-	SchemaVersion string           `json:"schema_version"`
-	ID            uint64           `json:"id"`
-	OK            bool             `json:"ok"`
-	Error         string           `json:"error,omitempty"`
-	Nodes         []workerNode     `json:"nodes"`
-	Messages      []workerMessage  `json:"messages"`
-	Decisions     []workerDecision `json:"decisions"`
+	SchemaVersion string               `json:"schema_version"`
+	ID            uint64               `json:"id"`
+	OK            bool                 `json:"ok"`
+	Error         string               `json:"error,omitempty"`
+	Configuration *workerConfiguration `json:"configuration,omitempty"`
+	Nodes         []workerNode         `json:"nodes"`
+	Messages      []workerMessage      `json:"messages"`
+	Decisions     []workerDecision     `json:"decisions"`
+}
+
+type workerConfiguration struct {
+	NodeCount                uint64   `json:"node_count"`
+	ElectionTickTimeout      uint64   `json:"election_tick_timeout"`
+	ResendMessageTickTimeout uint64   `json:"resend_message_tick_timeout"`
+	BufferSize               uint64   `json:"buffer_size"`
+	BatchSize                uint64   `json:"batch_size"`
+	LeaderPriorities         []uint32 `json:"leader_priorities"`
 }
 
 type workerNode struct {

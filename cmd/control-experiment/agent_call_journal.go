@@ -159,10 +159,6 @@ func recoverStatelessAgentCallJournal(
 	}, nil
 }
 
-func openRouterTransportFreeze(client openRouterIntentClient) controlexperiment.AgentTransportFreeze {
-	return client.freeze()
-}
-
 func statelessAgentCallCanContinue(status string) bool {
 	return status == controlexperiment.StatelessAgentCallCompleted ||
 		status == controlexperiment.StatelessAgentCallContentReady

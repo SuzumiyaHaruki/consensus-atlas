@@ -53,6 +53,9 @@ type KnowledgeReadRequest struct {
 type KnowledgeSourceMount struct {
 	ReferencePrefix string `json:"reference_prefix"`
 	Directory       string `json:"directory"`
+	// SUTSource is trusted runtime metadata. Directory remains machine-local,
+	// while this content identity is projected into MethodSpec.
+	SUTSource *AgenticSUTSourceBinding `json:"sut_source,omitempty"`
 }
 
 type KnowledgeReadResult struct {
@@ -241,6 +244,8 @@ func ValidateKnowledgeSourceMounts(mounts []KnowledgeSourceMount) error {
 	for _, mount := range mounts {
 		prefix := mount.ReferencePrefix
 		if strings.TrimSpace(mount.Directory) == "" || seen[prefix] ||
+			mount.SUTSource != nil && (mount.SUTSource.Validate() != nil ||
+				mount.SUTSource.ReferencePrefix != prefix) ||
 			prefix != "" && (!strings.HasSuffix(prefix, "/") || strings.HasPrefix(prefix, "/") ||
 				strings.Contains(prefix, "\\") ||
 				pathpkg.Clean(strings.TrimSuffix(prefix, "/"))+"/" != prefix) {

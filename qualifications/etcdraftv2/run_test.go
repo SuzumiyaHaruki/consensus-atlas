@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
+	adapterv2 "github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	qualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/etcdraftv2"
 )
@@ -38,6 +41,29 @@ func TestQualificationBundleIsStableAndMechanicallyQualified(t *testing.T) {
 	}
 	if left.Profile.ID != "portable-cft-control-v2" || len(left.ConformanceReports) != 5 {
 		t.Fatalf("profile/reports = %s/%d, want portable v2/5", left.Profile.ID, len(left.ConformanceReports))
+	}
+	if left.Work == nil || left.Work.Validate() != nil || left.Work.WorkUnits == 0 ||
+		left.Work.SchedulerDecisions == 0 {
+		t.Fatalf("qualification work missing: %+v", left.Work)
+	}
+}
+
+func TestQualificationUsesConfiguredFiveNodeMembership(t *testing.T) {
+	bundle, err := qualification.RunWithConfig(context.Background(), adapterv2.Config{
+		NodeCount: 5, ElectionTick: 7, HeartbeatTick: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []control.NodeID{"n1", "n2", "n3", "n4", "n5"}
+	if !reflect.DeepEqual(bundle.Manifest.Nodes, want) || !bundle.Qualification.Qualified {
+		t.Fatalf("five-node qualification = nodes:%v qualified:%t, want %v/true",
+			bundle.Manifest.Nodes, bundle.Qualification.Qualified, want)
+	}
+	for _, report := range bundle.ConformanceReports {
+		if report.ManifestDigest != bundle.Qualification.ManifestDigest {
+			t.Fatalf("report %s qualified a different membership", report.Digest)
+		}
 	}
 }
 

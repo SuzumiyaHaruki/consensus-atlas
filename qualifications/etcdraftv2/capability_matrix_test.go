@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -77,9 +78,6 @@ func TestFrozenPortableCapabilityMatrixMatchesMechanicalQualification(t *testing
 
 	hashBundleDigest := checkedDigest(t,
 		"../../benchmarks/qualifications/hashicorp-raft-v2-m5.4c/report.json", "digest")
-	if hashBundleDigest != hash.Digest {
-		t.Fatalf("checked HashiCorp qualification is stale: %s != %s", hashBundleDigest, hash.Digest)
-	}
 	auditDigest := checkedDigest(t,
 		"../../benchmarks/probes/hashicorp-raft-v1.7.3-m5.4d/report.json", "canonical_digest")
 
@@ -101,6 +99,10 @@ func TestFrozenPortableCapabilityMatrixMatchesMechanicalQualification(t *testing
 	}
 	if sealed.Digest != frozen.Digest {
 		t.Fatalf("frozen matrix digest is invalid: %s != %s", sealed.Digest, frozen.Digest)
+	}
+	if !reflect.DeepEqual(fresh.Capabilities, frozen.Capabilities) ||
+		!reflect.DeepEqual(fresh.SharedValidated, frozen.SharedValidated) {
+		t.Fatal("local source resolution changed the frozen portable capability intersection")
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v17"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v18"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
@@ -339,7 +339,10 @@ func scenarioAgentPrompt(
 		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available non-closure interventions, and recent " +
 		"Action kinds. milestone_progress=milestone-stalled means selectors executed but no new milestone appeared; " +
 		"natural_progress_stop distinguishes a returned client operation from a frontier with no closure Action. Use these mechanical " +
-		"facts to continue, revise, change the intervention, or abandon; repetition and a missing milestone are not protocol verdicts. " +
+		"facts to continue, revise, change the intervention, or abandon. When natural_progress_stop=closure-underdetermined, " +
+		"prior_feedback.closure_candidates is the complete trusted subset that can resolve the current Target-local ambiguity; " +
+		"use revise and select one of those exact enabled Action IDs. Do not substitute another frontier Action. " +
+		"Repetition and a missing milestone are not protocol verdicts. " +
 		"decision_allowance bounds this proposal plus its deterministic natural-progress slice; remaining_decisions is the " +
 		"episode-wide successful Action budget still available. " +
 		"Frozen input JSON:\n" + string(encoded)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"reflect"
 
@@ -29,7 +30,7 @@ func buildOmnipaxosScenarioRoot(
 	if err != nil {
 		return controlruntime.Trace{}, err
 	}
-	adapter, err := omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
+	adapter, err := omnipaxosv2.New(experiment.adapterConfig(workerPath))
 	if err != nil {
 		return controlruntime.Trace{}, err
 	}
@@ -94,9 +95,9 @@ type omnipaxosScenarioQualification struct {
 
 func qualifyOmnipaxosScenario(
 	ctx context.Context,
-	workerPath string,
+	adapterConfig omnipaxosv2.Config,
 ) (omnipaxosScenarioQualification, error) {
-	bundle, err := omnipaxosqualification.Run(ctx, workerPath)
+	bundle, err := omnipaxosqualification.RunWithConfig(ctx, adapterConfig)
 	if err != nil {
 		return omnipaxosScenarioQualification{}, err
 	}
@@ -183,7 +184,7 @@ func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 		config.WorkloadRouterID = omnipaxosv2.WorkloadRouterID
 	}
 	factory := func() (control.Adapter, error) {
-		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
+		return omnipaxosv2.New(experiment.adapterConfig(workerPath))
 	}
 	var bundle controlexperiment.ExecutionBundle
 	if methodSpecDigest == "" {
@@ -199,6 +200,18 @@ func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 	}
 	if err != nil {
 		return scenarioTestingResult{}, err
+	}
+	if methodSpecDigest != "" {
+		targetConfig, marshalErr := json.Marshal(experiment.AdapterConfig)
+		if marshalErr != nil {
+			return scenarioTestingResult{}, marshalErr
+		}
+		bundle, err = bundle.WithExecutionRecipe(controlexperiment.ExecutionRecipe{
+			TargetID: "omnipaxos-v2", Config: config, TargetConfig: targetConfig,
+		})
+		if err != nil {
+			return scenarioTestingResult{}, err
+		}
 	}
 	risk, err := projector.Project(
 		execution.FinalRisk.ID, spec, bundle.Trace,

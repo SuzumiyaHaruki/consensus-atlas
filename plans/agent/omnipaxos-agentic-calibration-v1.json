@@ -94,7 +94,7 @@
       }
     ],
     "target_dossier": {
-      "scope": "crates.io omnipaxos 0.2.2 running inside a three-node Rust worker with MemoryStorage and a ConsensusAtlas message/timer Adapter; this is a protocol-core harness, not a production storage or process deployment.",
+      "scope": "The pinned local checkout of OmniPaxos 0.2.2 (upstream commit e3e989b6bb85762264dafb821b3e5c84c7de36a1) running inside a three-node Rust worker with MemoryStorage and a ConsensusAtlas message/timer Adapter; this is a protocol-core harness, not a production storage or process deployment.",
       "assumptions": [
         {
           "id": "cft-participants",
@@ -116,7 +116,7 @@
         {
           "id": "official-omnipaxos-nodes",
           "summary": "The worker owns three OmniPaxos instances and invokes their append, tick, handle_incoming, outgoing_messages and decided-log APIs.",
-          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster"]
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster", "crates.io/omnipaxos@0.2.2/omnipaxos/src/omni_paxos.rs:pub struct OmniPaxos"]
         },
         {
           "id": "json-worker-boundary",
@@ -153,7 +153,7 @@
         {
           "id": "decided-result-source",
           "summary": "Client-visible decided results are derived from read_decided_suffix and preserve the request ID, origin and value stored in the decided entry.",
-          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:take_decisions", "adapters/omnipaxosv2/model.go:workerDecision"]
+          "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:take_decisions", "adapters/omnipaxosv2/model.go:workerDecision", "crates.io/omnipaxos@0.2.2/omnipaxos/src/omni_paxos.rs:pub fn read_decided_suffix"]
         }
       ],
       "control_semantics": [
@@ -165,7 +165,7 @@
         {
           "id": "natural-periodic-pulse",
           "summary": "fire-temporal-event consumes the current participant pulse and invokes OmniPaxos.tick; it does not directly assign ballot, promise or coordinator state.",
-          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:RunUntilYield", "adapters/omnipaxosv2/worker/src/main.rs:tick"]
+          "evidence_refs": ["adapters/omnipaxosv2/adapter.go:RunUntilYield", "adapters/omnipaxosv2/worker/src/main.rs:tick", "crates.io/omnipaxos@0.2.2/omnipaxos/src/omni_paxos.rs:pub fn tick"]
         },
         {
           "id": "no-node-lifecycle-control",
@@ -211,6 +211,9 @@
     ]
   },
   "experiment": {
+    "adapter_config": {
+      "node_count": 3
+    },
     "runtime": {
       "seed_hex": "6f6d6e697061786f732d613965312d6167656e746963",
       "clock_error": 0,

@@ -110,6 +110,41 @@ type RiskCandidatePortfolio struct {
 	requiresBoundMechanismSteps bool
 }
 
+// RiskCandidateSemanticIdentity returns a canonical structural value rather
+// than trusting the Agent-authored Candidate ID. Explanatory prose and source
+// citations are intentionally excluded: the executable predicates, property,
+// fidelity requirements and causal milestone kinds define semantic reuse.
+func RiskCandidateSemanticIdentity(candidate RiskCandidate) (string, error) {
+	if candidate.Validate() != nil {
+		return "", errors.New("EXPERIMENT_RISK_CANDIDATE_SEMANTIC_IDENTITY_INVALID")
+	}
+	type mechanismStep struct {
+		MilestoneID string                   `json:"milestone_id"`
+		Kind        semantic.ObservationKind `json:"kind"`
+	}
+	projection := struct {
+		PropertyRef      string                          `json:"property_ref"`
+		RequiredFidelity []string                        `json:"required_fidelity,omitempty"`
+		Predicates       []semantic.ObservationPredicate `json:"predicates"`
+		MechanismSteps   []mechanismStep                 `json:"mechanism_steps,omitempty"`
+	}{
+		PropertyRef:      candidate.PropertyRef,
+		RequiredFidelity: append([]string(nil), candidate.RequiredFidelity...),
+		Predicates:       append([]semantic.ObservationPredicate(nil), candidate.Predicates...),
+		MechanismSteps:   make([]mechanismStep, len(candidate.MechanismSteps)),
+	}
+	for index, step := range candidate.MechanismSteps {
+		projection.MechanismSteps[index] = mechanismStep{
+			MilestoneID: step.MilestoneID, Kind: step.Kind,
+		}
+	}
+	encoded, err := json.Marshal(projection)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
 type RiskKnowledgeRequestBatch struct {
 	KnowledgeRequests []KnowledgeReadRequest `json:"knowledge_requests"`
 }

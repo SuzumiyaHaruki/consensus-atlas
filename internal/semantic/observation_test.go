@@ -99,3 +99,44 @@ func TestMatchLinearRiskWitnessBacktracksParticipantBinding(t *testing.T) {
 		t.Fatalf("unexpected binding match: %+v", matched)
 	}
 }
+
+func TestMatchLinearRiskWitnessBoundsAdversarialUnconstrainedSearch(t *testing.T) {
+	digest := strings.Repeat("b", 64)
+	milestones := []string{"a", "b", "c", "d", "e", "never"}
+	orders := make([]RiskWitnessOrder, 0, len(milestones)-1)
+	predicates := make([]ObservationPredicate, 0, len(milestones))
+	for index, milestone := range milestones {
+		kind := ObservationMessageDelivered
+		if milestone == "never" {
+			kind = ObservationNodeCrashed
+		}
+		predicates = append(predicates, ObservationPredicate{MilestoneID: milestone, Kind: kind})
+		if index > 0 {
+			orders = append(orders, RiskWitnessOrder{Before: milestones[index-1], After: milestone})
+		}
+	}
+	spec, err := NewRiskWitnessSpec(
+		"bounded-adversarial-witness", "fixture", "bounded-matching", milestones, orders,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make([]Observation, 80)
+	for index := range events {
+		events[index] = Observation{
+			Kind: ObservationMessageDelivered, Step: uint64(index + 1), SourceDigest: digest,
+		}
+	}
+	_, err = MatchLinearRiskWitnessBounded(spec, predicates, ObservationHistory{
+		ProjectorID: "bounded-fixture", TraceDigest: digest, Events: events,
+	}, 32)
+	if err == nil || !strings.Contains(err.Error(), "MATCH_BUDGET_EXHAUSTED") {
+		t.Fatalf("adversarial matching did not stop at its trusted work bound: %v", err)
+	}
+	matched, err := MatchLinearRiskWitnessBounded(spec, predicates, ObservationHistory{
+		ProjectorID: "bounded-fixture", TraceDigest: digest, Events: events,
+	}, 100_000)
+	if err != nil || len(matched) != 5 {
+		t.Fatalf("memoized bounded matching lost the longest prefix: %d/%v", len(matched), err)
+	}
+}

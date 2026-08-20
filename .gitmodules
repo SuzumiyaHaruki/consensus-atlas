@@ -1,0 +1,9 @@
+[submodule "suts/etcdraft"]
+	path = suts/etcdraft
+	url = https://github.com/etcd-io/raft.git
+[submodule "suts/hashicorpraft"]
+	path = suts/hashicorpraft
+	url = https://github.com/hashicorp/raft.git
+[submodule "suts/omnipaxos"]
+	path = suts/omnipaxos
+	url = https://github.com/haraldng/omnipaxos.git

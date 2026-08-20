@@ -2,12 +2,58 @@ package hashicorpraftv2
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 )
+
+func TestConfiguredFiveNodeMembershipUsesTheDefaultRuntimePath(t *testing.T) {
+	adapter, err := NewWithConfig(Config{NodeCount: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adapter.Close()
+	manifest, err := adapter.Manifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []control.NodeID{"n1", "n2", "n3", "n4", "n5"}
+	if !reflect.DeepEqual(manifest.Nodes, want) {
+		t.Fatalf("manifest nodes=%v, want %v", manifest.Nodes, want)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	runtime, err := controlruntime.New(ctx, adapter, controlruntime.Config{Seed: []byte("hashicorp-five-node")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initial := enabledMessages(t, ctx, runtime, "request-vote"); len(initial) != 4 {
+		t.Fatalf("initial vote requests=%d, want 4", len(initial))
+	}
+}
+
+func TestConfiguredMembershipDefaultsAndBounds(t *testing.T) {
+	implicit := NewAdapter()
+	explicit, err := NewWithConfig(Config{NodeCount: defaultNodeCount})
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := implicit.Manifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := explicit.Manifest(context.Background())
+	if err != nil || left.ConfigurationDigest != right.ConfigurationDigest {
+		t.Fatalf("omitted and explicit default membership diverged: left=%s right=%s err=%v",
+			left.ConfigurationDigest, right.ConfigurationDigest, err)
+	}
+	if _, err := NewWithConfig(Config{NodeCount: maxStaticNodes + 1}); err == nil {
+		t.Fatal("oversized HashiCorp membership was accepted")
+	}
+}
 
 func TestThreeNodeRuntimeDeliverDropAndFSMApply(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
