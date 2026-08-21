@@ -1,0 +1,98 @@
+{
+  "schema_version": "consensus-atlas/m4n11-canary-summary/v1",
+  "experiment_id": "etcdraft-m4n11-canary-v4",
+  "result_class": "public-capability-canary",
+  "consensus_atlas_commit": "1103a52",
+  "canary_root_commit": "b9bfbb1",
+  "sut_upstream_commit": "f35a02212416d045c574e30aa59d4b07c4b8d732",
+  "sut_canary_commit": "f740123cb726422ab7b47842734562d11584bfaf",
+  "sut_commit_availability": "local-only-canary",
+  "clean_checkout": true,
+  "method": {
+    "implementation_id": "consensus-atlas/agentic-method/m4n11-provider-recovery-and-quorum-oracle-v1",
+    "method_spec_digest": "eb931742c2bc44b5af78f689435b47da36f196b386611186285f951b850aae63",
+    "target_id": "etcdraft-v2",
+    "node_count": 5,
+    "closure_mode": "public-fixed",
+    "source_exposure_mode": "mounted-repository-search-readonly-v3",
+    "sut_source_digest": "f896506c8340c6082a62d938f62fac34d3cb47aaaf361cd8e481039f0d11b6aa",
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "investigation_episodes": 1,
+    "max_calls": 12,
+    "max_observed_tokens": 240000,
+    "max_scenario_decisions": 64
+  },
+  "provider": {
+    "risk_calls": 3,
+    "scenario_calls": 8,
+    "total_calls": 11,
+    "observed_tokens": 202046,
+    "content_ready_calls": 11,
+    "finish_reason_stop_calls": 11,
+    "unreconciled_calls": 0
+  },
+  "risk": {
+    "candidate_id": "duplicate-vote-resp-quorum",
+    "property_ref": "election-safety",
+    "mechanically_executable": true,
+    "portfolio_candidates": 2,
+    "source_grounding": "completed-used",
+    "bounded_read_reference": "source/go.etcd.io/raft/v3@v3.6.0/raft.go"
+  },
+  "scenario": {
+    "status": "completed",
+    "stop_reason": "call-budget-exhausted",
+    "attempts": 8,
+    "agent_selected_decisions": 8,
+    "public_progress_decisions": 22,
+    "target_closure_decisions": 0,
+    "selected_path_decisions": 30,
+    "first_missing_milestone": "candidate-term",
+    "witness_instantiated": false
+  },
+  "evidence": {
+    "root_decisions": 40,
+    "trace_decisions": 70,
+    "trace_digest": "eaeda535b19e7bf703d50abf49845fda5f4de3f0dc241f91f70a991050c89f46",
+    "bundle_digest": "2c7dd18355f51416147e87dee59fab0325fd51aa4bb2606b373c47f03048ddc1",
+    "evaluator_owned_replay_stable": true,
+    "evaluator_replay_decisions": 70,
+    "oracle_checked": [
+      "trace-integrity",
+      "agreement",
+      "etcdraft-client-application-binding",
+      "etcdraft-election-safety",
+      "etcdraft-log-progress"
+    ],
+    "root_prefix_oracle_findings": 1,
+    "agent_path_oracle_findings": 0,
+    "root_finding": {
+      "monitor": "etcdraft-election-safety",
+      "step": 37,
+      "message": "term 2 leader n1 is not backed by a legal election quorum: voters votes=2/5 need=3"
+    }
+  },
+  "upstream_test": {
+    "status": "failed-as-expected-for-controlled-variant",
+    "top_level_failures": [
+      "TestLeaderElectionInOneRoundRPC",
+      "TestLeaderElection",
+      "TestLeaderElectionPreVote",
+      "TestLeaderElectionOverwriteNewerLogs",
+      "TestLeaderElectionOverwriteNewerLogsPreVote",
+      "TestProposal",
+      "TestInteraction"
+    ],
+    "interaction_failures": [
+      "async_storage_writes_append_aba_race",
+      "probe_and_replicate"
+    ]
+  },
+  "claims": {
+    "canary_pipeline_completed": true,
+    "finding_attributed_to_agent": false,
+    "controlled_variant_is_unknown_to_upstream_tests": false,
+    "long_investigation_started": false
+  }
+}

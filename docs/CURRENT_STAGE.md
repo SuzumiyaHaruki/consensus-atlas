@@ -150,10 +150,13 @@ search no-match 后换词成功、stopped read 后改读另一搜索结果、
 新增的无模型端到端 fixture 已覆盖合法 Action→length→repair failure→summary/Bundle→fresh Replay→Oracle→
 journal recovery；已有执行不会因 provider failure 丢失。干净上游 etcd/raft 的五节点真实 Trace 以及普通选举、
 joint/restart 校准均无 election-safety 误报，不建立长期 baseline。M4n10R canary v3
-作为失败工件保留，不在原目录恢复。下一步是在新目录运行不写入正式 Memory 的 canary v4，确认
-`search → bounded read → portfolio → Scenario → summary/Bundle/fresh Replay/Oracle`，并检查没有
-unreconciled call；
-canary 通过后，才在单独授权下运行六 Episode、约三小时的
+作为失败工件保留，不在原目录恢复。M4n11 canary v4 已在根仓库与 SUT 都干净的独立
+checkout 中完成 `search → bounded read → portfolio → Scenario → summary/Bundle → evaluator-owned
+Replay → Oracle`。11 个 dispatch 都有 result，没有 unreconciled call；Risk 候选可执行，但在
+8 次 Scenario 调用内未实例化 witness。受控 SUT 在 40-decision deterministic root 的 step 37
+已出现 election-safety violation，它被正确分类为 root-prefix Oracle sensitivity，Agent path finding
+为 0。精简结果见 `benchmarks/experiments/etcdraft-m4n11-canary-v4/`。
+因为 root 已经异常，不直接启动六 Episode、约三小时的
 无修改特定提示的受控盲测；上限为 72 calls、1,440,000 observed tokens 和 384 Scenario
 decision allowance。盲测不提供变更文件、函数、diff 或测试名，但明确提供通用协议不变量、
 fault model 和 Oracle-backed properties；因此不能称为“无性质提示”。没有 finding 只能表述为
@@ -561,9 +564,10 @@ etcd application prefix 与 OmniPaxos decided prefix 已改为增量缓存，避
   和 Oracle 语义仍独立；
 - 弱语义 OmniPaxos v1 Risk 已从活动 `plans/agent/` 迁入 M4m3 实验目录，活动输入只保留 v2。
 
-本轮已在当前工作树通过 `go test ./... -count=1`、`go vet ./...`、
+本轮已在版本化代码上通过 `go test ./... -count=1`、`go vet ./...`、
 `audit-no-v1`、`audit-race-shards`、新增 provider/journal/Bundle 端到端、formal root attribution 与
-election incarnation 聚焦 race。正式 canary 尚未启动，也没有调用外部模型。
+election incarnation 聚焦 race。canary v4 已调用外部模型，使用 11 calls/202,046 observed tokens；
+独立 evaluator Replay 重现相同 70-decision Trace 和 root-prefix election-safety violation。
 
 ## 当前结果边界
 
@@ -583,8 +587,9 @@ election incarnation 聚焦 race。正式 canary 尚未启动，也没有调用�
 
 ## 下一步
 
-1. 将 M4n11 修复形成明确版本，并准备根仓库与 SUT 均干净、源码 mount 与实际构建一致的独立 checkout；
-2. 在新目录运行一次不进入正式 Memory 的单 Episode canary v4，核对 journal、summary、Bundle、root/post-root
-   attribution、evaluator-owned Replay 和 Oracle；
-3. canary 通过后再单独授权六 Episode 长实验；若 root 已经出现异常，只能报告 Oracle sensitivity，不能报告
-   Agent discovery。
+1. 为受控 SUT 选择或构造一条 Oracle-clean deterministic root，但不向 Agent 提供修改文件、函数、diff
+   或测试名；
+2. 用零模型回归证明新 root 自身无 election-safety violation，且仍保留有意义的 enabled Action/
+   Observation 调查空间；
+3. 在新空目录重做一次单 Episode canary；只有 root clean、Replay stable 且无不可对账调用时，才另行
+   授权六 Episode 长实验。
