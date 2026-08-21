@@ -835,9 +835,9 @@ func TestEtcdraftFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
 		context.Background(), controlExperimentTestTimeout(180*time.Second),
 	)
 	defer cancel()
-	inputs, err := prepareEtcdraftAgenticEpisode(
-		ctx, "", "../../plans/agent/etcdraft-agentic-five-node-v1.json",
-		fixtureOpenRouterIntentClient(),
+	inputs, err := prepareEtcdraftAgenticEpisodeWithOverrides(
+		ctx, "", etcdraftAgenticTestInputPath, fixtureOpenRouterIntentClient(),
+		agenticInputOverrides{NodeCount: 5, RootMode: agenticRootWorkloadReady},
 	)
 	if err != nil {
 		t.Fatal(err)

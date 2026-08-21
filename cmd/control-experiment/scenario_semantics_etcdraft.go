@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"sort"
 	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
@@ -70,10 +71,57 @@ func projectEtcdraftScenarioSemantics(
 	if err != nil {
 		return controlexperiment.ScenarioSemanticExposure{}, err
 	}
+	coordination := etcdraftScenarioCoordination(evidence)
+	if coordination.Status == controlexperiment.ConsensusCoordinatorPresent {
+		for _, action := range frontier.Actions {
+			if action.Kind == control.ActionCompleteEffect &&
+				(action.Node.Node == coordination.CoordinatorNode ||
+					action.Owner.Node == coordination.CoordinatorNode) {
+				coordination.InvokeReady = false
+				break
+			}
+		}
+	}
+	exposure.Coordination = &coordination
+	if err := exposure.Validate(frontier); err != nil {
+		return controlexperiment.ScenarioSemanticExposure{}, err
+	}
 	if mode == controlexperiment.ScenarioSemanticExposureMasked {
 		return controlexperiment.MaskScenarioSemanticExposure(exposure, frontier)
 	}
 	return exposure, nil
+}
+
+func etcdraftScenarioCoordination(evidence etcdraftv2.Evidence) controlexperiment.ConsensusCoordinationStatus {
+	leaders := make([]control.NodeID, 0, 1)
+	candidates := make([]control.NodeID, 0)
+	changed := false
+	for _, node := range evidence.Nodes {
+		if node.Term > 0 {
+			changed = true
+		}
+		switch node.Role {
+		case "StateLeader":
+			leaders = append(leaders, node.Node)
+		case "StateCandidate", "StatePreCandidate":
+			candidates = append(candidates, node.Node)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
+	status := controlexperiment.ConsensusCoordinationStatus{
+		Status: controlexperiment.ConsensusCoordinatorAbsent,
+		ElectionProgress: controlexperiment.ConsensusElectionProgress{
+			TermOrBallotChanged: changed, CandidateNodes: candidates,
+		},
+	}
+	if len(leaders) == 1 {
+		status.Status = controlexperiment.ConsensusCoordinatorPresent
+		status.CoordinatorNode = leaders[0]
+		status.InvokeReady = true
+	} else if len(leaders) > 1 {
+		status.Status = controlexperiment.ConsensusCoordinatorAmbiguous
+	}
+	return status
 }
 
 func etcdraftScenarioActorRole(role string) string {

@@ -114,7 +114,7 @@
       }
     ],
     "target_dossier": {
-      "scope": "The pinned local checkout of OmniPaxos 0.2.2 (upstream commit e3e989b6bb85762264dafb821b3e5c84c7de36a1) running inside a three-node Rust worker with MemoryStorage and a ConsensusAtlas message/timer Adapter; this is a protocol-core harness, not a production storage or process deployment.",
+      "scope": "The pinned local checkout of OmniPaxos 0.2.2 (upstream commit e3e989b6bb85762264dafb821b3e5c84c7de36a1) running inside a statically configured Rust worker with MemoryStorage and a ConsensusAtlas message/timer Adapter; this is a protocol-core harness, not a production storage or process deployment.",
       "assumptions": [
         {
           "id": "cft-participants",
@@ -128,14 +128,14 @@
         },
         {
           "id": "deterministic-priority-election",
-          "summary": "The active worker configures election timeout 2 and distinct leader priorities 3, 2 and 1; it exposes no SUT RNG call in the exercised core.",
+          "summary": "The active worker uses the election timeout and deterministic non-equal leader priorities derived from the current Target configuration; it exposes no SUT RNG call in the exercised core.",
           "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster::new", "adapters/omnipaxosv2/adapter.go:Manifest"]
         }
       ],
       "components": [
         {
           "id": "official-omnipaxos-nodes",
-          "summary": "The worker owns three OmniPaxos instances and invokes their append, tick, handle_incoming, outgoing_messages and decided-log APIs.",
+          "summary": "The worker owns one OmniPaxos instance per participant in the current Target configuration and invokes their append, tick, handle_incoming, outgoing_messages and decided-log APIs.",
           "evidence_refs": ["adapters/omnipaxosv2/worker/src/main.rs:Cluster", "crates.io/omnipaxos@0.2.2/omnipaxos/src/omni_paxos.rs:pub struct OmniPaxos"]
         },
         {
@@ -231,6 +231,7 @@
     ]
   },
   "experiment": {
+    "root_mode": "workload-ready",
     "adapter_config": {
       "node_count": 3
     },
@@ -249,7 +250,7 @@
     },
     "scenario_max_calls": 8,
     "scenario_max_steps": 1,
-    "scenario_max_decisions": 64,
+    "scenario_max_decisions": 128,
     "scenario_semantic_exposure": "full",
     "session_budget": {
       "max_attempts": 2,

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
@@ -59,6 +60,7 @@ func (source omnipaxosWorkloadAuthoringSource) build() (controlexperiment.Worklo
 // budget inputs. Worker location remains a runtime input.
 type omnipaxosScenarioExperimentConfig struct {
 	AdapterConfig            omnipaxosv2.Config                             `json:"adapter_config"`
+	RootMode                 string                                         `json:"root_mode"`
 	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
 	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
 	ScenarioMaxCalls         int                                            `json:"scenario_max_calls"`
@@ -72,6 +74,7 @@ type omnipaxosScenarioExperimentConfig struct {
 func (config omnipaxosScenarioExperimentConfig) validate() error {
 	seed, seedErr := hex.DecodeString(config.Runtime.SeedHex)
 	if seedErr != nil || len(seed) == 0 || config.AdapterConfig.ValidateNodeConfiguration() != nil ||
+		!validAgenticRootMode(config.RootMode) ||
 		config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.FaultEnvelope.MaxMessageDrops <= 0 ||
 		config.FaultEnvelope.MaxCrashes != 0 || config.FaultEnvelope.MaxConcurrentCrashes != 0 ||
@@ -108,24 +111,52 @@ func loadOmnipaxosAgenticAuthoringSource(
 	controlexperiment.WorkloadPlan,
 	error,
 ) {
+	knowledge, experiment, workload, _, err := loadOmnipaxosAgenticAuthoringSourceResolved(
+		path, agenticInputOverrides{},
+	)
+	return knowledge, experiment, workload, err
+}
+
+func loadOmnipaxosAgenticAuthoringSourceResolved(
+	path string,
+	overrides agenticInputOverrides,
+) (
+	controlexperiment.ProtocolKnowledgePack,
+	omnipaxosScenarioExperimentConfig,
+	controlexperiment.WorkloadPlan,
+	string,
+	error,
+) {
 	var source omnipaxosAgenticAuthoringSource
-	if path == "" || readStrictJSONFile(path, omnipaxosSemanticInputLimit, &source) != nil {
+	if path == "" || !overrides.validate() ||
+		readStrictJSONFile(path, omnipaxosSemanticInputLimit, &source) != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_FILE_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("OMNIPAXOS_AGENTIC_INPUT_FILE_INVALID")
+	}
+	if overrides.NodeCount > 0 {
+		source.Experiment.AdapterConfig.NodeCount = overrides.NodeCount
+	}
+	if overrides.RootMode != "" {
+		source.Experiment.RootMode = overrides.RootMode
 	}
 	if source.Experiment.validate() != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_EXPERIMENT_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("OMNIPAXOS_AGENTIC_INPUT_EXPERIMENT_INVALID")
+	}
+	effectiveDigest, err := control.CanonicalDigest(source)
+	if err != nil {
+		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
+			controlexperiment.WorkloadPlan{}, "", errors.New("OMNIPAXOS_AGENTIC_INPUT_EFFECTIVE_DIGEST_INVALID")
 	}
 	workload, err := source.Workload.build()
 	if err != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_WORKLOAD_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("OMNIPAXOS_AGENTIC_INPUT_WORKLOAD_INVALID")
 	}
 	knowledge, err := buildAgenticKnowledgeAuthoring(source.Knowledge, "omnipaxos")
 	if err != nil || knowledge.Family != "paxos" {
 		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("OMNIPAXOS_AGENTIC_INPUT_MATERIALS_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("OMNIPAXOS_AGENTIC_INPUT_MATERIALS_INVALID")
 	}
-	return knowledge, source.Experiment, workload, nil
+	return knowledge, source.Experiment, workload, effectiveDigest, nil
 }

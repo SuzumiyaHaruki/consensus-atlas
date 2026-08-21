@@ -16,6 +16,56 @@ import (
 	omnipaxosqualification "github.com/SuzumiyaHaruki/consensus-atlas/qualifications/omnipaxosv2"
 )
 
+func buildOmnipaxosAgenticBootstrapRoot(
+	ctx context.Context,
+	workerPath string,
+	experiment omnipaxosScenarioExperimentConfig,
+	workload controlexperiment.WorkloadPlan,
+) (controlruntime.Trace, error) {
+	if workerPath == "" || experiment.validate() != nil || workload.Validate() != nil ||
+		len(workload.Invocations) != 1 {
+		return controlruntime.Trace{}, errors.New("OMNIPAXOS_SCENARIO_ROOT_INPUT_INVALID")
+	}
+	seed, err := hex.DecodeString(experiment.Runtime.SeedHex)
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	adapter, err := omnipaxosv2.New(experiment.adapterConfig(workerPath))
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	runtime, err := controlruntime.New(ctx, adapter, controlruntime.Config{
+		Seed: seed, ClockError: experiment.Runtime.ClockError,
+		MaxClones: experiment.Runtime.MaxClones,
+	})
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	defer runtime.Close()
+	trace, err := runtime.Trace()
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	route, err := (omnipaxosv2.WorkloadRouter{}).Route(
+		workload.TargetSelector, latestScenarioEvidence(trace),
+	)
+	if err != nil || len(route.Candidates) != 0 {
+		return controlruntime.Trace{}, errors.New("OMNIPAXOS_SCENARIO_BOOTSTRAP_COORDINATOR_PRESENT")
+	}
+	actions, err := runtime.EnabledActions(ctx)
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	if _, ok := firstOmnipaxosScenarioProgress(actions); !ok {
+		return controlruntime.Trace{}, errors.New("OMNIPAXOS_SCENARIO_ROOT_QUIESCENT")
+	}
+	return trace, nil
+}
+
+// buildOmnipaxosScenarioRoot retains the workload-ready root used by the
+// narrow closure calibration regressions. Active blind experiments select the
+// bootstrap mode explicitly and therefore keep coordinator election and Invoke
+// inside the Agent-owned path.
 func buildOmnipaxosScenarioRoot(
 	ctx context.Context,
 	workerPath string,
@@ -44,34 +94,36 @@ func buildOmnipaxosScenarioRoot(
 	defer runtime.Close()
 	router := omnipaxosv2.WorkloadRouter{}
 	for decisions := 0; decisions < 256; decisions++ {
-		trace, err := runtime.Trace()
-		if err != nil {
-			return controlruntime.Trace{}, err
+		trace, traceErr := runtime.Trace()
+		if traceErr != nil {
+			return controlruntime.Trace{}, traceErr
 		}
-		route, err := router.Route(workload.TargetSelector, latestScenarioEvidence(trace))
-		if err != nil {
-			return controlruntime.Trace{}, err
+		route, routeErr := router.Route(workload.TargetSelector, latestScenarioEvidence(trace))
+		if routeErr != nil {
+			return controlruntime.Trace{}, routeErr
 		}
 		if len(route.Candidates) == 1 {
-			invoke, err := runtime.OfferInvoke(ctx, route.Candidates[0], workload.Invocations[0].Input)
-			if err != nil {
-				return controlruntime.Trace{}, err
+			invoke, offerErr := runtime.OfferInvoke(
+				ctx, route.Candidates[0], workload.Invocations[0].Input,
+			)
+			if offerErr != nil {
+				return controlruntime.Trace{}, offerErr
 			}
-			if _, err := runtime.Select(ctx, invoke); err != nil {
-				return controlruntime.Trace{}, err
+			if _, selectErr := runtime.Select(ctx, invoke); selectErr != nil {
+				return controlruntime.Trace{}, selectErr
 			}
 			return runtime.Trace()
 		}
-		actions, err := runtime.EnabledActions(ctx)
-		if err != nil {
-			return controlruntime.Trace{}, err
+		actions, enabledErr := runtime.EnabledActions(ctx)
+		if enabledErr != nil {
+			return controlruntime.Trace{}, enabledErr
 		}
 		selected, ok := firstOmnipaxosScenarioProgress(actions)
 		if !ok {
 			return controlruntime.Trace{}, errors.New("OMNIPAXOS_SCENARIO_ROOT_QUIESCENT")
 		}
-		if _, err := runtime.Select(ctx, selected.ID); err != nil {
-			return controlruntime.Trace{}, err
+		if _, selectErr := runtime.Select(ctx, selected.ID); selectErr != nil {
+			return controlruntime.Trace{}, selectErr
 		}
 	}
 	return controlruntime.Trace{}, errors.New("OMNIPAXOS_SCENARIO_ROOT_COORDINATOR_MISSING")
@@ -86,6 +138,31 @@ func firstOmnipaxosScenarioProgress(actions []control.Action) (control.Action, b
 		}
 	}
 	return control.Action{}, false
+}
+
+func newOmnipaxosScenarioActionPreparer(
+	workload controlexperiment.WorkloadPlan,
+) controlexperiment.ScenarioActionPreparer {
+	return func(
+		ctx context.Context,
+		selector controlexperiment.FrontierActionSelector,
+		trace controlruntime.Trace,
+		runtime *controlruntime.Runtime,
+	) (control.ActionID, bool, error) {
+		if !scenarioPreparedInvokeSelector(selector) || len(workload.Invocations) != 1 {
+			return "", false, nil
+		}
+		route, err := (omnipaxosv2.WorkloadRouter{}).Route(
+			workload.TargetSelector, latestScenarioEvidence(trace),
+		)
+		if err != nil || len(route.Candidates) != 1 {
+			return "", false, err
+		}
+		actionID, err := runtime.OfferInvoke(
+			ctx, route.Candidates[0], workload.Invocations[0].Input,
+		)
+		return actionID, err == nil, err
+	}
 }
 
 type omnipaxosScenarioQualification struct {

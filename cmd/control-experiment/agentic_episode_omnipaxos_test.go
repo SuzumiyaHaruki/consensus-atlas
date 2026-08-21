@@ -132,8 +132,14 @@ func TestCurrentMethodRecoveryRequiresOracleAttribution(t *testing.T) {
 	legacy := &controlexperiment.AgenticMethodSpec{
 		ImplementationID: "consensus-atlas/agentic-method/m4n10-deep-candidate-investigation-v1",
 	}
+	m4n11 := &controlexperiment.AgenticMethodSpec{
+		ImplementationID: "consensus-atlas/agentic-method/m4n11-provider-recovery-and-quorum-oracle-v1",
+	}
 	if err := requireRecoveredScenarioOracleAttribution(current, true, nil); err == nil {
 		t.Fatal("current executed path recovered without Oracle attribution")
+	}
+	if err := requireRecoveredScenarioOracleAttribution(m4n11, true, nil); err == nil {
+		t.Fatal("M4n11 executed path recovered without Oracle attribution")
 	}
 	if err := requireRecoveredScenarioOracleAttribution(
 		current, true, &scenarioOracleAttribution{RootDecisions: 1},
@@ -185,7 +191,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	)
 	if err != nil || configuredBudget.MaxRiskCalls != 4 ||
 		configuredBudget.MaxScenarioCalls != 8 || configuredBudget.MaxScenarioPlanSteps != 1 ||
-		configuredBudget.MaxRuntimeDecisions != 64 || configuredBudget.MaxTotalCalls != 12 ||
+		configuredBudget.MaxRuntimeDecisions != 128 || configuredBudget.MaxTotalCalls != 12 ||
 		configuredBudget.MaxObservedTokens != 240000 {
 		t.Fatalf("OmniPaxos A9e1 budget does not permit Risk repair: %#v/%v", configuredBudget, err)
 	}
@@ -226,6 +232,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			content = candidateBytes
 		case scenarioInvestigationStructuredOutputName:
 			view := a4bScenarioViewFromPayload(t, payload)
+			promptContent := payload.Messages[1].Content
 			wantIntents := []string{controlexperiment.ScenarioIntentContinue}
 			if view.Prior != nil && view.Prior.Outcome == controlexperiment.ScenarioAgentStopped {
 				wantIntents = []string{
@@ -242,14 +249,21 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"message_class"`)) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"replication"`)) ||
 				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"branch_id"`)) ||
-				!strings.Contains(payload.Messages[1].Content, "selector_trace") ||
-				!strings.Contains(payload.Messages[1].Content, "milestone-stalled") ||
-				!strings.Contains(payload.Messages[1].Content, "logical-clock") ||
-				!strings.Contains(payload.Messages[1].Content, "fault allowance/usage/remaining") {
+				!strings.Contains(promptContent, "selector_trace") ||
+				!strings.Contains(promptContent, "milestone-stalled") ||
+				!strings.Contains(promptContent, "logical-clock") ||
+				!strings.Contains(promptContent, "fault allowance/usage/remaining") ||
+				!strings.Contains(promptContent, "kind=invoke") ||
+				!strings.Contains(promptContent, `"action_frontier"`) ||
+				!strings.Contains(promptContent, `"coordination"`) ||
+				strings.Contains(promptContent, "kind=Invoke") ||
+				strings.Contains(promptContent, `"current_strategic_candidates"`) ||
+				strings.Contains(promptContent, `"action_semantics"`) ||
+				strings.Contains(promptContent, `"root_frontier"`) {
 				t.Fatalf("Scenario Agent did not receive compact accepted context: %#v", view)
 			}
-			if strings.Contains(payload.Messages[1].Content, `"knowledge":`) ||
-				strings.Contains(payload.Messages[1].Content, `"hypothesis":`) {
+			if strings.Contains(promptContent, `"knowledge":`) ||
+				strings.Contains(promptContent, `"hypothesis":`) {
 				t.Fatal("Scenario provider prompt retained the full knowledge/hypothesis contracts")
 			}
 			if view.Prior != nil {
@@ -539,9 +553,52 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	if err != nil || limited.Status != agenticEpisodeTokenStopped || limited.Testing != nil ||
 		!limited.Metrics.CandidateAccepted || limited.Metrics.WitnessInstantiated ||
 		limited.Work.Model.TotalTokens != 14 || providerCalls != 6 || keyActivations != 6 ||
-		limited.Assessment.Status != agenticEvidenceBudgetExhausted {
+		limited.Assessment.Status != agenticEvidenceBudgetExhausted || limited.Metrics.OracleEvaluated {
 		t.Fatalf("token threshold did not stop before execution: %#v calls=%d keys=%d err=%v",
 			limited, providerCalls, keyActivations, err)
+	}
+	sealedRisk, err := newStatelessAgentCallJournal(filepath.Join(directory, "sealed-risk"), client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedScenario, err := newScenarioAgentCallJournal(filepath.Join(directory, "sealed-scenario"), client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedBudget := budget
+	sealedBudget.MaxObservedTokens = 22
+	sealed, err := runOmnipaxosAgenticEpisode(
+		ctx, inputs, sealedRisk, sealedScenario, sealedBudget,
+		func() error {
+			keyActivations++
+			return sealedRisk.ActivateKey("fixture-key")
+		},
+		func() error {
+			keyActivations++
+			return sealedScenario.ActivateKey("fixture-key")
+		},
+	)
+	if err != nil || sealed.Status != agenticEpisodeTokenStopped || sealed.Testing == nil ||
+		!sealed.Testing.Replay.Stable || !sealed.Metrics.OracleEvaluated ||
+		sealed.Work.Model.TotalTokens != 28 || sealed.Assessment.Status != agenticEvidenceBudgetExhausted ||
+		sealed.Assessment.ReasonCode != "model-token-threshold-reached" ||
+		len(sealed.ScenarioProviderCalls) != 3 {
+		t.Fatalf("token stop discarded the latest committed execution evidence: %#v err=%v", sealed, err)
+	}
+	sealedDirectory := t.TempDir()
+	if _, err := persistAgenticEpisodeArtifacts(
+		sealedDirectory, "omnipaxos-v2", sealedBudget, sealed,
+	); err != nil {
+		t.Fatal(err)
+	}
+	recoveredSealed, terminal, err := recoverAgenticEpisodeArtifacts(
+		sealedDirectory, omnipaxosAgenticEpisodeRecoveryBinding(),
+	)
+	if err != nil || !terminal || recoveredSealed.Testing == nil ||
+		!recoveredSealed.Summary.Metrics.OracleEvaluated ||
+		recoveredSealed.Summary.Status != agenticEpisodeTokenStopped {
+		t.Fatalf("sealed token-stop evidence was not durably recoverable: %#v terminal=%t err=%v",
+			recoveredSealed, terminal, err)
 	}
 	tokenInvestigationDirectory := t.TempDir()
 	tokenEpisodeDirectory := filepath.Join(tokenInvestigationDirectory, "episode-0001")
@@ -835,7 +892,13 @@ func a4bScenarioViewFromPayload(
 ) controlexperiment.ScenarioAgentView {
 	t.Helper()
 	var prompt struct {
-		AgentView controlexperiment.ScenarioAgentView `json:"agent_view"`
+		AgentView struct {
+			AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis"`
+			TargetSurface      *controlexperiment.AgentTargetSurface        `json:"target_surface"`
+			AvailableIntents   []string                                     `json:"available_intents"`
+			Prior              *controlexperiment.ScenarioAgentFeedback     `json:"prior_feedback,omitempty"`
+			ActionFrontier     scenarioPromptFrontier                       `json:"action_frontier"`
+		} `json:"agent_view"`
 	}
 	if len(payload.Messages) != 2 {
 		t.Fatal("Scenario prompt has unexpected message count")
@@ -848,7 +911,32 @@ func a4bScenarioViewFromPayload(
 	if err := json.Unmarshal([]byte(payload.Messages[1].Content)[index+len(marker):], &prompt); err != nil {
 		t.Fatal(err)
 	}
-	return prompt.AgentView
+	if prompt.AgentView.ActionFrontier.ID == "" {
+		t.Fatalf("Scenario prompt projection omitted action_frontier: %s", payload.Messages[1].Content)
+	}
+	frontier := controlexperiment.RiskFrontierView{
+		SchemaVersion:        prompt.AgentView.ActionFrontier.SchemaVersion,
+		ID:                   prompt.AgentView.ActionFrontier.ID,
+		Progress:             prompt.AgentView.ActionFrontier.Progress,
+		PrefixDecisions:      prompt.AgentView.ActionFrontier.PrefixDecisions,
+		NextDecision:         prompt.AgentView.ActionFrontier.NextDecision,
+		PrefixTraceDigest:    prompt.AgentView.ActionFrontier.PrefixTraceDigest,
+		SnapshotDigest:       prompt.AgentView.ActionFrontier.SnapshotDigest,
+		RuntimeEnabledDigest: prompt.AgentView.ActionFrontier.RuntimeEnabledDigest,
+		AdmissibleDigest:     prompt.AgentView.ActionFrontier.AdmissibleDigest,
+		RuntimeActionCount:   prompt.AgentView.ActionFrontier.RuntimeActionCount,
+		Digest:               prompt.AgentView.ActionFrontier.Digest,
+	}
+	for _, action := range prompt.AgentView.ActionFrontier.Actions {
+		frontier.Actions = append(frontier.Actions, action.FrontierActionRef)
+	}
+	return controlexperiment.ScenarioAgentView{
+		AcceptedHypothesis: prompt.AgentView.AcceptedHypothesis,
+		TargetSurface:      prompt.AgentView.TargetSurface,
+		AvailableIntents:   append([]string(nil), prompt.AgentView.AvailableIntents...),
+		Prior:              prompt.AgentView.Prior,
+		Frontier:           frontier,
+	}
 }
 
 func riskAgentViewFromPayload(

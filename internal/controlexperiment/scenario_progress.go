@@ -31,6 +31,70 @@ var scenarioNaturalProgressPriority = []control.ActionKind{
 	control.ActionFireTemporal,
 }
 
+// scenarioCausalProgressFocus preserves the participant direction selected by
+// the most recent strategic Action. It is only a tie-breaker over already
+// enabled natural-progress Actions; it cannot create, enable or admit one.
+type scenarioCausalProgressFocus struct {
+	nodes map[control.NodeID]struct{}
+	items map[control.ItemID]struct{}
+}
+
+func newScenarioCausalProgressFocus(action FrontierActionRef) *scenarioCausalProgressFocus {
+	nodes := make(map[control.NodeID]struct{}, 4)
+	for _, node := range []control.NodeID{
+		action.Node.Node, action.Owner.Node, action.MessageSource.Node, action.MessageTarget,
+	} {
+		if node != "" {
+			nodes[node] = struct{}{}
+		}
+	}
+	if len(nodes) == 0 {
+		if action.ItemID == "" && len(action.Dependencies) == 0 {
+			return nil
+		}
+	}
+	items := make(map[control.ItemID]struct{}, len(action.Dependencies)+1)
+	if action.ItemID != "" {
+		items[action.ItemID] = struct{}{}
+	}
+	for _, dependency := range action.Dependencies {
+		if dependency != "" {
+			items[dependency] = struct{}{}
+		}
+	}
+	return &scenarioCausalProgressFocus{nodes: nodes, items: items}
+}
+
+func (focus *scenarioCausalProgressFocus) include(action FrontierActionRef) {
+	if focus == nil {
+		return
+	}
+	if focus.items == nil {
+		focus.items = make(map[control.ItemID]struct{})
+	}
+	if action.ItemID != "" {
+		focus.items[action.ItemID] = struct{}{}
+	}
+	for _, dependency := range action.Dependencies {
+		if dependency != "" {
+			focus.items[dependency] = struct{}{}
+		}
+	}
+}
+
+func scenarioCausalProgressFocusFromTrace(trace controlruntime.Trace) *scenarioCausalProgressFocus {
+	for index := len(trace.Records) - 1; index >= 0; index-- {
+		action := trace.Records[index].Action
+		if action.Node.Node == "" {
+			continue
+		}
+		return newScenarioCausalProgressFocus(FrontierActionRef{
+			Kind: action.Kind, Node: action.Node, ItemID: action.Item,
+		})
+	}
+	return nil
+}
+
 type ScenarioProgressResult struct {
 	StopReason        string              `json:"stop_reason"`
 	Execution         ScenarioExecution   `json:"execution"`
@@ -172,7 +236,7 @@ func executeScenarioNaturalProgress(
 	}
 	live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
-		faultEnvelope, runtime, projector, selector,
+		faultEnvelope, runtime, projector, selector, nil, nil, nil,
 	)
 	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
@@ -229,6 +293,9 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 	runtime *controlruntime.Runtime,
 	projector SemanticPrefixProjector,
 	selector ScenarioClosureSelector,
+	focus *scenarioCausalProgressFocus,
+	semanticProjector ScenarioSemanticProjector,
+	rootSemantics *ScenarioSemanticExposure,
 ) (scenarioLiveProgressResult, error) {
 	result := scenarioLiveProgressResult{FinalTrace: root, FinalRisk: rootRisk}
 	rootInterventions, err := scenarioStrategicActionKeys(view.Actions)
@@ -240,7 +307,9 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			result.StopReason = ScenarioProgressClientTerminal
 			break
 		}
-		action, ok, stopReason, stopFrontier, closureCandidates, err := scenarioClosureAction(view, selector)
+		action, ok, stopReason, stopFrontier, closureCandidates, err := scenarioProgressAction(
+			view, selector, focus,
+		)
 		if err != nil {
 			return result, err
 		}
@@ -254,6 +323,7 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			result.StopReason = ScenarioProgressQuiescent
 			break
 		}
+		focus.include(action)
 		choice, err := NewFrontierChoice(
 			fmt.Sprintf("%s-choice-%02d", id, decision+1), view, spec, action.ActionID,
 		)
@@ -305,8 +375,17 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			if err != nil {
 				return result, err
 			}
+			var currentSemantics *ScenarioSemanticExposure
+			if semanticProjector != nil && rootSemantics != nil {
+				projected, semanticErr := semanticProjector(result.FinalTrace, view, snapshot)
+				if semanticErr != nil || projected.Validate(view) != nil {
+					return result, errors.Join(errors.New("EXPERIMENT_SCENARIO_PROGRESS_SEMANTICS_INVALID"), semanticErr)
+				}
+				currentSemantics = &projected
+			}
 			if selector == nil && scenarioPublicProgressShouldYield(
 				rootRisk, result.FinalRisk, rootInterventions, view.Actions,
+				rootSemantics, currentSemantics,
 			) {
 				result.StopReason = ScenarioProgressSemanticYield
 				frontier, frontierErr := scenarioActionFrontier(view)
@@ -333,9 +412,26 @@ func scenarioPublicProgressShouldYield(
 	currentRisk semantic.RiskWitnessResult,
 	rootInterventions map[string]struct{},
 	actions []FrontierActionRef,
+	rootSemantics *ScenarioSemanticExposure,
+	currentSemantics *ScenarioSemanticExposure,
 ) bool {
 	if len(currentRisk.SatisfiedMilestones) > len(rootRisk.SatisfiedMilestones) {
 		return true
+	}
+	if rootSemantics != nil && currentSemantics != nil &&
+		rootSemantics.Coordination != nil && currentSemantics.Coordination != nil {
+		rootCoordination := *rootSemantics.Coordination
+		currentCoordination := *currentSemantics.Coordination
+		if scenarioCoordinationMeaningfullyChanged(rootCoordination, currentCoordination) {
+			return true
+		}
+		if rootCoordination.Status != ConsensusCoordinatorPresent {
+			// During bootstrap, newly offered Drop/Duplicate controls are a
+			// mechanical consequence of ordinary election traffic. Preserve the
+			// Agent-selected participant direction until the trusted coordination
+			// state changes or the bounded slice ends.
+			return false
+		}
 	}
 	current, err := scenarioStrategicActionKeys(actions)
 	if err != nil {
@@ -347,6 +443,15 @@ func scenarioPublicProgressShouldYield(
 		}
 	}
 	return false
+}
+
+func scenarioCoordinationMeaningfullyChanged(
+	root ConsensusCoordinationStatus,
+	current ConsensusCoordinationStatus,
+) bool {
+	return root.Status != current.Status || root.CoordinatorNode != current.CoordinatorNode ||
+		root.InvokeReady != current.InvokeReady ||
+		root.ElectionProgress.TermOrBallotChanged != current.ElectionProgress.TermOrBallotChanged
 }
 
 func scenarioStrategicActionKeys(actions []FrontierActionRef) (map[string]struct{}, error) {
@@ -371,8 +476,16 @@ func scenarioClosureAction(
 	view RiskFrontierView,
 	selector ScenarioClosureSelector,
 ) (FrontierActionRef, bool, string, *ActionFrontierView, []FrontierActionRef, error) {
+	return scenarioProgressAction(view, selector, nil)
+}
+
+func scenarioProgressAction(
+	view RiskFrontierView,
+	selector ScenarioClosureSelector,
+	focus *scenarioCausalProgressFocus,
+) (FrontierActionRef, bool, string, *ActionFrontierView, []FrontierActionRef, error) {
 	if selector == nil {
-		action, ok := scenarioNaturalProgressAction(view.Actions)
+		action, ok := scenarioNaturalProgressActionWithFocus(view.Actions, focus)
 		return action, ok, "", nil, nil, nil
 	}
 	authoritative, err := scenarioActionFrontier(view)
@@ -476,10 +589,49 @@ func scenarioClosureActionKind(kind control.ActionKind) bool {
 }
 
 func scenarioNaturalProgressAction(actions []FrontierActionRef) (FrontierActionRef, bool) {
+	return scenarioNaturalProgressActionWithFocus(actions, nil)
+}
+
+func scenarioNaturalProgressActionWithFocus(
+	actions []FrontierActionRef,
+	focus *scenarioCausalProgressFocus,
+) (FrontierActionRef, bool) {
+	// First preserve the selected causal direction across Action kinds. An
+	// unrelated CompleteEffect must not preempt a vote/prepare delivery that
+	// continues the participant direction the planner just selected.
+	if focus != nil {
+		for _, kind := range scenarioNaturalProgressPriority {
+			var dependent FrontierActionRef
+			for _, action := range actions {
+				if action.Kind == kind && scenarioProgressActionDependsOnFocus(action, focus) &&
+					(dependent.ActionID == "" || scenarioProgressActionLess(action, dependent)) {
+					dependent = action
+				}
+			}
+			if dependent.ActionID != "" {
+				return dependent, true
+			}
+		}
+		for _, kind := range scenarioNaturalProgressPriority {
+			var focused FrontierActionRef
+			for _, action := range actions {
+				if action.Kind == kind && scenarioProgressActionInFocus(action, focus) &&
+					(focused.ActionID == "" || scenarioProgressActionLess(action, focused)) {
+					focused = action
+				}
+			}
+			if focused.ActionID != "" {
+				return focused, true
+			}
+		}
+	}
 	for _, kind := range scenarioNaturalProgressPriority {
 		var selected FrontierActionRef
 		for _, action := range actions {
-			if action.Kind == kind && (selected.ActionID == "" || scenarioProgressActionLess(action, selected)) {
+			if action.Kind != kind {
+				continue
+			}
+			if selected.ActionID == "" || scenarioProgressActionLess(action, selected) {
 				selected = action
 			}
 		}
@@ -488,6 +640,41 @@ func scenarioNaturalProgressAction(actions []FrontierActionRef) (FrontierActionR
 		}
 	}
 	return FrontierActionRef{}, false
+}
+
+func scenarioProgressActionDependsOnFocus(
+	action FrontierActionRef,
+	focus *scenarioCausalProgressFocus,
+) bool {
+	if focus == nil || len(focus.items) == 0 {
+		return false
+	}
+	if _, ok := focus.items[action.ItemID]; ok && action.ItemID != "" {
+		return true
+	}
+	for _, dependency := range action.Dependencies {
+		if _, ok := focus.items[dependency]; ok && dependency != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func scenarioProgressActionInFocus(
+	action FrontierActionRef,
+	focus *scenarioCausalProgressFocus,
+) bool {
+	if focus == nil || len(focus.nodes) == 0 {
+		return false
+	}
+	for _, node := range []control.NodeID{
+		action.Node.Node, action.Owner.Node, action.MessageSource.Node, action.MessageTarget,
+	} {
+		if _, ok := focus.nodes[node]; ok && node != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func scenarioProgressActionLess(left, right FrontierActionRef) bool {

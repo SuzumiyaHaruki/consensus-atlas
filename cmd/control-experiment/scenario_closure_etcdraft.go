@@ -12,12 +12,11 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
-// closureScenarioCallLowerBound is shared by the two current leader-CFT
-// target compositions, not by the protocol-neutral Runtime. With three or
-// four participants every remaining follower is required and the Target can
-// select the set without another Agent call. Larger sets require the Agent to
-// choose floor(N/2) followers after selecting the intervention.
-func closureScenarioCallLowerBound(nodeCount int) int {
+// etcdraftClosureMinimumScenarioCalls belongs to the etcd/raft composition.
+// With three or four participants every remaining follower is required and
+// the Target can select the set without another Agent call. Larger sets
+// require the Agent to choose floor(N/2) followers after the intervention.
+func etcdraftClosureMinimumScenarioCalls(nodeCount int) int {
 	if nodeCount <= 0 {
 		return 0
 	}

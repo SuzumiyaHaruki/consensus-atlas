@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 )
 
@@ -59,6 +60,7 @@ func (source etcdraftWorkloadAuthoringSource) build() (controlexperiment.Workloa
 
 type etcdraftAgentExperimentConfig struct {
 	AdapterConfig            etcdraftv2.Config                              `json:"adapter_config"`
+	RootMode                 string                                         `json:"root_mode"`
 	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
 	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
 	ScenarioMaxCalls         int                                            `json:"scenario_max_calls"`
@@ -76,7 +78,8 @@ type etcdraftAgentExperimentConfig struct {
 func (config etcdraftAgentExperimentConfig) validateAgentic() error {
 	seed, seedErr := hex.DecodeString(config.Runtime.SeedHex)
 	_, adapterErr := etcdraftv2.NewWithConfig(config.AdapterConfig)
-	if adapterErr != nil || seedErr != nil || len(seed) == 0 || config.Runtime.ClockError != 0 ||
+	if adapterErr != nil || seedErr != nil || len(seed) == 0 || !validAgenticRootMode(config.RootMode) ||
+		config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.ScenarioMaxCalls <= 0 ||
 		config.ScenarioMaxCalls > controlexperiment.ScenarioAgentMaxCalls ||
 		config.ScenarioMaxSteps <= 0 || config.ScenarioMaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
@@ -117,25 +120,54 @@ func loadEtcdraftAgenticAuthoringSource(
 	controlexperiment.WorkloadPlan,
 	error,
 ) {
+	knowledge, experiment, workload, _, err := loadEtcdraftAgenticAuthoringSourceResolved(
+		path, agenticInputOverrides{},
+	)
+	return knowledge, experiment, workload, err
+}
+
+func loadEtcdraftAgenticAuthoringSourceResolved(
+	path string,
+	overrides agenticInputOverrides,
+) (
+	controlexperiment.ProtocolKnowledgePack,
+	etcdraftAgentExperimentConfig,
+	controlexperiment.WorkloadPlan,
+	string,
+	error,
+) {
 	var source etcdraftAgenticAuthoringSource
-	if path == "" || readStrictJSONFile(path, etcdraftSemanticInputLimit, &source) != nil {
+	if path == "" || !overrides.validate() ||
+		readStrictJSONFile(path, etcdraftSemanticInputLimit, &source) != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("ETCDRAFT_AGENTIC_INPUT_FILE_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("ETCDRAFT_AGENTIC_INPUT_FILE_INVALID")
 	}
 	source.Experiment = source.Experiment.withDefaultAdapterConfig()
+	if overrides.NodeCount > 0 {
+		source.Experiment.AdapterConfig.NodeCount = overrides.NodeCount
+		source.Experiment.AdapterConfig.Nodes = nil
+	}
+	if overrides.RootMode != "" {
+		source.Experiment.RootMode = overrides.RootMode
+	}
 	if source.Experiment.validateAgentic() != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("ETCDRAFT_AGENTIC_INPUT_EXPERIMENT_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("ETCDRAFT_AGENTIC_INPUT_EXPERIMENT_INVALID")
+	}
+	effectiveDigest, err := control.CanonicalDigest(source)
+	if err != nil {
+		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
+			controlexperiment.WorkloadPlan{}, "", errors.New("ETCDRAFT_AGENTIC_INPUT_EFFECTIVE_DIGEST_INVALID")
 	}
 	workload, err := source.Workload.build()
 	if err != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("ETCDRAFT_AGENTIC_INPUT_WORKLOAD_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("ETCDRAFT_AGENTIC_INPUT_WORKLOAD_INVALID")
 	}
 	knowledge, err := buildAgenticKnowledgeAuthoring(source.Knowledge, "etcdraft")
 	if err != nil || knowledge.Family != "raft" {
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},
-			controlexperiment.WorkloadPlan{}, errors.New("ETCDRAFT_AGENTIC_INPUT_MATERIALS_INVALID")
+			controlexperiment.WorkloadPlan{}, "", errors.New("ETCDRAFT_AGENTIC_INPUT_MATERIALS_INVALID")
 	}
-	return knowledge, source.Experiment, workload, nil
+	return knowledge, source.Experiment, workload, effectiveDigest, nil
 }

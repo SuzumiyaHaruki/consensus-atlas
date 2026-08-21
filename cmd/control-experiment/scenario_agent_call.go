@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v19"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v21"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
@@ -29,6 +29,69 @@ type scenarioPromptStepFeedback struct {
 	MatchCount    int                                        `json:"match_count,omitempty"`
 	Available     []controlexperiment.FrontierActionRef      `json:"available_actions,omitempty"`
 	SelectorTrace []controlexperiment.ScenarioSelectorFilter `json:"selector_trace,omitempty"`
+}
+
+// scenarioPromptAction combines the exact enabled Action and its trusted
+// semantic classification. The previous prompt repeated every Action once in
+// root_frontier and once in action_semantics, which made large frontiers both
+// expensive and difficult to read.
+type scenarioPromptAction struct {
+	controlexperiment.FrontierActionRef
+	ActorRole      string `json:"actor_role"`
+	MessageClass   string `json:"message_class"`
+	EpochRelation  string `json:"epoch_relation"`
+	OperationState string `json:"operation_state"`
+}
+
+type scenarioPromptFrontier struct {
+	SchemaVersion        string                                         `json:"schema_version"`
+	ID                   string                                         `json:"id"`
+	Progress             semantic.RiskWitnessProgress                   `json:"progress"`
+	PrefixDecisions      int                                            `json:"prefix_decisions"`
+	NextDecision         int                                            `json:"next_decision"`
+	PrefixTraceDigest    string                                         `json:"prefix_trace_digest"`
+	SnapshotDigest       string                                         `json:"snapshot_digest"`
+	RuntimeEnabledDigest string                                         `json:"runtime_enabled_digest"`
+	AdmissibleDigest     string                                         `json:"admissible_digest"`
+	RuntimeActionCount   int                                            `json:"runtime_action_count"`
+	Coordination         *controlexperiment.ConsensusCoordinationStatus `json:"coordination,omitempty"`
+	Actions              []scenarioPromptAction                         `json:"actions"`
+	Digest               string                                         `json:"digest"`
+}
+
+func newScenarioPromptFrontier(
+	view controlexperiment.ScenarioAgentView,
+) (scenarioPromptFrontier, error) {
+	if view.Semantics.Validate(view.Frontier) != nil ||
+		len(view.Frontier.Actions) != len(view.Semantics.ActionHints) {
+		return scenarioPromptFrontier{}, errors.New("SCENARIO_AGENT_PROMPT_FRONTIER_INVALID")
+	}
+	actions := make([]scenarioPromptAction, len(view.Frontier.Actions))
+	for index, action := range view.Frontier.Actions {
+		hint := view.Semantics.ActionHints[index]
+		actions[index] = scenarioPromptAction{
+			FrontierActionRef: action,
+			ActorRole:         hint.ActorRole, MessageClass: hint.MessageClass,
+			EpochRelation: hint.EpochRelation, OperationState: hint.OperationState,
+		}
+	}
+	coordination := view.Semantics.Coordination
+	if coordination != nil {
+		cloned := *coordination
+		cloned.ElectionProgress.CandidateNodes = append(
+			[]control.NodeID(nil), coordination.ElectionProgress.CandidateNodes...,
+		)
+		coordination = &cloned
+	}
+	frontier := view.Frontier
+	return scenarioPromptFrontier{
+		SchemaVersion: frontier.SchemaVersion, ID: frontier.ID, Progress: frontier.Progress,
+		PrefixDecisions: frontier.PrefixDecisions, NextDecision: frontier.NextDecision,
+		PrefixTraceDigest: frontier.PrefixTraceDigest, SnapshotDigest: frontier.SnapshotDigest,
+		RuntimeEnabledDigest: frontier.RuntimeEnabledDigest, AdmissibleDigest: frontier.AdmissibleDigest,
+		RuntimeActionCount: frontier.RuntimeActionCount, Coordination: coordination,
+		Actions: actions, Digest: frontier.Digest,
+	}, nil
 }
 
 func compactScenarioPromptSteps(
@@ -309,6 +372,10 @@ func scenarioAgentRepairPrompt(
 	if err := validateScenarioPromptInput(spec, view); err != nil {
 		return "", "", err
 	}
+	frontier, err := newScenarioPromptFrontier(view)
+	if err != nil {
+		return "", "", err
+	}
 	type targetSurfaceView struct {
 		TargetID       string                          `json:"target_id"`
 		Nodes          []control.NodeID                `json:"nodes"`
@@ -349,8 +416,7 @@ func scenarioAgentRepairPrompt(
 		AcceptedHypothesis    *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
 		TargetSurface         *targetSurfaceView                           `json:"target_surface,omitempty"`
 		OrderedMilestones     []string                                     `json:"ordered_milestones"`
-		Frontier              controlexperiment.RiskFrontierView           `json:"root_frontier"`
-		Semantics             controlexperiment.ScenarioSemanticExposure   `json:"action_semantics"`
+		Frontier              scenarioPromptFrontier                       `json:"action_frontier"`
 		MaxSteps              int                                          `json:"max_steps"`
 		DecisionAllowance     int                                          `json:"decision_allowance"`
 		RemainingDecisions    int                                          `json:"remaining_decisions"`
@@ -363,8 +429,8 @@ func scenarioAgentRepairPrompt(
 		AcceptedHypothesis: view.AcceptedHypothesis,
 		TargetSurface:      surface,
 		OrderedMilestones:  append([]string(nil), view.OrderedMilestones...),
-		Frontier:           view.Frontier, Semantics: view.Semantics,
-		MaxSteps: view.MaxSteps, DecisionAllowance: view.DecisionAllowance,
+		Frontier:           frontier,
+		MaxSteps:           view.MaxSteps, DecisionAllowance: view.DecisionAllowance,
 		RemainingDecisions:    view.RemainingDecisions,
 		AvailableIntents:      append([]string(nil), view.AvailableIntents...),
 		PostInterventionClose: view.PostInterventionClosure,
@@ -377,7 +443,7 @@ func scenarioAgentRepairPrompt(
 	system := "The preceding charged Scenario response reached the provider output limit. " +
 		"Return exactly one minimal ScenarioInvestigationProposal JSON object and no prose. " +
 		"Use one intent from available_intents. For continue/revise, return exactly one plan with exactly one " +
-		"strategic Action step selected from the supplied current root_frontier; omit every optional field not needed " +
+		"strategic Action step selected from the supplied current action_frontier; omit every optional field not needed " +
 		"to identify that Action. Do not repeat analysis, evidence, rationale, assertions, verdicts, budgets, or digests."
 	user := "Repair only the truncated response against this unchanged trusted frontier. The previous response executed no " +
 		"Runtime Action. A proposal outside the current frontier or available intent remains invalid. Frozen repair input JSON:\n" +
@@ -390,6 +456,10 @@ func scenarioAgentPrompt(
 	view controlexperiment.ScenarioAgentView,
 ) (string, string, error) {
 	if err := validateScenarioPromptInput(spec, view); err != nil {
+		return "", "", err
+	}
+	frontier, err := newScenarioPromptFrontier(view)
+	if err != nil {
 		return "", "", err
 	}
 	selectionOnly := scenarioSelectionOnlyView(view)
@@ -451,12 +521,30 @@ func scenarioAgentPrompt(
 				ProgressDelta:        promptView.Prior.ProgressDelta,
 			}
 		}
+		type planningFocusView struct {
+			NextMissingMilestone  string                                `json:"next_missing_milestone,omitempty"`
+			ResolvedBindings      []semantic.RiskWitnessResolvedBinding `json:"resolved_bindings,omitempty"`
+			LastAgentActionEffect *scenarioPromptStepFeedback           `json:"last_agent_action_effect,omitempty"`
+		}
+		focus := planningFocusView{
+			NextMissingMilestone: promptView.Frontier.Progress.FirstMissingMilestone,
+			ResolvedBindings: append(
+				[]semantic.RiskWitnessResolvedBinding(nil),
+				promptView.Frontier.Progress.ResolvedBindings...,
+			),
+		}
+		if promptView.Prior != nil && len(promptView.Prior.Steps) > 0 {
+			last := compactScenarioPromptSteps(
+				promptView.Prior.Steps[len(promptView.Prior.Steps)-1:],
+			)[0]
+			focus.LastAgentActionEffect = &last
+		}
 		agentView = struct {
+			PlanningFocus           planningFocusView                               `json:"planning_focus"`
 			AcceptedHypothesis      *controlexperiment.AcceptedHypothesisContext    `json:"accepted_hypothesis"`
 			TargetSurface           *targetSurfaceView                              `json:"target_surface,omitempty"`
 			OrderedMilestones       []string                                        `json:"ordered_milestones"`
-			Frontier                controlexperiment.RiskFrontierView              `json:"root_frontier"`
-			Semantics               controlexperiment.ScenarioSemanticExposure      `json:"action_semantics"`
+			Frontier                scenarioPromptFrontier                          `json:"action_frontier"`
 			MaxSteps                int                                             `json:"max_steps"`
 			DecisionAllowance       int                                             `json:"decision_allowance"`
 			RemainingDecisions      int                                             `json:"remaining_decisions"`
@@ -465,9 +553,10 @@ func scenarioAgentPrompt(
 			Branches                []controlexperiment.ScenarioInvestigationBranch `json:"branches,omitempty"`
 			Prior                   *feedbackView                                   `json:"prior_feedback,omitempty"`
 		}{
+			PlanningFocus:      focus,
 			AcceptedHypothesis: promptView.AcceptedHypothesis,
 			TargetSurface:      surface, OrderedMilestones: promptView.OrderedMilestones,
-			Frontier: promptView.Frontier, Semantics: promptView.Semantics,
+			Frontier: frontier,
 			MaxSteps: promptView.MaxSteps, DecisionAllowance: promptView.DecisionAllowance,
 			RemainingDecisions:      promptView.RemainingDecisions,
 			AvailableIntents:        promptView.AvailableIntents,
@@ -507,11 +596,11 @@ func scenarioAgentPrompt(
 		"available_intents. Except for select and abandon, the nested plan may use only id, steps, and selector_fields listed in the input. " +
 		"select is a zero-Action final choice: provide only intent=select and from_branch_id, and omit plan. " +
 		"abandon is a zero-Action hypothesis choice: provide only intent=abandon and omit plan. " +
-		"action_id is valid only for an Action in the supplied current root_frontier or a branch's available_actions when " +
+		"action_id is valid only for an Action in the supplied current action_frontier or a branch's available_actions when " +
 		"continuing from that branch. control and ablate execute from an earlier root checkpoint and must use semantic selectors. " +
-		"action_semantics only describes the bound current Actions and grants no authority to invent Actions or facts. " +
+		"The semantic fields embedded in action_frontier describe only their bound current Actions and grant no authority to invent Actions or facts. " +
 		"The optional actor_role, message_class, epoch_relation, and operation_state selector fields may use only non-unknown " +
-		"values present in action_semantics for the same Action; they narrow the current frontier but do not create an Action. " +
+		"values present on that Action; they narrow the current frontier but do not create an Action. " +
 		"message_type_hint, effect_phase, and effect_outcome are opaque target-declared values copied from the current " +
 		"frontier; use only values present on an enabled Action. " +
 		"Selector node, owner, message_source, and message_target values are node ID JSON strings such as n1, never " +
@@ -525,7 +614,7 @@ func scenarioAgentPrompt(
 			"investigation. Use only the intent listed in available_intents, or abandon when it is also listed. " +
 			"For continue/revise provide one plan containing exactly one strategic Action step. Omit branch_id, " +
 			"from_branch_id, reference_branch_id, omitted_step_ids, assertions, verdicts, budgets, and digests. " +
-			"Use only a current enabled Action or stable selector fields present in root_frontier/action_semantics."
+			"Use only a current enabled Action or stable selector fields present in action_frontier."
 	}
 	if len(view.AvailableIntents) == 1 &&
 		(view.AvailableIntents[0] == controlexperiment.ScenarioIntentContinue ||
@@ -569,12 +658,19 @@ func scenarioAgentPrompt(
 		"prior_feedback.closure_candidates is the complete trusted subset that can resolve the current Target-local ambiguity; " +
 		"use revise and select one of those exact enabled Action IDs. Do not substitute another frontier Action. " +
 		"Repetition and a missing milestone are not protocol verdicts. " +
+		"Before selecting the single strategic Action, start with planning_focus and action_frontier.coordination. Check the Action source/target against " +
+		"resolved_bindings; whether it can advance next_missing_milestone; whether it resets or contradicts the current protocol state; " +
+		"whether it is only housekeeping that trusted natural progress can perform; whether DuplicateMessage must be followed by delivery " +
+		"to have the claimed effect; and whether a crashed receiver must first be restarted. Treat action_frontier.actions " +
+		"as the current admissible choices to assess, not as trusted proof that every choice is causally useful. " +
 		"Not selecting an enabled Action does not block it because trusted natural progress may execute it. A temporal-fired milestone " +
 		"means one timer callback, not timeout expiry, unless later trusted milestone evidence establishes the protocol transition. Do not " +
 		"continue a mechanism whose claimed stall or timeout contradicts the supplied mechanical steps; revise to an Action-supported path " +
 		"or abandon it. " +
 		"decision_allowance bounds this proposal plus its deterministic natural-progress slice; remaining_decisions is the " +
 		"episode-wide successful Action budget still available. " +
+		"A semantic kind=invoke selector may be prepared by the trusted Target when the configured workload has one invocation and current " +
+		"evidence identifies exactly one coordinator; preparation still creates an ordinary enabled Runtime Action and otherwise returns no-match. " +
 		"Frozen input JSON:\n" + string(encoded)
 	if view.PostInterventionClosure {
 		user = "The trusted Target exposes post_intervention_closure. End the plan at the intended fault intervention; " +

@@ -195,6 +195,27 @@ func TestKnowledgeDiscoverySearchesNeutralMountedSourcesBeforeBoundedRead(t *tes
 	}
 }
 
+func TestKnowledgeDiscoveryDeduplicatesPhysicalFilesAcrossMountAliases(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(root, "election.go"),
+		[]byte("package protocol\n// quorum transition\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	mounts := []KnowledgeSourceMount{
+		{ReferencePrefix: "go.example/consensus@v1/", Directory: root},
+		{ReferencePrefix: "sut/", Directory: root},
+	}
+	search, err := SearchMountedKnowledgeSources(mounts, KnowledgeReadRequest{
+		Query: "quorum transition", MaxResults: 20,
+	})
+	if err != nil || search.Validate() != nil || len(search.Matches) != 1 ||
+		search.Matches[0].Reference != "go.example/consensus@v1/election.go" {
+		t.Fatalf("physical mount aliases consumed search results: %#v/%v", search, err)
+	}
+}
+
 func knowledgeDiscoveryFixture(t *testing.T, references []string) ProtocolKnowledgePack {
 	t.Helper()
 	pack, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{

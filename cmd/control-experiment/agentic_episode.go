@@ -85,6 +85,7 @@ type agenticEpisodeMetrics struct {
 	ProtocolPSSStates             int  `json:"protocol_pss_states,omitempty"`
 	ControlPSSStates              int  `json:"control_pss_states,omitempty"`
 	OracleFindings                int  `json:"oracle_findings"`
+	OracleEvaluated               bool `json:"oracle_evaluated"`
 	RootPrefixOracleFindings      int  `json:"root_prefix_oracle_findings,omitempty"`
 	CapabilityGapAttempts         int  `json:"capability_gap_attempts,omitempty"`
 	RepeatedCapabilityGapAttempts int  `json:"repeated_capability_gap_attempts,omitempty"`
@@ -348,13 +349,14 @@ func runAgenticEpisode(
 	addAgentModelWork(&result.Work.Model, modelWorkFromAgentAudits(result.ScenarioProviderCalls))
 	result.Work.ScenarioFrontier = scenario.FrontierWork
 	result.Work.ScenarioSearch = scenario.Agent.ExecutionWork
-	if errors.Is(scenarioErr, errAgenticEpisodeTokenThreshold) {
+	tokenStopped := errors.Is(scenarioErr, errAgenticEpisodeTokenThreshold)
+	if tokenStopped && scenario.Agent.Execution == nil && len(scenario.Agent.CandidateExecutions) == 0 {
 		result.Status = agenticEpisodeTokenStopped
 		result.Assessment.Status = agenticEvidenceBudgetExhausted
 		result.Assessment.ReasonCode = "model-token-threshold-reached"
 		return result, nil
 	}
-	if scenarioErr != nil {
+	if scenarioErr != nil && !tokenStopped {
 		if scenario.Failure != nil {
 			result.Status = agenticEpisodeExecutionFailed
 			result.Assessment.Status = agenticEvidenceExecutionFailed
@@ -386,6 +388,9 @@ func runAgenticEpisode(
 			result.Assessment = assessUnselectedBranchEvidence(
 				result.Assessment, result.BranchTesting, scenario.Agent,
 			)
+			if tokenStopped {
+				markAgenticEpisodeTokenStopped(&result)
+			}
 			return result, nil
 		}
 		result.Status = agenticEpisodeScenarioStopped
@@ -428,7 +433,20 @@ func runAgenticEpisode(
 		result.Assessment, testing, scenario.Agent,
 	)
 	result.Assessment = overrideWithBranchOracleFinding(result.Assessment, result.BranchTesting)
+	if tokenStopped {
+		markAgenticEpisodeTokenStopped(&result)
+	}
 	return result, nil
+}
+
+func markAgenticEpisodeTokenStopped(result *agenticEpisodeResult) {
+	result.Status = agenticEpisodeTokenStopped
+	result.Assessment.Status = agenticEvidenceBudgetExhausted
+	result.Assessment.ReasonCode = "model-token-threshold-reached"
+	result.Assessment.FirstMissingMilestone = ""
+	if result.Testing != nil && len(result.Testing.Risk.MissingMilestones) > 0 {
+		result.Assessment.FirstMissingMilestone = result.Testing.Risk.MissingMilestones[0]
+	}
 }
 
 func agenticScenarioTokenBoundary(

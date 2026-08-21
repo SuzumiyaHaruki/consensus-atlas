@@ -199,6 +199,19 @@ fresh 单 Episode 校准使用新的空 `-campaign-dir`。最低闭环条件不�
 生成 `bundle.json` 并通过 fresh Replay。`planning-failed` 必须结合字段级 feedback 分析，不能单独视为
 模型或协议结论。
 
+Agentic semantic input 必须显式给出 `experiment.root_mode`：正式调查使用 `bootstrap`，只完成启动
+Ready/effect；历史闭合校准可使用 `workload-ready`。该选择进入 semantic input digest，不能在同一
+MethodSpec 下把已完成选举/Invoke 的 root 与 pre-election root 混用。
+
+节点规模和 root 也可作为运行参数覆盖稳定协议材料，无需复制整份 semantic input：
+
+```bash
+-node-count 5 -root-mode bootstrap
+```
+
+CLI 先应用 override，再对解析后的有效输入计算现有 `SemanticInputDigest`；因此节点数、root、预算和
+实际 TargetSurface 仍由同一个 MethodSpec 绑定。未传 override 时继续使用 JSON 中的默认值。
+
 连续 Investigation 增加 `-investigation-episodes N`；中断后使用相同参数和 `-campaign-resume`。源码查询需显式增加：
 
 ```bash
@@ -217,7 +230,8 @@ grounding 是一次成功的中立 search，再读取一个该 search 实际返�
 模型调用不等于可以读取 4 个源码片段。
 Episode summary 会把该 bounded read 标记为 `completed-used` 或 `completed-unused`：只有候选的
 mechanism step 真正引用相应 `source/...` 时才算 used。该字段只是 grounding 口径，不是候选准入条件，
-也不能把源码引用提升为 finding。
+也不能把源码引用解释为已经定位缺陷或提升为 finding。同一物理文件若由多个 mount/reference prefix
+暴露，只占一个搜索结果，避免别名挤占有界结果列表。
 
 Provider 返回 HTTP 200 但结构化输出不可用时，journal 区分 `response-finish-length`、
 `response-empty-content`、`response-malformed` 与 `response-too-large`，并在已解析出 usage/response
@@ -227,6 +241,9 @@ durable recovery 只承认紧邻且绑定同一 root、冻结 view digest 和原
 Failed 后续调用一律拒绝。repair 已 dispatch 但 result 尚未落盘时会明确报告远端结果不确定且不会自动重发。
 失败响应即使恰好越过 token 上限也保留原 failure code，只禁止后续 repair，已有执行仍进入 Bundle、fresh Replay
 和 Oracle。
+已提交 Scenario 前缀恰好越过 token 阈值时也不会丢弃证据：Episode 保持
+`model-token-threshold-reached`/budget-exhausted 结论，但会封存 Bundle、执行 fresh Replay、运行 Oracle，
+并以 `oracle_evaluated=true` 明确区别于尚未执行 Oracle 的零 finding。
 `-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
 公开反馈校准可指定 `-capability-feedback-probe`；探针只由真实 TargetSurface 预检，不执行 Action，并进入

@@ -194,6 +194,13 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   这三项事实。完整 Oracle
   结果不删除 root violation，但正式 finding 只由 evaluator-owned Replay 中 root 之后的 violation 产生。
   root 中已有的异常单独报告为 Oracle sensitivity，不能归因于 Agent；
+- Agentic semantic input 显式声明 `root_mode`。正式盲测使用 `bootstrap`：只清空启动
+  Ready/effect，不预先完成选举、coordinator 形成或 Invoke；历史窄 closure 校准保留
+  `workload-ready`。两种模式由 semantic input digest/MethodSpec 区分，不能靠移动 root
+  把自然启动已出现的问题改记为 Agent finding；
+- 每个活动 Target 的 bootstrap root 必须以普通零模型测试证明三/五节点均可精确 Replay、
+  现有 Oracle registry 为 clean 且仍存在 timer/message 调查空间。这一检查复用现有 Trace、Replay
+  和 Oracle，不新增 contract、hash 或 admission gate；
 - Target preparation 受独立 wall-clock deadline 约束；qualification report/case 数量、
   root 构造的 primary/replay work 和实际耗时进入 Episode 工件。root work 进入 formal
   primary/replay 成本；qualification 通过协议中立 Adapter `WorkMeter` 记录真实 Reset、
@@ -269,17 +276,20 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
-- closure handoff、正式 Risk 输入、节点规模/调用预算和因果实例绑定属于方法实现变化，当前
-  MethodSpec implementation identity 为 `m4n11-provider-recovery-and-quorum-oracle-v1`；旧
+- closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
+  token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
+  `m4n13-causal-bootstrap-and-sealed-token-stop-v1`；旧
+  `m4n12-bootstrap-root-and-action-coherence-v1`/
+  `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
   `m4n8-agent-semantics-portfolio-search-v1`/`m4n6-causal-closure-build-evidence-v1`/
   `m4n5-multinode-closure-v1`/`m4m4-risk-fidelity-v1`/
   `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
   `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
-- M4n11 已执行的主路径和候选分支必须封存 root/post-root Oracle attribution；
-  campaign resume 按已有 MethodSpec implementation ID 机械区分当前与历史工件。只有旧版本
-  可以缺省 attribution，当前版本不会将缺失字段默认恢复为 root=0；
+- M4n11 及后续版本已执行的主路径和候选分支必须封存 root/post-root Oracle attribution；
+  campaign resume 按已有 MethodSpec implementation ID 机械区分。只有 M4n10 及更早版本
+  可以缺省 attribution，方法版本前移不会将 M4n11 缺失字段默认恢复为 root=0；
 - M4n10 的新工件只使用“机械可执行”（兼容 wire value `executable`）→
   `witness-instantiated → oracle-finding` 三层结论；
   `scenarioTestingResult.outcome` 为 `oracle-clean|oracle-finding`，不能再用 `passed`
@@ -293,33 +303,43 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   盲测试运行必须让 Agent 读取与执行器编译使用同一独立 SUT checkout，并从该 checkout 排除
   解释性修改注释和专用验证测试。etcd/raft 已增加只读 Evidence 驱动的 election-safety Oracle；
   场景仍受公开分组控制能力限制，无 finding 不能被解释为实现通过；
+- 同一物理文件经多个 mount/reference prefix 暴露时，搜索只保留按 prefix 稳定排序后的一个
+  Agent-visible reference；Dossier 在搜索前只给抽象 contract，不给缺陷相关精确函数 locator；
 - 协议知识使用现有 KnowledgeStatement/ProtocolProperty/TargetDossier 承载紧凑 CFT fault model
   与协议不变量。Raft 的 quorum 由 `Q=floor(n/2)+1` 和实际 Target 节点数推导；OmniPaxos
   使用 ballot/prepare/promise/accepted/decided/recovery 术语，不把协议语义写入公共 Core；
 - Risk 固定最多 4 次调用：正常路径为一次中立 search、一次 bounded read、一次 portfolio、
   最多一次可信资格反馈修复。一次 search/read 返回 `stopped` 时可重试一次，但会占用原本的
-  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v8`
+  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v9`
   按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
   portfolio；query 是单行匹配的一个大小写不敏感字面子串，不分词且不执行 OR。oracle-backed 是 prompt
   的可验证性软偏好，不是可信侧准入条件；已完成的 read 按候选 mechanism step 是否引用 `source/...`
-  报告为 `completed-used|completed-unused`，该口径不形成 gate；已通过机械审查的 observable-only/
+  报告为 `completed-used|completed-unused`，该口径只证明候选引用了真实读取片段，不证明源码阅读定位了
+  缺陷，也不形成 gate；已通过机械审查的 observable-only/
   hypothesis-only 候选仍必须保留。源码只确认实现机制与 contract，不能作为 defect verdict；
-- 取消共享调用池。每个新候选或队列候选都固定获得 8 次 Scenario 调用、64 decisions、单步计划
-  和每轮至多 4 个自然推进 decision；Episode 总预算为 12 calls、240k observed tokens、30 分钟，
+- 取消共享调用池。每个新候选或队列候选都固定获得 8 次 Scenario 调用和单步计划；当前 etcd/raft
+  有效输入给 64 decisions，初始五节点 frontier 更大的 OmniPaxos 给 128 decisions。协调者存在后每轮
+  至多 4 个自然推进 decision；bootstrap 使用至多 16 个 decision 的有界因果切片，优先 item dependency、
+  再按 Agent 所选参与者方向推进，并在可信协调/term/ballot/milestone 变化时返回。Episode 总预算为
+  12 calls、240k observed tokens、30 分钟，
   Risk reasoning 保持 high，Scenario reasoning 降为 low，Scenario 输出上限仍为 8192 tokens；
   HTTP 200 的结构化响应失败必须区分 length/empty/malformed/too-large，并在已知时保留 usage、
   response identity 与 finish reason。首次 `finish_reason=length` 只允许在现有预算内做一次绑定同一
   frontier 的最小 JSON repair；repair 不执行或重放 Runtime Action，二次失败以 in-band stop 保存
   已验证前缀并继续 Bundle、fresh Replay 与 Oracle。journal 恢复只允许精确相邻、同 root、同冻结 view、
   绑定原调用序号的 length→repair；dispatch 后缺少 result 的调用保持显式 unreconciled，绝不静默重发。
-  失败响应跨过 token 阈值时保留原 failure classification，只停止后续模型调用；
+  失败响应跨过 token 阈值时保留原 failure classification，只停止后续模型调用；已有 committed
+  Scenario 前缀跨过阈值时仍封存 Bundle、fresh Replay 和 Oracle，Episode 结论保持 budget exhausted，
+  并显式报告 `oracle_evaluated`；
 - Exploration Memory 增加 `property_ref`/`evidence_level`，只用于识别语义重复和理解可验证性，
   不把 oracle-backed 当作 finding，也不参与可信 verdict；
 - 六 Episode 长调查不设独立 portfolio 数量上限，只受统一 Episode/call/token/decision 预算约束；
   按原顺序调查最多六个候选，总上限 72 calls、
   1.44M observed tokens、384 Scenario decision allowance；不因首个 finding 提前停止，且暂不
   实现跨 Episode live Trace continuation；
-- Scenario 的 stateless 压缩反馈必须保留 previous proposal、outcome/reason、selector failure、
+- Scenario 的 stateless 压缩反馈必须优先展示 next missing milestone、resolved bindings、协调状态、上一条 Agent
+  Action 的可信效果和当前候选 Action；每个 enabled Action 只在合并后的 `action_frontier` 中出现一次，
+  并保留 previous proposal、outcome/reason、selector failure、
   capability gap、closure handoff 与 ProgressDelta；逐步反馈删除重复的 Choice、RiskProgress 和
   view/evidence digest。`token-stopped` 只停止当前 Episode，已 accepted 但未进入
   Scenario 的候选必须在 Investigation 总预算尚可启动时由下一 Episode 继续；
@@ -337,6 +357,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   搜索策略或模型进行同 Risk 对比；
 - 使用显式 mount 内的中立关键词搜索与限行只读源码窗口；不提供修改文件、变更函数、
   control/candidate 差异或实验定向函数提示；
+- 正式效果实验的材料与方法版本必须先于受控修改/历史问题选择固定；实验期间不因观察到的
+  candidate 再增强对应 property 或 locator。Oracle-backed 是透明报告的 portfolio 软偏置，
+  不允许直接比较 Oracle coverage 不同的 Target 发现率；
 - 利用真实 ProgressDelta 做多轮 revise；
 - 让 Risk Agent 根据执行 capability gap 切换假设；
 - 在隔离工作区探索 native-test candidate，但可信 verdict 仍来自主执行链。

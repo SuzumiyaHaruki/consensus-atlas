@@ -287,6 +287,7 @@ func executeBoundedScenarioPlan(
 		return nil
 	}
 	var activeClosureSelector ScenarioClosureSelector
+	progressFocus := scenarioCausalProgressFocusFromTrace(root)
 	closureExecuted := func() []FrontierChoice {
 		values := cloneScenarioFrontierChoices(inheritedClosureChoices)
 		values = append(values, scenarioFeedbackChoices(result.Steps)...)
@@ -386,7 +387,9 @@ func executeBoundedScenarioPlan(
 					})
 					break
 				}
-				action, ok, stopReason, stopFrontier, closureCandidates, closureErr := scenarioClosureAction(view, selector)
+				action, ok, stopReason, stopFrontier, closureCandidates, closureErr := scenarioProgressAction(
+					view, selector, progressFocus,
+				)
 				if closureErr != nil {
 					return ScenarioExecution{}, closeWith(closureErr)
 				}
@@ -566,6 +569,7 @@ func executeBoundedScenarioPlan(
 		}
 		feedback.Outcome, feedback.Choice, feedback.RiskProgress = ScenarioStepApplied, &choice, progress
 		result.Steps = append(result.Steps, feedback)
+		progressFocus = newScenarioCausalProgressFocus(choice.Action)
 		if closureFactory != nil && naturalProgressLimit > 0 {
 			selector, selectorErr := closureSelector()
 			if selectorErr != nil {
@@ -609,9 +613,15 @@ func executeBoundedScenarioPlan(
 					return ScenarioExecution{}, closeWith(refreshErr)
 				}
 			}
+			naturalFocus := progressFocus
+			if semantics.Coordination == nil ||
+				semantics.Coordination.Status == ConsensusCoordinatorPresent {
+				naturalFocus = nil
+			}
 			live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 				ctx, executionID+"-natural", remaining, spec, result.FinalRisk,
 				result.FinalTrace, view, snapshot, faultEnvelope, runtime, projector, selector,
+				naturalFocus, semanticProjector, &semantics,
 			)
 			addScenarioPhase(&result.Work.ChildMaterialization, live.Work.ChildMaterialization)
 			result.NaturalProgressStop = live.StopReason

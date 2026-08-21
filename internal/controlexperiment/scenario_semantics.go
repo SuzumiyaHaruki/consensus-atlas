@@ -30,7 +30,30 @@ const (
 	ConsensusOperationNone              = "none"
 	ConsensusOperationInflight          = "inflight"
 	ConsensusOperationDecidedNotApplied = "decided-not-applied"
+
+	ConsensusCoordinatorAbsent    = "absent"
+	ConsensusCoordinatorPresent   = "present"
+	ConsensusCoordinatorAmbiguous = "ambiguous"
 )
+
+// ConsensusElectionProgress is a compact, protocol-neutral projection of
+// startup progress. A Target derives it from its own trusted evidence; it does
+// not grant an Action or assert that an election will eventually complete.
+type ConsensusElectionProgress struct {
+	TermOrBallotChanged bool             `json:"term_or_ballot_changed"`
+	CandidateNodes      []control.NodeID `json:"candidate_nodes,omitempty"`
+}
+
+// ConsensusCoordinationStatus explains whether the configured single-
+// coordinator workload can currently be materialized. It deliberately avoids
+// Raft/Paxos-specific epoch values and remains optional for targets without a
+// coordinator concept.
+type ConsensusCoordinationStatus struct {
+	Status           string                    `json:"coordinator_status"`
+	CoordinatorNode  control.NodeID            `json:"coordinator_node,omitempty"`
+	InvokeReady      bool                      `json:"invoke_ready"`
+	ElectionProgress ConsensusElectionProgress `json:"election_progress"`
+}
 
 // ConsensusActionHint is a closed semantic classification of one current
 // trusted Action. It carries no raw message, absolute epoch, future fact, or
@@ -49,6 +72,7 @@ type ScenarioSemanticExposure struct {
 	PrefixTraceDigest string                       `json:"prefix_trace_digest"`
 	SnapshotDigest    string                       `json:"snapshot_digest"`
 	ActionHints       []ConsensusActionHint        `json:"action_hints"`
+	Coordination      *ConsensusCoordinationStatus `json:"coordination,omitempty"`
 }
 
 func NewScenarioSemanticExposure(
@@ -76,6 +100,7 @@ func MaskScenarioSemanticExposure(
 	}
 	exposure.Mode = ScenarioSemanticExposureMasked
 	exposure.ActionHints = append([]ConsensusActionHint(nil), exposure.ActionHints...)
+	exposure.Coordination = nil
 	for index := range exposure.ActionHints {
 		exposure.ActionHints[index].ActorRole = ConsensusSemanticUnknown
 		exposure.ActionHints[index].MessageClass = ConsensusSemanticUnknown
@@ -113,6 +138,39 @@ func (exposure ScenarioSemanticExposure) Validate(frontier RiskFrontierView) err
 				hint.EpochRelation != ConsensusSemanticUnknown || hint.OperationState != ConsensusSemanticUnknown) {
 			return errors.New("EXPERIMENT_SCENARIO_MASKED_HINT_EXPOSED")
 		}
+	}
+	if exposure.Coordination != nil && exposure.Coordination.Validate() != nil {
+		return errors.New("EXPERIMENT_SCENARIO_COORDINATION_INVALID")
+	}
+	return nil
+}
+
+func (status ConsensusCoordinationStatus) Validate() error {
+	switch status.Status {
+	case ConsensusCoordinatorAbsent:
+		if status.CoordinatorNode != "" || status.InvokeReady {
+			return errors.New("EXPERIMENT_SCENARIO_COORDINATION_ABSENT_INVALID")
+		}
+	case ConsensusCoordinatorPresent:
+		if status.CoordinatorNode == "" {
+			return errors.New("EXPERIMENT_SCENARIO_COORDINATION_PRESENT_INVALID")
+		}
+	case ConsensusCoordinatorAmbiguous:
+		if status.CoordinatorNode != "" || status.InvokeReady {
+			return errors.New("EXPERIMENT_SCENARIO_COORDINATION_AMBIGUOUS_INVALID")
+		}
+	default:
+		return errors.New("EXPERIMENT_SCENARIO_COORDINATION_STATUS_INVALID")
+	}
+	seen := make(map[control.NodeID]struct{}, len(status.ElectionProgress.CandidateNodes))
+	for _, node := range status.ElectionProgress.CandidateNodes {
+		if node == "" {
+			return errors.New("EXPERIMENT_SCENARIO_COORDINATION_CANDIDATE_INVALID")
+		}
+		if _, duplicate := seen[node]; duplicate {
+			return errors.New("EXPERIMENT_SCENARIO_COORDINATION_CANDIDATE_DUPLICATE")
+		}
+		seen[node] = struct{}{}
 	}
 	return nil
 }

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/conformance"
@@ -21,12 +23,13 @@ type etcdraftAgenticExecutionInputs struct {
 }
 
 type etcdraftAgenticEpisodeInputs struct {
-	execution   etcdraftAgenticExecutionInputs
-	root        controlruntime.Trace
-	knowledge   controlexperiment.ProtocolKnowledgePack
-	experiment  etcdraftAgentExperimentConfig
-	client      agentIntentTransport
-	preparation controlexperiment.AgenticPreparationWork
+	execution           etcdraftAgenticExecutionInputs
+	root                controlruntime.Trace
+	knowledge           controlexperiment.ProtocolKnowledgePack
+	experiment          etcdraftAgentExperimentConfig
+	client              agentIntentTransport
+	preparation         controlexperiment.AgenticPreparationWork
+	semanticInputDigest string
 }
 
 func prepareEtcdraftAgenticExecutionInputs(
@@ -44,9 +47,47 @@ func prepareEtcdraftAgenticExecutionInputs(
 	if err != nil {
 		return empty, controlruntime.Trace{}, err
 	}
+	var root controlruntime.Trace
+	var rootWork controlexperiment.WorkLedger
+	if experiment.RootMode == agenticRootBootstrap {
+		root, rootWork, err = buildEtcdraftAgenticBootstrapRoot(ctx, experiment)
+	} else {
+		root, rootWork, err = buildEtcdraftAgenticWorkloadRoot(
+			ctx, workload, experiment, qualification, admission,
+		)
+	}
+	if err != nil {
+		return empty, controlruntime.Trace{}, err
+	}
+	if root.ManifestDigest != admission.ManifestDigest ||
+		root.ManifestDigest != qualification.Qualification.ManifestDigest {
+		return empty, controlruntime.Trace{}, errors.New("ETCDRAFT_AGENTIC_ROOT_IDENTITY_MISMATCH")
+	}
+	qualificationWork, err := qualificationPreparationWork(qualification)
+	if err != nil {
+		return empty, controlruntime.Trace{}, err
+	}
+	return etcdraftAgenticExecutionInputs{
+		qualification: qualification, admission: admission, workload: workload,
+		preparation: controlexperiment.AgenticPreparationWork{
+			QualificationReports: len(qualification.ConformanceReports),
+			QualificationCases:   qualificationCaseCount(qualification),
+			Qualification:        qualificationWork,
+			Root:                 rootWork,
+		},
+	}, root, nil
+}
+
+func buildEtcdraftAgenticWorkloadRoot(
+	ctx context.Context,
+	workload controlexperiment.WorkloadPlan,
+	experiment etcdraftAgentExperimentConfig,
+	qualification etcdqualification.Bundle,
+	admission controlexperiment.ExecutionAdmission,
+) (controlruntime.Trace, controlexperiment.WorkLedger, error) {
 	policy := controlexperiment.Policy{
 		Version: controlexperiment.PolicyVersion,
-		ID:      "etcdraft-agentic-root-source-v1",
+		ID:      "etcdraft-agentic-workload-root-source-v1",
 		Priority: []control.ActionKind{
 			control.ActionInvoke, control.ActionCompleteEffect,
 			control.ActionDeliverMessage, control.ActionFireTemporal,
@@ -54,7 +95,7 @@ func prepareEtcdraftAgenticExecutionInputs(
 	}
 	config := controlexperiment.Config{
 		SchemaVersion:    controlexperiment.SchemaVersionV2,
-		ID:               "etcdraft-agentic-root-source",
+		ID:               "etcdraft-agentic-workload-root-source",
 		PSSID:            etcdraftv2.CorePSSMappingID,
 		Runtime:          experiment.Runtime,
 		Admission:        &admission,
@@ -74,7 +115,7 @@ func prepareEtcdraftAgenticExecutionInputs(
 		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
 	)
 	if err != nil {
-		return empty, controlruntime.Trace{}, err
+		return controlruntime.Trace{}, controlexperiment.WorkLedger{}, err
 	}
 	rootDecisions := 0
 	for index, record := range source.Trace.Records {
@@ -85,21 +126,93 @@ func prepareEtcdraftAgenticExecutionInputs(
 	}
 	root, err := controlexperiment.ExecutionTracePrefix(source.Trace, rootDecisions)
 	if err != nil || rootDecisions == 0 {
-		return empty, controlruntime.Trace{}, errors.New("ETCDRAFT_AGENTIC_ROOT_MILESTONE_MISSING")
+		return controlruntime.Trace{}, controlexperiment.WorkLedger{},
+			errors.New("ETCDRAFT_AGENTIC_ROOT_MILESTONE_MISSING")
 	}
-	qualificationWork, err := qualificationPreparationWork(qualification)
+	return root, source.Work, nil
+}
+
+// buildEtcdraftAgenticBootstrapRoot clears only the host Ready effects emitted
+// by Reset. It deliberately stops before the first message delivery or timer
+// callback, so elections and workload routing remain part of the Agent-owned
+// investigation rather than hidden preparation.
+func buildEtcdraftAgenticBootstrapRoot(
+	ctx context.Context,
+	experiment etcdraftAgentExperimentConfig,
+) (controlruntime.Trace, controlexperiment.WorkLedger, error) {
+	seed, err := hex.DecodeString(experiment.Runtime.SeedHex)
 	if err != nil {
-		return empty, controlruntime.Trace{}, err
+		return controlruntime.Trace{}, controlexperiment.WorkLedger{}, err
 	}
-	return etcdraftAgenticExecutionInputs{
-		qualification: qualification, admission: admission, workload: workload,
-		preparation: controlexperiment.AgenticPreparationWork{
-			QualificationReports: len(qualification.ConformanceReports),
-			QualificationCases:   qualificationCaseCount(qualification),
-			Qualification:        qualificationWork,
-			Root:                 source.Work,
-		},
-	}, root, nil
+	adapter, err := etcdraftv2.NewWithConfig(experiment.AdapterConfig)
+	if err != nil {
+		return controlruntime.Trace{}, controlexperiment.WorkLedger{}, err
+	}
+	runtime, err := controlruntime.New(ctx, adapter, controlruntime.Config{
+		Seed: seed, ClockError: experiment.Runtime.ClockError,
+		MaxClones: experiment.Runtime.MaxClones,
+	})
+	if err != nil {
+		return controlruntime.Trace{}, controlexperiment.WorkLedger{}, err
+	}
+	defer runtime.Close()
+	for decisions := 0; decisions < 256; decisions++ {
+		actions, enabledErr := runtime.EnabledActions(ctx)
+		if enabledErr != nil {
+			return controlruntime.Trace{}, controlexperiment.WorkLedger{}, enabledErr
+		}
+		var effect *control.Action
+		for index := range actions {
+			if actions[index].Kind == control.ActionCompleteEffect {
+				effect = &actions[index]
+				break
+			}
+		}
+		if effect != nil {
+			if _, selectErr := runtime.Select(ctx, effect.ID); selectErr != nil {
+				return controlruntime.Trace{}, controlexperiment.WorkLedger{}, selectErr
+			}
+			continue
+		}
+		if len(actions) == 0 {
+			return controlruntime.Trace{}, controlexperiment.WorkLedger{},
+				errors.New("ETCDRAFT_AGENTIC_BOOTSTRAP_ROOT_QUIESCENT")
+		}
+		trace, traceErr := runtime.Trace()
+		if traceErr != nil {
+			return controlruntime.Trace{}, controlexperiment.WorkLedger{}, traceErr
+		}
+		evidence, evidenceErr := etcdraftv2.ProjectEvidence(latestScenarioEvidence(trace))
+		election, electionErr := etcdraftv2.ProjectElectionEvidence(latestScenarioEvidence(trace))
+		expectedNodes := experiment.AdapterConfig.NodeCount
+		if expectedNodes == 0 {
+			expectedNodes = len(experiment.AdapterConfig.Nodes)
+		}
+		if evidenceErr != nil || electionErr != nil || len(evidence.Nodes) != expectedNodes ||
+			len(election.Nodes) != expectedNodes {
+			return controlruntime.Trace{}, controlexperiment.WorkLedger{},
+				errors.New("ETCDRAFT_AGENTIC_BOOTSTRAP_EVIDENCE_INVALID")
+		}
+		baselineTerm := election.Nodes[0].Term
+		for _, node := range election.Nodes {
+			if !node.Running || node.Term != baselineTerm || node.Vote != 0 ||
+				node.Role == "StateLeader" ||
+				node.Role == "StateCandidate" || node.Role == "StatePreCandidate" {
+				return controlruntime.Trace{}, controlexperiment.WorkLedger{},
+					fmt.Errorf(
+						"ETCDRAFT_AGENTIC_BOOTSTRAP_ELECTION_ALREADY_STARTED: node=%s term=%d role=%s",
+						node.Node, node.Term, node.Role,
+					)
+			}
+		}
+		phase := controlexperiment.PhaseWork{
+			SetupAttempts: 1, RuntimeInitializations: 1,
+			SchedulerDecisions: len(trace.Records), WorkUnits: 1 + len(trace.Records),
+		}
+		return trace, controlexperiment.WorkLedger{Primary: phase}, nil
+	}
+	return controlruntime.Trace{}, controlexperiment.WorkLedger{},
+		errors.New("ETCDRAFT_AGENTIC_BOOTSTRAP_EFFECT_BUDGET_EXHAUSTED")
 }
 
 func prepareEtcdraftAgenticEpisode(
@@ -108,7 +221,20 @@ func prepareEtcdraftAgenticEpisode(
 	semanticInputPath string,
 	client agentIntentTransport,
 ) (etcdraftAgenticEpisodeInputs, error) {
-	knowledge, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(semanticInputPath)
+	return prepareEtcdraftAgenticEpisodeWithOverrides(
+		ctx, corpusPath, semanticInputPath, client, agenticInputOverrides{},
+	)
+}
+
+func prepareEtcdraftAgenticEpisodeWithOverrides(
+	ctx context.Context,
+	corpusPath string,
+	semanticInputPath string,
+	client agentIntentTransport,
+	overrides agenticInputOverrides,
+) (etcdraftAgenticEpisodeInputs, error) {
+	knowledge, experiment, workload, semanticInputDigest, err :=
+		loadEtcdraftAgenticAuthoringSourceResolved(semanticInputPath, overrides)
 	if err != nil {
 		return etcdraftAgenticEpisodeInputs{}, err
 	}
@@ -128,7 +254,7 @@ func prepareEtcdraftAgenticEpisode(
 	}
 	return etcdraftAgenticEpisodeInputs{
 		execution: execution, root: root, knowledge: knowledge, experiment: experiment, client: client,
-		preparation: execution.preparation,
+		preparation: execution.preparation, semanticInputDigest: semanticInputDigest,
 	}, nil
 }
 
@@ -197,7 +323,7 @@ func newEtcdraftAgenticEpisodeTarget(
 		ObservationProjector:        observationProjector,
 		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
 		ClosureSupport:              etcdraftScenarioClosureSupports,
-		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(len(surface.Nodes)),
+		ClosureMinimumScenarioCalls: etcdraftClosureMinimumScenarioCalls(len(surface.Nodes)),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
@@ -212,7 +338,7 @@ func newEtcdraftAgenticEpisodeTarget(
 				NewAdapter: func() (control.Adapter, error) {
 					return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 				},
-				ActionPreparer: prepareEtcdraftScenarioAction,
+				ActionPreparer: newEtcdraftScenarioActionPreparer(inputs.execution.workload),
 				RiskProjector:  projector,
 				SemanticProjector: func(
 					trace controlruntime.Trace,

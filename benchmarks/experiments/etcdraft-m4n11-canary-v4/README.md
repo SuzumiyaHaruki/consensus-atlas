@@ -1,8 +1,9 @@
 # M4n11 etcd/raft canary v4
 
-本目录只保存精简、非正式的 capability canary 结论。完整 provider journal、展开
-Bundle、evaluator fresh Bundle 和上游测试日志位于运行时的独立临时 checkout，未进入
-Git；SUT canary commit 也是本地对象，因此本结果不能当作可跨机器复现的 formal trial。
+本目录保存非正式 capability canary 的结论和压缩审计证据。`evidence/` 包含完整
+provider journal、原始与 evaluator fresh Bundle、evaluator 报告、上游测试日志和可读取
+本地 SUT commit 的 Git bundle。它足以复核 Prompt、Action binding、Replay 和当时源码，
+但本结果仍不是预注册的 formal trial。
 
 ## 固定边界
 
@@ -35,6 +36,9 @@ term 2 leader n1 is not backed by a legal election quorum: voters votes=2/5 need
 
 该结果证明 canary 管线和 root/post-root attribution 正常，不证明 Agent 已发现问题。
 受控 SUT 的普通上游测试也已直接失败，因此不能宣称未知缺陷或 Agent 独占发现。
+
+这里的源码 grounding 状态是 `completed-used`：候选确实引用了真实读取片段。它不表示
+该片段定位了缺陷；本轮读取位置与实际受控修改位置不同。
 
 ## 下一决策
 

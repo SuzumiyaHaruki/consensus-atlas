@@ -12,13 +12,14 @@ import (
 )
 
 type omnipaxosAgenticEpisodeInputs struct {
-	WorkerPath    string
-	Knowledge     controlexperiment.ProtocolKnowledgePack
-	Experiment    omnipaxosScenarioExperimentConfig
-	Workload      controlexperiment.WorkloadPlan
-	Root          controlruntime.Trace
-	Qualification omnipaxosScenarioQualification
-	Preparation   controlexperiment.AgenticPreparationWork
+	WorkerPath          string
+	Knowledge           controlexperiment.ProtocolKnowledgePack
+	Experiment          omnipaxosScenarioExperimentConfig
+	Workload            controlexperiment.WorkloadPlan
+	Root                controlruntime.Trace
+	Qualification       omnipaxosScenarioQualification
+	Preparation         controlexperiment.AgenticPreparationWork
+	SemanticInputDigest string
 }
 
 func prepareOmnipaxosAgenticEpisode(
@@ -26,11 +27,28 @@ func prepareOmnipaxosAgenticEpisode(
 	workerPath string,
 	semanticInputPath string,
 ) (omnipaxosAgenticEpisodeInputs, error) {
-	knowledge, experiment, workload, err := loadOmnipaxosAgenticAuthoringSource(semanticInputPath)
+	return prepareOmnipaxosAgenticEpisodeWithOverrides(
+		ctx, workerPath, semanticInputPath, agenticInputOverrides{},
+	)
+}
+
+func prepareOmnipaxosAgenticEpisodeWithOverrides(
+	ctx context.Context,
+	workerPath string,
+	semanticInputPath string,
+	overrides agenticInputOverrides,
+) (omnipaxosAgenticEpisodeInputs, error) {
+	knowledge, experiment, workload, semanticInputDigest, err :=
+		loadOmnipaxosAgenticAuthoringSourceResolved(semanticInputPath, overrides)
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
-	root, err := buildOmnipaxosScenarioRoot(ctx, workerPath, experiment, workload)
+	var root controlruntime.Trace
+	if experiment.RootMode == agenticRootBootstrap {
+		root, err = buildOmnipaxosAgenticBootstrapRoot(ctx, workerPath, experiment, workload)
+	} else {
+		root, err = buildOmnipaxosScenarioRoot(ctx, workerPath, experiment, workload)
+	}
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
@@ -42,17 +60,22 @@ func prepareOmnipaxosAgenticEpisode(
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
+	rootPrepareActions := 0
+	if experiment.RootMode == agenticRootWorkloadReady {
+		rootPrepareActions = 1
+	}
 	return omnipaxosAgenticEpisodeInputs{
 		WorkerPath: workerPath, Knowledge: knowledge, Experiment: experiment,
 		Workload: workload, Root: root, Qualification: qualification,
+		SemanticInputDigest: semanticInputDigest,
 		Preparation: controlexperiment.AgenticPreparationWork{
 			QualificationReports: len(qualification.Bundle.ConformanceReports),
 			QualificationCases:   qualificationCaseCount(qualification.Bundle),
 			Qualification:        qualificationWork,
 			Root: controlexperiment.WorkLedger{Primary: controlexperiment.PhaseWork{
 				SetupAttempts: 1, RuntimeInitializations: 1,
-				PrepareActions: 1, SchedulerDecisions: len(root.Records),
-				WorkUnits: 2 + len(root.Records),
+				PrepareActions: rootPrepareActions, SchedulerDecisions: len(root.Records),
+				WorkUnits: 1 + rootPrepareActions + len(root.Records),
 			}},
 		},
 	}, nil
@@ -118,7 +141,7 @@ func newOmnipaxosAgenticEpisodeTarget(
 		ObservationProjector:        observationProjector,
 		ClosureFactory:              newOmnipaxosScenarioClosureFactory(),
 		ClosureSupport:              omnipaxosScenarioClosureSupports,
-		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(len(surface.Nodes)),
+		ClosureMinimumScenarioCalls: omnipaxosClosureMinimumScenarioCalls(len(surface.Nodes)),
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
@@ -133,7 +156,9 @@ func newOmnipaxosAgenticEpisodeTarget(
 				FaultEnvelope:         inputs.Experiment.faultEnvelope(),
 				SemanticExposure:      inputs.Experiment.ScenarioSemanticExposure,
 				SingleStrategicAction: true,
-				NewAdapter:            factory, RiskProjector: projector,
+				NewAdapter:            factory,
+				ActionPreparer:        newOmnipaxosScenarioActionPreparer(inputs.Workload),
+				RiskProjector:         projector,
 				SemanticProjector: func(
 					trace controlruntime.Trace,
 					frontier controlexperiment.RiskFrontierView,

@@ -248,9 +248,12 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 		!strings.Contains(user, "source grounding is mandatory") ||
 		!strings.Contains(user, "must perform one neutral keyword search") ||
 		!strings.Contains(user, "choose a property; identify the supplied protocol invariant") ||
+		!strings.Contains(user, "same concrete message instance") ||
+		!strings.Contains(user, "term/ballot advance") ||
 		!strings.Contains(user, "Prefer including at least one mechanically executable candidate for an oracle-backed property") ||
 		!strings.Contains(user, "not an admission requirement") ||
 		strings.Contains(user, "Prefer a direct portfolio") ||
+		strings.Contains(user, "msgsAfterAppend") ||
 		!bytes.Contains([]byte(user), []byte("adapter.go:Check")) ||
 		output.Name != "risk_grounding_search" ||
 		len(output.Schema) > 32<<10 ||

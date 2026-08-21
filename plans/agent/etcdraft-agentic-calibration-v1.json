@@ -163,7 +163,7 @@
         {
           "id": "after-append-response-gating",
           "summary": "Vote and append acknowledgements that depend on unstable state are held by the official core until append persistence is acknowledged; an experiment must not manually release those private messages.",
-          "evidence_refs": ["go.etcd.io/raft/v3@v3.6.0/raft.go:msgsAfterAppend"]
+          "evidence_refs": ["go.etcd.io/raft/v3@v3.6.0/doc.go"]
         },
         {
           "id": "client-result-after-application",
@@ -232,6 +232,7 @@
     ]
   },
   "experiment": {
+    "root_mode": "workload-ready",
     "adapter_config": {
       "node_count": 3,
       "election_tick": 5,

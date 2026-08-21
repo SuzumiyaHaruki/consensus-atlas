@@ -13,7 +13,7 @@ import (
 
 const (
 	agenticMethodSpecFile        = "method-spec.json"
-	riskAgentPromptVersion       = "risk-agent-navigation-v8"
+	riskAgentPromptVersion       = "risk-agent-navigation-v9"
 	etcdraftSemanticInputSchema  = "etcdraft-agentic-input-v1"
 	omnipaxosSemanticInputSchema = "omnipaxos-agentic-input-v1"
 )
@@ -25,6 +25,7 @@ func buildAgenticMethodSpec(
 	client agentIntentTransport,
 	scenarioClient agentIntentTransport,
 	semanticInputSchema string,
+	semanticInputDigest string,
 	semanticExposure controlexperiment.ScenarioSemanticExposureMode,
 	sessionWallClockMS int64,
 	mounts []controlexperiment.KnowledgeSourceMount,
@@ -33,13 +34,10 @@ func buildAgenticMethodSpec(
 ) (controlexperiment.AgenticMethodSpec, error) {
 	if target.validate() != nil || budget.validate() != nil || budget.Logical == nil ||
 		options.InvestigationEpisodes <= 0 || semanticInputSchema == "" || sessionWallClockMS <= 0 ||
+		!validAgenticSHA256(semanticInputDigest) ||
 		client == nil || scenarioClient == nil ||
 		semanticExposure.Validate() != nil {
 		return controlexperiment.AgenticMethodSpec{}, errors.New("AGENTIC_METHOD_SPEC_INPUT_INVALID")
-	}
-	semanticBytes, err := os.ReadFile(options.SemanticInput)
-	if err != nil || len(semanticBytes) == 0 || len(semanticBytes) > etcdraftSemanticInputLimit {
-		return controlexperiment.AgenticMethodSpec{}, errors.New("AGENTIC_METHOD_SPEC_SEMANTIC_INPUT_INVALID")
 	}
 	totalBudget, err := controlexperiment.ScaleAgenticLogicalBudget(
 		*budget.Logical, options.InvestigationEpisodes,
@@ -61,7 +59,7 @@ func buildAgenticMethodSpec(
 		TargetID: target.ID, Transport: client.freeze(), ScenarioTransport: &scenarioTransport,
 		RiskPromptVersion: riskAgentPromptVersion, ScenarioPromptVersion: scenarioAgentPromptVersion,
 		SemanticInputSchema:      semanticInputSchema,
-		SemanticInputDigest:      controlexperiment.AgentInvocationDigest(semanticBytes),
+		SemanticInputDigest:      semanticInputDigest,
 		ScenarioSemanticExposure: semanticExposure, SourceExposure: source,
 		ClosureMode:   closureMode,
 		RiskInputMode: riskInputMode, RiskInputDigest: riskInputDigest,

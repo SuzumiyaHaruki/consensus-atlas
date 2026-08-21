@@ -28,6 +28,20 @@ type omnipaxosClosureParticipantSet struct {
 	RequestID       string
 }
 
+// omnipaxosClosureMinimumScenarioCalls is intentionally Target-owned even
+// while its current majority formula matches etcd/raft. OmniPaxos ballot and
+// recovery quorum requirements may evolve independently of Raft membership.
+func omnipaxosClosureMinimumScenarioCalls(nodeCount int) int {
+	if nodeCount <= 0 {
+		return 0
+	}
+	requiredFollowers := nodeCount / 2
+	if nodeCount-2 <= requiredFollowers {
+		return 1
+	}
+	return 1 + requiredFollowers
+}
+
 // newOmnipaxosScenarioClosureFactory recognizes only the existing
 // message-loss-before-decision Risk and an actually executed operation-carrying
 // AcceptDecide or initial AcceptSync drop. It never creates protocol work; it

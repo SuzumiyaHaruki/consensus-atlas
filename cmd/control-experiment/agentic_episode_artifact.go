@@ -219,7 +219,9 @@ func newAgenticEpisodeArtifact(
 	if err := artifact.validateCompact(); err != nil {
 		return agenticEpisodeArtifact{}, err
 	}
-	if result.Status == agenticEpisodeCompleted {
+	if result.Status == agenticEpisodeCompleted ||
+		result.Status == agenticEpisodeTokenStopped &&
+			(result.Testing != nil || len(result.BranchTesting) != 0) {
 		metrics, metricsErr := agenticEpisodeMetricsFromEvidence(result.Testing, result.BranchTesting)
 		primaryValid := result.Testing == nil && artifact.PlanID == "" && artifact.RiskResultID == "" ||
 			result.Testing != nil && result.Testing.validateExecutionStructure() == nil &&
@@ -301,7 +303,10 @@ func recoverAgenticEpisodeArtifacts(
 	} else if _, err := os.Lstat(filepath.Join(clean, agenticMethodSpecFile)); !os.IsNotExist(err) {
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_METHOD_SPEC")
 	}
-	if artifact.Status != agenticEpisodeCompleted {
+	hasSealedEvidence := artifact.Status == agenticEpisodeCompleted ||
+		artifact.Status == agenticEpisodeTokenStopped &&
+			(artifact.PlanID != "" || len(artifact.BranchEvidence) != 0)
+	if !hasSealedEvidence {
 		if _, err := os.Lstat(filepath.Join(clean, agenticEpisodeBundleFile)); !os.IsNotExist(err) {
 			return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BUNDLE")
 		}
@@ -384,16 +389,16 @@ func recoverAgenticEpisodeArtifacts(
 	return recovered, true, nil
 }
 
-// Current M4n11 artifacts use root/post-root Oracle attribution as part of
-// their execution meaning. Historical MethodSpecs predate that field and stay
-// readable, but a current executed path must not silently recover as root=0.
+// M4n11 and later artifacts use root/post-root Oracle attribution as part of
+// their execution meaning. Older MethodSpecs predate that field and stay
+// readable, but a newer executed path must not silently recover as root=0.
 func requireRecoveredScenarioOracleAttribution(
 	spec *controlexperiment.AgenticMethodSpec,
 	hasExecution bool,
 	attribution *scenarioOracleAttribution,
 ) error {
 	if hasExecution && spec != nil &&
-		spec.ImplementationID == controlexperiment.AgenticMethodImplementationID &&
+		controlexperiment.AgenticMethodRequiresOracleAttribution(spec.ImplementationID) &&
 		attribution == nil {
 		return errors.New("AGENTIC_EPISODE_RECOVERY_ORACLE_ATTRIBUTION_REQUIRED")
 	}
@@ -650,12 +655,23 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			len(artifact.BranchEvidence) != 0 {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_RISK_STOP_INVALID")
 		}
-	case agenticEpisodeScenarioStopped, agenticEpisodeTokenStopped:
+	case agenticEpisodeScenarioStopped:
 		if artifact.Failure != nil || artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
 			artifact.PlanID != "" || artifact.RiskResultID != "" || artifact.TraceDigest != "" ||
 			artifact.OracleAttribution != nil ||
 			len(artifact.BranchEvidence) != 0 {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_STOP_INVALID")
+		}
+	case agenticEpisodeTokenStopped:
+		hasPrimary := artifact.PlanID != "" && artifact.RiskResultID != ""
+		hasEvidence := hasPrimary || len(artifact.BranchEvidence) != 0
+		if artifact.Failure != nil || artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
+			artifact.PlanID == "" != (artifact.RiskResultID == "") ||
+			hasPrimary != (artifact.TraceDigest != "") ||
+			artifact.TraceDigest != "" && !validAgenticSHA256(artifact.TraceDigest) ||
+			!hasEvidence && (artifact.OracleAttribution != nil || artifact.Metrics.OracleEvaluated) ||
+			hasEvidence && (!artifact.Metrics.OracleEvaluated || artifact.Accepted == nil) {
+			return errors.New("AGENTIC_EPISODE_ARTIFACT_TOKEN_STOP_INVALID")
 		}
 	case agenticEpisodeExecutionFailed:
 		if artifact.Accepted == nil || !artifact.Metrics.CandidateAccepted || artifact.Failure == nil ||
@@ -782,6 +798,15 @@ func agenticMetricsMatchArtifact(
 ) bool {
 	if actual == stored {
 		return true
+	}
+	// OracleEvaluated was added after the first readable Episode artifacts.
+	// Their Bundle still lets recovery recompute the result; a missing historical
+	// reporting bit does not change that evidence.
+	if actual.OracleEvaluated && !stored.OracleEvaluated {
+		actual.OracleEvaluated = false
+		if actual == stored {
+			return true
+		}
 	}
 	if hasPrimary && stored.ExecutedCandidates == 0 && stored.BranchCandidates == 0 &&
 		actual.ExecutedCandidates == 1 && actual.BranchCandidates == 0 {
@@ -985,6 +1010,7 @@ func agenticEpisodeMetricsFromEvidence(
 	if len(results) == 0 {
 		return metrics, nil
 	}
+	metrics.OracleEvaluated = true
 	for _, testing := range results {
 		if testing.validateExecutionStructure() != nil {
 			return agenticEpisodeMetrics{}, errors.New("AGENTIC_EPISODE_CANDIDATE_EVIDENCE_INVALID")
@@ -1021,9 +1047,12 @@ func deriveAgenticExplorationMemory(
 	seenCandidates := make(map[string]bool)
 	seenProtocolStates := make(map[string]bool)
 	for index, episode := range episodes {
+		hasEvidence := episode.Testing != nil || len(episode.BranchTesting) > 0
+		statusAllowsEvidence := episode.Summary.Status == agenticEpisodeCompleted ||
+			episode.Summary.Status == agenticEpisodeTokenStopped
 		if episode.Summary.validateCompact() != nil ||
-			(episode.Summary.Status == agenticEpisodeCompleted) !=
-				(episode.Testing != nil || len(episode.BranchTesting) > 0) {
+			episode.Summary.Status == agenticEpisodeCompleted && !hasEvidence ||
+			hasEvidence && !statusAllowsEvidence {
 			return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EPISODE_INVALID")
 		}
 		reasons := agenticExplorationReasonCodes(

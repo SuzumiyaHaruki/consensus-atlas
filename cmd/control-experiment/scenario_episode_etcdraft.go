@@ -13,6 +13,42 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
+func newEtcdraftScenarioActionPreparer(
+	workload controlexperiment.WorkloadPlan,
+) controlexperiment.ScenarioActionPreparer {
+	return func(
+		ctx context.Context,
+		selector controlexperiment.FrontierActionSelector,
+		trace controlruntime.Trace,
+		runtime *controlruntime.Runtime,
+	) (control.ActionID, bool, error) {
+		if scenarioPreparedInvokeSelector(selector) {
+			route, err := (etcdraftv2.WorkloadRouter{}).Route(
+				workload.TargetSelector, latestScenarioEvidence(trace),
+			)
+			if err != nil || len(route.Candidates) != 1 || len(workload.Invocations) != 1 {
+				return "", false, err
+			}
+			actionID, err := runtime.OfferInvoke(
+				ctx, route.Candidates[0], workload.Invocations[0].Input,
+			)
+			return actionID, err == nil, err
+		}
+		return prepareEtcdraftScenarioAction(ctx, selector, trace, runtime)
+	}
+}
+
+func scenarioPreparedInvokeSelector(selector controlexperiment.FrontierActionSelector) bool {
+	return selector.ActionID == "" && selector.Kind == control.ActionInvoke &&
+		selector.Node == "" && selector.ItemKind == "" && selector.Owner == "" &&
+		selector.MessageSource == "" && selector.MessageTarget == "" &&
+		selector.MessageTypeHint == "" && selector.TemporalKind == "" &&
+		selector.EffectKind == "" && selector.EffectPhase == "" &&
+		selector.EffectOutcome == "" && selector.Durability == "" &&
+		selector.ActorRole == "" && selector.MessageClass == "" &&
+		selector.EpochRelation == "" && selector.OperationState == ""
+}
+
 // prepareEtcdraftScenarioAction translates a protocol-neutral partition
 // intent into the currently observed leader-versus-peers grouping.
 func prepareEtcdraftScenarioAction(

@@ -22,7 +22,7 @@ func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.
 	target := agenticEpisodeTarget{
 		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
 		ClosureSupport:              etcdraftScenarioClosureSupports,
-		ClosureMinimumScenarioCalls: closureScenarioCallLowerBound(7),
+		ClosureMinimumScenarioCalls: etcdraftClosureMinimumScenarioCalls(7),
 	}
 	if target.ClosureMinimumScenarioCalls != 4 {
 		t.Fatalf("seven-node lower bound = %d, want 4", target.ClosureMinimumScenarioCalls)
@@ -35,8 +35,11 @@ func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.
 	if err := validateClosureCallBudget(target, agenticEpisodeBudget{MaxScenarioCalls: 3}); err != nil {
 		t.Fatalf("public-fixed inherited closure lower bound: %v", err)
 	}
-	if got := closureScenarioCallLowerBound(3); got != 1 {
+	if got := etcdraftClosureMinimumScenarioCalls(3); got != 1 {
 		t.Fatalf("three-node lower bound = %d, want 1", got)
+	}
+	if got := omnipaxosClosureMinimumScenarioCalls(7); got != 4 {
+		t.Fatalf("seven-node OmniPaxos lower bound = %d, want 4", got)
 	}
 }
 

@@ -94,7 +94,8 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"or decision, must therefore have its own predicate and " +
 		"matching mechanism step. Not selecting an enabled Action does not block it: trusted natural progress may execute it later. " +
 		"A temporal-fired observation records one timer callback only and does not by itself prove that an election, request, or other " +
-		"protocol timeout expired. Every causal condition in the summary must therefore be established by milestone evidence or be directly " +
+		"protocol timeout expired. Use a trusted term/ballot advance, role/coordinator change, or another supplied protocol observation as " +
+		"the actual campaign/timeout evidence. Every causal condition in the summary must therefore be established by milestone evidence or be directly " +
 		"produced by a declared Action. If the mechanism depends on persistently withholding an ordinary enabled Action and the Target " +
 		"does not expose that control or a matching fidelity boundary, do not present the candidate as executable; choose another mechanism. " +
 		"For any quorum-dependent mechanism, its rationale must use target_surface topology and fault allowance to explain why the " +
@@ -105,6 +106,9 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"source read may remain uncited; trusted reporting will mark it grounding-completed-but-unused rather than treating it as support. " +
 		"Do not claim a verdict. Reuse a bind_as token in at least two constraints when an entity must remain " +
 		"the same across milestones, but only across fields whose binding_domains entries have the same domain. " +
+		"If a hypothesis depends on the same concrete message instance, log entry, host effect, or clone lineage, first confirm that the supplied " +
+		"observation fields and binding domains can prove that exact identity. Source/target/type equality alone does not prove that two events " +
+		"refer to the same instance. Revise to an identity the witness can bind, or omit the candidate when identity is essential but unavailable. " +
 		"participant and related-participant include incarnation and therefore cannot share a token with " +
 		"participant-node, related-participant-node, message-source-node, message-target-node, new-coordinator-node, " +
 		"previous-coordinator-node, or another node-id field. Every bind_as token must occur in at least two constraints; omit one-off field " +

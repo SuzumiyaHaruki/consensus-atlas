@@ -32,10 +32,11 @@ func isNilSemanticComponent(value any) bool {
 }
 
 const (
-	ScenarioPlanningBackendID    = "bounded-scenario-plan-v1"
-	ScenarioAgentMaxCalls        = 16
-	ScenarioAgentMaxDecisions    = 512
-	ScenarioNaturalProgressSlice = 4
+	ScenarioPlanningBackendID      = "bounded-scenario-plan-v1"
+	ScenarioAgentMaxCalls          = 16
+	ScenarioAgentMaxDecisions      = 512
+	ScenarioNaturalProgressSlice   = 4
+	ScenarioBootstrapProgressSlice = 16
 
 	ScenarioAgentCompleted = "completed"
 	ScenarioAgentStopped   = "stopped"
@@ -339,8 +340,13 @@ func exploreScenarioWithPlanner(
 		if !selectionOnly {
 			remainingCalls := maxCalls - ordinal + 1
 			progressQuantum = (remaining + remainingCalls - 1) / remainingCalls
-			if progressQuantum > ScenarioNaturalProgressSlice {
-				progressQuantum = ScenarioNaturalProgressSlice
+			progressLimit := ScenarioNaturalProgressSlice
+			if currentSemantics.Coordination != nil &&
+				currentSemantics.Coordination.Status != ConsensusCoordinatorPresent {
+				progressLimit = ScenarioBootstrapProgressSlice
+			}
+			if progressQuantum > progressLimit {
+				progressQuantum = progressLimit
 			}
 			viewMaxSteps = maxPlanSteps
 			if singlePath {
@@ -944,6 +950,13 @@ func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecu
 
 func cloneScenarioSemantics(exposure ScenarioSemanticExposure) ScenarioSemanticExposure {
 	exposure.ActionHints = append([]ConsensusActionHint(nil), exposure.ActionHints...)
+	if exposure.Coordination != nil {
+		coordination := *exposure.Coordination
+		coordination.ElectionProgress.CandidateNodes = append(
+			[]control.NodeID(nil), exposure.Coordination.ElectionProgress.CandidateNodes...,
+		)
+		exposure.Coordination = &coordination
+	}
 	return exposure
 }
 

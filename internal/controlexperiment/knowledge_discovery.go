@@ -304,6 +304,13 @@ func SearchMountedKnowledgeSources(
 	sort.Slice(ordered, func(i, j int) bool {
 		return ordered[i].ReferencePrefix < ordered[j].ReferencePrefix
 	})
+	// Multiple Agent-visible prefixes may intentionally bind the same physical
+	// checkout (for example a repository-relative SUT prefix and its official
+	// Go module prefix). Search each physical file once so aliases cannot crowd
+	// distinct files out of the bounded result set. Mount ordering chooses the
+	// stable visible reference; bounded reads remain authorized by that exact
+	// returned reference.
+	seenPhysicalFiles := make(map[string]bool)
 	files, consumed := 0, int64(0)
 	for _, mount := range ordered {
 		root, err := filepath.Abs(mount.Directory)
@@ -335,6 +342,11 @@ func SearchMountedKnowledgeSources(
 				!searchableKnowledgeSource(path) {
 				return nil
 			}
+			physicalPath := filepath.Clean(path)
+			if seenPhysicalFiles[physicalPath] {
+				return nil
+			}
+			seenPhysicalFiles[physicalPath] = true
 			files++
 			if files > knowledgeDiscoverySearchFiles {
 				result.Truncated = true

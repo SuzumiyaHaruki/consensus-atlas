@@ -2,7 +2,7 @@
 
 更新时间：2026-08-21
 分支：`feature/agentic-consensus-testing`
-阶段：M4n11 canary 响应恢复与选举 Oracle 收口
+阶段：M4n13 bootstrap 因果推进、紧凑反馈与证据封存收口
 
 ## 一句话状态
 
@@ -33,8 +33,10 @@ Oracle violation 才称为 `finding`。底层历史 Bundle 的 `qualified/reache
 
 默认 Scenario Agent 现在是单路径、单战略 Action 协议：每次只提出一个当前前沿选择，
 只使用 `continue/revise/abandon`，不能默认创建 branch/control/ablate/select 状态机。
-公共自然推进每次最多执行 4 个非干预 Action，并在新 milestone 或新的可干预语义前沿
-出现时立即返回可信 `ProgressDelta`。Target closure 仍可持续拥有已接管的因果闭合，且
+协调者已经存在时公共自然推进每次最多执行 4 个非干预 Action；bootstrap 阶段使用最多 16 个
+decision 的有界切片，并优先沿所选 Action 的 item dependency、再沿参与者方向推进。在协调状态、
+term/ballot 状态或 milestone 发生可信变化时返回 `ProgressDelta`；仅因普通选举消息派生出新的
+Drop/Duplicate 控制不会立即打断 bootstrap 切片。Target closure 仍可持续拥有已接管的因果闭合，且
 只能消费公共 Runtime 已 enabled 的 Effect/Deliver/Temporal。
 
 `RiskWitnessProgress` v2 将实际 milestone participant、related participant 和跨 milestone
@@ -73,23 +75,31 @@ Risk Prompt 要求按 property → invariant → 合法 fault condition → 实�
 search→read→portfolio 后最多一次机械资格修复。
 
 新运行的 MethodSpec implementation identity 为
-`m4n11-provider-recovery-and-quorum-oracle-v1`，旧 M4n10 工件仅作只读兼容；源码暴露模式为
+`m4n13-causal-bootstrap-and-sealed-token-stop-v1`，M4n12 及更早工件仅作只读兼容；源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
-`risk-agent-navigation-v8`：search 前只暴露 search schema，成功 search 后只暴露其真实
+`risk-agent-navigation-v9`：search 前只暴露 search schema，成功 search 后只暴露其真实
 match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
 单行上的一个大小写不敏感字面子串，不进行分词或 OR；最多只允许一次 stopped grounding 重试。
+同一物理源码文件经多个 mount/reference prefix 暴露时只占一个搜索结果，稳定保留按 reference
+prefix 排序后的第一个 Agent-visible 引用，避免重复别名挤占 20 条结果额度。
 
-模型预算不再共享或转移。每个候选固定获得 8 次 Scenario 调用、64 个 Runtime decisions、
-每次一个战略 Action、每次最多 4 个公共自然推进 decision；Risk 最多 4 次调用，Episode
+模型预算不再共享或转移。每个候选固定获得 8 次 Scenario 调用；etcd/raft 当前有效输入提供 64 个
+Runtime decisions，初始五节点 frontier 更大的 OmniPaxos 提供 128 个。每次仍只有一个战略 Action；
+协调者存在后的公共推进切片为 4，bootstrap 切片上限为 16。Risk 最多 4 次调用，Episode
 总上限为 12 calls、240,000 observed tokens 和 30 分钟。Risk reasoning 保持 high，Scenario
 reasoning 降为 low，Scenario 输出仍限制为 8,192 tokens。新 portfolio 的首候选与从队列恢复的候选使用
 相同 Scenario 深度；Risk 未使用额度不再扩大某个候选的搜索机会。除统一 Episode/call/token/
 decision 预算外不再设置 portfolio 数量上限；发现 finding 不会提前终止。
 
-Scenario prompt 的压缩视图保留 previous proposal、outcome/reason、selector failure、capability gap、
+Scenario prompt v21 把 `next_missing_milestone`、可信 resolved bindings、上一条 Agent Action 的
+紧凑效果、协调状态和当前候选 Action 放在最前面，并保留 previous proposal、outcome/reason、selector failure、capability gap、
 closure handoff 和 ProgressDelta；删除每个执行/自然推进步骤中重复的完整 Choice、RiskProgress 及
-view/evidence digest。一次 enabled Action 未被选择不等于被阻塞，`temporal-fired` 只代表一次 callback；
+view/evidence digest；`action_frontier` 将原先重复的 frontier/action semantics 合成每个 Action 一份。
+一次 enabled Action 未被选择不等于被阻塞，`temporal-fired` 只代表一次 callback；
 依赖持续不执行正常 Action 的机制若没有对应控制能力，Agent 应 revise/abandon 或声明 fidelity requirement。
+每次选择前要求核对端点 binding、下一 milestone、协议状态是否被重置、是否只是 housekeeping、
+duplicate 后是否仍需 delivery，以及 crash receiver 是否先要 restart。候选列表只是可执行选择，
+不自动证明因果相关性。
 
 Provider 失败现在区分 `response-finish-length|response-empty-content|response-malformed|response-too-large`。
 已解析 HTTP 200 usage 与 response identity 时，durable journal 保留计费、response digest 和 finish reason。
@@ -104,7 +114,10 @@ fresh Replay 和 Oracle。
 
 Risk summary 新增 `risk_source_grounding.status`。成功 bounded read 若被任一候选 mechanism step 的
 `source/...` 引用则为 `completed-used`，否则为 `completed-unused`；它只描述源码 grounding 是否实际参与
-候选，不是资格 gate，也不是 Oracle verdict。
+候选，不是资格 gate、源码缺陷定位证明或 Oracle verdict。Risk prompt 同时要求：依赖“同一消息实例、
+同一日志条目、同一 effect/clone lineage”的假设，必须由当前 Observation/binding 证明身份；仅有
+source/target/type 不足时必须改写或放弃。`temporal-fired` 只表示 callback，term/ballot/role/coordinator
+变化才是选举或超时语义的协议证据。
 
 Exploration Memory 新增 `property_ref` 与 `evidence_level`。它们只说明语义重复和候选可验证性，
 不能把 `oracle-backed` 解释成已有 finding，也不参与可信 verdict。当前仍不实现跨 Episode 的
@@ -129,8 +142,8 @@ boundary 表述为 evaluator-owned，也不声称能识别 artifact producer 对
 private/formal evaluator 在 evaluator-owned SUT Replay 后
 重新执行完整 registry，并只以 post-root violation 决定 killed/false-positive；
 root violation 以 `root_prefix_oracle_findings` 单列，不能给 Agent 记功。
-当前 M4n11 MethodSpec 的已执行主路径和分支在 resume 时必须携带 attribution；
-只有历史 implementation ID 允许缺省，避免新工件被默认解释为 root=0。
+M4n11 以及当前 M4n12/M4n13 MethodSpec 的已执行主路径和分支在 resume 时必须携带 attribution；
+只有 M4n10 及更早 implementation ID 允许缺省，避免方法版本前移后把 M4n11 工件错误解释为 root=0。
 
 Evidence 结论优先级已统一为 `post-root Oracle finding → witness-instantiated → provider-response-failed
 → hypothesis-not-reached`；未选择分支也使用同一规则，Provider 失败不会覆盖已经机械实例化的 witness，
@@ -155,7 +168,10 @@ checkout 中完成 `search → bounded read → portfolio → Scenario → summa
 Replay → Oracle`。11 个 dispatch 都有 result，没有 unreconciled call；Risk 候选可执行，但在
 8 次 Scenario 调用内未实例化 witness。受控 SUT 在 40-decision deterministic root 的 step 37
 已出现 election-safety violation，它被正确分类为 root-prefix Oracle sensitivity，Agent path finding
-为 0。精简结果见 `benchmarks/experiments/etcdraft-m4n11-canary-v4/`。
+为 0。它保持 `public-capability-canary` 定位：能证明 Provider、执行、Replay、Oracle 和归因链路，
+不能证明 Agent 从源码定位了修改或根因。精简报告与完整 provider journal、Bundle/fresh Bundle、
+Oracle/evaluator 证据和可恢复的本地 SUT Git bundle 均归档在
+`benchmarks/experiments/etcdraft-m4n11-canary-v4/`；`completed-used` 只表示候选引用了读取片段。
 因为 root 已经异常，不直接启动六 Episode、约三小时的
 无修改特定提示的受控盲测；上限为 72 calls、1,440,000 observed tokens 和 384 Scenario
 decision allowance。盲测不提供变更文件、函数、diff 或测试名，但明确提供通用协议不变量、
@@ -587,9 +603,12 @@ election incarnation 聚焦 race。canary v4 已调用外部模型，使用 11 c
 
 ## 下一步
 
-1. 为受控 SUT 选择或构造一条 Oracle-clean deterministic root，但不向 Agent 提供修改文件、函数、diff
-   或测试名；
-2. 用零模型回归证明新 root 自身无 election-safety violation，且仍保留有意义的 enabled Action/
-   Observation 调查空间；
-3. 在新空目录重做一次单 Episode canary；只有 root clean、Replay stable 且无不可对账调用时，才另行
-   授权六 Episode 长实验。
+1. M4n12 的两次真实 canary 保持为失败诊断工件；其后续 M4n13 零模型回归已证明 etcd/raft 与
+   OmniPaxos 的三/五节点 bootstrap 均可建立唯一协调者并执行 Invoke，不改写历史实验结果。
+2. 在新提交和干净 checkout 上各运行一次短 canary，确认真实模型使用紧凑 `action_frontier`、协调反馈和
+   因果推进后能到达首个 workload milestone；若 token 在已提交路径后停止，必须看到 Bundle、stable Replay、
+   Oracle 结果以及 `oracle_evaluated=true`。
+3. 两个短 canary 均闭合后，再单独授权六 Episode 长实验；不把本轮零模型回归作为 Agent 效果证据。
+4. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
+   attribution capability，不作为 Agent discovery benchmark。正式报告披露 Oracle-backed portfolio 偏置，
+   仅将 witness 已实例化且对应 property 出现 post-root finding 的结果称为 Agent discovery。
