@@ -8,12 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/sutbuild"
+	raft "go.etcd.io/raft/v3"
 )
 
 const (
@@ -80,6 +83,10 @@ func bindEtcdraftLocalSUTSource(
 	module, err := resolveEtcdraftModule(ctx, repositoryRoot)
 	if err != nil {
 		return nil, err
+	}
+	compiledModule, err := executableEtcdraftModuleDirectory()
+	if err != nil || compiledModule != module.Dir {
+		return nil, errors.New("AGENTIC_ETCDRAFT_COMPILED_SOURCE_MISMATCH")
 	}
 	digest, err := sutbuild.SourceTreeDigest(module.Dir)
 	if err != nil {
@@ -150,6 +157,32 @@ func executableUsesLocalEtcdraftReplacement() bool {
 		}
 	}
 	return false
+}
+
+// executableEtcdraftModuleDirectory reads the source location recorded for a
+// concrete etcd/raft function in this executable. BuildInfo alone preserves
+// only the relative replace directive, which cannot distinguish two checkouts
+// that both use ./suts/etcdraft.
+func executableEtcdraftModuleDirectory() (string, error) {
+	function := runtime.FuncForPC(reflect.ValueOf(raft.NewRawNode).Pointer())
+	if function == nil {
+		return "", errors.New("AGENTIC_ETCDRAFT_COMPILED_SOURCE_UNAVAILABLE")
+	}
+	file, _ := function.FileLine(function.Entry())
+	if file == "" || !filepath.IsAbs(file) {
+		return "", errors.New("AGENTIC_ETCDRAFT_COMPILED_SOURCE_UNAVAILABLE")
+	}
+	directory, err := canonicalDirectory(filepath.Dir(file))
+	if err != nil {
+		return "", errors.New("AGENTIC_ETCDRAFT_COMPILED_SOURCE_UNAVAILABLE")
+	}
+	// NewRawNode currently lives at the module root. Keep the check explicit so
+	// a future upstream move fails closed instead of silently deriving a wrong
+	// checkout identity.
+	if filepath.Base(file) != "rawnode.go" {
+		return "", errors.New("AGENTIC_ETCDRAFT_COMPILED_SOURCE_LAYOUT_CHANGED")
+	}
+	return directory, nil
 }
 
 // bindOmnipaxosLocalSUTSource is the Rust-worker counterpart of the Go module

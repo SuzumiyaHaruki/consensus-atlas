@@ -309,7 +309,7 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	}
 	wantOracleIDs := []string{
 		"trace-integrity", "agreement", "etcdraft-client-application-binding",
-		"etcdraft-log-progress",
+		"etcdraft-election-safety", "etcdraft-log-progress",
 	}
 	if !reflect.DeepEqual(qualified.Oracle.Checked, wantOracleIDs) {
 		t.Fatalf("qualified closure Oracle set = %v, want %v", qualified.Oracle.Checked, wantOracleIDs)
@@ -501,7 +501,7 @@ func TestM4l8EtcdraftSharedAgentPrefixBackendAblation(t *testing.T) {
 	publicExtendedQualified := qualify("m4l8-public-extended-qualified", publicExtended)
 	wantOracleIDs := []string{
 		"trace-integrity", "agreement", "etcdraft-client-application-binding",
-		"etcdraft-log-progress",
+		"etcdraft-election-safety", "etcdraft-log-progress",
 	}
 	for name, qualified := range map[string]scenarioTestingResult{
 		"public-equal":    publicEqualQualified,
@@ -671,7 +671,7 @@ func TestEtcdraftAlternateQuorumClosureRunsThroughScenarioAgentEpisode(t *testin
 	requestID := inputs.execution.workload.Invocations[0].ID
 	wantOracleIDs := []string{
 		"trace-integrity", "agreement", "etcdraft-client-application-binding",
-		"etcdraft-log-progress",
+		"etcdraft-election-safety", "etcdraft-log-progress",
 	}
 	if !qualified.Replay.Stable || qualified.Risk.Status != semantic.RiskWitnessReached ||
 		len(qualified.Oracle.Violations) != 0 ||

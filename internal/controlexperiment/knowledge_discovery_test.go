@@ -161,6 +161,12 @@ func TestKnowledgeDiscoverySearchesNeutralMountedSourcesBeforeBoundedRead(t *tes
 	); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(
+		filepath.Join(root, "protocol", "election_test.go"),
+		[]byte("package protocol\n// quorum transition in a directed regression\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}

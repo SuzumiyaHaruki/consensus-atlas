@@ -16,17 +16,19 @@ import (
 )
 
 const (
-	RiskAgentMaxCalls            = 4
-	RiskCandidateMaxBytes        = 64 << 10
-	RiskCandidateMaxSteps        = 6
-	RiskCandidatePortfolioMax    = 3
-	RiskExplorationMemoryMax     = 8
-	RiskMechanismStepMaxBytes    = 256
-	RiskMechanismSupportMax      = 3
-	riskSupportReferenceMaxBytes = targetEvidenceReferenceMaxBytes + len("source/")
-	RiskKnowledgeRequestsPerCall = 2
-	RiskKnowledgeRequestsTotal   = 4
-	RiskKnowledgeRequestMaxLines = 80
+	RiskAgentMaxCalls               = 4
+	RiskCandidateMaxBytes           = 64 << 10
+	RiskCandidateMaxSteps           = 6
+	RiskCandidatePortfolioMax       = 3
+	RiskExplorationMemoryMax        = 8
+	RiskMechanismStepMaxBytes       = 256
+	RiskMechanismSupportMax         = 3
+	riskSupportReferenceMaxBytes    = targetEvidenceReferenceMaxBytes + len("source/")
+	RiskKnowledgeRequestsPerCall    = 1
+	RiskKnowledgeRequestsRequired   = 2
+	RiskKnowledgeRequestRetryMax    = 1
+	RiskKnowledgeRequestMaxAttempts = RiskKnowledgeRequestsRequired + RiskKnowledgeRequestRetryMax
+	RiskKnowledgeRequestMaxLines    = 80
 
 	RiskMemoryOutcomeExecutionCompleted  = "execution-completed"
 	RiskMemoryOutcomeBudgetExhausted     = "budget-exhausted"
@@ -55,6 +57,7 @@ const (
 	RiskAgentReasonKnowledgeInvalid     = "risk-knowledge-request-invalid"
 	RiskAgentReasonKnowledgeUnavailable = "risk-knowledge-reader-unavailable"
 	RiskAgentReasonKnowledgeBudget      = "risk-knowledge-request-budget-exceeded"
+	RiskAgentReasonKnowledgeGrounding   = "risk-knowledge-grounding-required"
 	RiskAgentReasonFidelity             = AgentCapabilityGapTargetFidelity
 
 	RiskCandidateExecutable = "executable"
@@ -196,6 +199,8 @@ type RiskCandidateReview struct {
 type RiskExplorationMemoryEntry struct {
 	Episode               int                  `json:"episode"`
 	CandidateID           string               `json:"candidate_id,omitempty"`
+	PropertyRef           string               `json:"property_ref,omitempty"`
+	EvidenceLevel         string               `json:"evidence_level,omitempty"`
 	Summary               string               `json:"summary,omitempty"`
 	SuspectedMechanism    string               `json:"suspected_mechanism,omitempty"`
 	EpisodeOutcome        string               `json:"episode_outcome"`
@@ -317,6 +322,8 @@ func DiscoverRiskWithPlanner(
 	var prior *RiskAgentFeedback
 	var knowledgeResults []KnowledgeReadResult
 	knowledgeRequests := 0
+	completedSearch := false
+	completedSourceRead := false
 	seenKnowledgeRequests := make(map[string]bool)
 	for ordinal := 1; ordinal <= budget.MaxCalls; ordinal++ {
 		view := RiskAgentView{
@@ -334,8 +341,9 @@ func DiscoverRiskWithPlanner(
 			),
 			Prior: cloneRiskAgentFeedback(prior),
 		}
-		remainingKnowledgeRequests := RiskKnowledgeRequestsTotal - knowledgeRequests
-		if knowledgeReader != nil && remainingKnowledgeRequests > 0 && ordinal < budget.MaxCalls {
+		remainingKnowledgeRequests := RiskKnowledgeRequestMaxAttempts - knowledgeRequests
+		if knowledgeReader != nil && !completedSourceRead &&
+			remainingKnowledgeRequests > 0 && ordinal < budget.MaxCalls {
 			view.MaxKnowledgeRequests = min(RiskKnowledgeRequestsPerCall, remainingKnowledgeRequests)
 		}
 		response, work, err := planner(ctx, view)
@@ -372,12 +380,16 @@ func DiscoverRiskWithPlanner(
 			reason := RiskAgentReasonKnowledgeRead
 			if knowledgeReader == nil {
 				reason = RiskAgentReasonKnowledgeUnavailable
-			} else if knowledgeRequests+len(requests) > RiskKnowledgeRequestsTotal ||
+			} else if !riskKnowledgeRequestMatchesGroundingPhase(
+				requests, completedSearch, completedSourceRead, knowledgeResults,
+			) {
+				reason = RiskAgentReasonKnowledgeGrounding
+			} else if knowledgeRequests+len(requests) > RiskKnowledgeRequestMaxAttempts ||
 				!validRiskKnowledgeRequests(
 					requests, knowledgeSources, knowledgeResults, seenKnowledgeRequests,
 				) {
 				reason = RiskAgentReasonKnowledgeBudget
-				if knowledgeRequests+len(requests) <= RiskKnowledgeRequestsTotal {
+				if knowledgeRequests+len(requests) <= RiskKnowledgeRequestMaxAttempts {
 					reason = RiskAgentReasonKnowledgeInvalid
 				}
 			} else {
@@ -400,12 +412,27 @@ func DiscoverRiskWithPlanner(
 					knowledgeRequests++
 					seenKnowledgeRequests[riskKnowledgeRequestKey(request)] = true
 					completedRead = completedRead || read.Status == KnowledgeDiscoveryCompleted
+					if read.Status == KnowledgeDiscoveryCompleted {
+						if request.Query != "" {
+							completedSearch = true
+						} else {
+							completedSourceRead = true
+						}
+					}
 				}
 				if !completedRead {
 					reason = RiskAgentReasonKnowledgeReadStopped
 				}
 			}
 			attempt.Feedback = RiskAgentFeedback{Outcome: RiskAgentStopped, ReasonCode: reason}
+			result.Attempts = append(result.Attempts, attempt)
+			prior = &result.Attempts[len(result.Attempts)-1].Feedback
+			continue
+		}
+		if knowledgeReader != nil && (!completedSearch || !completedSourceRead) {
+			attempt.Feedback = RiskAgentFeedback{
+				Outcome: RiskAgentStopped, ReasonCode: RiskAgentReasonKnowledgeGrounding,
+			}
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
@@ -525,6 +552,37 @@ func DiscoverRiskWithPlanner(
 		return result, nil
 	}
 	return result, nil
+}
+
+func riskKnowledgeRequestMatchesGroundingPhase(
+	requests []KnowledgeReadRequest,
+	completedSearch bool,
+	completedSourceRead bool,
+	results []KnowledgeReadResult,
+) bool {
+	if len(requests) != 1 || completedSourceRead {
+		return false
+	}
+	for _, request := range requests {
+		if !completedSearch && request.Query == "" {
+			return false
+		}
+		if completedSearch && request.Query != "" {
+			return false
+		}
+		if completedSearch {
+			found := false
+			for _, result := range results {
+				for _, match := range result.Matches {
+					found = found || match.Reference == request.Reference
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func riskCandidateReason(err error) string {
@@ -943,6 +1001,11 @@ func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
 			len(value.Summary) > 2048 || len(value.SuspectedMechanism) > 2048) {
 			return false
 		}
+		if (value.PropertyRef == "") != (value.EvidenceLevel == "") ||
+			value.PropertyRef != "" && (!validMethodToken(value.PropertyRef) ||
+				!validPropertyEvidenceLevel(value.EvidenceLevel)) {
+			return false
+		}
 		if value.RiskStatus != "" && value.RiskStatus != semantic.RiskWitnessReached &&
 			value.RiskStatus != semantic.RiskWitnessNotReached {
 			return false
@@ -992,7 +1055,7 @@ func validRiskKnowledgeView(view RiskAgentView) bool {
 	}
 	if view.MaxKnowledgeRequests < 0 || view.MaxKnowledgeRequests > RiskKnowledgeRequestsPerCall ||
 		(view.MaxKnowledgeRequests == 0 && len(view.KnowledgeResults) == 0) ||
-		len(view.KnowledgeResults) > RiskKnowledgeRequestsTotal {
+		len(view.KnowledgeResults) > RiskKnowledgeRequestMaxAttempts {
 		return false
 	}
 	want, err := KnowledgeSourceCatalog(view.Knowledge)
@@ -1108,14 +1171,14 @@ func validRiskKnowledgeRequests(
 		declared[source.Reference] = true
 	}
 	current := make(map[string]bool, len(requests))
-	windows := make(map[string][]knowledgeReadWindow)
+	completedSourceRead := false
 	for _, result := range results {
 		if result.Status == KnowledgeDiscoveryCompleted && result.Query == "" {
-			windows[result.Source.Reference] = append(
-				windows[result.Source.Reference],
-				knowledgeReadWindow{start: result.StartLine, end: result.EndLine},
-			)
+			completedSourceRead = true
 		}
+	}
+	if completedSourceRead {
+		return false
 	}
 	for _, request := range requests {
 		key := riskKnowledgeRequestKey(request)
@@ -1133,33 +1196,9 @@ func validRiskKnowledgeRequests(
 			request.MaxLines > RiskKnowledgeRequestMaxLines {
 			return false
 		}
-		if request.StartLine == 0 {
-			if len(windows[request.Reference]) > 0 {
-				return false
-			}
-		} else {
-			window := knowledgeReadWindow{
-				start: request.StartLine, end: request.StartLine + request.MaxLines - 1,
-			}
-			for _, existing := range windows[request.Reference] {
-				if window.overlaps(existing) {
-					return false
-				}
-			}
-			windows[request.Reference] = append(windows[request.Reference], window)
-		}
 		current[key] = true
 	}
 	return true
-}
-
-type knowledgeReadWindow struct {
-	start int
-	end   int
-}
-
-func (window knowledgeReadWindow) overlaps(other knowledgeReadWindow) bool {
-	return window.start <= other.end && other.start <= window.end
 }
 
 func riskKnowledgeRequestKey(request KnowledgeReadRequest) string {

@@ -13,7 +13,7 @@ import (
 
 const (
 	agenticMethodSpecFile        = "method-spec.json"
-	riskAgentPromptVersion       = "risk-agent-navigation-v5"
+	riskAgentPromptVersion       = "risk-agent-navigation-v7"
 	etcdraftSemanticInputSchema  = "etcdraft-agentic-input-v1"
 	omnipaxosSemanticInputSchema = "omnipaxos-agentic-input-v1"
 )

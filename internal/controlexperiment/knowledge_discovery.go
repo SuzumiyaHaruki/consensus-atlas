@@ -400,6 +400,9 @@ func ignoredKnowledgeSearchDirectory(name string) bool {
 }
 
 func searchableKnowledgeSource(path string) bool {
+	if strings.HasSuffix(strings.ToLower(filepath.Base(path)), "_test.go") {
+		return false
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go", ".rs", ".proto", ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".kt", ".py", ".toml":
 		return true

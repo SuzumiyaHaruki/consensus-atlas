@@ -1,8 +1,8 @@
 # 当前阶段
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 分支：`feature/agentic-consensus-testing`
-阶段：M4n8 Agent 语义、portfolio 调查与中立源码导航收口
+阶段：M4n10R 长盲测前审计收口
 
 ## 一句话状态
 
@@ -13,17 +13,23 @@
         ↓
 Risk Agent 生成并修订候选 portfolio
         ↓
-机械 executable 审查 → Scenario Agent 单路径选择一个战略 Action
+机械可执行（wire value: `executable`）审查 → Scenario Agent 单路径选择一个战略 Action
         ↓
 可信绑定 → Runtime → Trace → fresh Replay
         ↓
 Target-local Observation/PSS/Oracle → witness-instantiated / finding 与成本
 ```
 
-M4n8 修正了活动 Agent 语义。Risk 候选通过类型、Observation 与 Action 能力审查后称为
-`executable`；执行轨迹满足全部可信 milestone 时称为 `witness-instantiated`；只有独立
+M4n9 在 M4n8 三层术语上修复了 Witness 的端点歧义。Risk 候选通过类型、Observation 与
+Action 能力审查后，报告称为“机械可执行”（为保持工件兼容，wire value 仍为 `executable`）；
+执行轨迹满足全部可信 milestone 时称为 `witness-instantiated`；只有独立
 Oracle violation 才称为 `finding`。底层历史 Bundle 的 `qualified/reached` 枚举仍为只读
 兼容字段，不能在新报告中解释为候选正确或发现问题。
+
+公共 Observation 现在分别暴露 `message-source-node/message-target-node` 和
+`new-coordinator-node/previous-coordinator-node`。消息 Risk 不再能用含义随 Drop/Deliver
+变化的 `participant-node` 充当稳定端点；etcd/raft 与 OmniPaxos projector 均升级为 v4。
+本次盲测中 Episode 1、3、4 的三类错误 predicate 已成为负向回归，稳定端点版本有正向回归。
 
 默认 Scenario Agent 现在是单路径、单战略 Action 协议：每次只提出一个当前前沿选择，
 只使用 `continue/revise/abandon`，不能默认创建 branch/control/ablate/select 状态机。
@@ -36,31 +42,84 @@ binding 的可信解析结果反馈给 Scenario Agent，避免模型从摘要猜
 closure 仅在 Target 明确支持当前 Risk 且真实干预已执行后暴露，不再把“Target 存在某个
 factory”误报为“当前候选可闭合”。
 
-Risk Agent portfolio 的全部机械 executable 候选都会进入 Episode summary。多 Episode
+Risk Agent portfolio 的全部机械 executable 候选都会进入 Episode summary。Oracle-backed
+只保留为 prompt 中的可验证性软偏好；可信侧不会因 portfolio 暂无 Oracle-backed 候选而
+拒绝或丢弃其他已通过资格审查的候选。多 Episode
 Investigation 在现有统一 calls/tokens/runtime-decision 总预算内，按 Agent 原优先级依次
 调查尚未执行的语义不同候选；只修改显示 ID 的重复候选不会获得额外调查额度。候选只有在
 `scenario_attempts > 0` 后才算已经调查；若 Risk 响应使 Episode 越过 token 阈值、候选已经
-accepted 但 Scenario 尚未开始，下一 Episode 仍从同一候选继续，不会错误跳到 portfolio 下一项。
+accepted 但 Scenario 尚未开始，下一 Episode 仍从同一候选继续，不会错误跳到 portfolio 下一项；
+`token-stopped` 只终止当前 Episode，只有 Investigation 总 token/call/decision 额度不足以启动
+下一 Episode 时才终止整个调查。
 
-源码能力改为显式 mount 内的中立关键词检索和后续限行读取：搜索最多检查 4096 个源码
-文件/8 MiB，返回至多 20 个路径与行号；读取仍受 80 行 Agent 请求上限和 24 KiB 摘要上限。
-`.git`、build target、vendor、artifacts/benchmarks 等目录不进入搜索。五节点 etcd 输入中
+源码能力改为显式 mount 内的中立关键词检索和后续限行读取：每个新 portfolio 在提交前
+必须先完成一次 Agent 自选的中立搜索，再读取一个该搜索实际返回的精确源码引用；可信侧
+拒绝直接 portfolio、跳过搜索的直接读取以及读取未由搜索返回的路径。搜索最多检查 4096 个源码
+文件/8 MiB，返回至多 20 个路径与行号；每次只允许一个请求。正常流程仍为一次成功 search、
+一次成功 bounded read；其中一次请求返回 `stopped` 时，允许在同一 4-call Risk 预算内重试一次，
+并自然失去 portfolio 的资格反馈修复机会。读取仍受 80 行 Agent 请求上限和 24 KiB 摘要上限。完成 read 后不会再
+提供 continuation；`*_test.go`、`.git`、build target、vendor、artifacts/benchmarks 等不进入搜索。五节点 etcd 输入中
 指向选举计票函数的实验定向材料已删除；Agent 不获得本地修改文件、变更函数或候选差异提示。
+M4n10 在既有材料结构内增加紧凑的 CFT fault-model card 和协议族不变量：etcd/raft
+材料包含由实际 `n` 推导 `Q=floor(n/2)+1`、多数派相交、每 term 单次投票、Election
+Safety/Log Matching/Leader Completeness、持久与易失状态以及活性所需的 quorum/公平条件；
+OmniPaxos 材料包含 ballot、prepare/promise、quorum intersection、accepted/decided prefix
+与 recovery adoption。公共 Core 不解释这些协议语义，也没有硬编码五节点多数派。
+
+Risk Prompt 要求按 property → invariant → 合法 fault condition → 实际拓扑与 fault allowance
+充分性 → 正常恢复与可疑偏离 → milestone/binding 的顺序形成假设。源码 search/read 只确认
+机制存在、组件位置或公开 contract，不构成缺陷结论。Prompt 鼓励包含 oracle-backed
+候选，但 observable-only/hypothesis-only 候选不会因此被准入层淘汰。可信反馈允许在
+search→read→portfolio 后最多一次机械资格修复。
+
 新运行的 MethodSpec implementation identity 为
-`m4n8-agent-semantics-portfolio-search-v1`，源码暴露模式为
-`mounted-repository-search-readonly-v3`。
+`m4n10-deep-candidate-investigation-v1`，源码暴露模式为
+`mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
+`risk-agent-navigation-v7`：search 前只暴露 search schema，成功 search 后只暴露其真实
+match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。
+
+模型预算不再共享或转移。每个候选固定获得 8 次 Scenario 调用、64 个 Runtime decisions、
+每次一个战略 Action、每次最多 4 个公共自然推进 decision；Risk 最多 4 次调用，Episode
+总上限为 12 calls、240,000 observed tokens 和 30 分钟。Risk 与 Scenario reasoning 均为
+high，Scenario 输出仍限制为 8,192 tokens。新 portfolio 的首候选与从队列恢复的候选使用
+相同 Scenario 深度；Risk 未使用额度不再扩大某个候选的搜索机会。除统一 Episode/call/token/
+decision 预算外不再设置 portfolio 数量上限；发现 finding 不会提前终止。
+
+Scenario prompt 的压缩视图保留上一轮唯一战略 Action、机械执行步骤、自然推进切片和
+closure handoff step ID，使 stateless 调用可以针对实际 source/target/type 修订，而不恢复
+完整历史 Trace。
+
+Exploration Memory 新增 `property_ref` 与 `evidence_level`。它们只说明语义重复和候选可验证性，
+不能把 `oracle-backed` 解释成已有 finding，也不参与可信 verdict。当前仍不实现跨 Episode 的
+live Trace continuation；一个候选只在单 Episode 固定预算内深入调查。
+
+etcd/raft registry 新增 `etcdraft-election-safety`：它只读取 Adapter-owned Evidence，按 term
+记录实际运行的 `StateLeader`，同一 term 出现不同 leader 时产生 violation；不读取 vote
+tracker 或 Agent 结论。`election-safety` 因此由 observable-only 升为 oracle-backed。
 
 活动 `scenarioTestingResult.outcome` 只使用 `oracle-clean/oracle-finding`，不再把“当前
 Oracle 没有 violation”写成 `passed`。最终 finding 仍只来自 registry Oracle；
 `witness-instantiated` 但缺少对应 property monitor 时保持 unverified。
 
-下一项实验是四 Episode、无定向提示的源码发现与 witness 编译试验，而不是正式 finding
-实验：使用五节点 etcd 知识、完整 Target surface、显式本地 SUT mount 和统一 Investigation
-预算；不提供变更文件、变更函数、control/candidate diff 或相关性质词。为避免注释和专用
-测试名直接泄露修改意图，Agent 与执行器必须共同使用一个独立的盲测 checkout；该 checkout
-保留生产行为，但不包含解释性修改注释和专用验证 `_test.go`。原用户 SUT 工作区不改写。
-当前选举场景缺少完整分组控制与 election-safety Oracle，因此本轮只能评价源码导航、Risk
-生成、executable 审查和 witness 编译，不能预注册或表述为端到端 finding。
+不进入正式 Memory 的零模型/fixture 机械校准已经完成：search→read→portfolio→一次修复、
+search no-match 后换词成功、stopped read 后改读另一搜索结果、
+固定 8-call Scenario 配额、超过三次反馈循环、五节点 quorum 知识、端点 binding、fresh Replay
+和 election-safety 合成冲突回归均通过。下一步是先从干净独立 checkout 重新构建并运行一个
+不写入正式 Memory 的单 Episode 真模型 canary，确认 `search → bounded read → portfolio → Scenario`；
+canary 通过后，才在单独授权下运行六 Episode、约三小时的
+无修改特定提示的受控盲测；上限为 72 calls、1,440,000 observed tokens 和 384 Scenario
+decision allowance。盲测不提供变更文件、函数、diff 或测试名，但明确提供通用协议不变量、
+fault model 和 Oracle-backed properties；因此不能称为“无性质提示”。没有 finding 只能表述为
+“该预算内未发现”。正式运行必须在独立、清理过解释性修改注释与专用测试的 checkout 内编译
+并运行；不能从主仓库构建后把 `-repository-root` 指向另一棵树。
+
+本地 controlled etcd/raft 变体的独立 upstream 测试已能直接发现问题：当前稳定失败
+包括多个 `TestLeaderElection*`、`TestProposal` 以及
+`TestInteraction/async_storage_writes_append_aba_race`/
+`TestInteraction/probe_and_replicate`；某些全量运行还会出现 `rafttest/TestRestart`。根模块
+`go test ./...` 不递归进入该嵌套 module；后续报告必须把它称为普通上游测试已知
+可发现的 controlled known-failure，不能暗示只有 Agent 才能发现。正式结果应保存当次
+独立 SUT 测试的完整失败清单，不依赖预写的两个名称。
 
 etcd/raft 与 OmniPaxos 两个真实 Target 已走通该链路。M4l2/M4l3 说明
 Target-local 消息 leaf type 可以在不扩展公共 ActionKind 的情况下减少
@@ -197,7 +256,8 @@ Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共�
 转换为 `closure-underdetermined`，不再作为执行错误。
 
 当前新运行的 MethodSpec implementation identity 已更新为
-`consensus-atlas/agentic-method/m4n8-agent-semantics-portfolio-search-v1`。旧
+`consensus-atlas/agentic-method/m4n10-deep-candidate-investigation-v1`。旧
+`m4n8-agent-semantics-portfolio-search-v1`、
 `m4n7-qualification-cost-cargo-replay-v1`、`m4n6-causal-closure-build-evidence-v1`、
 `m4n5-multinode-closure-v1`、`m4m4-risk-fidelity-v1`、
 `m4m1-closure-ownership-v1`、`m4l7-risk-input-closure-handoff-v1`、

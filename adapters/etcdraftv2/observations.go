@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	ObservationProjectionID                               = "official-etcdraft-v2/observations-v3"
+	ObservationProjectionID                               = "official-etcdraft-v2/observations-v4"
 	ObservationRaftTermAdvanced semantic.ObservationKind  = "raft/term-advanced"
 	ObservationFieldRaftTerm    semantic.ObservationField = "raft/term"
 )
@@ -27,6 +27,10 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 		semantic.ObservationFieldParticipant,
 		semantic.ObservationFieldParticipantNode,
 	}
+	messageEndpoints := []semantic.ObservationField{
+		semantic.ObservationFieldMessageSourceNode,
+		semantic.ObservationFieldMessageTargetNode,
+	}
 	return []semantic.ObservationCapability{
 		{Kind: semantic.ObservationWorkloadInvoked, Fields: append(append([]semantic.ObservationField{}, node...),
 			semantic.ObservationFieldRequestID, semantic.ObservationFieldParticipantRole),
@@ -34,12 +38,12 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 				semantic.ObservationFieldParticipantRole: {"coordinator"},
 			}},
 		{Kind: semantic.ObservationMessageDropped,
-			Fields: append(append([]semantic.ObservationField{}, node...), semantic.ObservationFieldMessageRole),
+			Fields: append(append([]semantic.ObservationField{}, messageEndpoints...), semantic.ObservationFieldMessageRole),
 			Values: map[semantic.ObservationField][]string{
 				semantic.ObservationFieldMessageRole: append([]string(nil), messageTypeHints...),
 			}},
 		{Kind: semantic.ObservationMessageDelivered,
-			Fields: append(append([]semantic.ObservationField{}, node...), semantic.ObservationFieldMessageRole),
+			Fields: append(append([]semantic.ObservationField{}, messageEndpoints...), semantic.ObservationFieldMessageRole),
 			Values: map[semantic.ObservationField][]string{
 				semantic.ObservationFieldMessageRole: append([]string(nil), messageTypeHints...),
 			}},
@@ -47,8 +51,8 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 		{Kind: semantic.ObservationNodeCrashed, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationNodeRestarted, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationCoordinatorChange, Fields: []semantic.ObservationField{
-			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
-			semantic.ObservationFieldRelatedParticipant, semantic.ObservationFieldRelatedNode,
+			semantic.ObservationFieldNewCoordinatorNode,
+			semantic.ObservationFieldPreviousCoordinatorNode,
 			semantic.ObservationFieldOperationStage,
 		}, Values: map[semantic.ObservationField][]string{
 			semantic.ObservationFieldOperationStage: {"inflight"},
@@ -148,16 +152,16 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 			})
 			previousTerm = currentTerm
 		}
-		if hasCoordinator && previousCoordinator.Node != "" && currentCoordinator != previousCoordinator {
-			participant, related := currentCoordinator, previousCoordinator
+		if hasCoordinator && coordinatorNodeChanged(previousCoordinator, currentCoordinator) {
 			stage := ""
 			if activeWorkload && currentCommands <= activeBaseline {
 				stage = "inflight"
 			}
 			events = append(events, semantic.Observation{
 				Kind: semantic.ObservationCoordinatorChange, Step: record.Step,
-				SourceDigest: digest, Participant: &participant, RelatedParticipant: &related,
-				OperationStage: stage,
+				SourceDigest: digest, NewCoordinatorNode: currentCoordinator.Node,
+				PreviousCoordinatorNode: previousCoordinator.Node,
+				OperationStage:          stage,
 			})
 		}
 		if hasCoordinator {
@@ -178,6 +182,10 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 	return semantic.NewObservationHistoryWithCapabilities(
 		ObservationProjectionID, trace, events, (ObservationProjector{}).Capabilities(),
 	)
+}
+
+func coordinatorNodeChanged(previous, current control.NodeRef) bool {
+	return previous.Node != "" && current.Node != previous.Node
 }
 
 func etcdraftObservationMessageRole(record controlruntime.ActionRecord) (string, error) {

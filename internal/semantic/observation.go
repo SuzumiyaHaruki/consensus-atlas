@@ -40,16 +40,20 @@ var observationKinds = map[ObservationKind]struct{}{
 // fields shared by the current leader/round consensus scope. Target-specific
 // state remains in Adapter Evidence.
 type Observation struct {
-	Kind               ObservationKind        `json:"kind"`
-	Step               uint64                 `json:"step"`
-	SourceDigest       string                 `json:"source_digest"`
-	Participant        *control.NodeRef       `json:"participant,omitempty"`
-	RelatedParticipant *control.NodeRef       `json:"related_participant,omitempty"`
-	RequestID          string                 `json:"request_id,omitempty"`
-	ParticipantRole    string                 `json:"participant_role,omitempty"`
-	MessageRole        string                 `json:"message_role,omitempty"`
-	OperationStage     string                 `json:"operation_stage,omitempty"`
-	Attributes         []ObservationAttribute `json:"attributes,omitempty"`
+	Kind                    ObservationKind        `json:"kind"`
+	Step                    uint64                 `json:"step"`
+	SourceDigest            string                 `json:"source_digest"`
+	Participant             *control.NodeRef       `json:"participant,omitempty"`
+	RelatedParticipant      *control.NodeRef       `json:"related_participant,omitempty"`
+	MessageSourceNode       control.NodeID         `json:"message_source_node,omitempty"`
+	MessageTargetNode       control.NodeID         `json:"message_target_node,omitempty"`
+	NewCoordinatorNode      control.NodeID         `json:"new_coordinator_node,omitempty"`
+	PreviousCoordinatorNode control.NodeID         `json:"previous_coordinator_node,omitempty"`
+	RequestID               string                 `json:"request_id,omitempty"`
+	ParticipantRole         string                 `json:"participant_role,omitempty"`
+	MessageRole             string                 `json:"message_role,omitempty"`
+	OperationStage          string                 `json:"operation_stage,omitempty"`
+	Attributes              []ObservationAttribute `json:"attributes,omitempty"`
 }
 
 type ObservationValueType string
@@ -84,7 +88,17 @@ func (observation Observation) Validate() error {
 			return err
 		}
 	}
+	for _, node := range []control.NodeID{
+		observation.MessageSourceNode, observation.MessageTargetNode,
+		observation.NewCoordinatorNode, observation.PreviousCoordinatorNode,
+	} {
+		if node != "" && !validObservationScalar(ObservationValueNodeID, string(node)) {
+			return errors.New("OBSERVATION_NODE_ID_INVALID")
+		}
+	}
 	for _, value := range []string{
+		string(observation.MessageSourceNode), string(observation.MessageTargetNode),
+		string(observation.NewCoordinatorNode), string(observation.PreviousCoordinatorNode),
 		observation.RequestID, observation.ParticipantRole,
 		observation.MessageRole, observation.OperationStage,
 	} {
@@ -181,13 +195,18 @@ func ProjectRuntimeObservations(trace controlruntime.Trace) ([]Observation, erro
 		}
 		kind := ObservationKind("")
 		participant := record.Action.Node
+		var messageSource, messageTarget control.NodeID
 		switch record.Action.Kind {
 		case control.ActionInvoke:
 			kind = ObservationWorkloadInvoked
 		case control.ActionDropMessage:
 			kind = ObservationMessageDropped
+			participant = control.NodeRef{}
+			messageSource, messageTarget, err = runtimeMessageEndpoints(record)
 		case control.ActionDeliverMessage:
 			kind = ObservationMessageDelivered
+			participant = control.NodeRef{}
+			messageSource, messageTarget, err = runtimeMessageEndpoints(record)
 		case control.ActionFireTemporal:
 			kind = ObservationTemporalFired
 		case control.ActionCrash:
@@ -203,35 +222,64 @@ func ProjectRuntimeObservations(trace controlruntime.Trace) ([]Observation, erro
 				}
 			}
 		}
+		if err != nil {
+			return nil, err
+		}
 		if kind == "" {
 			continue
 		}
-		value := participant
-		result = append(result, Observation{
-			Kind: kind, Step: record.Step, SourceDigest: digest, Participant: &value,
-		})
+		event := Observation{
+			Kind: kind, Step: record.Step, SourceDigest: digest,
+			MessageSourceNode: messageSource, MessageTargetNode: messageTarget,
+		}
+		if participant.Node != "" {
+			value := participant
+			event.Participant = &value
+		}
+		result = append(result, event)
 	}
 	return result, nil
+}
+
+func runtimeMessageEndpoints(record controlruntime.ActionRecord) (control.NodeID, control.NodeID, error) {
+	if record.Command == nil {
+		return "", "", errors.New("OBSERVATION_MESSAGE_COMMAND_REQUIRED")
+	}
+	envelope, err := control.DecodeAdapterCommand(*record.Command)
+	if err != nil {
+		return "", "", err
+	}
+	if envelope.Item == nil || envelope.Item.ID != record.Action.Item ||
+		envelope.Item.Kind != control.ItemMessage || envelope.Item.Message == nil {
+		return "", "", errors.New("OBSERVATION_MESSAGE_ITEM_INVALID")
+	}
+	return envelope.Item.Message.Source.Node, envelope.Item.Message.Target, nil
 }
 
 type ObservationField string
 
 const (
-	ObservationFieldParticipant        ObservationField = "participant"
-	ObservationFieldParticipantNode    ObservationField = "participant-node"
-	ObservationFieldRelatedParticipant ObservationField = "related-participant"
-	ObservationFieldRelatedNode        ObservationField = "related-participant-node"
-	ObservationFieldRequestID          ObservationField = "request-id"
-	ObservationFieldParticipantRole    ObservationField = "participant-role"
-	ObservationFieldMessageRole        ObservationField = "message-role"
-	ObservationFieldOperationStage     ObservationField = "operation-stage"
+	ObservationFieldParticipant             ObservationField = "participant"
+	ObservationFieldParticipantNode         ObservationField = "participant-node"
+	ObservationFieldRelatedParticipant      ObservationField = "related-participant"
+	ObservationFieldRelatedNode             ObservationField = "related-participant-node"
+	ObservationFieldRequestID               ObservationField = "request-id"
+	ObservationFieldParticipantRole         ObservationField = "participant-role"
+	ObservationFieldMessageRole             ObservationField = "message-role"
+	ObservationFieldOperationStage          ObservationField = "operation-stage"
+	ObservationFieldMessageSourceNode       ObservationField = "message-source-node"
+	ObservationFieldMessageTargetNode       ObservationField = "message-target-node"
+	ObservationFieldNewCoordinatorNode      ObservationField = "new-coordinator-node"
+	ObservationFieldPreviousCoordinatorNode ObservationField = "previous-coordinator-node"
 )
 
 var observationFields = map[ObservationField]struct{}{
 	ObservationFieldParticipant: {}, ObservationFieldParticipantNode: {},
 	ObservationFieldRelatedParticipant: {}, ObservationFieldRelatedNode: {},
 	ObservationFieldRequestID: {}, ObservationFieldParticipantRole: {}, ObservationFieldMessageRole: {},
-	ObservationFieldOperationStage: {},
+	ObservationFieldOperationStage:    {},
+	ObservationFieldMessageSourceNode: {}, ObservationFieldMessageTargetNode: {},
+	ObservationFieldNewCoordinatorNode: {}, ObservationFieldPreviousCoordinatorNode: {},
 }
 
 // ObservationConstraint is deliberately smaller than a temporal DSL. Equals
@@ -479,6 +527,14 @@ func observationFieldValue(event Observation, field ObservationField) (string, b
 		return event.MessageRole, event.MessageRole != ""
 	case ObservationFieldOperationStage:
 		return event.OperationStage, event.OperationStage != ""
+	case ObservationFieldMessageSourceNode:
+		return string(event.MessageSourceNode), event.MessageSourceNode != ""
+	case ObservationFieldMessageTargetNode:
+		return string(event.MessageTargetNode), event.MessageTargetNode != ""
+	case ObservationFieldNewCoordinatorNode:
+		return string(event.NewCoordinatorNode), event.NewCoordinatorNode != ""
+	case ObservationFieldPreviousCoordinatorNode:
+		return string(event.PreviousCoordinatorNode), event.PreviousCoordinatorNode != ""
 	}
 	for _, attribute := range event.Attributes {
 		if attribute.Field == field {

@@ -309,9 +309,13 @@ func runAgenticEpisode(
 	if scenarioJournal.SetRoot(rootID) != nil {
 		return result, errors.New("AGENTIC_EPISODE_SCENARIO_ROOT_INVALID")
 	}
+	scenarioCallAllowance, err := fixedScenarioCallAllowance(budget, result.Work.Model.Calls)
+	if err != nil {
+		return result, err
+	}
 	scenarioObservedTokens := 0
 	scenario, scenarioErr := runScenarioEpisodeCore(
-		ctx, coreInputs, budget.MaxScenarioCalls, budget.MaxScenarioPlanSteps,
+		ctx, coreInputs, scenarioCallAllowance, budget.MaxScenarioPlanSteps,
 		budget.MaxRuntimeDecisions,
 		func(ctx context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
@@ -419,6 +423,13 @@ func runAgenticEpisode(
 	)
 	result.Assessment = overrideWithBranchOracleFinding(result.Assessment, result.BranchTesting)
 	return result, nil
+}
+
+func fixedScenarioCallAllowance(budget agenticEpisodeBudget, riskCalls int) (int, error) {
+	if budget.validate() != nil || riskCalls < 0 || riskCalls > budget.MaxRiskCalls {
+		return 0, errors.New("AGENTIC_EPISODE_RISK_CALL_ACCOUNTING_INVALID")
+	}
+	return budget.MaxScenarioCalls, nil
 }
 
 func lastScenarioCapabilityGapCode(result controlexperiment.ScenarioAgentResult) string {

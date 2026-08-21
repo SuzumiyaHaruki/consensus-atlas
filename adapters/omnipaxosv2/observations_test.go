@@ -41,3 +41,18 @@ func TestObservedRequestFollowsMessageDependenciesAndRejectsConflict(t *testing.
 		t.Fatalf("conflicting request=%q/%v", got, ok)
 	}
 }
+
+func TestCoordinatorChangeUsesStableNodeIdentity(t *testing.T) {
+	if omnipaxosCoordinatorChanged(
+		control.NodeRef{Node: "n1", Incarnation: 1},
+		control.NodeRef{Node: "n1", Incarnation: 2},
+	) {
+		t.Fatal("an incarnation change was reported as a coordinator change")
+	}
+	if !omnipaxosCoordinatorChanged(
+		control.NodeRef{Node: "n1", Incarnation: 1},
+		control.NodeRef{Node: "n2", Incarnation: 1},
+	) {
+		t.Fatal("a stable node identity change was not reported")
+	}
+}

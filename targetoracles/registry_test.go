@@ -22,7 +22,7 @@ func TestRegistryResolvesExactTargetAndProjector(t *testing.T) {
 		t.Fatalf("etcd/raft registry resolution = %#v/%#v/%v", projector, registry, err)
 	}
 	monitors := registry.EvaluationMonitors()
-	want := []string{"agreement", ClientApplicationBindingMonitorID, LogProgressMonitorID}
+	want := []string{"agreement", ClientApplicationBindingMonitorID, ElectionSafetyMonitorID, LogProgressMonitorID}
 	if len(monitors) != len(want) {
 		t.Fatalf("evaluation monitors = %#v", monitors)
 	}

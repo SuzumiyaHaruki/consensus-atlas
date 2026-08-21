@@ -1,6 +1,6 @@
 [submodule "suts/etcdraft"]
 	path = suts/etcdraft
-	url = https://github.com/etcd-io/raft.git
+	url = https://github.com/SuzumiyaHaruki/raft.git
 [submodule "suts/hashicorpraft"]
 	path = suts/hashicorpraft
 	url = https://github.com/hashicorp/raft.git

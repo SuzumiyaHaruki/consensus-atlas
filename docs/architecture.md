@@ -176,7 +176,9 @@ Trace、Replay 和 Oracle 不感知 Git，也不根据仓库状态改变执行�
 Agent source exposure 与执行输入在 etcd/raft 和 OmniPaxos composition 中进一步绑定。
 源码读取是显式授权能力：没有 module/crate mount 就没有源码查询；存在 mount 时，可信
 准备阶段要求语言构建系统的解析目录和 mount 目录均为同一个 `suts/` checkout。etcd/raft
-核对可执行文件的 Go replacement 与 `go list`；OmniPaxos 核对锁定离线 Cargo metadata，
+核对可执行文件的 Go replacement、`go list` 解析目录和可执行文件中记录的实际
+etcd/raft 源文件目录，因此不能把仓库 A 编译的进程与仓库 B 的相同相对 replacement
+伪装成同一输入；OmniPaxos 核对锁定离线 Cargo metadata，
 从本地 path dependency 重建规范 worker，并核对 worker 路径。MethodSpec 只记录
 module path/version/reference prefix 与完整 tree
 digest，不记录机器路径。运行开始、每次读取和封存前重新计算 digest，避免相同前缀指向

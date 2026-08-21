@@ -29,7 +29,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	contract.AgenticBudget = &methodSpec.InvestigationBudget
 	contract.Composition.MonitorIDs = []string{
 		"agreement", targetoracles.ClientApplicationBindingMonitorID,
-		targetoracles.LogProgressMonitorID,
+		targetoracles.ElectionSafetyMonitorID, targetoracles.LogProgressMonitorID,
 	}
 	contract, err := contract.Seal()
 	if err != nil {

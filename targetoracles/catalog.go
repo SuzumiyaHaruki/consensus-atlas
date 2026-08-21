@@ -33,6 +33,13 @@ func EtcdraftV2Registry() Registry {
 		},
 		Registration{
 			Capability: controlexperiment.AgentOracleCapability{
+				ID: ElectionSafetyMonitorID, Scope: controlexperiment.AgentOracleScopeTarget,
+				PropertyIDs: []string{"election-safety"},
+			},
+			Monitor: ElectionSafetyMonitor{},
+		},
+		Registration{
+			Capability: controlexperiment.AgentOracleCapability{
 				ID: ClientApplicationBindingMonitorID, Scope: controlexperiment.AgentOracleScopeTarget,
 				PropertyIDs: []string{"client-operation-continuity"},
 			},

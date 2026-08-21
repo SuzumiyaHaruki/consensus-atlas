@@ -15,6 +15,26 @@
       {
         "id": "partial-synchrony",
         "text": "Message delay, loss, duplication, process lifecycle changes, and natural timer expiry may alter progress without changing the CFT assumption that nodes are non-Byzantine."
+      },
+      {
+        "id": "cft-fault-model",
+        "text": "Running participants follow the protocol implementation. The environment may crash or restart participants and may partition, delay, lose, duplicate or reorder messages, including asymmetric loss. It may not forge, mutate or equivocate protocol messages unless a future BFT Target explicitly exposes such Actions. Liveness claims require fault relief, a communicating quorum and fair progress; a temporary missing leader or finite loss is not itself a liveness violation."
+      },
+      {
+        "id": "raft-majority-and-voting",
+        "text": "For the actual target size n, a Raft majority is Q=floor(n/2)+1, so any two majorities intersect. A candidate becomes leader only after quorum votes, and each participant may grant at most one vote in a term. Derive Q from target_surface instead of assuming a three- or five-node deployment."
+      },
+      {
+        "id": "raft-safety-invariant-chain",
+        "text": "Election safety limits each term to one leader. Log matching preserves the same prefix when entries share an index and term. Leader completeness requires every later leader to contain entries already committed in earlier terms; quorum intersection and the voting log-freshness rule connect these invariants."
+      },
+      {
+        "id": "raft-durable-versus-volatile-state",
+        "text": "Current term, granted vote and log contents are durable protocol state. Current leader role, election counters and leader per-peer replication progress are volatile and may be reconstructed after restart. A recovery hypothesis must distinguish loss of documented volatile state from regression of durable state."
+      },
+      {
+        "id": "raft-liveness-boundary",
+        "text": "Raft progress after disruption requires a communicating majority, eventual message and timer fairness, and enough synchrony for one election timeout to avoid repeated overlap. Short election churn, message loss or leader absence inside a bounded unfair prefix is expected behavior rather than a protocol violation."
       }
     ],
     "properties": [
@@ -31,7 +51,7 @@
       {
         "id": "election-safety",
         "summary": "At most one participant may act as leader in a term under the CFT assumptions exercised by the target.",
-        "evidence_level": "observable-only"
+        "evidence_level": "oracle-backed"
       },
       {
         "id": "recovery-progress-monotonicity",
@@ -98,12 +118,12 @@
       "assumptions": [
         {
           "id": "cft-participants",
-          "summary": "Participants follow the implementation while running; the active target permits crash/restart and network scheduling but does not permit forged or equivocated protocol messages.",
+          "summary": "Participants follow the implementation while running; crash/restart and asymmetric network delay, loss, duplication, reordering and partition are permitted, but forged, mutated or equivocated protocol messages are not.",
           "evidence_refs": ["plans/agent/etcdraft-agentic-calibration-v1.json:fault_envelope", "adapters/etcdraftv2/adapter.go:Check"]
         },
         {
           "id": "partial-synchrony",
-          "summary": "The scheduler may delay, drop, duplicate and reorder stored messages and may advance naturally due periodic pulses; eventual delivery or fairness is an explicit experiment assumption, not an unconditional runtime guarantee.",
+          "summary": "The scheduler may delay, drop, duplicate and reorder stored messages and may advance naturally due periodic pulses; liveness requires fault relief, a communicating quorum and explicit fairness, so temporary leader absence or finite loss is not itself a violation.",
           "evidence_refs": ["adapters/etcdraftv2/adapter.go:Manifest", "internal/controlruntime/runtime.go"]
         },
         {
@@ -230,11 +250,11 @@
       "max_partitions": 1,
       "max_active_partitions": 1
     },
-    "scenario_max_calls": 3,
-    "scenario_max_steps": 5,
-    "scenario_max_decisions": 32,
+    "scenario_max_calls": 8,
+    "scenario_max_steps": 1,
+    "scenario_max_decisions": 64,
     "scenario_semantic_exposure": "full",
-    "model_reasoning_effort": "low",
+    "model_reasoning_effort": "high",
     "model_exclude_reasoning": true,
     "model_max_output_tokens": 32000,
     "model_max_retries": 0,
@@ -243,9 +263,9 @@
       "max_primary_scheduler_decisions": 16384,
       "max_primary_work_units": 32768,
       "max_replay_work_units": 8192,
-      "max_model_calls": 6,
-      "max_model_tokens": 120000
+      "max_model_calls": 12,
+      "max_model_tokens": 240000
     },
-    "session_wall_clock_ms": 600000
+    "session_wall_clock_ms": 1800000
   }
 }

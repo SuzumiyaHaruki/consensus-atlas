@@ -429,6 +429,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.RiskAttempts < 0 || artifact.ScenarioAttempts < 0 ||
 		artifact.RiskAttempts > artifact.Budget.MaxRiskCalls ||
 		artifact.ScenarioAttempts > artifact.Budget.MaxScenarioCalls ||
+		artifact.RiskAttempts+artifact.ScenarioAttempts > artifact.Budget.MaxTotalCalls ||
 		artifact.ScenarioDecisionsUsed < 0 ||
 		artifact.ScenarioDecisionsUsed > artifact.Budget.MaxRuntimeDecisions ||
 		artifact.SelectedPathDecisions < 0 ||
@@ -979,6 +980,8 @@ func deriveAgenticExplorationMemory(
 				return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_CANDIDATE_INVALID")
 			}
 			entry.CandidateID = candidate.ID
+			entry.PropertyRef = candidate.PropertyRef
+			entry.EvidenceLevel = episode.Summary.Assessment.EvidenceLevel
 			entry.Summary = candidate.Summary
 			entry.SuspectedMechanism = candidate.SuspectedMechanism
 			entry.RepeatedCandidate = seenCandidates[semanticIdentity]

@@ -56,6 +56,7 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	actions := []control.ActionKind{control.ActionInvoke, control.ActionDropMessage}
 	memory := []controlexperiment.RiskExplorationMemoryEntry{{
 		Episode: 1, CandidateID: "earlier-risk", Summary: "Earlier candidate.",
+		PropertyRef: "decision-continuity", EvidenceLevel: controlexperiment.PropertyEvidenceObservable,
 		SuspectedMechanism: "An earlier ordering was already investigated.",
 		EpisodeOutcome:     controlexperiment.RiskMemoryOutcomeWitnessNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
@@ -106,6 +107,8 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("target_dossier")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("observable-only")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("exploration_memory")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("property_ref")) ||
+			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("evidence_level")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("persist-step")) ||
 			!bytes.Contains([]byte(payload.Messages[1].Content), []byte("do not repeat a mechanism")) ||
 			bytes.Contains([]byte(payload.Messages[1].Content), []byte("oracle_findings")) ||
@@ -205,13 +208,15 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	var selected controlexperiment.KnowledgeSource
+	var unmatched controlexperiment.KnowledgeSource
 	for _, source := range sources {
 		if source.Reference == "adapters/etcdraftv2/adapter.go:Check" {
 			selected = source
-			break
+		} else if unmatched.Reference == "" {
+			unmatched = source
 		}
 	}
-	if selected.Reference == "" {
+	if selected.Reference == "" || unmatched.Reference == "" {
 		t.Fatal("active etcd/raft Dossier lost its declared Check source")
 	}
 	view := controlexperiment.RiskAgentView{
@@ -240,34 +245,87 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 	}
 	output, err := riskAgentStructuredOutput(view)
 	if err != nil || !strings.Contains(system, "RiskAgentResponseEnvelope") ||
-		!strings.Contains(user, "Prefer a direct portfolio") ||
+		!strings.Contains(user, "source grounding is mandatory") ||
+		!strings.Contains(user, "must perform one neutral keyword search") ||
+		!strings.Contains(user, "choose a property; identify the supplied protocol invariant") ||
+		!strings.Contains(user, "Prefer including at least one mechanically executable candidate for an oracle-backed property") ||
+		!strings.Contains(user, "not an admission requirement") ||
+		strings.Contains(user, "Prefer a direct portfolio") ||
 		!bytes.Contains([]byte(user), []byte("adapter.go:Check")) ||
-		output.Name != "risk_grounding_or_portfolio" ||
+		output.Name != "risk_grounding_search" ||
 		len(output.Schema) > 32<<10 ||
 		!bytes.Contains(output.Schema, []byte("knowledge_requests")) ||
-		!bytes.Contains(output.Schema, []byte("adapters/etcdraftv2/adapter.go:Check")) ||
+		!bytes.Contains(output.Schema, []byte(`"query"`)) ||
+		bytes.Contains(output.Schema, []byte(`"reference"`)) ||
+		bytes.Contains(output.Schema, []byte("adapters/etcdraftv2/adapter.go:Check")) ||
 		!bytes.Contains(output.Schema, []byte("candidates")) ||
 		!bytes.Contains(output.Schema, []byte("response_kind")) {
 		t.Fatalf("knowledge-assisted Risk contract incomplete: %s\n%s\n%s\n%v", system, user, output.Schema, err)
 	}
 	view.KnowledgeResults = []controlexperiment.KnowledgeReadResult{{
-		Status: controlexperiment.KnowledgeDiscoveryCompleted, Source: selected,
-		StartLine: 10, EndLine: 12, TotalLines: 100,
-		Text: "func (adapter *Adapter) Check(action control.Action) error {\n  return nil\n}", Truncated: true,
+		Status:     controlexperiment.KnowledgeDiscoveryStopped,
+		ReasonCode: controlexperiment.KnowledgeDiscoverySearchNoMatch,
+		Query:      "missing phrase",
 	}}
 	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
 		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
 	)
 	system, user, err = riskAgentPrompt(view)
 	output, outputErr := riskAgentStructuredOutput(view)
-	if err != nil || outputErr != nil || output.Name != "risk_grounding_or_portfolio" ||
-		!strings.Contains(user, "end_line plus one") ||
-		!bytes.Contains([]byte(user), []byte("func (adapter *Adapter) Check")) ||
-		!bytes.Contains(output.Schema, []byte("start_line")) ||
-		!bytes.Contains(output.Schema, []byte("knowledge_requests")) {
-		t.Fatalf("completed source window did not preserve bounded navigation: %s\n%s\n%s\n%v/%v",
+	if err != nil || outputErr != nil || output.Name != "risk_grounding_search" ||
+		!strings.Contains(user, "preceding search stopped or had no match") ||
+		!strings.Contains(user, "change the neutral keywords") ||
+		bytes.Contains(output.Schema, []byte(`"reference"`)) {
+		t.Fatalf("stopped search did not remain in the search phase: %s\n%s\n%s\n%v/%v",
 			system, user, output.Schema, err, outputErr)
 	}
+	view.KnowledgeResults = []controlexperiment.KnowledgeReadResult{{
+		Status: controlexperiment.KnowledgeDiscoveryCompleted, Query: "adapter check",
+		Matches: []controlexperiment.KnowledgeSearchMatch{{
+			Reference: selected.Reference, Line: 10, Preview: "func (adapter *Adapter) Check",
+		}},
+	}}
+	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
+		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
+	)
+	system, user, err = riskAgentPrompt(view)
+	output, outputErr = riskAgentStructuredOutput(view)
+	if err != nil || outputErr != nil || output.Name != "risk_grounding_read" ||
+		!strings.Contains(user, "repository search has completed") ||
+		!strings.Contains(user, "do not select an arbitrary Dossier-declared source") ||
+		!bytes.Contains(output.Schema, []byte(selected.Reference)) ||
+		bytes.Contains(output.Schema, []byte(unmatched.Reference)) ||
+		!bytes.Contains(output.Schema, []byte(`"reference"`)) ||
+		bytes.Contains(output.Schema, []byte(`"query"`)) {
+		t.Fatalf("completed search did not narrow the read phase: %s\n%s\n%s\n%v/%v",
+			system, user, output.Schema, err, outputErr)
+	}
+	view.KnowledgeResults = append(view.KnowledgeResults, controlexperiment.KnowledgeReadResult{
+		Status:     controlexperiment.KnowledgeDiscoveryStopped,
+		ReasonCode: controlexperiment.KnowledgeDiscoveryLocatorNotFound,
+		Source:     selected,
+	})
+	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
+		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
+	)
+	system, user, err = riskAgentPrompt(view)
+	output, outputErr = riskAgentStructuredOutput(view)
+	if err != nil || outputErr != nil || output.Name != "risk_grounding_read" ||
+		!strings.Contains(user, "preceding read stopped") ||
+		!bytes.Contains(output.Schema, []byte(selected.Reference)) ||
+		bytes.Contains(output.Schema, []byte(unmatched.Reference)) ||
+		bytes.Contains(output.Schema, []byte(`"query"`)) {
+		t.Fatalf("stopped read escaped the search-matched read phase: %s\n%s\n%s\n%v/%v",
+			system, user, output.Schema, err, outputErr)
+	}
+	view.KnowledgeResults = append(view.KnowledgeResults, controlexperiment.KnowledgeReadResult{
+		Status: controlexperiment.KnowledgeDiscoveryCompleted, Source: selected,
+		StartLine: 10, EndLine: 12, TotalLines: 100,
+		Text: "func (adapter *Adapter) Check(action control.Action) error {\n  return nil\n}", Truncated: true,
+	})
+	view.AvailableSupportRefs = controlexperiment.VisibleRiskSupportRefs(
+		view.Knowledge, view.TargetSurface, view.KnowledgeResults,
+	)
 	view.MaxKnowledgeRequests = 0
 	system, user, err = riskAgentPrompt(view)
 	output, outputErr = riskAgentStructuredOutput(view)
@@ -296,8 +354,21 @@ func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reference := "adapters/omnipaxosv2/adapter.go:Manifest"
-	requestBytes, err := json.Marshal(struct {
+	reference := "adapters/omnipaxosv2/adapter.go"
+	searchBytes, err := json.Marshal(struct {
+		ResponseKind      string                                   `json:"response_kind"`
+		Candidates        []controlexperiment.RiskCandidate        `json:"candidates"`
+		KnowledgeRequests []controlexperiment.KnowledgeReadRequest `json:"knowledge_requests"`
+	}{
+		ResponseKind: "knowledge-query", Candidates: []controlexperiment.RiskCandidate{},
+		KnowledgeRequests: []controlexperiment.KnowledgeReadRequest{{
+			Query: "package omnipaxosv2", MaxResults: 10,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readBytes, err := json.Marshal(struct {
 		ResponseKind      string                                   `json:"response_kind"`
 		Candidates        []controlexperiment.RiskCandidate        `json:"candidates"`
 		KnowledgeRequests []controlexperiment.KnowledgeReadRequest `json:"knowledge_requests"`
@@ -325,18 +396,30 @@ func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
 		var content []byte
 		switch providerCalls {
 		case 1:
-			if payload.ResponseFormat.JSONSchema.Name != "risk_grounding_or_portfolio" ||
+			if payload.ResponseFormat.JSONSchema.Name != "risk_grounding_search" ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("knowledge_requests")) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"query"`)) ||
+				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"reference"`)) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("candidates")) ||
-				!bytes.Contains([]byte(payload.Messages[1].Content), []byte(reference)) {
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("No repository search has completed yet")) {
 				t.Fatalf("first Risk call did not expose declared sources: %#v", payload)
 			}
-			content = requestBytes
+			content = searchBytes
 		case 2:
+			if payload.ResponseFormat.JSONSchema.Name != "risk_grounding_read" ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte("knowledge_requests")) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"reference"`)) ||
+				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"query"`)) ||
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("knowledge_results")) ||
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte(reference)) {
+				t.Fatalf("second Risk call did not receive the neutral search result: %#v", payload.Messages)
+			}
+			content = readBytes
+		case 3:
 			if payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio" ||
 				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("knowledge_results")) ||
-				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("func (adapter *Adapter) Manifest")) {
-				t.Fatalf("second Risk call did not receive the source excerpt: %#v", payload.Messages)
+				!bytes.Contains([]byte(payload.Messages[1].Content), []byte("package omnipaxosv2")) {
+				t.Fatalf("third Risk call did not receive the source excerpt: %#v", payload.Messages)
 			}
 			content = portfolioBytes
 		default:
@@ -360,21 +443,32 @@ func TestRiskAgentProviderJournalReadsSourceThenAcceptsPortfolio(t *testing.T) {
 	reader := func(request controlexperiment.KnowledgeReadRequest) (
 		controlexperiment.KnowledgeReadResult, error,
 	) {
-		return controlexperiment.ReadDeclaredKnowledgeSource("../..", knowledge, request)
+		mounts := []controlexperiment.KnowledgeSourceMount{{Directory: "../.."}}
+		if request.Query != "" {
+			return controlexperiment.SearchMountedKnowledgeSources(mounts, request)
+		}
+		return controlexperiment.ReadMountedKnowledgeSourceFromMounts(
+			mounts,
+			controlexperiment.KnowledgeSource{Reference: request.Reference, Path: request.Reference},
+			request,
+		)
 	}
 	result, err := controlexperiment.DiscoverRiskWithPlanner(
-		context.Background(), controlexperiment.RiskAgentBudget{MaxCalls: 2, MaxTokens: 20},
+		context.Background(), controlexperiment.RiskAgentBudget{MaxCalls: 3, MaxTokens: 30},
 		knowledge, (omnipaxosv2.ObservationProjector{}).Capabilities(),
 		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage}, nil, nil, reader, planner,
 	)
 	audits, auditErr := journal.Audits()
 	if err != nil || auditErr != nil || result.Status != controlexperiment.RiskAgentAccepted ||
-		result.Accepted == nil || len(result.Attempts) != 2 || len(audits) != 2 || providerCalls != 2 ||
+		result.Accepted == nil || len(result.Attempts) != 3 || len(audits) != 3 || providerCalls != 3 ||
 		result.Attempts[0].Feedback.ReasonCode != controlexperiment.RiskAgentReasonKnowledgeRead ||
 		len(result.Attempts[0].KnowledgeResults) != 1 ||
+		result.Attempts[1].Feedback.ReasonCode != controlexperiment.RiskAgentReasonKnowledgeRead ||
+		len(result.Attempts[1].KnowledgeResults) != 1 ||
 		audits[0].ProviderUsageStatus != agentProviderUsageObserved ||
 		audits[1].ProviderUsageStatus != agentProviderUsageObserved ||
-		result.ModelWork != (controlexperiment.ModelWork{Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14}) {
+		audits[2].ProviderUsageStatus != agentProviderUsageObserved ||
+		result.ModelWork != (controlexperiment.ModelWork{Calls: 3, InputTokens: 12, OutputTokens: 9, TotalTokens: 21}) {
 		t.Fatalf("provider-backed knowledge loop failed: %#v audits=%#v calls=%d err=%v/%v",
 			result, audits, providerCalls, err, auditErr)
 	}

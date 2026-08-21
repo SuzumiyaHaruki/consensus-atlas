@@ -22,7 +22,7 @@ const (
 	openRouterMaxOutputTokens        = 32000
 	openRouterDefaultReasoningEffort = "high"
 	openRouterDefaultTimeout         = 900 * time.Second
-	scenarioAgentMaxOutputTokens     = 32000
+	scenarioAgentMaxOutputTokens     = 8192
 	agentFailureTransport            = "AGENT_TRANSPORT_FAILED"
 	agentFailureHTTP                 = "AGENT_HTTP_STATUS_REJECTED"
 	agentFailureResponse             = "AGENT_RESPONSE_REJECTED"

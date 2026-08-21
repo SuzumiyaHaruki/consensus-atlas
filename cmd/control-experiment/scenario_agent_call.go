@@ -230,18 +230,68 @@ func scenarioAgentPrompt(
 		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
 	}
 	promptView := view
-	if view.Prior != nil {
-		prior := *view.Prior
-		prior.NaturalProgress = nil
-		promptView.Prior = &prior
-	}
 	agentView := any(promptView)
-	implementationContext := "Use target_dossier as implementation context: preserve stated public contracts and treat blind spots " +
-		"as unavailable evidence rather than permission to invent an internal transition. "
+	implementationContext := "Use only the accepted candidate, current trusted frontier, action semantics, and recent mechanical feedback. "
 	if promptView.AcceptedHypothesis != nil {
+		type targetSurfaceView struct {
+			TargetID          string                                 `json:"target_id"`
+			Nodes             []control.NodeID                       `json:"nodes"`
+			Workload          controlexperiment.AgentWorkloadSurface `json:"workload"`
+			FaultAllowance    controlexperiment.FaultEnvelope        `json:"fault_allowance"`
+			ComposableActions []control.ActionKind                   `json:"composable_actions"`
+		}
+		type feedbackView struct {
+			Outcome              string                                              `json:"outcome"`
+			ReasonCode           string                                              `json:"reason_code,omitempty"`
+			PreviousProposal     *controlexperiment.ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
+			ValidationIssues     []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+			CapabilityGaps       []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
+			AllowedIntents       []string                                            `json:"allowed_intents,omitempty"`
+			FailedStep           *controlexperiment.ScenarioStep                     `json:"failed_step,omitempty"`
+			Steps                []controlexperiment.ScenarioStepFeedback            `json:"steps,omitempty"`
+			NaturalProgress      []controlexperiment.ScenarioStepFeedback            `json:"natural_progress,omitempty"`
+			NaturalProgressStop  string                                              `json:"natural_progress_stop,omitempty"`
+			ClosureCandidates    []controlexperiment.FrontierActionRef               `json:"closure_candidates,omitempty"`
+			ClosureHandoff       bool                                                `json:"closure_handoff,omitempty"`
+			ClosureHandoffStepID string                                              `json:"closure_handoff_step_id,omitempty"`
+			ProgressDelta        *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+		}
+		var surface *targetSurfaceView
+		if promptView.TargetSurface != nil {
+			surface = &targetSurfaceView{
+				TargetID:       promptView.TargetSurface.TargetID,
+				Nodes:          append([]control.NodeID(nil), promptView.TargetSurface.Nodes...),
+				Workload:       promptView.TargetSurface.Workload,
+				FaultAllowance: promptView.TargetSurface.FaultAllowance,
+				ComposableActions: append([]control.ActionKind(nil),
+					promptView.TargetSurface.Capabilities.ComposableActions...),
+			}
+		}
+		var prior *feedbackView
+		if promptView.Prior != nil {
+			prior = &feedbackView{
+				Outcome: promptView.Prior.Outcome, ReasonCode: promptView.Prior.ReasonCode,
+				PreviousProposal: promptView.Prior.PreviousProposal,
+				ValidationIssues: append([]controlexperiment.ScenarioProposalValidationIssue(nil),
+					promptView.Prior.ValidationIssues...),
+				CapabilityGaps: append([]controlexperiment.AgentCapabilityGap(nil), promptView.Prior.CapabilityGaps...),
+				AllowedIntents: append([]string(nil), promptView.Prior.AllowedIntents...),
+				FailedStep:     promptView.Prior.FailedStep,
+				Steps: append([]controlexperiment.ScenarioStepFeedback(nil),
+					promptView.Prior.Steps...),
+				NaturalProgress: append([]controlexperiment.ScenarioStepFeedback(nil),
+					promptView.Prior.NaturalProgress...),
+				NaturalProgressStop: promptView.Prior.NaturalProgressStop,
+				ClosureCandidates: append([]controlexperiment.FrontierActionRef(nil),
+					promptView.Prior.ClosureCandidates...),
+				ClosureHandoff:       promptView.Prior.ClosureHandoff,
+				ClosureHandoffStepID: promptView.Prior.ClosureHandoffStepID,
+				ProgressDelta:        promptView.Prior.ProgressDelta,
+			}
+		}
 		agentView = struct {
 			AcceptedHypothesis      *controlexperiment.AcceptedHypothesisContext    `json:"accepted_hypothesis"`
-			TargetSurface           *controlexperiment.AgentTargetSurface           `json:"target_surface,omitempty"`
+			TargetSurface           *targetSurfaceView                              `json:"target_surface,omitempty"`
 			OrderedMilestones       []string                                        `json:"ordered_milestones"`
 			Frontier                controlexperiment.RiskFrontierView              `json:"root_frontier"`
 			Semantics               controlexperiment.ScenarioSemanticExposure      `json:"action_semantics"`
@@ -251,16 +301,16 @@ func scenarioAgentPrompt(
 			AvailableIntents        []string                                        `json:"available_intents"`
 			PostInterventionClosure bool                                            `json:"post_intervention_closure"`
 			Branches                []controlexperiment.ScenarioInvestigationBranch `json:"branches,omitempty"`
-			Prior                   *controlexperiment.ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
+			Prior                   *feedbackView                                   `json:"prior_feedback,omitempty"`
 		}{
 			AcceptedHypothesis: promptView.AcceptedHypothesis,
-			TargetSurface:      promptView.TargetSurface, OrderedMilestones: promptView.OrderedMilestones,
+			TargetSurface:      surface, OrderedMilestones: promptView.OrderedMilestones,
 			Frontier: promptView.Frontier, Semantics: promptView.Semantics,
 			MaxSteps: promptView.MaxSteps, DecisionAllowance: promptView.DecisionAllowance,
 			RemainingDecisions:      promptView.RemainingDecisions,
 			AvailableIntents:        promptView.AvailableIntents,
 			PostInterventionClosure: promptView.PostInterventionClosure,
-			Branches:                promptView.Branches, Prior: promptView.Prior,
+			Branches:                promptView.Branches, Prior: prior,
 		}
 		implementationContext = "Use accepted_hypothesis as the investigated mechanism and executable witness. It is an " +
 			"Agent proposal accepted for execution, not a protocol fact or verdict. "

@@ -39,6 +39,29 @@ func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.
 	}
 }
 
+func TestFixedScenarioCallBudgetDoesNotDependOnRiskUsage(t *testing.T) {
+	logical := controlexperiment.AgenticLogicalBudget{
+		MaxAttempts: 1, MaxPrimarySchedulerDecisions: 16384,
+		MaxPrimaryWorkUnits: 32768, MaxReplayWorkUnits: 8192,
+		MaxModelCalls: 12, MaxModelTokens: 240000,
+	}
+	budget, err := agenticEpisodeBudgetFromExperiment(8, 1, 64, logical)
+	if err != nil || budget.MaxRiskCalls != 4 || budget.MaxScenarioCalls != 8 ||
+		budget.MaxTotalCalls != 12 || budget.MaxObservedTokens != 240000 {
+		t.Fatalf("fixed deep-investigation budget drifted: %#v/%v", budget, err)
+	}
+	for _, riskCalls := range []int{0, 1, 2, 3, 4} {
+		allowance, allowanceErr := fixedScenarioCallAllowance(budget, riskCalls)
+		if allowanceErr != nil || allowance != 8 {
+			t.Fatalf("Risk usage %d changed the executed Scenario allowance: %d/%v",
+				riskCalls, allowance, allowanceErr)
+		}
+	}
+	if _, err := fixedScenarioCallAllowance(budget, 5); err == nil {
+		t.Fatal("Risk work above its own allowance reached Scenario execution")
+	}
+}
+
 func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
 	defer cancel()
@@ -48,6 +71,12 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if majority := agenticKnowledgeText(inputs.knowledge, "raft-majority-and-voting"); !strings.Contains(majority, "Q=floor(n/2)+1") || strings.Contains(majority, "majority is 3") {
+		t.Fatalf("Raft knowledge lost topology-derived quorum semantics: %q", majority)
+	}
+	if faultModel := agenticKnowledgeText(inputs.knowledge, "cft-fault-model"); !strings.Contains(faultModel, "asymmetric loss") || !strings.Contains(faultModel, "may not forge") {
+		t.Fatalf("Raft knowledge lost CFT fault boundary: %q", faultModel)
 	}
 	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
 	if err != nil || target.validate() != nil || target.ID != "etcdraft-v2" ||
@@ -64,7 +93,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		len(target.Surface.Capabilities.DeclaredActions) != 10 ||
 		len(target.Surface.Capabilities.ComposableActions) != 10 ||
 		len(target.Surface.Capabilities.ObservationCapabilities) == 0 ||
-		len(target.Surface.Capabilities.OracleCapabilities) != 4 ||
+		len(target.Surface.Capabilities.OracleCapabilities) != 5 ||
 		len(target.Surface.Capabilities.FidelityBoundaries) != 1 {
 		t.Fatalf("etcd/raft dynamic Agent surface was not derived from active inputs: %#v", target.Surface)
 	}
@@ -94,10 +123,11 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		composition.MethodSpec.EpisodeLimits.MaxScenarioPlanSteps != composition.Budget.MaxScenarioPlanSteps ||
 		composition.Budget.Logical == nil ||
 		*composition.Budget.Logical != inputs.experiment.SessionBudget ||
-		composition.Budget.MaxRiskCalls != 3 || composition.Budget.MaxScenarioCalls != 3 ||
-		composition.Budget.MaxScenarioPlanSteps != 5 ||
-		composition.Budget.MaxTotalCalls != 6 || composition.Budget.MaxObservedTokens != 120000 ||
-		transport.Model != openRouterFixtureModel || transport.Thinking != "low" ||
+		composition.Budget.MaxRiskCalls != 4 || composition.Budget.MaxScenarioCalls != 8 ||
+		composition.Budget.MaxScenarioPlanSteps != 1 ||
+		composition.Budget.MaxRuntimeDecisions != 64 ||
+		composition.Budget.MaxTotalCalls != 12 || composition.Budget.MaxObservedTokens != 240000 ||
+		transport.Model != openRouterFixtureModel || transport.Thinking != "high" ||
 		transport.MaxOutputTokens != 32000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {
 		t.Fatalf("etcd/raft registry composition drifted: %#v err=%v", composition, err)
 	}
@@ -218,14 +248,25 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	if err := bindAgenticMethodSpec(methodDirectory, true, tampered); err == nil {
 		t.Fatal("resume accepted changed method limits")
 	}
-	investigation, err := agenticInvestigationBudgetFromEpisode(3, composition.Budget)
-	if err != nil || investigation.MaxEpisodes != 3 ||
-		investigation.MaxModelCalls != 3*composition.Budget.MaxTotalCalls ||
-		investigation.MaxModelTokens != 3*composition.Budget.MaxObservedTokens ||
-		investigation.MaxRuntimeDecisionAllowance != 3*composition.Budget.MaxRuntimeDecisions {
+	investigation, err := agenticInvestigationBudgetFromEpisode(6, composition.Budget)
+	if err != nil || investigation.MaxEpisodes != 6 ||
+		investigation.MaxModelCalls != 72 || investigation.MaxModelTokens != 1_440_000 ||
+		investigation.MaxRuntimeDecisionAllowance != 384 {
 		t.Fatalf("Investigation budget did not scale the existing episode contract: %#v/%v",
 			investigation, err)
 	}
+}
+
+func agenticKnowledgeText(
+	knowledge controlexperiment.ProtocolKnowledgePack,
+	id string,
+) string {
+	for _, statement := range knowledge.Knowledge {
+		if statement.ID == id {
+			return statement.Text
+		}
+	}
+	return ""
 }
 
 func TestEtcdraftReadyAdvanceHypothesisReportsTargetFidelityGap(t *testing.T) {
@@ -583,5 +624,17 @@ func TestInvestigationSelectsEveryDistinctExecutablePortfolioRiskInOrder(t *test
 	)
 	if err != nil || selected != nil {
 		t.Fatalf("exhausted portfolio produced another investigation: %#v/%v", selected, err)
+	}
+}
+
+func TestInvestigationCountsRiskGenerationEpisodesWithExecutableCandidates(t *testing.T) {
+	episodes := []recoveredAgenticEpisode{
+		{Summary: agenticEpisodeArtifact{RiskAttempts: 4, ExecutableRisks: []controlexperiment.RiskCandidateAssessment{{}}}},
+		{Summary: agenticEpisodeArtifact{RiskAttempts: 0, ScenarioAttempts: 8}},
+		{Summary: agenticEpisodeArtifact{RiskAttempts: 3}},
+		{Summary: agenticEpisodeArtifact{RiskAttempts: 3, ExecutableRisks: []controlexperiment.RiskCandidateAssessment{{}}}},
+	}
+	if got := riskGenerationEpisodeCountWithExecutableCandidates(episodes); got != 2 {
+		t.Fatalf("Risk generation Episode count with executable candidates = %d, want 2", got)
 	}
 }

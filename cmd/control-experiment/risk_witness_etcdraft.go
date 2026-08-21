@@ -56,8 +56,8 @@ func etcdraftLeaderChangeObservationPredicates() []semantic.ObservationPredicate
 			Kind:        semantic.ObservationCoordinatorChange,
 			Constraints: []semantic.ObservationConstraint{
 				{Field: semantic.ObservationFieldOperationStage, Equals: "inflight"},
-				{Field: semantic.ObservationFieldRelatedNode, BindAs: "old-coordinator"},
-				{Field: semantic.ObservationFieldParticipantNode, BindAs: "new-coordinator"},
+				{Field: semantic.ObservationFieldPreviousCoordinatorNode, BindAs: "old-coordinator"},
+				{Field: semantic.ObservationFieldNewCoordinatorNode, BindAs: "new-coordinator"},
 			},
 		},
 		{

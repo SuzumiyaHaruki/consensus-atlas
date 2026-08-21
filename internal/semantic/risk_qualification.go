@@ -287,6 +287,9 @@ func observationBindingDomain(field ObservationField, valueType ObservationValue
 		return "node-incarnation", true
 	case ObservationFieldParticipantNode, ObservationFieldRelatedNode:
 		return "node-id", true
+	case ObservationFieldMessageSourceNode, ObservationFieldMessageTargetNode,
+		ObservationFieldNewCoordinatorNode, ObservationFieldPreviousCoordinatorNode:
+		return "node-id", true
 	case ObservationFieldRequestID:
 		return "request-id", true
 	case ObservationFieldParticipantRole:
@@ -388,10 +391,14 @@ func observationMatchesCapability(
 		actual[ObservationFieldRelatedNode] = string(event.RelatedParticipant.Node)
 	}
 	for field, value := range map[ObservationField]string{
-		ObservationFieldRequestID:       event.RequestID,
-		ObservationFieldParticipantRole: event.ParticipantRole,
-		ObservationFieldMessageRole:     event.MessageRole,
-		ObservationFieldOperationStage:  event.OperationStage,
+		ObservationFieldRequestID:               event.RequestID,
+		ObservationFieldParticipantRole:         event.ParticipantRole,
+		ObservationFieldMessageRole:             event.MessageRole,
+		ObservationFieldOperationStage:          event.OperationStage,
+		ObservationFieldMessageSourceNode:       string(event.MessageSourceNode),
+		ObservationFieldMessageTargetNode:       string(event.MessageTargetNode),
+		ObservationFieldNewCoordinatorNode:      string(event.NewCoordinatorNode),
+		ObservationFieldPreviousCoordinatorNode: string(event.PreviousCoordinatorNode),
 	} {
 		if value != "" {
 			actual[field] = value

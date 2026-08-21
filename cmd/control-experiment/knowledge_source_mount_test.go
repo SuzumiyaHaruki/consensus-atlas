@@ -222,3 +222,18 @@ func TestExplicitRepositoryRootDecouplesLocalSUTFromSemanticInputLocation(t *tes
 		t.Fatalf("non-repository explicit root was accepted: %v", err)
 	}
 }
+
+func TestEtcdraftCompiledSourceIsTheResolvedLocalModule(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, err := resolveEtcdraftModule(context.Background(), repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := executableEtcdraftModuleDirectory()
+	if err != nil || compiled != module.Dir {
+		t.Fatalf("compiled etcd/raft source = %q, resolved module = %q: %v", compiled, module.Dir, err)
+	}
+}

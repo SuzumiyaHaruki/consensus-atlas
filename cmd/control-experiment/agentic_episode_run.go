@@ -72,13 +72,15 @@ type agenticInvestigationOptions struct {
 }
 
 type agenticInvestigationResult struct {
-	StopReason               string
-	Episodes                 []recoveredAgenticEpisode
-	ExplorationMemory        []controlexperiment.RiskExplorationMemoryEntry
-	ModelWork                controlexperiment.ModelWork
-	RuntimeDecisionAllowance int
-	UnreconciledModelCalls   int
-	CapabilityAdaptation     agenticCapabilityAdaptationMetrics
+	StopReason                                     string
+	Episodes                                       []recoveredAgenticEpisode
+	ExplorationMemory                              []controlexperiment.RiskExplorationMemoryEntry
+	ModelWork                                      controlexperiment.ModelWork
+	ReservedDecisionAllowance                      int
+	ConsumedScenarioDecisions                      int
+	UnreconciledModelCalls                         int
+	RiskGenerationEpisodesWithExecutableCandidates int
+	CapabilityAdaptation                           agenticCapabilityAdaptationMetrics
 }
 
 func (budget agenticInvestigationBudget) validate() error {
@@ -112,13 +114,11 @@ func runAgenticInvestigation(
 	result.Episodes = existing
 	for _, episode := range existing {
 		addAgentModelWork(&result.ModelWork, episode.Summary.Work.Model)
-		result.RuntimeDecisionAllowance += episode.Summary.Budget.MaxRuntimeDecisions
-		if episode.Summary.Status == agenticEpisodeTokenStopped {
-			result.StopReason = agenticInvestigationTokenLimit
-		}
+		result.ReservedDecisionAllowance += episode.Summary.Budget.MaxRuntimeDecisions
+		result.ConsumedScenarioDecisions += episode.Summary.ScenarioDecisionsUsed
 	}
 	startOrdinal := len(existing) + 1
-	if startOrdinal > options.Budget.MaxEpisodes {
+	if startOrdinal > options.Budget.MaxEpisodes && result.StopReason == "" {
 		result.StopReason = agenticInvestigationEpisodeLimit
 	}
 	var prepared agenticEpisodeComposition
@@ -157,7 +157,7 @@ func runAgenticInvestigation(
 		composition.PortfolioRisk = portfolioRisk
 		remainingCalls := options.Budget.MaxModelCalls - result.ModelWork.Calls
 		remainingTokens := options.Budget.MaxModelTokens - result.ModelWork.TotalTokens
-		remainingDecisions := options.Budget.MaxRuntimeDecisionAllowance - result.RuntimeDecisionAllowance
+		remainingDecisions := options.Budget.MaxRuntimeDecisionAllowance - result.ReservedDecisionAllowance
 		if remainingCalls < composition.Budget.MaxTotalCalls {
 			result.StopReason = agenticInvestigationCallLimit
 			break
@@ -202,9 +202,10 @@ func runAgenticInvestigation(
 		result.Episodes = append(result.Episodes, recovered)
 		partial = false
 		addAgentModelWork(&result.ModelWork, recovered.Summary.Work.Model)
-		result.RuntimeDecisionAllowance += composition.Budget.MaxRuntimeDecisions
-		if recovered.Summary.Status == agenticEpisodeTokenStopped {
-			result.StopReason = agenticInvestigationTokenLimit
+		result.ReservedDecisionAllowance += composition.Budget.MaxRuntimeDecisions
+		result.ConsumedScenarioDecisions += recovered.Summary.ScenarioDecisionsUsed
+		if ordinal == options.Budget.MaxEpisodes {
+			result.StopReason = agenticInvestigationEpisodeLimit
 			break
 		}
 		if result.ModelWork.Calls >= options.Budget.MaxModelCalls {
@@ -215,7 +216,7 @@ func runAgenticInvestigation(
 			result.StopReason = agenticInvestigationTokenLimit
 			break
 		}
-		if result.RuntimeDecisionAllowance >= options.Budget.MaxRuntimeDecisionAllowance {
+		if result.ReservedDecisionAllowance >= options.Budget.MaxRuntimeDecisionAllowance {
 			result.StopReason = agenticInvestigationDecisionLimit
 			break
 		}
@@ -224,8 +225,19 @@ func runAgenticInvestigation(
 		result.StopReason = agenticInvestigationEpisodeLimit
 	}
 	result.ExplorationMemory, err = deriveAgenticExplorationMemory(result.Episodes)
+	result.RiskGenerationEpisodesWithExecutableCandidates = riskGenerationEpisodeCountWithExecutableCandidates(result.Episodes)
 	result.CapabilityAdaptation = agenticInvestigationCapabilityAdaptation(result.Episodes)
 	return result, err
+}
+
+func riskGenerationEpisodeCountWithExecutableCandidates(episodes []recoveredAgenticEpisode) int {
+	count := 0
+	for _, episode := range episodes {
+		if episode.Summary.RiskAttempts > 0 && len(episode.Summary.ExecutableRisks) > 0 {
+			count++
+		}
+	}
+	return count
 }
 
 func agenticInvestigationCapabilityAdaptation(

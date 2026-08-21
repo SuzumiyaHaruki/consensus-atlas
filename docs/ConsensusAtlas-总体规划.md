@@ -263,22 +263,52 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
 - closure handoff、正式 Risk 输入、节点规模/调用预算和因果实例绑定属于方法实现变化，当前
-  MethodSpec implementation identity 为 `m4n8-agent-semantics-portfolio-search-v1`；旧
-  `m4n6-causal-closure-build-evidence-v1`/`m4n5-multinode-closure-v1`/`m4m4-risk-fidelity-v1`/
+  MethodSpec implementation identity 为 `m4n10-deep-candidate-investigation-v1`；旧
+  `m4n8-agent-semantics-portfolio-search-v1`/`m4n6-causal-closure-build-evidence-v1`/
+  `m4n5-multinode-closure-v1`/`m4m4-risk-fidelity-v1`/
   `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
   `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
-- M4n8 的新工件只使用 `executable → witness-instantiated → oracle-finding` 三层结论；
+- M4n10 的新工件只使用“机械可执行”（兼容 wire value `executable`）→
+  `witness-instantiated → oracle-finding` 三层结论；
   `scenarioTestingResult.outcome` 为 `oracle-clean|oracle-finding`，不能再用 `passed`
   暗示实现或性质正确。底层历史 Bundle 的枚举只作兼容读取；
 - Investigation 保留 Risk Agent 返回的全部 executable portfolio 候选，并在统一总预算内
   依次调查。accepted 候选只有在至少产生一次 Scenario attempt 后才算已调查；Risk 调用越过
   token 阈值而 Scenario 尚未开始时，下一 Episode 必须继续同一候选；
-- Risk 源码导航采用显式 mount 内的中立搜索和随后 bounded read，不接受变更文件、函数、
-  diff 或性质提示。盲测试运行必须让 Agent 读取与执行器编译使用同一独立 SUT checkout，
-  并从该 checkout 排除解释性修改注释和专用验证测试。当前五节点选举差异仅作为四 Episode
-  discovery/witness-compilation pilot；因现有分组控制和 election-safety Oracle 不完整，
-  不作为正式端到端 finding；
+- Risk 源码导航采用显式 mount 内的中立搜索和随后 bounded read，不接受修改特定的文件/函数、
+  源码差异或缺陷定向提示；通用协议不变量、公开性质与 Oracle-backed property 仍是正式知识输入。
+  新 portfolio 前必须机械完成一次 Agent 自选搜索和一次对搜索结果的限行读取。
+  盲测试运行必须让 Agent 读取与执行器编译使用同一独立 SUT checkout，并从该 checkout 排除
+  解释性修改注释和专用验证测试。etcd/raft 已增加只读 Evidence 驱动的 election-safety Oracle；
+  场景仍受公开分组控制能力限制，无 finding 不能被解释为实现通过；
+- 协议知识使用现有 KnowledgeStatement/ProtocolProperty/TargetDossier 承载紧凑 CFT fault model
+  与协议不变量。Raft 的 quorum 由 `Q=floor(n/2)+1` 和实际 Target 节点数推导；OmniPaxos
+  使用 ballot/prepare/promise/accepted/decided/recovery 术语，不把协议语义写入公共 Core；
+- Risk 固定最多 4 次调用：正常路径为一次中立 search、一次 bounded read、一次 portfolio、
+  最多一次可信资格反馈修复。一次 search/read 返回 `stopped` 时可重试一次，但会占用原本的
+  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v7`
+  按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
+  portfolio。oracle-backed 是 prompt
+  的可验证性软偏好，不是可信侧准入条件；已通过机械审查的 observable-only/
+  hypothesis-only 候选仍必须保留。源码只确认实现机制与 contract，不能作为 defect verdict；
+- 取消共享调用池。每个新候选或队列候选都固定获得 8 次 Scenario 调用、64 decisions、单步计划
+  和每轮至多 4 个自然推进 decision；Episode 总预算为 12 calls、240k observed tokens、30 分钟，
+  Risk/Scenario reasoning 均为 high，Scenario 输出上限为 8192 tokens；
+- Exploration Memory 增加 `property_ref`/`evidence_level`，只用于识别语义重复和理解可验证性，
+  不把 oracle-backed 当作 finding，也不参与可信 verdict；
+- 六 Episode 长调查不设独立 portfolio 数量上限，只受统一 Episode/call/token/decision 预算约束；
+  按原顺序调查最多六个候选，总上限 72 calls、
+  1.44M observed tokens、384 Scenario decision allowance；不因首个 finding 提前停止，且暂不
+  实现跨 Episode live Trace continuation；
+- Scenario 的 stateless 压缩反馈必须保留上一轮唯一战略 Action、机械步骤、自然推进切片和
+  closure handoff step ID；`token-stopped` 只停止当前 Episode，已 accepted 但未进入
+  Scenario 的候选必须在 Investigation 总预算尚可启动时由下一 Episode 继续；
+- M4n10 的零模型/fixture 校准已经机械验证 source search/read、一次 portfolio 修复、固定
+  Scenario 深度、超过三次反馈循环、协议 quorum 知识、端点 binding、fresh Replay 与
+  election-safety 合成冲突；这些校准结果不进入后续正式盲测 Memory；
+- Investigation 同时报告预留 decision allowance 与实际 Scenario decisions；全部 Episode 完成时
+  优先报告 `episode-limit-reached`，只有预留额度阻止下一 Episode 启动时才报告 decision limit；
 - 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
   factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
   composition 与字段不一致时拒绝运行，两个 arm 使用不同 digest；

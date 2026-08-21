@@ -14,7 +14,56 @@ import (
 const (
 	LogProgressMonitorID              = "etcdraft-log-progress"
 	ClientApplicationBindingMonitorID = "etcdraft-client-application-binding"
+	ElectionSafetyMonitorID           = "etcdraft-election-safety"
 )
+
+// ElectionSafetyMonitor checks the Raft election invariant exposed by
+// Adapter-owned Evidence: at most one distinct running leader may be observed
+// for one term. It deliberately does not inspect vote bookkeeping or native
+// tracker state.
+type ElectionSafetyMonitor struct{}
+
+func (ElectionSafetyMonitor) Name() string { return ElectionSafetyMonitorID }
+
+func (ElectionSafetyMonitor) CheckBundle(
+	bundle controlexperiment.ExecutionBundle,
+) []oracle.Violation {
+	leaders := make(map[uint64]control.NodeID)
+	points := []struct {
+		step     int
+		evidence control.EvidenceEnvelope
+	}{{evidence: bundle.Trace.InitialEvidence}}
+	for _, record := range bundle.Trace.Records {
+		if record.Evidence != nil {
+			points = append(points, struct {
+				step     int
+				evidence control.EvidenceEnvelope
+			}{step: int(record.Step), evidence: *record.Evidence})
+		}
+	}
+	for _, point := range points {
+		evidence, err := etcdraftv2.ProjectEvidence(point.evidence)
+		if err != nil {
+			return electionSafetyViolation(point.step, "evidence projection failed")
+		}
+		for _, node := range evidence.Nodes {
+			if !node.Running || node.Role != "StateLeader" || node.Term == 0 {
+				continue
+			}
+			if previous, exists := leaders[node.Term]; exists && previous != node.Node {
+				return electionSafetyViolation(point.step, fmt.Sprintf(
+					"term %d has distinct leaders %s and %s", node.Term, previous, node.Node,
+				))
+			}
+			leaders[node.Term] = node.Node
+		}
+	}
+	return nil
+}
+
+func electionSafetyViolation(step int, message string) []oracle.Violation {
+	return []oracle.Violation{{Monitor: ElectionSafetyMonitorID, Step: step, Message: message}}
+}
 
 // LogProgressMonitor stays target-local. It checks only Adapter-owned
 // Evidence and never consumes PSS, Risk progress, or Agent output.

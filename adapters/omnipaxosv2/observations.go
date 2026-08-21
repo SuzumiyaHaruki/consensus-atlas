@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	ObservationProjectionID                                              = "omnipaxos-v2/observations-v3"
+	ObservationProjectionID                                              = "omnipaxos-v2/observations-v4"
 	ObservationPromiseRaised                   semantic.ObservationKind  = "omnipaxos/promise-raised"
 	ObservationFieldBallotNode                 semantic.ObservationField = "omnipaxos/ballot-node"
 	ObservationFieldBallotNumber               semantic.ObservationField = "omnipaxos/ballot-number"
@@ -30,23 +30,27 @@ func (ObservationProjector) Capabilities() []semantic.ObservationCapability {
 		semantic.ObservationFieldParticipant,
 		semantic.ObservationFieldParticipantNode,
 	}
+	messageEndpoints := []semantic.ObservationField{
+		semantic.ObservationFieldMessageSourceNode,
+		semantic.ObservationFieldMessageTargetNode,
+	}
 	return []semantic.ObservationCapability{
 		{Kind: semantic.ObservationWorkloadInvoked, Fields: append(append([]semantic.ObservationField{}, node...),
 			semantic.ObservationFieldRequestID, semantic.ObservationFieldParticipantRole),
 			Values: map[semantic.ObservationField][]string{
 				semantic.ObservationFieldParticipantRole: {"coordinator"},
 			}},
-		{Kind: semantic.ObservationMessageDropped, Fields: append(append([]semantic.ObservationField{}, node...),
+		{Kind: semantic.ObservationMessageDropped, Fields: append(append([]semantic.ObservationField{}, messageEndpoints...),
 			semantic.ObservationFieldMessageRole, semantic.ObservationFieldOperationStage,
 			semantic.ObservationFieldRequestID), Values: map[semantic.ObservationField][]string{
 			semantic.ObservationFieldMessageRole:    {ObservationMessageRoleOperationReplication},
 			semantic.ObservationFieldOperationStage: {"inflight"},
 		}},
-		{Kind: semantic.ObservationMessageDelivered, Fields: append([]semantic.ObservationField{}, node...)},
+		{Kind: semantic.ObservationMessageDelivered, Fields: append([]semantic.ObservationField{}, messageEndpoints...)},
 		{Kind: semantic.ObservationTemporalFired, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationCoordinatorChange, Fields: []semantic.ObservationField{
-			semantic.ObservationFieldParticipant, semantic.ObservationFieldParticipantNode,
-			semantic.ObservationFieldRelatedParticipant, semantic.ObservationFieldRelatedNode,
+			semantic.ObservationFieldNewCoordinatorNode,
+			semantic.ObservationFieldPreviousCoordinatorNode,
 		}},
 		{Kind: semantic.ObservationEpochAdvanced, Fields: append([]semantic.ObservationField{}, node...)},
 		{Kind: semantic.ObservationDecisionAdvanced, Fields: append(append([]semantic.ObservationField{}, node...),
@@ -165,11 +169,11 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 			})
 			previousPromise = currentPromise
 		}
-		if hasCoordinator && previousCoordinator.Node != "" && currentCoordinator != previousCoordinator {
-			participant, related := currentCoordinator, previousCoordinator
+		if hasCoordinator && omnipaxosCoordinatorChanged(previousCoordinator, currentCoordinator) {
 			events = append(events, semantic.Observation{
 				Kind: semantic.ObservationCoordinatorChange, Step: record.Step, SourceDigest: digest,
-				Participant: &participant, RelatedParticipant: &related,
+				NewCoordinatorNode:      currentCoordinator.Node,
+				PreviousCoordinatorNode: previousCoordinator.Node,
 			})
 		}
 		if hasCoordinator {
@@ -192,6 +196,10 @@ func (ObservationProjector) Project(trace controlruntime.Trace) (semantic.Observ
 	return semantic.NewObservationHistoryWithCapabilities(
 		ObservationProjectionID, trace, events, (ObservationProjector{}).Capabilities(),
 	)
+}
+
+func omnipaxosCoordinatorChanged(previous, current control.NodeRef) bool {
+	return previous.Node != "" && current.Node != previous.Node
 }
 
 type omnipaxosObservedMessage struct {

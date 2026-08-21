@@ -156,6 +156,15 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 	readerCalls := 0
 	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
 		readerCalls++
+		if readerCalls == 1 {
+			if request.Query != "retry" || request.MaxResults != 3 {
+				t.Fatalf("first grounding request was not neutral search: %#v", request)
+			}
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Query: request.Query,
+				Matches: []KnowledgeSearchMatch{{Reference: catalog[0].Reference, Line: 4, Preview: "func round"}},
+			}, nil
+		}
 		if request.Reference != catalog[0].Reference || request.MaxLines != 20 {
 			t.Fatalf("reader received unrelated request: %#v", request)
 		}
@@ -178,11 +187,22 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 			}
 			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
 				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
+				KnowledgeRequests: []KnowledgeReadRequest{{Query: "retry", MaxResults: 3}},
+			})
+			return encoded, ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5}, marshalErr
+		}
+		if calls == 2 {
+			if len(view.KnowledgeResults) != 1 || view.KnowledgeResults[0].Query != "retry" ||
+				view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeRead {
+				t.Fatalf("search result did not return to bounded read call: %#v", view)
+			}
+			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
 				KnowledgeRequests: []KnowledgeReadRequest{{Reference: catalog[0].Reference, MaxLines: 20}},
 			})
 			return encoded, ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5}, marshalErr
 		}
-		if len(view.KnowledgeResults) != 1 || !strings.Contains(view.KnowledgeResults[0].Text, "retryLostMessage") ||
+		if len(view.KnowledgeResults) != 2 || !strings.Contains(view.KnowledgeResults[1].Text, "retryLostMessage") ||
 			view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeRead ||
 			!slices.Contains(view.AvailableSupportRefs, "source/"+catalog[0].Reference) {
 			t.Fatalf("read result did not return to the repair view: %#v", view)
@@ -208,18 +228,97 @@ func TestRiskAgentReadsDeclaredKnowledgeBeforeSubmittingPortfolio(t *testing.T) 
 		return encoded, ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7}, marshalErr
 	}
 	result, err := DiscoverRiskWithPlanner(
-		context.Background(), RiskAgentBudget{MaxCalls: 2, MaxTokens: 20},
+		context.Background(), RiskAgentBudget{MaxCalls: 3, MaxTokens: 30},
 		knowledge, capabilities, actions, nil, nil, reader, planner,
 	)
 	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
-		len(result.Attempts) != 2 || len(result.Attempts[0].KnowledgeResults) != 1 ||
-		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonKnowledgeRead || readerCalls != 1 || calls != 2 ||
-		result.ModelWork != (ModelWork{Calls: 2, InputTokens: 7, OutputTokens: 5, TotalTokens: 12}) {
+		len(result.Attempts) != 3 || len(result.Attempts[0].KnowledgeResults) != 1 ||
+		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonKnowledgeRead || readerCalls != 2 || calls != 3 ||
+		result.ModelWork != (ModelWork{Calls: 3, InputTokens: 10, OutputTokens: 7, TotalTokens: 17}) {
 		t.Fatalf("knowledge-assisted Risk loop failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
 	}
 }
 
-func TestRiskAgentContinuesAcrossBoundedDeclaredSourceWindows(t *testing.T) {
+func TestRiskAgentDoesNotGateExecutablePortfolioOnOracleCoverage(t *testing.T) {
+	base := riskAgentFixtureKnowledge(t)
+	base.Properties = append(base.Properties, ProtocolProperty{
+		ID: "agreement", Summary: "Participants do not decide conflicting values at one position.",
+		EvidenceLevel: PropertyEvidenceOracleBacked,
+	})
+	knowledge, err := NewProtocolKnowledgePack(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := KnowledgeSourceCatalog(knowledge)
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("fixture source catalog invalid: %#v/%v", catalog, err)
+	}
+	readerCalls := 0
+	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
+		readerCalls++
+		if readerCalls == 1 {
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Query: request.Query,
+				Matches: []KnowledgeSearchMatch{{Reference: catalog[0].Reference, Line: 4, Preview: "round"}},
+			}, nil
+		}
+		return KnowledgeReadResult{
+			Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 4, EndLine: 6,
+			TotalLines: 12, Text: "func round() { decide() }", Truncated: true,
+		}, nil
+	}
+	candidate := riskCandidateWithSupport(RiskCandidate{
+		ID: "decision-after-invoke", PropertyRef: "bounded-progress", InspirationRef: "original",
+		Summary: "Observe decision progress after one invocation.",
+		MechanismSteps: []RiskMechanismStep{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start one operation."},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe decision progress."},
+		},
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+		},
+	}, "source/"+catalog[0].Reference)
+	calls := 0
+	planner := func(_ context.Context, view RiskAgentView) ([]byte, error) {
+		calls++
+		switch calls {
+		case 1:
+			return json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind:      riskAgentResponseKnowledgeQuery,
+				KnowledgeRequests: []KnowledgeReadRequest{{Query: "round", MaxResults: 1}},
+			})
+		case 2:
+			return json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind:      riskAgentResponseKnowledgeQuery,
+				KnowledgeRequests: []KnowledgeReadRequest{{Reference: catalog[0].Reference, MaxLines: 20}},
+			})
+		case 3:
+			return json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
+		default:
+			return nil, errors.New("unexpected planner call")
+		}
+	}
+	wrappedPlanner := func(ctx context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
+		response, marshalErr := planner(ctx, view)
+		return response, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+	}
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 4, MaxTokens: 20}, knowledge,
+		[]semantic.ObservationCapability{
+			{Kind: semantic.ObservationWorkloadInvoked},
+			{Kind: semantic.ObservationDecisionAdvanced},
+		},
+		[]control.ActionKind{control.ActionInvoke}, nil, nil, reader, wrappedPlanner,
+	)
+	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
+		result.Accepted.Candidate.ID != candidate.ID || len(result.Executable) != 1 ||
+		len(result.Attempts) != 3 || calls != 3 || readerCalls != 2 {
+		t.Fatalf("executable non-Oracle portfolio was gated: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
+	}
+}
+
+func TestRiskAgentGroundingUsesSearchBeforeBoundedSourceRead(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	catalog, err := KnowledgeSourceCatalog(knowledge)
 	if err != nil || len(catalog) != 1 {
@@ -228,24 +327,21 @@ func TestRiskAgentContinuesAcrossBoundedDeclaredSourceWindows(t *testing.T) {
 	readerCalls := 0
 	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
 		readerCalls++
+		if readerCalls == 1 {
+			if request.Query != "retry" {
+				t.Fatalf("first grounding request was not search: %#v", request)
+			}
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Query: request.Query,
+				Matches: []KnowledgeSearchMatch{{Reference: catalog[0].Reference, Line: 4, Preview: "retry"}},
+			}, nil
+		}
 		if request.Reference != catalog[0].Reference || request.MaxLines != 3 {
 			t.Fatalf("reader received unrelated request: %#v", request)
 		}
-		if readerCalls == 1 {
-			if request.StartLine != 0 {
-				t.Fatalf("first read did not use the declared locator: %#v", request)
-			}
-			return KnowledgeReadResult{
-				Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 4, EndLine: 6,
-				TotalLines: 20, Text: "func round() {\n  retryLostMessage()\n}", Truncated: true,
-			}, nil
-		}
-		if request.StartLine != 7 {
-			t.Fatalf("second read did not continue after the first window: %#v", request)
-		}
 		return KnowledgeReadResult{
-			Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 7, EndLine: 9,
-			TotalLines: 20, Text: "func retryLostMessage() {\n  sendAgain()\n}", Truncated: true,
+			Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 4, EndLine: 6,
+			TotalLines: 20, Text: "func round() {\n  retryLostMessage()\n}", Truncated: true,
 		}, nil
 	}
 	calls := 0
@@ -255,26 +351,24 @@ func TestRiskAgentContinuesAcrossBoundedDeclaredSourceWindows(t *testing.T) {
 			t.Fatal(err)
 		}
 		if calls <= 2 {
-			start := 0
+			request := KnowledgeReadRequest{Query: "retry", MaxResults: 2}
 			if calls == 2 {
-				start = 7
-				if len(view.KnowledgeResults) != 1 || view.KnowledgeResults[0].EndLine != 6 ||
+				request = KnowledgeReadRequest{Reference: catalog[0].Reference, MaxLines: 3}
+				if len(view.KnowledgeResults) != 1 || view.KnowledgeResults[0].Query != "retry" ||
 					view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall {
-					t.Fatalf("first window did not enable bounded continuation: %#v", view)
+					t.Fatalf("search did not enable bounded read: %#v", view)
 				}
 			}
 			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
 				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
-				KnowledgeRequests: []KnowledgeReadRequest{{
-					Reference: catalog[0].Reference, StartLine: start, MaxLines: 3,
-				}},
+				KnowledgeRequests: []KnowledgeReadRequest{request},
 			})
 			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
 		}
-		if len(view.KnowledgeResults) != 2 || view.KnowledgeResults[1].StartLine != 7 ||
+		if len(view.KnowledgeResults) != 2 || view.KnowledgeResults[1].StartLine != 4 ||
 			view.MaxKnowledgeRequests != 0 ||
 			!slices.Contains(view.AvailableSupportRefs, "source/"+catalog[0].Reference) {
-			t.Fatalf("continued windows did not return to the portfolio call: %#v", view)
+			t.Fatalf("grounding results did not return to the portfolio call: %#v", view)
 		}
 		candidate := RiskCandidate{
 			ID: "decision-after-source-continuation", PropertyRef: "bounded-progress",
@@ -309,7 +403,7 @@ func TestRiskAgentContinuesAcrossBoundedDeclaredSourceWindows(t *testing.T) {
 	}
 }
 
-func TestRiskKnowledgeNavigationRejectsOverlappingCompletedWindow(t *testing.T) {
+func TestRiskKnowledgeNavigationClosesAfterOneCompletedSourceRead(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	catalog, err := KnowledgeSourceCatalog(knowledge)
 	if err != nil || len(catalog) != 1 {
@@ -325,15 +419,97 @@ func TestRiskKnowledgeNavigationRejectsOverlappingCompletedWindow(t *testing.T) 
 	) {
 		t.Fatal("overlapping source window was accepted")
 	}
-	if !validRiskKnowledgeRequests(
+	if validRiskKnowledgeRequests(
 		[]KnowledgeReadRequest{{Reference: catalog[0].Reference, StartLine: 20, MaxLines: 10}},
 		catalog, results, map[string]bool{},
 	) {
-		t.Fatal("adjacent source continuation was rejected")
+		t.Fatal("adjacent source continuation remained reachable after the final grounding read")
 	}
 }
 
-func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
+func TestRiskAgentRetriesStoppedSearchBeforeBoundedRead(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	catalog, err := KnowledgeSourceCatalog(knowledge)
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("fixture source catalog invalid: %#v/%v", catalog, err)
+	}
+	readerCalls := 0
+	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
+		readerCalls++
+		switch readerCalls {
+		case 1:
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryStopped, ReasonCode: KnowledgeDiscoverySearchNoMatch,
+				Query: request.Query,
+			}, nil
+		case 2:
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Query: request.Query,
+				Matches: []KnowledgeSearchMatch{{Reference: catalog[0].Reference, Line: 4, Preview: "round"}},
+			}, nil
+		case 3:
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Source: catalog[0], StartLine: 4, EndLine: 6,
+				TotalLines: 12, Text: "func round() { decide() }", Truncated: true,
+			}, nil
+		default:
+			return KnowledgeReadResult{}, errors.New("unexpected knowledge request")
+		}
+	}
+	candidate := riskCandidateWithSupport(RiskCandidate{
+		ID: "decision-after-search-retry", PropertyRef: "bounded-progress", InspirationRef: "original",
+		Summary: "Observe decision progress after a grounded invocation.",
+		MechanismSteps: []RiskMechanismStep{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start work."},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe progress."},
+		},
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+		},
+	}, "source/"+catalog[0].Reference)
+	calls := 0
+	planner := func(_ context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
+		calls++
+		if err := view.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		var response any
+		switch calls {
+		case 1:
+			response = riskAgentResponseEnvelope{ResponseKind: riskAgentResponseKnowledgeQuery,
+				KnowledgeRequests: []KnowledgeReadRequest{{Query: "missing phrase", MaxResults: 2}}}
+		case 2:
+			if view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeReadStopped {
+				t.Fatalf("stopped search feedback missing: %#v", view)
+			}
+			response = riskAgentResponseEnvelope{ResponseKind: riskAgentResponseKnowledgeQuery,
+				KnowledgeRequests: []KnowledgeReadRequest{{Query: "round", MaxResults: 2}}}
+		case 3:
+			response = riskAgentResponseEnvelope{ResponseKind: riskAgentResponseKnowledgeQuery,
+				KnowledgeRequests: []KnowledgeReadRequest{{Reference: catalog[0].Reference, MaxLines: 20}}}
+		case 4:
+			response = RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}}
+		default:
+			return nil, ModelWork{}, errors.New("unexpected planner call")
+		}
+		encoded, marshalErr := json.Marshal(response)
+		return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+	}
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 4, MaxTokens: 30}, knowledge,
+		[]semantic.ObservationCapability{
+			{Kind: semantic.ObservationWorkloadInvoked}, {Kind: semantic.ObservationDecisionAdvanced},
+		},
+		[]control.ActionKind{control.ActionInvoke}, nil, nil, reader, planner,
+	)
+	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
+		result.Accepted.Candidate.ID != candidate.ID || calls != 4 || readerCalls != 3 {
+		t.Fatalf("stopped search retry failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
+	}
+}
+
+func TestRiskAgentRetriesStoppedReadWithAlternateSearchResult(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	knowledge.TargetDossier = cloneTargetDossier(knowledge.TargetDossier)
 	knowledge.TargetDossier.Components[0].EvidenceRefs = append(
@@ -355,20 +531,28 @@ func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
 	readerCalls := 0
 	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
 		readerCalls++
-		source := byLocator["round"]
 		if readerCalls == 1 {
+			return KnowledgeReadResult{
+				Status: KnowledgeDiscoveryCompleted, Query: request.Query,
+				Matches: []KnowledgeSearchMatch{
+					{Reference: byLocator["round"].Reference, Line: 1, Preview: "round"},
+					{Reference: byLocator["retry"].Reference, Line: 1, Preview: "retry"},
+				},
+			}, nil
+		}
+		source := byLocator["round"]
+		if readerCalls == 2 {
 			if request.Reference != source.Reference {
 				t.Fatalf("unexpected first source: %#v", request)
 			}
 			return stoppedKnowledgeRead(source, KnowledgeDiscoveryLocatorNotFound), nil
 		}
-		source = byLocator["retry"]
-		if request.Reference != source.Reference {
-			t.Fatalf("stopped read was not followed by another source: %#v", request)
+		if request.Reference != byLocator["retry"].Reference {
+			t.Fatalf("unexpected alternate source: %#v", request)
 		}
 		return KnowledgeReadResult{
-			Status: KnowledgeDiscoveryCompleted, Source: source, StartLine: 2, EndLine: 3,
-			TotalLines: 3, Text: "func retry() {}\n", Truncated: true,
+			Status: KnowledgeDiscoveryCompleted, Source: byLocator["retry"], StartLine: 1, EndLine: 3,
+			TotalLines: 12, Text: "func retry() { decide() }", Truncated: true,
 		}, nil
 	}
 	calls := 0
@@ -377,49 +561,43 @@ func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
 		if err := view.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if calls <= 2 {
-			locator := "round"
+		if calls <= 3 {
+			request := KnowledgeReadRequest{Query: "round retry", MaxResults: 2}
 			if calls == 2 {
-				locator = "retry"
-				if len(view.KnowledgeResults) != 1 ||
-					view.KnowledgeResults[0].ReasonCode != KnowledgeDiscoveryLocatorNotFound ||
-					view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall || view.Prior == nil ||
-					view.Prior.ReasonCode != RiskAgentReasonKnowledgeReadStopped {
-					t.Fatalf("stopped result did not preserve one remaining choice: %#v", view)
+				request = KnowledgeReadRequest{Reference: byLocator["round"].Reference, MaxLines: 20}
+			} else if calls == 3 {
+				if view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeReadStopped {
+					t.Fatalf("stopped read feedback was not preserved: %#v", view)
 				}
+				request = KnowledgeReadRequest{Reference: byLocator["retry"].Reference, MaxLines: 20}
 			}
 			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
 				ResponseKind: riskAgentResponseKnowledgeQuery, Candidates: []RiskCandidate{},
-				KnowledgeRequests: []KnowledgeReadRequest{{
-					Reference: byLocator[locator].Reference, MaxLines: 20,
-				}},
+				KnowledgeRequests: []KnowledgeReadRequest{request},
 			})
 			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
 		}
-		if view.MaxKnowledgeRequests != 0 || len(view.KnowledgeResults) != 2 ||
-			view.KnowledgeResults[1].Status != KnowledgeDiscoveryCompleted {
-			t.Fatalf("final Risk call did not reserve the portfolio response: %#v", view)
+		if view.Prior == nil || view.Prior.ReasonCode != RiskAgentReasonKnowledgeRead ||
+			!slices.Contains(view.AvailableSupportRefs, "source/"+byLocator["retry"].Reference) {
+			t.Fatalf("alternate completed read was not returned: %#v", view)
 		}
-		candidate := RiskCandidate{
-			ID: "decision-after-alternate-source", PropertyRef: "bounded-progress",
-			InspirationRef: "message-loss-progress", Summary: "Observe a decision after message loss.",
+		candidate := riskCandidateWithSupport(RiskCandidate{
+			ID: "alternate-source-portfolio", PropertyRef: "bounded-progress", InspirationRef: "original",
+			Summary: "A completed alternate source read grounds this portfolio.",
 			MechanismSteps: []RiskMechanismStep{
-				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start work."},
-				{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped, Rationale: "Exercise loss."},
-				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe progress."},
+				{MilestoneID: "first", Kind: semantic.ObservationWorkloadInvoked, Rationale: "Start work."},
+				{MilestoneID: "second", Kind: semantic.ObservationDecisionAdvanced, Rationale: "Observe progress."},
 			},
 			Predicates: []semantic.ObservationPredicate{
-				{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
-				{MilestoneID: "drop", Kind: semantic.ObservationMessageDropped},
-				{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+				{MilestoneID: "first", Kind: semantic.ObservationWorkloadInvoked},
+				{MilestoneID: "second", Kind: semantic.ObservationDecisionAdvanced},
 			},
-		}
-		candidate = riskCandidateWithSupport(candidate, "source/"+byLocator["retry"].Reference)
+		}, "source/"+byLocator["retry"].Reference)
 		encoded, marshalErr := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
 		return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
 	}
 	result, err := DiscoverRiskWithPlanner(
-		context.Background(), RiskAgentBudget{MaxCalls: 3, MaxTokens: 30}, knowledge,
+		context.Background(), RiskAgentBudget{MaxCalls: 4, MaxTokens: 30}, knowledge,
 		[]semantic.ObservationCapability{
 			{Kind: semantic.ObservationWorkloadInvoked},
 			{Kind: semantic.ObservationMessageDropped},
@@ -427,7 +605,8 @@ func TestRiskAgentCanChooseAnotherDeclaredSourceAfterStoppedRead(t *testing.T) {
 		},
 		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage}, nil, nil, reader, planner,
 	)
-	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil || calls != 3 || readerCalls != 2 {
+	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
+		result.Accepted.Candidate.ID != "alternate-source-portfolio" || calls != 4 || readerCalls != 3 {
 		t.Fatalf("alternate-source discovery failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
 	}
 }
@@ -549,6 +728,27 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 	if err != nil || len(rejected.Attempts) != 1 ||
 		rejected.Attempts[0].Feedback.ReasonCode != RiskAgentReasonSupport {
 		t.Fatalf("unread source support was accepted: %#v/%v", rejected, err)
+	}
+}
+
+func TestRiskExplorationMemoryBindsPropertyToEvidenceLevel(t *testing.T) {
+	base := RiskExplorationMemoryEntry{
+		Episode: 1, CandidateID: "candidate", PropertyRef: "agreement",
+		EvidenceLevel:  PropertyEvidenceOracleBacked,
+		EpisodeOutcome: RiskMemoryOutcomePlanningStopped,
+	}
+	if !validRiskExplorationMemory([]RiskExplorationMemoryEntry{base}) {
+		t.Fatal("typed property/evidence Memory entry was rejected")
+	}
+	missingEvidence := base
+	missingEvidence.EvidenceLevel = ""
+	if validRiskExplorationMemory([]RiskExplorationMemoryEntry{missingEvidence}) {
+		t.Fatal("property-only Memory entry was accepted")
+	}
+	invalidEvidence := base
+	invalidEvidence.EvidenceLevel = "model-confirmed"
+	if validRiskExplorationMemory([]RiskExplorationMemoryEntry{invalidEvidence}) {
+		t.Fatal("unknown Memory evidence level was accepted")
 	}
 }
 

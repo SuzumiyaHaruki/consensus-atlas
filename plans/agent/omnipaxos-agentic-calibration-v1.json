@@ -15,6 +15,26 @@
       {
         "id": "partial-synchrony",
         "text": "Message delay, loss, duplication, and natural timer expiry may change progress while participants remain non-Byzantine."
+      },
+      {
+        "id": "cft-fault-model",
+        "text": "Running participants follow the protocol implementation. The environment may partition, delay, lose, duplicate or reorder produced messages, including asymmetric loss, and may use only lifecycle controls declared by the Target. It may not forge, mutate or equivocate messages. Liveness claims require fault relief, a communicating quorum and fair progress; temporary coordinator loss or finite message loss is not itself a violation."
+      },
+      {
+        "id": "omnipaxos-ballot-and-quorum",
+        "text": "Ballots order leadership attempts and quorum intersection prevents incompatible decisions from being independently authorized. Prepare and promise collect evidence for a ballot before a coordinator safely continues replication; quorum size must be derived from the actual target topology."
+      },
+      {
+        "id": "omnipaxos-recovery-adoption",
+        "text": "A recovering coordinator must adopt the strongest applicable promise and accepted log evidence gathered from its prepare quorum. Different accepted frontiers are legal, but recovery must reconcile them without replacing an already decided command at a shared position."
+      },
+      {
+        "id": "omnipaxos-prefix-invariants",
+        "text": "Accepted entries may exist beyond the decided frontier, while a decided prefix is stable shared history. Participants may expose different decided lengths, but every shared decided position must contain the same command and later recovery must preserve that prefix."
+      },
+      {
+        "id": "omnipaxos-liveness-boundary",
+        "text": "Coordinator and decision progress require a communicating quorum, eventual delivery or retry fairness and enough timing stability for one ballot to complete. Short ballot churn, temporary coordinator absence or finite loss in an unfair bounded prefix is expected behavior, not a liveness violation."
       }
     ],
     "properties": [
@@ -98,7 +118,7 @@
       "assumptions": [
         {
           "id": "cft-participants",
-          "summary": "Running participants use the unmodified OmniPaxos API and do not forge, mutate or equivocate messages; the active target controls only produced message delivery and natural periodic pulses.",
+          "summary": "Running participants use the OmniPaxos API and do not forge, mutate or equivocate messages; the active target controls only produced messages and natural periodic pulses, including asymmetric delay, loss, duplication and reordering within its declared fault envelope.",
           "evidence_refs": ["adapters/omnipaxosv2/adapter.go:Check", "adapters/omnipaxosv2/worker/src/main.rs:Cluster"]
         },
         {
@@ -227,8 +247,8 @@
       "max_partitions": 0,
       "max_active_partitions": 0
     },
-    "scenario_max_calls": 3,
-    "scenario_max_steps": 4,
+    "scenario_max_calls": 8,
+    "scenario_max_steps": 1,
     "scenario_max_decisions": 64,
     "scenario_semantic_exposure": "full",
     "session_budget": {
@@ -236,9 +256,9 @@
       "max_primary_scheduler_decisions": 4096,
       "max_primary_work_units": 8192,
       "max_replay_work_units": 4096,
-      "max_model_calls": 6,
-      "max_model_tokens": 120000
+      "max_model_calls": 12,
+      "max_model_tokens": 240000
     },
-    "session_wall_clock_ms": 1200000
+    "session_wall_clock_ms": 1800000
   }
 }
