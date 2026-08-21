@@ -274,7 +274,9 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 	output, outputErr := riskAgentStructuredOutput(view)
 	if err != nil || outputErr != nil || output.Name != "risk_grounding_search" ||
 		!strings.Contains(user, "preceding search stopped or had no match") ||
-		!strings.Contains(user, "change the neutral keywords") ||
+		!strings.Contains(user, "one case-insensitive literal substring") ||
+		!strings.Contains(user, "does not tokenize words") ||
+		!strings.Contains(user, "different short literal substring") ||
 		bytes.Contains(output.Schema, []byte(`"reference"`)) {
 		t.Fatalf("stopped search did not remain in the search phase: %s\n%s\n%s\n%v/%v",
 			system, user, output.Schema, err, outputErr)

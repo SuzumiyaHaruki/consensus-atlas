@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -506,6 +507,49 @@ func TestRiskAgentRetriesStoppedSearchBeforeBoundedRead(t *testing.T) {
 	if err != nil || result.Status != RiskAgentAccepted || result.Accepted == nil ||
 		result.Accepted.Candidate.ID != candidate.ID || calls != 4 || readerCalls != 3 {
 		t.Fatalf("stopped search retry failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
+	}
+}
+
+func TestRiskAgentOffersOnlyOneStoppedGroundingRetry(t *testing.T) {
+	knowledge := riskAgentFixtureKnowledge(t)
+	readerCalls := 0
+	reader := func(request KnowledgeReadRequest) (KnowledgeReadResult, error) {
+		readerCalls++
+		return KnowledgeReadResult{
+			Status: KnowledgeDiscoveryStopped, ReasonCode: KnowledgeDiscoverySearchNoMatch,
+			Query: request.Query,
+		}, nil
+	}
+	calls := 0
+	planner := func(_ context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
+		calls++
+		if err := view.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if calls <= 2 {
+			if view.MaxKnowledgeRequests != RiskKnowledgeRequestsPerCall {
+				t.Fatalf("grounding retry unavailable on call %d: %#v", calls, view)
+			}
+			encoded, marshalErr := json.Marshal(riskAgentResponseEnvelope{
+				ResponseKind: riskAgentResponseKnowledgeQuery,
+				KnowledgeRequests: []KnowledgeReadRequest{{
+					Query: fmt.Sprintf("missing-%d", calls), MaxResults: 2,
+				}},
+			})
+			return encoded, ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, marshalErr
+		}
+		if view.MaxKnowledgeRequests != 0 {
+			t.Fatalf("a second stopped retry remained available on call %d: %#v", calls, view)
+		}
+		return []byte("{"), ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}, nil
+	}
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 4, MaxTokens: 30}, knowledge,
+		[]semantic.ObservationCapability{{Kind: semantic.ObservationWorkloadInvoked}},
+		[]control.ActionKind{control.ActionInvoke}, nil, nil, reader, planner,
+	)
+	if err != nil || result.Status != RiskAgentStopped || calls != 4 || readerCalls != 2 {
+		t.Fatalf("stopped retry limit failed: %#v calls=%d reads=%d err=%v", result, calls, readerCalls, err)
 	}
 }
 

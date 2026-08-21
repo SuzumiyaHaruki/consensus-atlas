@@ -123,7 +123,10 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 	if view.MaxKnowledgeRequests > 0 {
 		if len(riskGroundingSearchReferences(view.KnowledgeResults)) == 0 {
 			user = "Before the first portfolio, source grounding is mandatory. No repository search has completed yet, so this call " +
-				"must perform one neutral keyword search. If the preceding search stopped or had no match, change the neutral keywords; " +
+				"must perform one neutral keyword search. The search engine treats query as one case-insensitive literal substring on a " +
+				"single source line: it does not tokenize words and does not apply OR semantics. Use one short protocol identifier, function " +
+				"name, or exact phrase likely to occur verbatim; do not concatenate a list of concepts. If the preceding search stopped or " +
+				"had no match, replace it with a different short literal substring; " +
 				"do not request a source read. Choose search terms from the protocol mechanism or invariant you selected, never from local " +
 				"modifications, diffs, test names or directed defect hints. Search results do not imply that a matched file contains a defect. " + user
 		} else {

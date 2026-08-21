@@ -322,6 +322,7 @@ func DiscoverRiskWithPlanner(
 	var prior *RiskAgentFeedback
 	var knowledgeResults []KnowledgeReadResult
 	knowledgeRequests := 0
+	stoppedKnowledgeRequests := 0
 	completedSearch := false
 	completedSourceRead := false
 	seenKnowledgeRequests := make(map[string]bool)
@@ -343,7 +344,8 @@ func DiscoverRiskWithPlanner(
 		}
 		remainingKnowledgeRequests := RiskKnowledgeRequestMaxAttempts - knowledgeRequests
 		if knowledgeReader != nil && !completedSourceRead &&
-			remainingKnowledgeRequests > 0 && ordinal < budget.MaxCalls {
+			remainingKnowledgeRequests > 0 && ordinal < budget.MaxCalls &&
+			stoppedKnowledgeRequests <= RiskKnowledgeRequestRetryMax {
 			view.MaxKnowledgeRequests = min(RiskKnowledgeRequestsPerCall, remainingKnowledgeRequests)
 		}
 		response, work, err := planner(ctx, view)
@@ -412,6 +414,9 @@ func DiscoverRiskWithPlanner(
 					knowledgeRequests++
 					seenKnowledgeRequests[riskKnowledgeRequestKey(request)] = true
 					completedRead = completedRead || read.Status == KnowledgeDiscoveryCompleted
+					if read.Status == KnowledgeDiscoveryStopped {
+						stoppedKnowledgeRequests++
+					}
 					if read.Status == KnowledgeDiscoveryCompleted {
 						if request.Query != "" {
 							completedSearch = true

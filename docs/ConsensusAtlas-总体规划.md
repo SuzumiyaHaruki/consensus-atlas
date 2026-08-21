@@ -287,9 +287,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   使用 ballot/prepare/promise/accepted/decided/recovery 术语，不把协议语义写入公共 Core；
 - Risk 固定最多 4 次调用：正常路径为一次中立 search、一次 bounded read、一次 portfolio、
   最多一次可信资格反馈修复。一次 search/read 返回 `stopped` 时可重试一次，但会占用原本的
-  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v7`
+  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v8`
   按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
-  portfolio。oracle-backed 是 prompt
+  portfolio；query 是单行匹配的一个大小写不敏感字面子串，不分词且不执行 OR。oracle-backed 是 prompt
   的可验证性软偏好，不是可信侧准入条件；已通过机械审查的 observable-only/
   hypothesis-only 候选仍必须保留。源码只确认实现机制与 contract，不能作为 defect verdict；
 - 取消共享调用池。每个新候选或队列候选都固定获得 8 次 Scenario 调用、64 decisions、单步计划

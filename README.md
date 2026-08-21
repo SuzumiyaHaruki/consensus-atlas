@@ -207,7 +207,8 @@ grounding 是一次成功的中立 search，再读取一个该 search 实际返�
 不会绕过 search 直接授权 read，本地绝对路径不会进入 prompt 或 verdict。每次模型调用只允许一个知识
 请求，每个 bounded read 最多 80 行；源码搜索词最多 128 bytes、每次最多返回 20 项。一次 search 或 read
 返回 `stopped` 时允许在同一 4-call Risk 预算内重试一次，并自然失去 portfolio repair 机会；成功 read 后
-不再继续翻页。重复请求、未搜索得到的任意路径和越过挂载根目录的引用由可信代码拒绝。最多 4 次 Risk
+不再继续翻页。query 是在单行源码上匹配的一个大小写不敏感字面子串，不进行分词或多关键词 OR；Agent
+应选择一个短标识符或原样短语。重复请求、未搜索得到的任意路径和越过挂载根目录的引用由可信代码拒绝。最多 4 次 Risk
 模型调用不等于可以读取 4 个源码片段。
 `-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。

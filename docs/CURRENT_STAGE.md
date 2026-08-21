@@ -75,8 +75,9 @@ search→read→portfolio 后最多一次机械资格修复。
 新运行的 MethodSpec implementation identity 为
 `m4n10-deep-candidate-investigation-v1`，源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
-`risk-agent-navigation-v7`：search 前只暴露 search schema，成功 search 后只暴露其真实
-match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。
+`risk-agent-navigation-v8`：search 前只暴露 search schema，成功 search 后只暴露其真实
+match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
+单行上的一个大小写不敏感字面子串，不进行分词或 OR；最多只允许一次 stopped grounding 重试。
 
 模型预算不再共享或转移。每个候选固定获得 8 次 Scenario 调用、64 个 Runtime decisions、
 每次一个战略 Action、每次最多 4 个公共自然推进 decision；Risk 最多 4 次调用，Episode
