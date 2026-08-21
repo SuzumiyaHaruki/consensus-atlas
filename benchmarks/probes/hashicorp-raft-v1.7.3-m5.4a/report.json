@@ -1,0 +1,110 @@
+{
+  "schema_version": "consensus-atlas/hashicorp-raft-probe/v1",
+  "probe_id": "hashicorp-raft-v1.7.3-m5.4a",
+  "sut": {
+    "module": "github.com/hashicorp/raft",
+    "version": "v1.7.3",
+    "revision": "c0dc6a0b2c7e889f31e5ab2f7ed90ceb159acffe",
+    "go_module_sum": "h1:DxpEqZJysHN0wK+fviai5mFcSYsCkNpFUl1xpAW8Rbo="
+  },
+  "cluster": {
+    "local_node": "n1",
+    "voters": [
+      "n1",
+      "n2",
+      "n3"
+    ],
+    "protocol_version": 3,
+    "heartbeat_timeout": "10ms",
+    "election_timeout": "10ms",
+    "config_digest": "9f1ef850030abc2573a1e414c5e57be17b5c435290c7f4232758d0dec551a12a"
+  },
+  "items": [
+    {
+      "id": "hashicorp-rpc-ca3fc176bd348ff345b7e5d052b4897c164a838180e02810d0d0625bdc066f6e",
+      "kind": "message",
+      "owner": {
+        "node": "n1",
+        "incarnation": 1
+      },
+      "message": {
+        "id": "hashicorp-rpc-ca3fc176bd348ff345b7e5d052b4897c164a838180e02810d0d0625bdc066f6e",
+        "source": {
+          "node": "n1",
+          "incarnation": 1
+        },
+        "target": "n2",
+        "type_hint": "request-vote",
+        "payload": {
+          "schema_version": "consensus-atlas/hashicorp-raft-rpc/v1",
+          "encoding": "json",
+          "bytes": "eyJ0YXJnZXQiOiJuMiIsInByb3RvY29sX3ZlcnNpb24iOjMsInNlbmRlcl9pZCI6Im4xIiwic2VuZGVyX2FkZHJlc3MiOiJuMSIsInRlcm0iOjIsImxhc3RfbG9nX2luZGV4IjoxLCJsYXN0X2xvZ190ZXJtIjoxLCJsZWFkZXJzaGlwX3RyYW5zZmVyIjpmYWxzZX0=",
+          "digest": "1118f9a8cddfc95ccc5a0b6aeacd26a2c8a380246e487d5b482a36a5cde3bc56"
+        },
+        "metadata": {
+          "implementation": "github.com/hashicorp/raft",
+          "version": "v1.7.3"
+        }
+      }
+    },
+    {
+      "id": "hashicorp-rpc-b99de29e1c5f210d548583f6ba68c0735d5e0c5f006bb282e1d4a3b8f3df9a49",
+      "kind": "message",
+      "owner": {
+        "node": "n1",
+        "incarnation": 1
+      },
+      "message": {
+        "id": "hashicorp-rpc-b99de29e1c5f210d548583f6ba68c0735d5e0c5f006bb282e1d4a3b8f3df9a49",
+        "source": {
+          "node": "n1",
+          "incarnation": 1
+        },
+        "target": "n3",
+        "type_hint": "request-vote",
+        "payload": {
+          "schema_version": "consensus-atlas/hashicorp-raft-rpc/v1",
+          "encoding": "json",
+          "bytes": "eyJ0YXJnZXQiOiJuMyIsInByb3RvY29sX3ZlcnNpb24iOjMsInNlbmRlcl9pZCI6Im4xIiwic2VuZGVyX2FkZHJlc3MiOiJuMSIsInRlcm0iOjIsImxhc3RfbG9nX2luZGV4IjoxLCJsYXN0X2xvZ190ZXJtIjoxLCJsZWFkZXJzaGlwX3RyYW5zZmVyIjpmYWxzZX0=",
+          "digest": "645a63949099229038998de172c14319ec398dad3a89eb0373d44f6946382a4f"
+        },
+        "metadata": {
+          "implementation": "github.com/hashicorp/raft",
+          "version": "v1.7.3"
+        }
+      }
+    }
+  ],
+  "findings": [
+    {
+      "capability": "official-module",
+      "status": "observed"
+    },
+    {
+      "capability": "transport-outbound-message",
+      "status": "observed"
+    },
+    {
+      "capability": "runtime-item-freeze",
+      "status": "observed"
+    },
+    {
+      "capability": "virtual-clock",
+      "status": "unsupported",
+      "reason_code": "HASHICORP_RAFT_CLOCK_NOT_INJECTABLE_V1_7_3"
+    },
+    {
+      "capability": "entropy-control",
+      "status": "unsupported",
+      "reason_code": "HASHICORP_RAFT_PACKAGE_RANDOM_NOT_INJECTABLE_V1_7_3"
+    },
+    {
+      "capability": "runtime-delivery-replay",
+      "status": "not-tested",
+      "reason_code": "M5_4A_CAPTURE_ONLY"
+    }
+  ],
+  "qualified": false,
+  "strict_replay": false,
+  "digest": "d31033a603185019dd5d35a8942463d31af07b89ec574d849dec59a60ad498b7"
+}

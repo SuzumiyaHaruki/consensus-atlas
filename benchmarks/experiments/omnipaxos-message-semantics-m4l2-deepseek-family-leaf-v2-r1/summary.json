@@ -1,0 +1,220 @@
+{
+  "schema_version": "consensus-atlas/omnipaxos-message-semantics-pair/v2",
+  "experiment_id": "omnipaxos-message-semantics-m4l2-pilot",
+  "target": "crates.io/omnipaxos@0.2.2",
+  "model": "deepseek-v4-flash",
+  "order": [
+    "family",
+    "leaf"
+  ],
+  "ground_truth": {
+    "root_trace_digest": "843d2a36c5837ee549bd48c05c9d9932b16af1195ea90920def13212355c93ea",
+    "source": "n1",
+    "target": "n2",
+    "family_type": "sequence-paxos",
+    "leaf_type": "sequence-paxos/prepare",
+    "target_item_id": "omnipaxos-v2-item-0cb0904108113555768a590c9390976c46859eca16cafbae4fd50994bbdff554",
+    "target_action_id": "action-7aa63ca911cfb7928180f252099b0d17a5af7d85bc905bcf22b800d0fb16bb25",
+    "contrast_item_id": "omnipaxos-v2-item-dca529f4e334da9707151a847bfd8dd2358b364dfacae7c9221a1236edda5d62",
+    "coarse_matches": 2,
+    "leaf_matches": 1,
+    "root_decisions": 23,
+    "setup_duplicates": 0
+  },
+  "scripted_preflight": {
+    "family_classification": "ambiguous",
+    "leaf_classification": "correct-unique",
+    "family_target_drop_executed": false,
+    "leaf_target_drop_executed": true,
+    "leaf_scenario_risk_reached": true,
+    "leaf_bundle_produced": true,
+    "leaf_fresh_replay_stable": true
+  },
+  "arms": [
+    {
+      "message_view": "family",
+      "method_spec_digest": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+      "first_proposal_target_selection": "ambiguous",
+      "target_drop_executed": false,
+      "unique_bindings": 0,
+      "wrong_message_selected": 0,
+      "ambiguous_count": 3,
+      "no_match_count": 0,
+      "proposal_rejections": 0,
+      "scenario_calls": 3,
+      "repair_calls": 2,
+      "model_work": {
+        "calls": 3,
+        "input_tokens": 24769,
+        "output_tokens": 34088,
+        "total_tokens": 58857
+      },
+      "runtime_decisions": 0,
+      "scenario_precondition_observed_milestone_reached": false,
+      "scenario_message_dropped_milestone_reached": false,
+      "qualified_risk_reached": false,
+      "bundle_produced": false,
+      "fresh_replay_stable": false,
+      "oracle_violations": 0,
+      "stop_reason": "capability-gap",
+      "planner_observations": [
+        {
+          "call": 1,
+          "classification": "ambiguous",
+          "projected_matches": 2,
+          "selected_target": false,
+          "selector_fields": [
+            "kind",
+            "message_type_hint"
+          ]
+        },
+        {
+          "call": 2,
+          "classification": "ambiguous",
+          "projected_matches": 2,
+          "selected_target": false,
+          "selector_fields": [
+            "kind",
+            "message_type_hint"
+          ]
+        },
+        {
+          "call": 3,
+          "classification": "ambiguous",
+          "projected_matches": 2,
+          "selected_target": false,
+          "selector_fields": [
+            "kind",
+            "message_type_hint"
+          ]
+        }
+      ],
+      "provider_calls": [
+        {
+          "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+          "ordinal": 1,
+          "root_id": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+          "search_request_digest": "7c7dac7dc5f9ff8c04d3791aa4d44b4dfd30c868b859266a534d244a64042727",
+          "intent_digest": "d1220a44d6773bf67e9ea9e8a1910fd99ccdcf2929b4e48e752e435e2553265d",
+          "dispatch_digest": "3fe29a316930b617ea182d99e1ba180d08ac2803bff3c3a0d0ec6177d6ea3b30",
+          "result_digest": "2ed783f603c00fea5600ac053171dbe5b06ef176d8e17cfd87869b79e961e493",
+          "status": "content-ready",
+          "work": {
+            "calls": 1,
+            "input_tokens": 8092,
+            "output_tokens": 7656,
+            "total_tokens": 15748
+          },
+          "transport_attempts": 1,
+          "provider_usage_status": "observed",
+          "digest": "35054b218b041e93c7206bfd5864d652eef4b6f56206d9a6a29d710438f61f85"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+          "ordinal": 2,
+          "root_id": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+          "search_request_digest": "a504550854af28be4f892f1976cc0e37c13549f13927ccf52560baf4c5a58343",
+          "intent_digest": "c5bd3ec3d9848ddb4857dbf59c2c2e9d6423260621fb95d297304e6f22d8c329",
+          "dispatch_digest": "b958e3321b4d282b628f7b750ae1a6bcc02d76da10f871442badd88b4f4279d7",
+          "result_digest": "25457ee65f41bdbf6c9453ff0b49dc36f7e3eb75f3583484bbf2fadf8ccea438",
+          "status": "content-ready",
+          "work": {
+            "calls": 1,
+            "input_tokens": 8324,
+            "output_tokens": 18897,
+            "total_tokens": 27221
+          },
+          "transport_attempts": 1,
+          "provider_usage_status": "observed",
+          "digest": "7cd0ea39ec1083f1feb54c5f985763a49c873ba8c3ab702f8fc57653cc70e080"
+        },
+        {
+          "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+          "ordinal": 3,
+          "root_id": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+          "search_request_digest": "1366b8cc6a6cc524f2beeaae2db0935eac73bd8c3454866a96b20547dd4acc30",
+          "intent_digest": "91c64605c9f96daeb61eaf97290368c2245e89edbc0aa7789db70ca192da70f3",
+          "dispatch_digest": "b257913726ff6e303a5967984204d98855dccc5e9d96cd9f37d16fae4ce6ddbd",
+          "result_digest": "05b7b82ac221553e06306b848baccfb2d7c8442e040ee49175fe27ecc653362a",
+          "status": "content-ready",
+          "work": {
+            "calls": 1,
+            "input_tokens": 8353,
+            "output_tokens": 7535,
+            "total_tokens": 15888
+          },
+          "transport_attempts": 1,
+          "provider_usage_status": "observed",
+          "digest": "baf9ab9408c11285126cd75736861e6e2edf2371e553b50452098cf0f3eb9f9f"
+        }
+      ]
+    },
+    {
+      "message_view": "leaf",
+      "method_spec_digest": "a5aa1b4314b0b448914dbea9f58128d53394e8e93bc7dd564020656941e39777",
+      "first_proposal_target_selection": "correct-unique",
+      "target_drop_executed": true,
+      "unique_bindings": 1,
+      "wrong_message_selected": 0,
+      "ambiguous_count": 0,
+      "no_match_count": 0,
+      "proposal_rejections": 0,
+      "scenario_calls": 1,
+      "repair_calls": 0,
+      "model_work": {
+        "calls": 1,
+        "input_tokens": 8258,
+        "output_tokens": 692,
+        "total_tokens": 8950
+      },
+      "runtime_decisions": 23,
+      "scenario_precondition_observed_milestone_reached": true,
+      "scenario_message_dropped_milestone_reached": true,
+      "qualified_risk_reached": true,
+      "bundle_produced": true,
+      "fresh_replay_stable": true,
+      "trace_digest": "5d1f74623a295c085a2622d4957841e5a6f82b80753bf9f99aa08ddb6b59e0a1",
+      "oracle_checked": [
+        "trace-integrity",
+        "agreement"
+      ],
+      "oracle_violations": 0,
+      "stop_reason": "risk-reached",
+      "planner_observations": [
+        {
+          "call": 1,
+          "classification": "correct-unique",
+          "projected_matches": 1,
+          "selected_action_id": "action-7aa63ca911cfb7928180f252099b0d17a5af7d85bc905bcf22b800d0fb16bb25",
+          "selected_target": true,
+          "selector_fields": [
+            "kind",
+            "message_type_hint"
+          ]
+        }
+      ],
+      "provider_calls": [
+        {
+          "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+          "ordinal": 1,
+          "root_id": "a5aa1b4314b0b448914dbea9f58128d53394e8e93bc7dd564020656941e39777",
+          "search_request_digest": "acd0b4b3ebe297381bc67dd11c3d87ce788dbb68adb7a34e5e953f72b3295f72",
+          "intent_digest": "b214ec63a17e56aa34950b2568be9631bdeda377a8bbf55affcd82497e3e08cd",
+          "dispatch_digest": "6270edeea3dfc3c7e0e1faf6f51d334be238798e90569259d695c1c0c86cfa8c",
+          "result_digest": "791f81ab4a7c6160ef59193c9b8282fa975d134a89dba816ca77308aa7eef89f",
+          "status": "content-ready",
+          "work": {
+            "calls": 1,
+            "input_tokens": 8258,
+            "output_tokens": 692,
+            "total_tokens": 8950
+          },
+          "transport_attempts": 1,
+          "provider_usage_status": "observed",
+          "digest": "a0e55c7953f4ee0e5b51cb49baf972e3fdf0670eba8f660d15def4bd27153660"
+        }
+      ]
+    }
+  ],
+  "claim_boundary": "Scenario family-vs-leaf semantic-selector calibration only; no Risk-Agent advantage or protocol finding claim."
+}

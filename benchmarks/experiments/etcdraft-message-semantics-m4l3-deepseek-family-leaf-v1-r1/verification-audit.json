@@ -1,0 +1,53 @@
+{
+  "schema_version": "consensus-atlas/etcdraft-message-semantics-verification-audit/v1",
+  "source_experiment": "etcdraft-message-semantics-m4l3-deepseek-family-leaf-v1-r1",
+  "issue": "The original message-dropped milestone did not constrain the dropped message role, so a dropped MsgVote could be mislabeled as the selected append response.",
+  "correction": {
+    "projector_id": "official-etcdraft-v2/observations-v3",
+    "observation_field": "message-role",
+    "required_value": "MsgAppResp",
+    "source": "the trace-bound Adapter command item"
+  },
+  "arms": [
+    {
+      "message_view": "leaf",
+      "first_proposal_target_selection": "correct-unique",
+      "dropped_message_role": "MsgAppResp",
+      "target_drop_executed": true,
+      "corrected_risk_status": "not-reached",
+      "satisfied_milestones": [
+        "workload-invoked-at-coordinator",
+        "append-response-dropped-while-replication-inflight"
+      ],
+      "missing_milestones": [
+        "alternate-quorum-decision-advanced"
+      ],
+      "bundle_valid": true,
+      "fresh_replay_stable": true,
+      "oracle_violations": 0
+    },
+    {
+      "message_view": "family",
+      "first_proposal_target_selection": "wrong-unique",
+      "dropped_message_role": "MsgVote",
+      "target_drop_executed": false,
+      "corrected_risk_status": "not-reached",
+      "satisfied_milestones": [
+        "workload-invoked-at-coordinator"
+      ],
+      "missing_milestones": [
+        "append-response-dropped-while-replication-inflight",
+        "alternate-quorum-decision-advanced"
+      ],
+      "bundle_valid": true,
+      "fresh_replay_stable": true,
+      "oracle_violations": 0
+    }
+  ],
+  "superseded_raw_fields": [
+    "summary.json arms[family].qualified_risk_reached",
+    "family/arm-summary.json qualified_risk_reached",
+    "family/scenario-result.json final risk classification"
+  ],
+  "claim_boundary": "The run supports a target-selection advantage for leaf message semantics. It does not establish end-to-end realization of the accepted hypothesis."
+}

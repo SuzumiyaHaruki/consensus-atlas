@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/benchmark-readiness-report-v1.json",
+  "title": "ConsensusAtlas private benchmark readiness report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "benchmark_id", "benchmark_digest", "policy", "passed", "defect_variants", "controls",
+    "distinct_root_causes", "historical_variants", "artifact_bound_trials", "findings"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "benchmark_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "benchmark_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["min_distinct_root_causes", "min_controls", "require_historical", "require_artifact_bindings"],
+      "properties": {
+        "min_distinct_root_causes": {"type": "integer", "minimum": 1},
+        "min_controls": {"type": "integer", "minimum": 1},
+        "require_historical": {"type": "boolean"},
+        "require_artifact_bindings": {"type": "boolean"}
+      }
+    },
+    "passed": {"type": "boolean"},
+    "defect_variants": {"type": "integer", "minimum": 0},
+    "controls": {"type": "integer", "minimum": 0},
+    "distinct_root_causes": {"type": "integer", "minimum": 0},
+    "historical_variants": {"type": "integer", "minimum": 0},
+    "artifact_bound_trials": {"type": "integer", "minimum": 0},
+    "findings": {
+      "type": "array", "uniqueItems": true,
+      "items": {"enum": [
+        "manifest-not-v2", "insufficient-distinct-root-causes", "insufficient-controls",
+        "non-historical-variant", "missing-artifact-binding"
+      ]}
+    }
+  }
+}

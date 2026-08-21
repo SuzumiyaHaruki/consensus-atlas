@@ -1,3 +1,5 @@
 /artifacts/
-/agents/__pycache__/
+/adapters/omnipaxosv2/worker/target/
 *.pyc
+key.txt
+.env

@@ -1,0 +1,271 @@
+{
+  "protocol_knowledge": {
+    "id": "etcdraft-agentic-primer-a9e1",
+    "family": "raft",
+    "protocol": "etcdraft",
+    "knowledge": [
+      {
+        "id": "epoch-and-replication",
+        "text": "Raft coordinates replicated-log progress through terms, elections, quorum-backed replication, commitment, application, and recovery. These phases may overlap with client operations."
+      },
+      {
+        "id": "persistence-and-visibility",
+        "text": "Persistent state, outbound messages, committed entries, application effects, and client-visible completion have ordering relationships that must remain valid across restart."
+      },
+      {
+        "id": "partial-synchrony",
+        "text": "Message delay, loss, duplication, process lifecycle changes, and natural timer expiry may alter progress without changing the CFT assumption that nodes are non-Byzantine."
+      },
+      {
+        "id": "cft-fault-model",
+        "text": "Running participants follow the protocol implementation. The environment may crash or restart participants and may partition, delay, lose, duplicate or reorder messages, including asymmetric loss. It may not forge, mutate or equivocate protocol messages unless a future BFT Target explicitly exposes such Actions. Liveness claims require fault relief, a communicating quorum and fair progress; a temporary missing leader or finite loss is not itself a liveness violation."
+      },
+      {
+        "id": "raft-majority-and-voting",
+        "text": "For the actual target size n, a Raft majority is Q=floor(n/2)+1, so any two majorities intersect. A candidate becomes leader only after quorum votes, and each participant may grant at most one vote in a term. Derive Q from target_surface instead of assuming a three- or five-node deployment."
+      },
+      {
+        "id": "raft-safety-invariant-chain",
+        "text": "Election safety limits each term to one leader. Log matching preserves the same prefix when entries share an index and term. Leader completeness requires every later leader to contain entries already committed in earlier terms; quorum intersection and the voting log-freshness rule connect these invariants."
+      },
+      {
+        "id": "raft-durable-versus-volatile-state",
+        "text": "Current term, granted vote and log contents are durable protocol state. Current leader role, election counters and leader per-peer replication progress are volatile and may be reconstructed after restart. A recovery hypothesis must distinguish loss of documented volatile state from regression of durable state."
+      },
+      {
+        "id": "raft-liveness-boundary",
+        "text": "Raft progress after disruption requires a communicating majority, eventual message and timer fairness, and enough synchrony for one election timeout to avoid repeated overlap. Short election churn, message loss or leader absence inside a bounded unfair prefix is expected behavior rather than a protocol violation."
+      }
+    ],
+    "properties": [
+      {
+        "id": "consensus-agreement",
+        "summary": "Participants must not decide different commands for the same logical log position.",
+        "evidence_level": "oracle-backed"
+      },
+      {
+        "id": "client-operation-continuity",
+        "summary": "A client operation must remain consistently related to its replicated and applied command across protocol transitions.",
+        "evidence_level": "oracle-backed"
+      },
+      {
+        "id": "election-safety",
+        "summary": "At most one participant may act as leader in a term under the CFT assumptions exercised by the target.",
+        "evidence_level": "oracle-backed"
+      },
+      {
+        "id": "recovery-progress-monotonicity",
+        "summary": "A logical participant must not recover with a committed or applied prefix behind evidence made durable before its crash.",
+        "evidence_level": "oracle-backed"
+      },
+      {
+        "id": "applied-prefix-consistency",
+        "summary": "Applied command prefixes must remain consistent across participants and across incarnations of the same logical participant.",
+        "evidence_level": "oracle-backed"
+      },
+      {
+        "id": "bounded-recovery-progress",
+        "summary": "After a recoverable disruption is removed and a quorum can communicate, an invoked operation should resume progress within an explicit investigation bound.",
+        "evidence_level": "hypothesis-only"
+      }
+    ],
+    "issue_patterns": [
+      {
+        "id": "epoch-transition-state-reuse",
+        "summary": "Evidence created in an older epoch is reused after a coordinator transition.",
+        "mechanism": "State that was valid under an earlier leadership context remains influential after the protocol has moved to a newer term.",
+        "applicability": "Use when delayed replication, per-peer progress, votes, or client-operation state can survive a term transition through public protocol paths.",
+        "boundary": "A term change by itself is not suspicious; the test must preserve the identity of the reused evidence and observe an inconsistent later effect."
+      },
+      {
+        "id": "visibility-before-durability",
+        "summary": "An externally visible effect occurs before the state needed to recover it is durable.",
+        "mechanism": "A crash between exposure and persistence may cause recovery to forget or reinterpret an operation that was already observable.",
+        "applicability": "Use for a production-style host path that can independently observe write start, durable completion and message or client-result publication.",
+        "boundary": "The current strict RawNode Adapter deliberately completes Ready persistence before releasing dependent responses. Bypassing that contract would demonstrate host misuse, not an etcd/raft core defect."
+      },
+      {
+        "id": "message-loss-progress-coupling",
+        "summary": "Selective message loss interacts with election or replication progress.",
+        "mechanism": "The implementation may retain stale per-peer or per-operation state when normal progress changes direction after a lost message.",
+        "applicability": "Use when the dropped message is identified by source, target and semantic class and a later retry, term change or replication transition is observable.",
+        "boundary": "Dropping arbitrary traffic and observing delay is insufficient; the scenario needs a causal progress transition or a bounded no-progress control."
+      },
+      {
+        "id": "crash-recovery-state-amnesia",
+        "summary": "A participant forgets protocol or application progress that should survive restart.",
+        "mechanism": "Recovery reconstructs state from an incomplete durable image and permits an already completed transition to regress or repeat.",
+        "applicability": "Use only for state represented in the target's durable image or for an explicitly identified host persistence boundary.",
+        "boundary": "Loss of documented volatile state is expected and must not be classified as amnesia."
+      },
+      {
+        "id": "timer-symmetry-liveness",
+        "summary": "Repeatedly aligned election timing prevents a communicating quorum from selecting a stable coordinator.",
+        "mechanism": "Participants repeatedly start competing elections before randomized timeout diversity can break symmetry.",
+        "applicability": "Use to study natural seeded timeout sequences or a deployment that can realistically correlate random sources.",
+        "boundary": "Directly overwriting private randomized timeout fields proves only an assumption boundary, not a production defect."
+      },
+      {
+        "id": "ready-pipeline-stall",
+        "summary": "Storage or application progress stalls the host Ready pipeline long enough to disrupt protocol progress.",
+        "mechanism": "A Ready batch remains outstanding, preventing later message, timer or application handling and causing repeated leadership disruption.",
+        "applicability": "Use when the target exposes an outstanding Ready effect and natural temporal progress around it.",
+        "boundary": "The current effect completion model has no duration or failed I/O result, so storage-latency conclusions remain outside this Adapter's present evidence."
+      }
+    ],
+    "target_dossier": {
+      "scope": "Official go.etcd.io/raft/v3 v3.6.0 RawNode core composed with the ConsensusAtlas in-process host loop; this is not the full etcd server storage and transport stack.",
+      "assumptions": [
+        {
+          "id": "cft-participants",
+          "summary": "Participants follow the implementation while running; crash/restart and asymmetric network delay, loss, duplication, reordering and partition are permitted, but forged, mutated or equivocated protocol messages are not.",
+          "evidence_refs": ["plans/agent/etcdraft-agentic-calibration-v1.json:fault_envelope", "adapters/etcdraftv2/adapter.go:Check"]
+        },
+        {
+          "id": "partial-synchrony",
+          "summary": "The scheduler may delay, drop, duplicate and reorder stored messages and may advance naturally due periodic pulses; liveness requires fault relief, a communicating quorum and explicit fairness, so temporary leader absence or finite loss is not itself a violation.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Manifest", "internal/controlruntime/runtime.go"]
+        },
+        {
+          "id": "seeded-native-entropy",
+          "summary": "RawNode election randomization consumes target-scoped deterministic entropy so an executed trace can be replayed without directly assigning private randomized timeout fields.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:boot", "adapters/etcdraftv2/entropy.go"]
+        }
+      ],
+      "components": [
+        {
+          "id": "rawnode-core",
+          "summary": "Each logical participant owns an official raft.RawNode that implements elections, replication, commitment and Ready production.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:nodeState", "adapters/etcdraftv2/adapter.go:boot"]
+        },
+        {
+          "id": "ready-host-loop",
+          "summary": "The Adapter turns each outstanding Ready into an ordered persist effect followed by an application-and-Advance effect; dependent output remains stored as runtime items.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:RunUntilYield", "adapters/etcdraftv2/model.go:readyRecord"]
+        },
+        {
+          "id": "durable-and-application-images",
+          "summary": "The target separately records RawNode storage state and application progress and reconstructs a restarted logical participant from those images.",
+          "evidence_refs": ["adapters/etcdraftv2/application.go", "adapters/etcdraftv2/model.go:nodeSnapshot"]
+        },
+        {
+          "id": "runtime-owned-network",
+          "summary": "Outbound Raft messages become stored message items; delivery, drop, duplication and partition effects are selected outside RawNode by the common Runtime.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Manifest", "internal/controlruntime/runtime.go"]
+        }
+      ],
+      "contracts": [
+        {
+          "id": "ready-ordering",
+          "summary": "The host must persist Ready HardState, entries and snapshot as required before publishing responses that depend on that durable state, and must Advance only after persistence and application handling.",
+          "evidence_refs": ["go.etcd.io/raft/v3@v3.6.0/doc.go:First, you must read from the Node.Ready()", "adapters/etcdraftv2/adapter.go:Check"]
+        },
+        {
+          "id": "after-append-response-gating",
+          "summary": "Vote and append acknowledgements that depend on unstable state are held by the official core until append persistence is acknowledged; an experiment must not manually release those private messages.",
+          "evidence_refs": ["go.etcd.io/raft/v3@v3.6.0/raft.go:msgsAfterAppend"]
+        },
+        {
+          "id": "client-result-after-application",
+          "summary": "This host composition emits a successful client result only after the matching committed entry is applied by the Ready advance path.",
+          "evidence_refs": ["adapters/etcdraftv2/application.go", "adapters/etcdraftv2/adapter.go:RunUntilYield"]
+        }
+      ],
+      "control_semantics": [
+        {
+          "id": "stored-message-control",
+          "summary": "Deliver, drop and duplicate operate only on messages already produced by RawNode and stored by the Runtime; they cannot invent payloads or make a running participant equivocate.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Check", "internal/controlruntime/runtime.go"]
+        },
+        {
+          "id": "natural-periodic-pulse",
+          "summary": "A fire-temporal-event Action consumes the currently enabled periodic pulse and calls RawNode.Tick; repeated pulses construct natural election and heartbeat expiry rather than directly forcing a role change.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Check", "adapters/etcdraftv2/adapter.go:RunUntilYield"]
+        },
+        {
+          "id": "power-loss-lifecycle",
+          "summary": "Crash removes the running RawNode while retaining the Adapter's durable image; restart creates a new incarnation from that image. Crashing an already stopped node and restarting a running node are not enabled.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Check", "adapters/etcdraftv2/adapter.go:boot"]
+        },
+        {
+          "id": "ready-effect-order",
+          "summary": "complete-effect may finish only the current Ready persist or advance effect. The advance effect is unavailable until the persist effect has completed.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Check", "adapters/etcdraftv2/model.go:readyRecord"]
+        }
+      ],
+      "active_experiment": [
+        {
+          "id": "adapter-tick-config",
+          "summary": "The active Adapter configuration uses ElectionTick 5 and HeartbeatTick 1.",
+          "evidence_refs": ["plans/agent/etcdraft-agentic-calibration-v1.json:experiment.adapter_config"]
+        }
+      ],
+      "blind_spots": [
+        {
+          "id": "atomic-successful-ready-persistence",
+          "summary": "Ready persistence is currently modeled as one successful atomic effect. The target cannot crash inside a storage write, return failed or partial I/O, or distinguish write completion from device flush completion.",
+          "evidence_refs": ["adapters/etcdraftv2/adapter.go:Check", "adapters/etcdraftv2/model.go:readyRecord"]
+        },
+        {
+          "id": "rawnode-not-full-etcd-server",
+          "summary": "The target excludes the production etcd WAL, backend, transport, lease and request-routing layers, so findings are not automatically full-server findings.",
+          "evidence_refs": ["adapters/etcdraftv2/model.go:implementation", "adapters/etcdraftv2/adapter.go:boot"]
+        },
+        {
+          "id": "limited-workload-features",
+          "summary": "The active workload does not exercise ReadIndex, snapshots, compaction, leadership transfer or membership change even if portions of those mechanisms exist in the upstream core.",
+          "evidence_refs": ["plans/agent/etcdraft-agentic-calibration-v1.json:workload", "adapters/etcdraftv2/workload_router.go"]
+        }
+      ]
+    }
+  },
+  "workload": {
+    "id": "single-write-v1",
+    "target_selector": "single-coordinating-participant",
+    "invocations": [
+      {
+        "id": "a9d6-write-1",
+        "operation": "propose",
+        "value": "alpha",
+        "expected_status": "committed"
+      }
+    ]
+  },
+  "experiment": {
+    "adapter_config": {
+      "node_count": 3,
+      "election_tick": 5,
+      "heartbeat_tick": 1
+    },
+    "runtime": {
+      "seed_hex": "6f6666696369616c2d65746364726166742d76322d636c75737465722d73656564",
+      "clock_error": 0,
+      "max_clones": 1
+    },
+    "fault_envelope": {
+      "max_crashes": 1,
+      "max_concurrent_crashes": 1,
+      "max_message_drops": 2,
+      "max_message_duplicates": 1,
+      "max_partitions": 1,
+      "max_active_partitions": 1
+    },
+    "scenario_max_calls": 8,
+    "scenario_max_steps": 1,
+    "scenario_max_decisions": 64,
+    "scenario_semantic_exposure": "full",
+    "model_reasoning_effort": "high",
+    "model_exclude_reasoning": true,
+    "model_max_output_tokens": 32000,
+    "model_max_retries": 0,
+    "session_budget": {
+      "max_attempts": 1,
+      "max_primary_scheduler_decisions": 16384,
+      "max_primary_work_units": 32768,
+      "max_replay_work_units": 8192,
+      "max_model_calls": 12,
+      "max_model_tokens": 240000
+    },
+    "session_wall_clock_ms": 1800000
+  }
+}

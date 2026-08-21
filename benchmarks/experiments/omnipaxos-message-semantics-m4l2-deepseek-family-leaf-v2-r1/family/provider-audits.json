@@ -1,0 +1,59 @@
+[
+  {
+    "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+    "ordinal": 1,
+    "root_id": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+    "search_request_digest": "7c7dac7dc5f9ff8c04d3791aa4d44b4dfd30c868b859266a534d244a64042727",
+    "intent_digest": "d1220a44d6773bf67e9ea9e8a1910fd99ccdcf2929b4e48e752e435e2553265d",
+    "dispatch_digest": "3fe29a316930b617ea182d99e1ba180d08ac2803bff3c3a0d0ec6177d6ea3b30",
+    "result_digest": "2ed783f603c00fea5600ac053171dbe5b06ef176d8e17cfd87869b79e961e493",
+    "status": "content-ready",
+    "work": {
+      "calls": 1,
+      "input_tokens": 8092,
+      "output_tokens": 7656,
+      "total_tokens": 15748
+    },
+    "transport_attempts": 1,
+    "provider_usage_status": "observed",
+    "digest": "35054b218b041e93c7206bfd5864d652eef4b6f56206d9a6a29d710438f61f85"
+  },
+  {
+    "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+    "ordinal": 2,
+    "root_id": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+    "search_request_digest": "a504550854af28be4f892f1976cc0e37c13549f13927ccf52560baf4c5a58343",
+    "intent_digest": "c5bd3ec3d9848ddb4857dbf59c2c2e9d6423260621fb95d297304e6f22d8c329",
+    "dispatch_digest": "b958e3321b4d282b628f7b750ae1a6bcc02d76da10f871442badd88b4f4279d7",
+    "result_digest": "25457ee65f41bdbf6c9453ff0b49dc36f7e3eb75f3583484bbf2fadf8ccea438",
+    "status": "content-ready",
+    "work": {
+      "calls": 1,
+      "input_tokens": 8324,
+      "output_tokens": 18897,
+      "total_tokens": 27221
+    },
+    "transport_attempts": 1,
+    "provider_usage_status": "observed",
+    "digest": "7cd0ea39ec1083f1feb54c5f985763a49c873ba8c3ab702f8fc57653cc70e080"
+  },
+  {
+    "schema_version": "consensus-atlas/stateless-agent-call-audit/v1",
+    "ordinal": 3,
+    "root_id": "e41bb28069662d24e3386b94de4ecfd3f11550ce9dccbcf294914d59458b8a09",
+    "search_request_digest": "1366b8cc6a6cc524f2beeaae2db0935eac73bd8c3454866a96b20547dd4acc30",
+    "intent_digest": "91c64605c9f96daeb61eaf97290368c2245e89edbc0aa7789db70ca192da70f3",
+    "dispatch_digest": "b257913726ff6e303a5967984204d98855dccc5e9d96cd9f37d16fae4ce6ddbd",
+    "result_digest": "05b7b82ac221553e06306b848baccfb2d7c8442e040ee49175fe27ecc653362a",
+    "status": "content-ready",
+    "work": {
+      "calls": 1,
+      "input_tokens": 8353,
+      "output_tokens": 7535,
+      "total_tokens": 15888
+    },
+    "transport_attempts": 1,
+    "provider_usage_status": "observed",
+    "digest": "baf9ab9408c11285126cd75736861e6e2edf2371e553b50452098cf0f3eb9f9f"
+  }
+]

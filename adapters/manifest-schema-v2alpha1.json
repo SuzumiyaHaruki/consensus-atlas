@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/adapter-manifest-v2alpha1.json",
+  "title": "ConsensusAtlas Control Runtime v2 Adapter Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "adapter_id",
+    "implementation_id",
+    "build_id",
+    "configuration_digest",
+    "nodes",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {"const": "consensus-atlas/control/v2alpha1"},
+    "adapter_id": {"type": "string", "minLength": 1},
+    "implementation_id": {"type": "string", "minLength": 1},
+    "build_id": {"type": "string", "minLength": 1},
+    "configuration_digest": {"type": "string", "minLength": 1},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "capabilities": {"$ref": "#/$defs/capabilities"},
+    "evidence_schemas": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temporal",
+        "entropy",
+        "strict_yield",
+        "strict_replay",
+        "durable_checkpoints"
+      ],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "drop-message", "duplicate-message", "partition", "heal", "cancel-trial",
+              "invoke", "deliver-message", "fire-temporal-event", "crash", "restart",
+              "complete-effect", "fail-effect", "complete-callback"
+            ]
+          }
+        },
+        "items": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "message", "temporal", "host-effect", "host-callback",
+              "client-response", "typed-observation"
+            ]
+          }
+        },
+        "temporal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["clock_error"],
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"enum": ["one-shot-timer", "periodic-pulse", "sleep-wakeup"]}
+            },
+            "clock_error": {"type": "integer", "minimum": 0}
+          }
+        },
+        "entropy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strict_replay"],
+          "properties": {
+            "provider": {"type": "string"},
+            "algorithm": {"type": "string"},
+            "domain_policy": {"type": "string"},
+            "reset_policy": {"type": "string"},
+            "strict_replay": {"type": "boolean"}
+          }
+        },
+        "crash_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "effect_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "strict_yield": {"type": "boolean"},
+        "strict_replay": {"type": "boolean"},
+        "durable_checkpoints": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": "consensus-atlas/experiment-summary/v1",
+  "experiment_id": "etcdraft-shared-prefix-backend-ablation-m4l8-v1",
+  "target_id": "etcdraft-v2",
+  "model_calls": 0,
+  "risk_id": "append-response-loss-with-alternate-quorum",
+  "request_id": "a9d6-write-1",
+  "shared_prefix": {
+    "root_decisions": 28,
+    "post_root_decisions": 3,
+    "trace_decisions": 31,
+    "trace_digest": "88351b3edc9803d828a6d65915c7848e8ab1eeb973116381e32ba5fdc3aae63f",
+    "actions": [
+      {
+        "decision": 29,
+        "kind": "deliver-message",
+        "owner": "n1",
+        "message_type": "MsgApp",
+        "source": "n1",
+        "target": "n2"
+      },
+      {
+        "decision": 30,
+        "kind": "complete-effect",
+        "owner": "n2",
+        "effect_kind": "raft-ready-persist"
+      },
+      {
+        "decision": 31,
+        "kind": "drop-message",
+        "owner": "n2",
+        "message_type": "MsgAppResp",
+        "source": "n2",
+        "target": "n1"
+      }
+    ]
+  },
+  "equal_budget": 14,
+  "arms": [
+    {
+      "mode": "public-fixed",
+      "budget": 14,
+      "stop_reason": "natural-progress-budget-exhausted",
+      "post_intervention_decisions": 14,
+      "risk_reached": false,
+      "client_result": null,
+      "progress_work_units": 94,
+      "qualified_primary_work_units": 47,
+      "qualified_replay_work_units": 47,
+      "accounted_post_intervention_work_units": 188,
+      "replay_stable": true,
+      "trace_digest": "30e97b66679cb1dbb04915566dcd5ff4f0e0435467d14d8100d032c5c3e05419",
+      "bundle_digest": "91d69c7bac7a7d2601b963b93c17d6864f2c2d28fc76db84964667daf70011f3"
+    },
+    {
+      "mode": "target-local",
+      "budget": 14,
+      "stop_reason": "client-terminal",
+      "post_intervention_decisions": 14,
+      "risk_reached": true,
+      "client_result": {
+        "request_id": "a9d6-write-1",
+        "status": "committed",
+        "step": 45
+      },
+      "progress_work_units": 94,
+      "qualified_primary_work_units": 47,
+      "qualified_replay_work_units": 47,
+      "accounted_post_intervention_work_units": 188,
+      "replay_stable": true,
+      "trace_digest": "fb90126f151cde97bab653cb81052bc50a45d86542c682ba21130a6a660be5f2",
+      "bundle_digest": "26822caf4a3a76ad6068579d19b121321dab22a85eda4ee311c87fb65d4d059c"
+    },
+    {
+      "mode": "public-fixed-extended",
+      "budget": 32,
+      "stop_reason": "client-terminal",
+      "post_intervention_decisions": 19,
+      "risk_reached": true,
+      "client_result": {
+        "request_id": "a9d6-write-1",
+        "status": "committed",
+        "step": 50
+      },
+      "progress_work_units": 104,
+      "qualified_primary_work_units": 52,
+      "qualified_replay_work_units": 52,
+      "accounted_post_intervention_work_units": 208,
+      "replay_stable": true,
+      "trace_digest": "df66d8676f1ed3e2eda03831d155b7f81a54e6afbe913c1586fb988114ed87f9",
+      "bundle_digest": "99da1fc9c21cacd43c9c30f59a2300d642ae6de925fb9beb3dfff0a3323587eb"
+    }
+  ],
+  "oracle": {
+    "checked": [
+      "trace-integrity",
+      "agreement",
+      "etcdraft-client-application-binding",
+      "etcdraft-log-progress"
+    ],
+    "violations_per_arm": 0
+  },
+  "comparison": {
+    "equal_budget_only_target_local_reached": true,
+    "public_extra_decisions_to_reach": 5,
+    "target_local_decision_reduction_vs_reaching_public": 0.2632,
+    "target_local_post_intervention_work_reduction_vs_reaching_public": 20
+  },
+  "conclusion_scope": "Deterministic single-prefix backend ablation; no model or prompt effect is present."
+}

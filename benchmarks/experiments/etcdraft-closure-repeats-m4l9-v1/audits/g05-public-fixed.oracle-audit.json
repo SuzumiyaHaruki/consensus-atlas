@@ -1,0 +1,20 @@
+{
+  "schema_version": "consensus-atlas/saved-bundle-oracle-audit/v1",
+  "target_id": "etcdraft-v2",
+  "projector_id": "official-etcdraft-v2/applied-prefix-chain-v2",
+  "bundle_digest": "8a6bdcd47a2345ed9b22e81e91f0d073f4ab794e89a6deb03ae09ab2143ffc73",
+  "trace_digest": "b7d8d8932e00e8a70169513387824377df7b8f0428f173c002b85cdef6839442",
+  "replay_stable": true,
+  "decisions": 34,
+  "primary_work_units": 36,
+  "replay_work_units": 36,
+  "oracle": {
+    "checked": [
+      "trace-integrity",
+      "agreement",
+      "etcdraft-client-application-binding",
+      "etcdraft-log-progress"
+    ],
+    "violations": null
+  }
+}

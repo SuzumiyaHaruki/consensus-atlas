@@ -1,0 +1,42 @@
+{
+  "candidate": {
+    "id": "agent-prepare-loss-after-coordinator-change",
+    "property_ref": "ballot-leadership-safety",
+    "inspiration_ref": "message-loss-progress-coupling",
+    "summary": "After natural protocol progress, selectively drop one prepare message while another Sequence Paxos leaf message remains pending.",
+    "suspected_mechanism": "natural-progress-observed [temporal-fired]: Natural periodic progress produces the protocol messages used by the calibration. -\u003e consensus-message-dropped-while-inflight [message-dropped]: The selected target-local prepare message is lost.",
+    "mechanism_steps": [
+      {
+        "milestone_id": "natural-progress-observed",
+        "kind": "temporal-fired",
+        "rationale": "Natural periodic progress produces the protocol messages used by the calibration.",
+        "support_refs": [
+          "primer/partial-synchrony"
+        ]
+      },
+      {
+        "milestone_id": "consensus-message-dropped-while-inflight",
+        "kind": "message-dropped",
+        "rationale": "The selected target-local prepare message is lost.",
+        "support_refs": [
+          "primer/ballot-and-log-progress"
+        ]
+      }
+    ],
+    "predicates": [
+      {
+        "milestone_id": "natural-progress-observed",
+        "kind": "temporal-fired"
+      },
+      {
+        "milestone_id": "consensus-message-dropped-while-inflight",
+        "kind": "message-dropped"
+      }
+    ]
+  },
+  "property": {
+    "id": "ballot-leadership-safety",
+    "summary": "Leadership and promise evidence must not authorize incompatible decisions across ballots.",
+    "evidence_level": "observable-only"
+  }
+}

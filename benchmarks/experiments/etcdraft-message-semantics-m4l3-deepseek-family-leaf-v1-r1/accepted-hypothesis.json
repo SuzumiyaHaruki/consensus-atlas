@@ -1,0 +1,60 @@
+{
+  "candidate": {
+    "id": "agent-append-response-loss-with-alternate-quorum",
+    "property_ref": "client-operation-continuity",
+    "inspiration_ref": "message-loss-progress-coupling",
+    "summary": "After a client write starts replication, selectively drop one append response while an append request to another follower remains pending, then observe alternate-quorum progress.",
+    "suspected_mechanism": "workload-invoked-at-coordinator [workload-invoked]: Start one write at the elected coordinator. -\u003e append-response-dropped-while-replication-inflight [message-dropped]: Lose the selected append response while replication remains active. -\u003e alternate-quorum-decision-advanced [decision-advanced]: Use the other follower path to complete normal decision progress.",
+    "mechanism_steps": [
+      {
+        "milestone_id": "workload-invoked-at-coordinator",
+        "kind": "workload-invoked",
+        "rationale": "Start one write at the elected coordinator.",
+        "support_refs": [
+          "primer/epoch-and-replication"
+        ]
+      },
+      {
+        "milestone_id": "append-response-dropped-while-replication-inflight",
+        "kind": "message-dropped",
+        "rationale": "Lose the selected append response while replication remains active.",
+        "support_refs": [
+          "primer/runtime-owned-network"
+        ]
+      },
+      {
+        "milestone_id": "alternate-quorum-decision-advanced",
+        "kind": "decision-advanced",
+        "rationale": "Use the other follower path to complete normal decision progress.",
+        "support_refs": [
+          "primer/epoch-and-replication"
+        ]
+      }
+    ],
+    "predicates": [
+      {
+        "milestone_id": "workload-invoked-at-coordinator",
+        "kind": "workload-invoked",
+        "constraints": [
+          {
+            "field": "participant-role",
+            "equals": "coordinator"
+          }
+        ]
+      },
+      {
+        "milestone_id": "append-response-dropped-while-replication-inflight",
+        "kind": "message-dropped"
+      },
+      {
+        "milestone_id": "alternate-quorum-decision-advanced",
+        "kind": "decision-advanced"
+      }
+    ]
+  },
+  "property": {
+    "id": "client-operation-continuity",
+    "summary": "A client operation must remain consistently related to its replicated and applied command across protocol transitions.",
+    "evidence_level": "oracle-backed"
+  }
+}

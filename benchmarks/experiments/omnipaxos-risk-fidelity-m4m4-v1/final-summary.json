@@ -1,0 +1,62 @@
+{
+  "schema_version": "consensus-atlas/risk-fidelity-reprojection/v1",
+  "experiment_id": "omnipaxos-risk-fidelity-m4m4-v1",
+  "source_experiment": "omnipaxos-closure-pair-m4m3-v1",
+  "target_id": "omnipaxos-v2",
+  "old_risk_input": "plans/agent/omnipaxos-message-loss-risk-v1.json",
+  "revised_risk_input": "plans/agent/omnipaxos-message-loss-risk-v2.json",
+  "old_mechanical_reached": 4,
+  "revised_hypothesis_instantiated": 2,
+  "episodes": [
+    {
+      "episode": "g01-public-fixed",
+      "closure_mode": "public-fixed",
+      "trace_digest": "189ab376fb00630132bb9fd52ccab8507f8d689e872b7e6609201fd76438a43d",
+      "old_status": "reached",
+      "revised_status": "not-reached",
+      "revised_satisfied_milestones": [
+        "workload-invoked-at-coordinator"
+      ]
+    },
+    {
+      "episode": "g01-target-local",
+      "closure_mode": "target-local",
+      "trace_digest": "8f227660ee162b303547f36845ad18941b70b96769fd7e91aedb3a3b570bc549",
+      "old_status": "reached",
+      "revised_status": "reached",
+      "revised_satisfied_milestones": [
+        "workload-invoked-at-coordinator",
+        "consensus-message-dropped-while-inflight",
+        "workload-decided-after-drop"
+      ]
+    },
+    {
+      "episode": "g02-target-local",
+      "closure_mode": "target-local",
+      "trace_digest": "bf9a69f74034948d6a7f9b2ef01d90b54c07dc980de66ad7f7390446c06009a9",
+      "old_status": "reached",
+      "revised_status": "reached",
+      "revised_satisfied_milestones": [
+        "workload-invoked-at-coordinator",
+        "consensus-message-dropped-while-inflight",
+        "workload-decided-after-drop"
+      ]
+    },
+    {
+      "episode": "g02-public-fixed",
+      "closure_mode": "public-fixed",
+      "trace_digest": "9456096ec4778412b5cd44e5125a1382e5cc537c57cc6026fa45853b40459b3b",
+      "old_status": "reached",
+      "revised_status": "not-reached",
+      "revised_satisfied_milestones": [
+        "workload-invoked-at-coordinator"
+      ]
+    }
+  ],
+  "interpretation": {
+    "predicate_reached": "All four M4m3 traces satisfied the original weaker predicate.",
+    "hypothesis_instantiated": "Only the two target-local traces bind Invoke, operation-carrying Drop, and Decision to the same RequestID.",
+    "oracle_finding": "No new Oracle evaluation was introduced; the source experiment remains clean under its three registered monitors."
+  },
+  "scope": "Post-hoc public trace diagnosis only; no model calls and no historical or controlled-difference target execution."
+}

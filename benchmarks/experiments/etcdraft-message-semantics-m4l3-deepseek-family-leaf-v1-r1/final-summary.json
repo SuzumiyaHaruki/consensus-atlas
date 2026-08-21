@@ -1,0 +1,35 @@
+{
+  "schema_version": "consensus-atlas/message-semantics-final-summary/v1",
+  "experiment_id": "etcdraft-message-semantics-m4l3-deepseek-family-leaf-v1-r1",
+  "target": "etcdraft-v2",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "arms": [
+    {
+      "message_view": "leaf",
+      "first_proposal_target_selection": "correct-unique",
+      "dropped_message_role": "MsgAppResp",
+      "target_drop_executed": true,
+      "corrected_risk_status": "not-reached",
+      "bundle_valid": true,
+      "fresh_replay_stable": true,
+      "oracle_violations": 0
+    },
+    {
+      "message_view": "family",
+      "first_proposal_target_selection": "wrong-unique",
+      "dropped_message_role": "MsgVote",
+      "target_drop_executed": false,
+      "corrected_risk_status": "not-reached",
+      "bundle_valid": true,
+      "fresh_replay_stable": true,
+      "oracle_violations": 0
+    }
+  ],
+  "supersedes": [
+    "summary.json arms[family].qualified_risk_reached",
+    "family/arm-summary.json qualified_risk_reached",
+    "family/scenario-result.json final risk classification"
+  ],
+  "claim_boundary": "Leaf message semantics improved target selection in this public paired calibration. Neither arm completed the accepted Risk, and no protocol finding was produced."
+}

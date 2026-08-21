@@ -1,0 +1,115 @@
+{
+  "schema_version": "consensus-atlas/experiment-summary/v1",
+  "experiment_id": "etcdraft-existing-risk-closure-pair-m4l7-v1",
+  "commit": "f7b1a4a1534b4dfc127f644e36fe77217f3abae2",
+  "target_id": "etcdraft-v2",
+  "model": "deepseek-v4-flash",
+  "scenario_prompt_version": "scenario-agent-investigation-v17",
+  "risk_input": {
+    "mode": "existing-candidate",
+    "candidate_id": "append-response-loss-with-alternate-quorum",
+    "candidate_digest": "91646150ca0bbddc7613bcd6f94917c641e31911e6704ccb91124e9272506da8",
+    "witness_digest": "058c7a77f6692664746b54facae8ca04aa86e7fc4c5848ac4be2509b88041d91"
+  },
+  "shared_prefix": {
+    "first_scenario_step": 29,
+    "intervention_step": 31,
+    "intervention_action_id": "action-a2b05c0646b59a64527918332b29d5d997db3261052480858e8acba52bcd204c",
+    "intervention_item_id": "etcdraft-v2-item-cd4871e49ae5e892e2b0714369d0deaa85c02d4f437464f9de74083b86dab4e4",
+    "intervention_kind": "drop-message",
+    "intervention_node": "n2"
+  },
+  "arms": [
+    {
+      "closure_mode": "public-fixed",
+      "method_spec_digest": "0f2f1fdb28e0b15cd74dc379814177943631fe4534f00b4c60fa5b38c5a495a6",
+      "status": "completed",
+      "stop_reason": "call-budget-exhausted",
+      "risk_calls": 0,
+      "scenario_calls": 3,
+      "model_calls": 3,
+      "model_input_tokens": 33841,
+      "model_output_tokens": 49361,
+      "model_total_tokens": 83202,
+      "scenario_decisions": 4,
+      "qualified_trace_decisions": 32,
+      "scenario_search_work_units": 130,
+      "qualified_primary_work_units": 34,
+      "qualified_replay_work_units": 34,
+      "accounted_execution_work_units": 198,
+      "closure_handoff": false,
+      "risk_reached": false,
+      "first_missing_milestone": "alternate-quorum-decision-advanced",
+      "client_result": null,
+      "replay_stable": true,
+      "oracle_findings": 0,
+      "oracle_checked": [
+        "trace-integrity",
+        "agreement",
+        "etcdraft-client-application-binding",
+        "etcdraft-log-progress"
+      ],
+      "trace_digest": "2d6502c21c3a631db654cff7a19eb6a0f269f6537acccbfe7682c776f8aab0e5",
+      "artifact_sha256": {
+        "summary": "ec4877b6603065598cd4036ff13906f096df2fa33014d5c93056c5428933bb48",
+        "method_spec": "d700d254a9f26bd53442631bc9658ad4ef7a1337f4e4e3ed80d28e5c6ef65ddf",
+        "bundle": "19a31968f11ab173db97ff07202e6da05dff888574d67dfaaddabc8860e62975",
+        "canonical_bundle_gzip": "ef0bb008703ea32f1a11f9fc9157608d9011e76e9862b3beb3c65e9bf20c02a5",
+        "oracle_audit": "53601bab2c5d0ac453fc2c716b926b70c93da62ff921cbeafce3fe01b7a6ac2f"
+      }
+    },
+    {
+      "closure_mode": "target-local",
+      "method_spec_digest": "6ae0c24837ac8b03269073d5f9d6b2b7786a56a710b91d7bc74079c308a2b00d",
+      "status": "completed",
+      "stop_reason": "risk-reached",
+      "risk_calls": 0,
+      "scenario_calls": 2,
+      "model_calls": 2,
+      "model_input_tokens": 23008,
+      "model_output_tokens": 18125,
+      "model_total_tokens": 41133,
+      "scenario_decisions": 17,
+      "qualified_trace_decisions": 45,
+      "scenario_search_work_units": 156,
+      "qualified_primary_work_units": 47,
+      "qualified_replay_work_units": 47,
+      "accounted_execution_work_units": 250,
+      "closure_handoff": true,
+      "closure_handoff_plan_step_id": "drop-n2-append-response",
+      "closure_handoff_trace_step": 31,
+      "closure_decisions_after_handoff": 14,
+      "risk_reached": true,
+      "client_result": {
+        "request_id": "a9d6-write-1",
+        "status": "committed",
+        "step": 45
+      },
+      "replay_stable": true,
+      "oracle_findings": 0,
+      "oracle_checked": [
+        "trace-integrity",
+        "agreement",
+        "etcdraft-client-application-binding",
+        "etcdraft-log-progress"
+      ],
+      "trace_digest": "fb90126f151cde97bab653cb81052bc50a45d86542c682ba21130a6a660be5f2",
+      "artifact_sha256": {
+        "summary": "df7a91f4e2183591b3011c40cf4c503f3b8c88c1b7d400a129032d9a212b2c4c",
+        "method_spec": "1b4a34ba0bc050157c1080211737f15562b20654416587aea0f17bd32be55de4",
+        "bundle": "ea605dffaf6c911acd2509ca985cdd9cf36de3a535a82ae906a68fc8062e374d",
+        "canonical_bundle_gzip": "0461f130b07f60cd27f897dbc2513816875e4078502b8c7260899e8947dac8e4",
+        "oracle_audit": "6868426043e12f5b56b595b50e9711a0330b1da66f5a92369e0056e4dea3e2c2"
+      }
+    }
+  ],
+  "comparison": {
+    "scenario_call_reduction": 1,
+    "model_token_reduction": 42069,
+    "model_token_reduction_ratio": 0.5056,
+    "accounted_execution_work_increase": 52,
+    "only_target_local_reached_risk": true,
+    "only_target_local_completed_client_request": true
+  },
+  "conclusion_scope": "One public paired capability sample; not a statistical method-effect result."
+}

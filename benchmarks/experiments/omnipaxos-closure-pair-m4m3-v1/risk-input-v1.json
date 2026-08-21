@@ -1,0 +1,33 @@
+{
+  "id": "message-loss-before-decision",
+  "property_ref": "decided-prefix-consistency",
+  "inspiration_ref": "message-loss-progress-coupling",
+  "summary": "Drop one operation-carrying Sequence Paxos replication message and observe a later decision for the same request.",
+  "suspected_mechanism": "One follower misses an in-flight operation while the leader and the alternate follower retain a path to decide it.",
+  "predicates": [
+    {
+      "milestone_id": "workload-invoked-at-coordinator",
+      "kind": "workload-invoked",
+      "constraints": [
+        {
+          "field": "participant-role",
+          "equals": "coordinator"
+        }
+      ]
+    },
+    {
+      "milestone_id": "consensus-message-dropped-while-inflight",
+      "kind": "message-dropped",
+      "constraints": [
+        {
+          "field": "operation-stage",
+          "equals": "inflight"
+        }
+      ]
+    },
+    {
+      "milestone_id": "workload-decided-after-drop",
+      "kind": "decision-advanced"
+    }
+  ]
+}

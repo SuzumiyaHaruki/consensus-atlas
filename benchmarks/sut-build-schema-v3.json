@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://consensus-atlas.local/schemas/sut-build-v3.json",
+  "title": "ConsensusAtlas controlled SUT build input v3",
+  "description": "Fresh controlled builds. Historical v1-v3 inputs remain archived evidence and must be migrated by a trusted concrete build pack before rebuilding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "trial_id", "module", "module_digest", "package", "identity_variable", "sut_build_identity", "command_allowlist", "output_path"],
+  "properties": {
+    "version": {"const": 4},
+    "id": {"type": "string", "minLength": 1},
+    "trial_id": {"type": "string", "minLength": 1},
+    "module": {"$ref": "#/$defs/module"},
+    "module_digest": {"$ref": "#/$defs/digest"},
+    "package": {"type": "string", "minLength": 1},
+    "identity_variable": {"type": "string", "pattern": "^[A-Za-z0-9_/-]+(\\.[A-Za-z0-9_/-]+)+$"},
+    "sut_build_identity": {"type": "string", "minLength": 1},
+    "command_allowlist": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"enum": ["go-build", "go-list-module"]}},
+    "output_path": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "module": {
+      "type": "object", "additionalProperties": false, "required": ["path", "version"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}}
+    }
+  }
+}

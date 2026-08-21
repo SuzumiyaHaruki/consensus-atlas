@@ -1,0 +1,76 @@
+{
+  "schema_version": "consensus-atlas/scripted-closure-summary/v1",
+  "experiment_id": "omnipaxos-message-loss-closure-m4m2-v1",
+  "target_id": "omnipaxos-v2",
+  "model_calls": 0,
+  "shared_prefix_decisions": 25,
+  "intervention": {
+    "trace_step": 26,
+    "kind": "drop-message",
+    "source": "n1",
+    "target": "n2",
+    "leaf_type": "sequence-paxos/accept-sync",
+    "request_id": "omnipaxos-a9e1-request"
+  },
+  "alternate_participant": "n3",
+  "equal_post_intervention_budget": 4,
+  "public_equal": {
+    "decisions": 4,
+    "risk": "not-reached",
+    "stop": "natural-progress-budget-exhausted",
+    "work_units": 64
+  },
+  "target_equal": {
+    "closure_handoff": true,
+    "decisions": 4,
+    "risk": "reached",
+    "stop": "client-terminal",
+    "work_units": 64,
+    "trace_digest": "8f227660ee162b303547f36845ad18941b70b96769fd7e91aedb3a3b570bc549"
+  },
+  "public_extended": {
+    "decisions": 8,
+    "risk": "reached",
+    "stop": "client-terminal",
+    "work_units": 72
+  },
+  "qualified": {
+    "bundle_digest": "9f7f0f80efb49df819cc43d36b5fd2367f37225e9b369296df83e188d39ca206",
+    "primary_work_units": 32,
+    "replay_work_units": 32,
+    "recorded_replay_stable": true,
+    "oracle_checked": [
+      "trace-integrity",
+      "agreement"
+    ],
+    "oracle_violations": 0,
+    "client_request_matches_dropped_message": true
+  },
+  "scenario_agent_path": {
+    "risk_input": "plans/agent/omnipaxos-message-loss-risk-v1.json",
+    "risk_id": "message-loss-before-decision",
+    "risk_provider_calls": 0,
+    "external_model_calls": 0,
+    "scripted_planner_calls": 1,
+    "planned_decisions": 3,
+    "closure_handoff": true,
+    "closure_handoff_step_id": "drop-operation-replication",
+    "closure_decisions": 4,
+    "post_handoff_new_interventions": 0,
+    "risk": "reached",
+    "request_id": "omnipaxos-a9e1-request",
+    "trace_digest": "8f227660ee162b303547f36845ad18941b70b96769fd7e91aedb3a3b570bc549",
+    "bundle_digest": "9f7f0f80efb49df819cc43d36b5fd2367f37225e9b369296df83e188d39ca206",
+    "recorded_replay_stable": true,
+    "oracle_checked": [
+      "trace-integrity",
+      "agreement"
+    ],
+    "oracle_violations": 0
+  },
+  "claims": {
+    "cross_protocol_closure_interface": true,
+    "defect_finding": false,
+    "general_method_superiority": false
+  }
+}
