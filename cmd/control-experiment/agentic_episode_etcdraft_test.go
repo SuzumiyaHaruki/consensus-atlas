@@ -638,3 +638,19 @@ func TestInvestigationCountsRiskGenerationEpisodesWithExecutableCandidates(t *te
 		t.Fatalf("Risk generation Episode count with executable candidates = %d, want 2", got)
 	}
 }
+
+func TestAgenticEpisodeCLIAllowsExplicitRepositoryRootAndSourceMounts(t *testing.T) {
+	options := controlExperimentOptions{
+		Target: "etcdraft-v2", MethodSpecDigest: strings.Repeat("a", 64),
+		InvestigationEpisodes: 6,
+		KnowledgeSourceMounts: []string{
+			"repo=/tmp/consensus-atlas", "go.etcd.io/raft/v3@v3.6.0/=/tmp/raft",
+		},
+		ClosureMode: "public-fixed", RiskInput: "/tmp/risk.json",
+		RepositoryRoot: "/tmp/consensus-atlas",
+		Decisions:      96, PolicySeed: 1,
+	}
+	if projected := agenticEpisodeNonSessionProjection(options); projected.hasNonSessionFlags() {
+		t.Fatalf("valid Agentic session flags leaked into generic CLI validation: %#v", projected)
+	}
+}

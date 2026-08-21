@@ -17,13 +17,7 @@ func runAgenticEpisodeCLI(
 	options controlExperimentOptions,
 	stdout io.Writer,
 ) error {
-	withoutTarget := options
-	withoutTarget.Target = ""
-	withoutTarget.MethodSpecDigest = ""
-	withoutTarget.InvestigationEpisodes = 1
-	withoutTarget.KnowledgeSourceMounts = nil
-	withoutTarget.ClosureMode = ""
-	withoutTarget.RiskInput = ""
+	withoutTarget := agenticEpisodeNonSessionProjection(options)
 	if options.CampaignDirectory == "" || options.Target == "" ||
 		options.InvestigationEpisodes <= 0 || withoutTarget.hasNonSessionFlags() {
 		return errors.New("Agentic Episode requires -campaign-dir, -target, target inputs, Agent inputs, optional -investigation-episodes, and optional -campaign-resume")
@@ -59,6 +53,17 @@ func runAgenticEpisodeCLI(
 			options.CampaignDirectory, result.UnreconciledModelCalls)
 	}
 	return err
+}
+
+func agenticEpisodeNonSessionProjection(options controlExperimentOptions) controlExperimentOptions {
+	options.Target = ""
+	options.MethodSpecDigest = ""
+	options.InvestigationEpisodes = 1
+	options.KnowledgeSourceMounts = nil
+	options.ClosureMode = ""
+	options.RiskInput = ""
+	options.RepositoryRoot = ""
+	return options
 }
 
 func runAgenticInvestigationCLI(
