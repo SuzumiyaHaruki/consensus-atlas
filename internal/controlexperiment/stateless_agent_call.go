@@ -292,6 +292,15 @@ func (result StatelessAgentCallResult) ValidateInputs(
 		!validProviderUsageStatus(result.ProviderUsageStatus) {
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_RESULT_INVALID")
 	}
+	if result.Response != nil && result.Response.Validate() != nil {
+		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_RESPONSE_IDENTITY_INVALID")
+	}
+	if result.FailureCode == "response-finish-length" &&
+		(result.Response == nil || result.Response.FinishReason != "length") ||
+		result.Response != nil && result.Response.FinishReason == "length" &&
+			(result.Status != StatelessAgentCallFailed || result.FailureCode != "response-finish-length") {
+		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_FINISH_REASON_INVALID")
+	}
 	switch result.Status {
 	case StatelessAgentCallCompleted:
 		if result.FailureCode != "" || result.Work.Calls != 1 || result.Work.TotalTokens <= 0 ||
@@ -315,8 +324,15 @@ func (result StatelessAgentCallResult) ValidateInputs(
 		}
 	case StatelessAgentCallFailed:
 		if !validMethodToken(result.FailureCode) || len(result.Content) != 0 || result.ContentDigest != "" ||
-			result.ProposalDigest != "" || result.Response != nil {
+			result.ProposalDigest != "" {
 			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_FAILED_INVALID")
+		}
+		if result.Response != nil && (!validSHA256(result.ResponseDigest) || result.Work.Calls != 1 ||
+			result.Work.TotalTokens <= 0 || result.ProviderUsageStatus != "observed") {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_FAILED_RESPONSE_INVALID")
+		}
+		if result.Response == nil && (result.Work.TotalTokens != 0 || result.ProviderUsageStatus == "observed") {
+			return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_FAILED_RESPONSE_MISSING")
 		}
 	default:
 		return errors.New("EXPERIMENT_STATELESS_AGENT_CALL_RESULT_STATUS_INVALID")

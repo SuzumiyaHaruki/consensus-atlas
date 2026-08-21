@@ -17,10 +17,12 @@ const (
 	ElectionSafetyMonitorID           = "etcdraft-election-safety"
 )
 
-// ElectionSafetyMonitor checks the Raft election invariant exposed by
-// Adapter-owned Evidence: at most one distinct running leader may be observed
-// for one term. It deliberately does not inspect vote bookkeeping or native
-// tracker state.
+// ElectionSafetyMonitor checks the first observation of each leader in a
+// complete bootstrap-to-result Trace. Adapter-owned Evidence must show a
+// majority in each active voter configuration, and at most one distinct leader
+// may be observed per term. This is not a historical election proof for a Trace
+// that begins from an arbitrary mid-run snapshot. The monitor never calls the
+// native tracker or consumes Agent conclusions.
 type ElectionSafetyMonitor struct{}
 
 func (ElectionSafetyMonitor) Name() string { return ElectionSafetyMonitorID }
@@ -29,6 +31,12 @@ func (ElectionSafetyMonitor) CheckBundle(
 	bundle controlexperiment.ExecutionBundle,
 ) []oracle.Violation {
 	leaders := make(map[uint64]control.NodeID)
+	type electionObservation struct {
+		term        uint64
+		raftID      uint64
+		incarnation uint64
+	}
+	observed := make(map[electionObservation]bool)
 	points := []struct {
 		step     int
 		evidence control.EvidenceEnvelope
@@ -42,7 +50,7 @@ func (ElectionSafetyMonitor) CheckBundle(
 		}
 	}
 	for _, point := range points {
-		evidence, err := etcdraftv2.ProjectEvidence(point.evidence)
+		evidence, err := etcdraftv2.ProjectElectionEvidence(point.evidence)
 		if err != nil {
 			return electionSafetyViolation(point.step, "evidence projection failed")
 		}
@@ -56,9 +64,57 @@ func (ElectionSafetyMonitor) CheckBundle(
 				))
 			}
 			leaders[node.Term] = node.Node
+			// Leader uniqueness is intentionally keyed by stable NodeID above,
+			// while quorum validation is performed once per incarnation. A node
+			// that restarts in the same term must not inherit the earlier quorum
+			// check merely because its logical Raft ID is unchanged.
+			key := electionObservation{
+				term: node.Term, raftID: node.RaftID, incarnation: node.Incarnation,
+			}
+			if observed[key] {
+				continue
+			}
+			observed[key] = true
+			if ok, detail := electionQuorumBacksLeader(evidence, node); !ok {
+				return electionSafetyViolation(point.step, fmt.Sprintf(
+					"term %d leader %s is not backed by a legal election quorum: %s",
+					node.Term, node.Node, detail,
+				))
+			}
 		}
 	}
 	return nil
+}
+
+func electionQuorumBacksLeader(
+	evidence etcdraftv2.ElectionEvidence,
+	leader etcdraftv2.ElectionNodeEvidence,
+) (bool, string) {
+	votes := make(map[uint64]bool, len(evidence.Nodes))
+	for _, node := range evidence.Nodes {
+		if node.Term == leader.Term && node.Vote == leader.RaftID {
+			votes[node.RaftID] = true
+		}
+	}
+	check := func(name string, voters []uint64) (bool, string) {
+		count := 0
+		for _, voter := range voters {
+			if votes[voter] {
+				count++
+			}
+		}
+		need := len(voters)/2 + 1
+		return count >= need, fmt.Sprintf("%s votes=%d/%d need=%d", name, count, len(voters), need)
+	}
+	if ok, detail := check("voters", leader.Configuration.Voters); !ok {
+		return false, detail
+	}
+	if len(leader.Configuration.VotersOutgoing) > 0 {
+		if ok, detail := check("voters-outgoing", leader.Configuration.VotersOutgoing); !ok {
+			return false, detail
+		}
+	}
+	return true, ""
 }
 
 func electionSafetyViolation(step int, message string) []oracle.Violation {

@@ -23,9 +23,13 @@ const (
 	openRouterDefaultReasoningEffort = "high"
 	openRouterDefaultTimeout         = 900 * time.Second
 	scenarioAgentMaxOutputTokens     = 8192
+	scenarioAgentReasoningEffort     = "low"
 	agentFailureTransport            = "AGENT_TRANSPORT_FAILED"
 	agentFailureHTTP                 = "AGENT_HTTP_STATUS_REJECTED"
-	agentFailureResponse             = "AGENT_RESPONSE_REJECTED"
+	agentFailureResponseMalformed    = "AGENT_RESPONSE_MALFORMED"
+	agentFailureResponseFinishLength = "AGENT_RESPONSE_FINISH_LENGTH"
+	agentFailureResponseEmptyContent = "AGENT_RESPONSE_EMPTY_CONTENT"
+	agentFailureResponseTooLarge     = "AGENT_RESPONSE_TOO_LARGE"
 	agentProviderUsageUnknown        = "unknown"
 	agentProviderUsageObserved       = "observed"
 )
@@ -190,7 +194,7 @@ func newScenarioAgentIntentTransport(provider string, model string) (agentIntent
 		return nil, err
 	}
 	return configureAgentIntentTransport(
-		transport, "high", false, scenarioAgentMaxOutputTokens, 0,
+		transport, scenarioAgentReasoningEffort, false, scenarioAgentMaxOutputTokens, 0,
 	)
 }
 
@@ -346,7 +350,7 @@ func (client openRouterIntentClient) invokePrepared(
 			// unknown-billing semantics as a failed Do call.
 			call.FailureCode = agentFailureTransport
 		} else if len(responseBody) > openRouterMaxResponse {
-			call.FailureCode = agentFailureResponse
+			call.FailureCode = agentFailureResponseTooLarge
 		} else if response.StatusCode != http.StatusOK {
 			call.ResponseDigest = controlexperiment.AgentInvocationDigest(responseBody)
 			call.FailureCode = agentFailureHTTP
@@ -364,12 +368,12 @@ func (client openRouterIntentClient) invokePrepared(
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	var parsed openRouterChatResponse
 	if err := decoder.Decode(&parsed); err != nil {
-		call.FailureCode = agentFailureResponse
+		call.FailureCode = agentFailureResponseMalformed
 		return call, nil
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		call.FailureCode = agentFailureResponse
+		call.FailureCode = agentFailureResponseMalformed
 		return call, nil
 	}
 	if parsed.ID == "" || strings.TrimSpace(parsed.Model) == "" || len(parsed.Choices) != 1 ||
@@ -377,7 +381,7 @@ func (client openRouterIntentClient) invokePrepared(
 		parsed.Choices[0].FinishReason == "" || parsed.Usage.PromptTokens < 0 ||
 		parsed.Usage.CompletionTokens < 0 ||
 		parsed.Usage.TotalTokens != parsed.Usage.PromptTokens+parsed.Usage.CompletionTokens {
-		call.FailureCode = agentFailureResponse
+		call.FailureCode = agentFailureResponseMalformed
 		return call, nil
 	}
 	call.Response = &controlexperiment.AgentResponseIdentity{
@@ -390,8 +394,16 @@ func (client openRouterIntentClient) invokePrepared(
 	}
 	call.UsageStatus = agentProviderUsageObserved
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	if parsed.Choices[0].FinishReason != "stop" || content == "" {
-		call.FailureCode = agentFailureResponse
+	if parsed.Choices[0].FinishReason == "length" {
+		call.FailureCode = agentFailureResponseFinishLength
+		return call, nil
+	}
+	if parsed.Choices[0].FinishReason != "stop" {
+		call.FailureCode = agentFailureResponseMalformed
+		return call, nil
+	}
+	if content == "" {
+		call.FailureCode = agentFailureResponseEmptyContent
 		return call, nil
 	}
 	call.Content = []byte(content)

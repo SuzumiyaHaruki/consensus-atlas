@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/fixture"
@@ -626,6 +627,105 @@ func TestScenarioAgentCommitsVerifiedPrefixBeforeRepair(t *testing.T) {
 		result.Attempts[0].Execution.Status != ScenarioStatusStopped ||
 		len(result.Attempts[0].Execution.Steps) != 2 {
 		t.Fatalf("verified prefix was not committed across repair: %#v calls=%d err=%v", result, calls, err)
+	}
+}
+
+func TestScenarioAgentPreservesVerifiedPrefixWhenLengthRepairFails(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig := RuntimeConfig{SeedHex: "6d346e31312d6c656e6774682d726570616972", MaxClones: 1}
+	root := fixtureInitialTrace(t, ctx, runtimeConfig)
+	factory := func() (control.Adapter, error) { return fixture.New(), nil }
+	spec, err := semantic.NewRiskWitnessSpec(
+		"fixture-length-repair-risk", "fixture-cft", "length-repair-prefix",
+		[]string{"never-reached"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := fixtureSemanticPrefixProjector{preferred: "never-selected"}
+	rootRisk, err := projector.Project("fixture-length-repair-root-risk", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, _, _, err := ReconstructRiskFrontierState(
+		ctx, "fixture-length-repair-frontier", spec, rootRisk, root, len(root.Records),
+		runtimeConfig, nil, factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
+		ID: "fixture-length-repair-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
+		Knowledge: []KnowledgeStatement{{ID: "periodic", Text: "A temporal callback advances one deterministic step."}},
+		Risks: []ProtocolRisk{{
+			ID: spec.RiskID, Summary: "Retain an executed prefix if a later provider response is truncated.",
+			RequiredCapabilities: []string{"natural-time"},
+			RequiredActions:      []control.ActionKind{control.ActionFireTemporal},
+			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hypothesis, err := NewTestHypothesis(
+		"fixture-length-repair-hypothesis", knowledge, spec,
+		"Execute one real action before a charged truncated response.", ScenarioPlanningBackendID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	verifiedDigest := ""
+	var repairIntents []string
+	result, err := ExploreScenarioWithPlanner(
+		ctx, 3, 1, 8, knowledge, hypothesis, spec, frontier,
+		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, nil,
+		nil, nil, factory, projector,
+		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
+			return unknownScenarioSemantics(t, next), nil
+		},
+		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
+			calls++
+			switch calls {
+			case 1:
+				var temporal FrontierActionRef
+				for _, action := range view.Frontier.Actions {
+					if action.Kind == control.ActionFireTemporal {
+						temporal = action
+						break
+					}
+				}
+				encoded, marshalErr := json.Marshal(ScenarioInvestigationProposal{
+					Intent: ScenarioIntentContinue,
+					Plan: ScenarioPlan{ID: "execute-prefix", Steps: []ScenarioStep{{
+						ID: "fire", Selector: FrontierActionSelector{ActionID: temporal.ActionID},
+					}}},
+				})
+				return encoded, ModelWork{Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5}, marshalErr
+			case 2:
+				verifiedDigest = view.Frontier.PrefixTraceDigest
+				repairIntents = append([]string(nil), view.AvailableIntents...)
+				return nil, ModelWork{Calls: 1, InputTokens: 4, OutputTokens: 3, TotalTokens: 7},
+					&ScenarioPlannerResponseFailure{Code: ScenarioAgentReasonResponseFinishLength, Repairable: true}
+			default:
+				if view.Frontier.PrefixTraceDigest != verifiedDigest {
+					t.Fatalf("repair call repeated or changed Runtime prefix: before=%s after=%s", verifiedDigest, view.Frontier.PrefixTraceDigest)
+				}
+				if !slices.Equal(view.AvailableIntents, repairIntents) {
+					t.Fatalf("length repair changed the logical intent phase: before=%v after=%v", repairIntents, view.AvailableIntents)
+				}
+				return nil, ModelWork{Calls: 1, InputTokens: 5, OutputTokens: 3, TotalTokens: 8},
+					&ScenarioPlannerResponseFailure{Code: ScenarioAgentReasonResponseFinishLength}
+			}
+		},
+	)
+	if err != nil || calls != 3 || result.Execution == nil || result.Status != ScenarioAgentCompleted ||
+		result.StopReason != ScenarioAgentStopProviderResponse || len(result.Attempts) != 3 ||
+		result.Attempts[1].Feedback.ReasonCode != ScenarioAgentReasonResponseFinishLength ||
+		result.Attempts[2].Feedback.ReasonCode != ScenarioAgentReasonResponseFinishLength ||
+		result.Execution.FinalTrace.Digest != verifiedDigest || result.SelectedPathDecisions == 0 ||
+		result.ModelWork != (ModelWork{Calls: 3, InputTokens: 12, OutputTokens: 8, TotalTokens: 20}) {
+		t.Fatalf("failed repair did not stop in-band with the verified prefix: %#v calls=%d err=%v", result, calls, err)
 	}
 }
 

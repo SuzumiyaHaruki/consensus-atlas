@@ -137,6 +137,11 @@ Replay，不理解 term、ballot 或具体消息语义。
 
 PSS、Risk reached 和 candidate accepted 都不是缺陷 verdict。缺陷结论必须来自 replay-stable 的独立 Oracle，或由
 后续 evaluator 对保存证据重新判断。
+完整 Oracle 会保留 root prefix 和 Agent path 上的全部 violation，但二者分别归因：确定性 root 中已存在的
+violation 只计为 Oracle sensitivity，只有 root 之后首次出现的 violation 才能计为 Agent finding。formal loader
+从 Scenario frontier reconstruction work 推导 root boundary，并与保存的 boundary 以及
+`Trace decisions - selected_path_decisions` 交叉核对；evaluator-owned Replay 后用该机械核对过的 boundary
+重新归因，不能用初始状态已有的问题给 Agent 记功。evaluator 当前不独立重建生成 Scenario root 的策略。
 对 formal trial，evaluator 在给予 finding credit 前汇总主路径和全部分支的 decisions 与
 qualified primary work，不允许每个分支单独重用完整预算。
 
@@ -210,6 +215,18 @@ grounding 是一次成功的中立 search，再读取一个该 search 实际返�
 不再继续翻页。query 是在单行源码上匹配的一个大小写不敏感字面子串，不进行分词或多关键词 OR；Agent
 应选择一个短标识符或原样短语。重复请求、未搜索得到的任意路径和越过挂载根目录的引用由可信代码拒绝。最多 4 次 Risk
 模型调用不等于可以读取 4 个源码片段。
+Episode summary 会把该 bounded read 标记为 `completed-used` 或 `completed-unused`：只有候选的
+mechanism step 真正引用相应 `source/...` 时才算 used。该字段只是 grounding 口径，不是候选准入条件，
+也不能把源码引用提升为 finding。
+
+Provider 返回 HTTP 200 但结构化输出不可用时，journal 区分 `response-finish-length`、
+`response-empty-content`、`response-malformed` 与 `response-too-large`，并在已解析出 usage/response
+identity 时保留其计费和 `finish_reason`。Scenario 的首次 `response-finish-length` 允许在原有 calls/tokens
+预算内发起一次同 frontier 的最小 JSON 修复；修复仍失败时以 in-band stop 保存已执行前缀，不能重复 Runtime Action。
+durable recovery 只承认紧邻且绑定同一 root、冻结 view digest 和原调用序号的 length→repair 序列；其他
+Failed 后续调用一律拒绝。repair 已 dispatch 但 result 尚未落盘时会明确报告远端结果不确定且不会自动重发。
+失败响应即使恰好越过 token 上限也保留原 failure code，只禁止后续 repair，已有执行仍进入 Bundle、fresh Replay
+和 Oracle。
 `-capability-feedback` 可选 `reason-codes` 或 `structured-gaps`，默认后者；该值同时控制实际 Memory 输入并进入
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
 公开反馈校准可指定 `-capability-feedback-probe`；探针只由真实 TargetSurface 预检，不执行 Action，并进入

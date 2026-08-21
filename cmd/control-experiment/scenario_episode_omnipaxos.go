@@ -222,7 +222,7 @@ func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 		return scenarioTestingResult{}, errors.New("OMNIPAXOS_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
 	registry := omnipaxosAgenticOracleRegistry()
-	result := newScenarioTestingResult(execution.PlanID, bundle, risk, registry)
+	result := newScenarioTestingResult(execution.PlanID, bundle, risk, registry, len(root.Records))
 	if err := validateScenarioTestingRisk(
 		result, spec, projector, omnipaxosv2.DecisionProjector{}, registry,
 	); err != nil {

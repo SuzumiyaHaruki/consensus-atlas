@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -152,6 +153,152 @@ func TestEtcdraftExistingRiskScenarioOnlyEpisodeSkipsRiskProvider(t *testing.T) 
 		reloadedDigest != riskDigest {
 		t.Fatalf("Agent-generated Risk summary was not reusable: %#v/%s/%v",
 			reloaded, reloadedDigest, err)
+	}
+}
+
+func TestEtcdraftProviderRepairFailurePersistsBundleAndRecoversJournal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), controlExperimentTestTimeout(180*time.Second),
+	)
+	defer cancel()
+	inputs, err := prepareEtcdraftAgenticEpisode(
+		ctx, "", "../../plans/agent/etcdraft-agentic-calibration-v1.json",
+		fixtureOpenRouterIntentClient(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existingRisk, _, err := loadExistingRiskInput(
+		"../../plans/agent/etcdraft-alternate-quorum-risk-v1.json", target,
+	)
+	if err != nil || existingRisk == nil {
+		t.Fatalf("load existing Risk: %#v/%v", existingRisk, err)
+	}
+	providerCalls := 0
+	client := fixtureOpenRouterIntentClient()
+	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls++
+		var payload openRouterChatRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil ||
+			payload.ResponseFormat.JSONSchema.Name != scenarioInvestigationStructuredOutputName {
+			t.Fatalf("unexpected Scenario request: %#v/%v", payload, err)
+		}
+		response := map[string]any{
+			"id": "provider-repair-fixture", "model": openRouterFixtureModel,
+			"system_fingerprint": "fixture-provider",
+			"usage":              map[string]int{"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
+		}
+		choice := map[string]any{
+			"index": 0, "message": map[string]any{"role": "assistant", "content": ""},
+			"finish_reason": "stop",
+		}
+		switch providerCalls {
+		case 1:
+			view := a4bScenarioViewFromPayload(t, payload)
+			var selected control.ActionID
+			for _, action := range view.Frontier.Actions {
+				if action.Kind == control.ActionDeliverMessage ||
+					action.Kind == control.ActionCompleteEffect ||
+					action.Kind == control.ActionFireTemporal {
+					selected = action.ActionID
+					break
+				}
+			}
+			if selected == "" {
+				t.Fatal("fixture frontier has no non-intervention Action")
+			}
+			proposal, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+				Intent: controlexperiment.ScenarioIntentContinue,
+				Plan: controlexperiment.ScenarioPlan{
+					ID: "execute-prefix-before-provider-failure",
+					Steps: []controlexperiment.ScenarioStep{{
+						ID: "execute-prefix", Selector: controlexperiment.FrontierActionSelector{ActionID: selected},
+					}},
+				},
+			})
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			choice["message"] = map[string]any{"role": "assistant", "content": string(proposal)}
+		case 2:
+			choice["message"] = map[string]any{"role": "assistant", "content": `{"intent":"revise"`}
+			choice["finish_reason"] = "length"
+		case 3:
+			// The one allowed repair returns an empty JSON body. This is a
+			// charged, typed provider failure, not a Runtime failure.
+		default:
+			t.Fatalf("provider was called after the failed repair: %d", providerCalls)
+		}
+		response["choices"] = []any{choice}
+		encoded, marshalErr := json.Marshal(response)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(encoded)),
+		}, nil
+	})
+	directory := t.TempDir()
+	riskJournal, err := newStatelessAgentCallJournal(filepath.Join(directory, "risk"), client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarioJournal, err := newScenarioAgentCallJournal(filepath.Join(directory, "scenario"), client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := agenticEpisodeBudget{
+		MaxRiskCalls: 1, MaxScenarioCalls: 4, MaxTotalCalls: 5,
+		MaxObservedTokens: 100, MaxScenarioPlanSteps: 1, MaxRuntimeDecisions: 16,
+	}
+	activateScenario := func() error { return scenarioJournal.ActivateKey("fixture-key") }
+	result, err := runAgenticEpisode(
+		ctx, target, riskJournal, scenarioJournal, budget, nil, nil, existingRisk,
+		func() error { return errors.New("Risk provider must not be activated") }, activateScenario,
+	)
+	if err != nil || providerCalls != 3 || result.Status != agenticEpisodeCompleted ||
+		result.Testing == nil || result.Scenario == nil || result.Scenario.Agent.Execution == nil ||
+		result.Scenario.Agent.StopReason != controlexperiment.ScenarioAgentStopProviderResponse ||
+		result.Assessment.Status != agenticEvidenceInconclusive ||
+		result.Assessment.ReasonCode != controlexperiment.ScenarioAgentStopProviderResponse ||
+		!result.Testing.Replay.Stable || len(result.ScenarioProviderCalls) != 3 ||
+		result.ScenarioProviderCalls[1].Status != controlexperiment.StatelessAgentCallFailed ||
+		result.ScenarioProviderCalls[2].Status != controlexperiment.StatelessAgentCallFailed {
+		t.Fatalf("failed repair lost its verified execution: %#v calls=%d err=%v",
+			result, providerCalls, err)
+	}
+	artifactDirectory := t.TempDir()
+	artifact, err := persistAgenticEpisodeArtifacts(artifactDirectory, target.ID, budget, result)
+	if err != nil || artifact.Status != agenticEpisodeCompleted || artifact.PlanID == "" ||
+		artifact.ScenarioStopReason != controlexperiment.ScenarioAgentStopProviderResponse {
+		t.Fatalf("failed repair did not produce a complete artifact: %#v/%v", artifact, err)
+	}
+	if _, terminal, err := recoverAgenticEpisodeArtifacts(
+		artifactDirectory, etcdraftAgenticEpisodeRecoveryBinding(),
+	); err != nil || !terminal {
+		t.Fatalf("failed-repair summary/Bundle was not recoverable: terminal=%t err=%v", terminal, err)
+	}
+	recoveredRisk, err := recoverStatelessAgentCallJournal(filepath.Join(directory, "risk"), client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredScenario, err := recoverScenarioAgentCallJournal(filepath.Join(directory, "scenario"), client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := runAgenticEpisode(
+		ctx, target, recoveredRisk, recoveredScenario, budget, nil, nil, existingRisk,
+		func() error { return errors.New("Risk provider must not be activated") },
+		func() error { return errors.New("recovered Scenario must not call provider") },
+	)
+	if err != nil || replayed.Testing == nil ||
+		replayed.Testing.Bundle.Trace.Digest != result.Testing.Bundle.Trace.Digest || providerCalls != 3 {
+		t.Fatalf("journal recovery repeated a call or changed Replay evidence: %#v calls=%d err=%v",
+			replayed, providerCalls, err)
 	}
 }
 
@@ -790,7 +937,21 @@ func TestEtcdraftFiveNodeScenarioAgentSelectsQuorumAndReplays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !qualified.Replay.Stable || len(qualified.Oracle.Violations) != 0 ||
+	for _, violation := range qualified.Oracle.Violations {
+		// This integration test runs against the active local SUT checkout. A
+		// controlled candidate may legitimately be detected here; that finding
+		// must not be confused with failure of closure or Replay plumbing.
+		if violation.Monitor != "etcdraft-election-safety" {
+			t.Fatalf("five-node closure produced an unrelated Oracle finding: %#v", qualified.Oracle)
+		}
+	}
+	if qualified.OracleAttribution == nil ||
+		len(qualified.rootPrefixOracleViolations()) != len(qualified.Oracle.Violations) ||
+		len(qualified.agentPathOracleViolations()) != 0 {
+		t.Fatalf("pre-Agent election finding was not isolated at the root boundary: %#v",
+			qualified.OracleAttribution)
+	}
+	if !qualified.Replay.Stable ||
 		len(qualified.Bundle.ClientHistory) != 1 ||
 		qualified.Bundle.ClientHistory[0].Response.RequestID != inputs.execution.workload.Invocations[0].ID ||
 		qualified.Bundle.ClientHistory[0].Response.Status != "committed" {

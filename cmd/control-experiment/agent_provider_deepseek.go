@@ -199,7 +199,7 @@ func (client deepSeekIntentClient) invokePrepared(
 		if err != nil || closeErr != nil {
 			call.FailureCode = agentFailureTransport
 		} else if len(responseBody) > openRouterMaxResponse {
-			call.FailureCode = agentFailureResponse
+			call.FailureCode = agentFailureResponseTooLarge
 		} else if response.StatusCode != http.StatusOK {
 			call.ResponseDigest = controlexperiment.AgentInvocationDigest(responseBody)
 			call.FailureCode = agentFailureHTTP
@@ -217,7 +217,7 @@ func (client deepSeekIntentClient) invokePrepared(
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	var parsed deepSeekChatResponse
 	if decoder.Decode(&parsed) != nil {
-		call.FailureCode = agentFailureResponse
+		call.FailureCode = agentFailureResponseMalformed
 		return call, nil
 	}
 	var trailing any
@@ -226,7 +226,7 @@ func (client deepSeekIntentClient) invokePrepared(
 		parsed.Choices[0].Message.Role != "assistant" || parsed.Choices[0].FinishReason == "" ||
 		parsed.Usage.PromptTokens < 0 || parsed.Usage.CompletionTokens < 0 ||
 		parsed.Usage.TotalTokens != parsed.Usage.PromptTokens+parsed.Usage.CompletionTokens {
-		call.FailureCode = agentFailureResponse
+		call.FailureCode = agentFailureResponseMalformed
 		return call, nil
 	}
 	call.Response = &controlexperiment.AgentResponseIdentity{
@@ -239,8 +239,16 @@ func (client deepSeekIntentClient) invokePrepared(
 	}
 	call.UsageStatus = agentProviderUsageObserved
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	if parsed.Choices[0].FinishReason != "stop" || content == "" {
-		call.FailureCode = agentFailureResponse
+	if parsed.Choices[0].FinishReason == "length" {
+		call.FailureCode = agentFailureResponseFinishLength
+		return call, nil
+	}
+	if parsed.Choices[0].FinishReason != "stop" {
+		call.FailureCode = agentFailureResponseMalformed
+		return call, nil
+	}
+	if content == "" {
+		call.FailureCode = agentFailureResponseEmptyContent
 		return call, nil
 	}
 	call.Content = []byte(content)

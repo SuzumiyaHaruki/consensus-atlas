@@ -17,7 +17,7 @@ import (
 
 func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *testing.T) {
 	episodeBudget := controlexperiment.AgenticLogicalBudget{
-		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 32, MaxPrimaryWorkUnits: 34,
+		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 64, MaxPrimaryWorkUnits: 66,
 		MaxReplayWorkUnits: 68, MaxModelCalls: 6, MaxModelTokens: 50_000,
 	}
 	methodSpec := agenticHoldoutCLIMethodSpec(t, 1, episodeBudget)
@@ -27,6 +27,8 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	contract, _, _ := writeFormalCLIFixture(t, root, spec, bundle)
 	contract.MethodSpecDigest = methodSpec.Digest
 	contract.AgenticBudget = &methodSpec.InvestigationBudget
+	contract.Budget.MaxDecisions = methodSpec.InvestigationBudget.MaxPrimarySchedulerDecisions
+	contract.Budget.MaxPrimaryWorkUnits = methodSpec.InvestigationBudget.MaxPrimaryWorkUnits
 	contract.Composition.MonitorIDs = []string{
 		"agreement", targetoracles.ClientApplicationBindingMonitorID,
 		targetoracles.ElectionSafetyMonitorID, targetoracles.LogProgressMonitorID,
@@ -87,7 +89,8 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 		"branch_id": "treatment-final", "intent": "branch",
 		"testing": map[string]any{
 			"plan_id": "branch-plan", "risk": map[string]any{"id": "branch-risk"},
-			"execution_bundle": bundle,
+			"execution_bundle":   bundle,
+			"oracle_attribution": map[string]any{"root_decisions": 1},
 		},
 	}}
 	if err := writeJSON(
@@ -130,6 +133,25 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 			t.Fatalf("online and holdout Oracle composition drifted: got=%#v want=%#v",
 				result.Result.Oracle, wantOracle)
 		}
+	}
+	boundaryTrial := contract.Pairs[0].Control.TrialID
+	boundaryDirectory := episodeByTrial[boundaryTrial]
+	tamperedBoundary := agenticHoldoutTestSummary(t, contract, bundle, false)
+	tamperedBoundary["oracle_attribution"] = map[string]any{"root_decisions": 2}
+	if err := writeJSON(filepath.Join(boundaryDirectory, "summary.json"), tamperedBoundary); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAgenticHoldoutEvaluation(
+		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"), inputsPath,
+		filepath.Join(root, "boundary-tamper-evaluation.json"), agenticHoldoutTestReplayFactory,
+	); err == nil || !strings.Contains(err.Error(), "AGENTIC_HOLDOUT_CLI_ORACLE_BOUNDARY_INVALID") {
+		t.Fatalf("off-by-one root boundary was accepted: %v", err)
+	}
+	if err := writeJSON(
+		filepath.Join(boundaryDirectory, "summary.json"),
+		agenticHoldoutTestSummary(t, contract, bundle, false),
+	); err != nil {
+		t.Fatal(err)
 	}
 	tamperedAccounting := agenticHoldoutTestSummary(t, contract, bundle, true)
 	tamperedWork := tamperedAccounting["work"].(map[string]any)
@@ -226,16 +248,18 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 
 	incompleteTrial := contract.Pairs[0].Candidate.TrialID
 	incompleteDirectory := episodeByTrial[incompleteTrial]
-	if err := writeJSON(filepath.Join(incompleteDirectory, "summary.json"), map[string]any{
+	incompleteSummary := map[string]any{
 		"target_id":           "etcdraft-v2",
 		"method_spec_digest":  contract.MethodSpecDigest,
 		"status":              defectbench.AgenticEpisodeRiskStopped,
 		"budget":              agenticHoldoutTestBudget(contract),
 		"work":                map[string]any{"model": controlexperiment.ModelWork{}},
 		"evidence_assessment": map[string]any{"status": "planning-failed"},
-	}); err != nil {
+	}
+	if err := writeJSON(filepath.Join(incompleteDirectory, "summary.json"), incompleteSummary); err != nil {
 		t.Fatal(err)
 	}
+	writeAgenticHoldoutTestJournals(t, incompleteDirectory, incompleteSummary)
 	if err := os.Remove(filepath.Join(incompleteDirectory, "bundle.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +297,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 
 func TestAgenticHoldoutCLIRequiresCompleteInvestigationAndAggregatesPriorEpisodes(t *testing.T) {
 	episodeBudget := controlexperiment.AgenticLogicalBudget{
-		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 32, MaxPrimaryWorkUnits: 34,
+		MaxAttempts: 2, MaxPrimarySchedulerDecisions: 64, MaxPrimaryWorkUnits: 66,
 		MaxReplayWorkUnits: 68, MaxModelCalls: 6, MaxModelTokens: 50_000,
 	}
 	methodSpec := agenticHoldoutCLIMethodSpec(t, 2, episodeBudget)
@@ -373,8 +397,8 @@ func TestAgenticHoldoutCLIRequiresCompleteInvestigationAndAggregatesPriorEpisode
 		t.Fatal(err)
 	}
 	for _, result := range evaluation.Results {
-		if result.ModelWork.Calls != 1 || result.ModelWork.TotalTokens != 5 ||
-			result.Result.PrimaryWork != bundle.Work.Primary.WorkUnits+1 {
+		if result.ModelWork.Calls != 2 || result.ModelWork.TotalTokens != 7 ||
+			result.Result.PrimaryWork != bundle.Work.Primary.WorkUnits+1+len(bundle.Trace.Records) {
 			t.Fatalf("prior Episode work was not aggregated: %#v", result)
 		}
 	}
@@ -468,11 +492,21 @@ func agenticHoldoutTestSummary(
 	bundle controlexperiment.ExecutionBundle,
 	branchOnly bool,
 ) map[string]any {
-	model := controlexperiment.ModelWork{}
+	rootDecisions := 1
+	pathDecisions := len(bundle.Trace.Records) - rootDecisions
+	model := controlexperiment.ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2}
+	executionWork := controlexperiment.ScenarioExecutionWork{
+		ChildMaterialization: controlexperiment.PhaseWork{
+			SchedulerDecisions: pathDecisions, WorkUnits: pathDecisions,
+		},
+		TotalWorkUnits: pathDecisions,
+	}
 	work := map[string]any{
 		"preparation": controlexperiment.AgenticPreparationWork{WallClockMS: 1},
-		"model":       model, "scenario_frontier": controlexperiment.PhaseWork{},
-		"scenario_search":     controlexperiment.ScenarioExecutionWork{},
+		"model":       model, "scenario_frontier": controlexperiment.PhaseWork{
+			SchedulerDecisions: rootDecisions, WorkUnits: rootDecisions,
+		},
+		"scenario_search":     executionWork,
 		"qualified_execution": bundle.Work,
 	}
 	summary := map[string]any{
@@ -480,14 +514,23 @@ func agenticHoldoutTestSummary(
 		"status": defectbench.AgenticEpisodeCompleted, "budget": agenticHoldoutTestBudget(contract),
 		"plan_id": "primary-plan", "risk_result_id": "primary-risk",
 		"trace_digest": bundle.Trace.Digest, "work": work,
+		"scenario_decisions_used": pathDecisions,
+		"selected_path_decisions": pathDecisions,
+		"decision_provenance":     controlexperiment.AgenticDecisionProvenance{PublicProgress: pathDecisions},
+		"scenario_attempts":       1,
+		"scenario_provider_calls": []controlexperiment.StatelessAgentCallAudit{
+			agenticHoldoutTestAudit(t, "scenario-root", model),
+		},
+		"scenario_attempt_feedback": []map[string]any{{
+			"ordinal": 1, "entered_execution": true, "execution_work": &executionWork,
+		}},
+		"oracle_attribution":        map[string]any{"root_decisions": rootDecisions},
 		"evidence_assessment":       map[string]any{"status": "oracle-finding"},
 		"forward_compatible_detail": map[string]any{"ignored_by_evaluator": true},
 	}
 	if !branchOnly {
 		return summary
 	}
-	model = controlexperiment.ModelWork{Calls: 1, InputTokens: 1, TotalTokens: 1}
-	work["model"] = model
 	work["qualified_execution"] = controlexperiment.WorkLedger{}
 	work["branch_qualified_executions"] = []map[string]any{{
 		"branch_id": "treatment-final", "work": bundle.Work,
@@ -495,17 +538,13 @@ func agenticHoldoutTestSummary(
 	delete(summary, "plan_id")
 	delete(summary, "risk_result_id")
 	delete(summary, "trace_digest")
-	summary["scenario_attempts"] = 1
-	summary["scenario_provider_calls"] = []controlexperiment.StatelessAgentCallAudit{
-		agenticHoldoutTestAudit(t, "scenario-root", model),
-	}
-	zeroWork := controlexperiment.ScenarioExecutionWork{}
-	summary["scenario_attempt_feedback"] = []map[string]any{{
-		"ordinal": 1, "entered_execution": true, "execution_work": &zeroWork,
-	}}
+	delete(summary, "oracle_attribution")
+	summary["selected_path_decisions"] = 0
+	summary["branch_exploration_decisions"] = pathDecisions
 	summary["branch_evidence"] = []map[string]any{{
 		"branch_id": "treatment-final", "intent": "branch", "plan_id": "branch-plan",
 		"risk_result_id": "branch-risk", "trace_digest": bundle.Trace.Digest, "work": bundle.Work,
+		"oracle_attribution": map[string]any{"root_decisions": rootDecisions},
 	}}
 	return summary
 }
@@ -609,6 +648,9 @@ func writeAgenticHoldoutTestJournals(
 		{name: "scenario-agent", field: "scenario_provider_calls"},
 	} {
 		root := filepath.Join(directory, current.name, "model-calls")
+		if err := os.RemoveAll(root); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
 		}

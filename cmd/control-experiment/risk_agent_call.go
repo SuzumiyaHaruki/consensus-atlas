@@ -92,11 +92,17 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"with the exact same milestone_id and kind. Each rationale explains why that observed milestone matters, must be concise, and " +
 		"must be no longer than 256 UTF-8 bytes. Every claimed causal trigger, including message loss, timeout, crash, coordinator change, " +
 		"or decision, must therefore have its own predicate and " +
-		"matching mechanism step. " +
+		"matching mechanism step. Not selecting an enabled Action does not block it: trusted natural progress may execute it later. " +
+		"A temporal-fired observation records one timer callback only and does not by itself prove that an election, request, or other " +
+		"protocol timeout expired. Every causal condition in the summary must therefore be established by milestone evidence or be directly " +
+		"produced by a declared Action. If the mechanism depends on persistently withholding an ordinary enabled Action and the Target " +
+		"does not expose that control or a matching fidelity boundary, do not present the candidate as executable; choose another mechanism. " +
 		"For any quorum-dependent mechanism, its rationale must use target_surface topology and fault allowance to explain why the " +
 		"proposed unavailable participants or responses are sufficient for the relevant quorum condition. " +
 		"Each mechanism step cites one to three exact available_support_refs that informed it. A support reference records visibility, not proof. " +
 		"A source/... reference is available only after its bounded source excerpt appears in knowledge_results. " +
+		"Cite a source/... reference in at least one mechanism step only when that excerpt actually informed the candidate. A completed " +
+		"source read may remain uncited; trusted reporting will mark it grounding-completed-but-unused rather than treating it as support. " +
 		"Do not claim a verdict. Reuse a bind_as token in at least two constraints when an entity must remain " +
 		"the same across milestones, but only across fields whose binding_domains entries have the same domain. " +
 		"participant and related-participant include incarnation and therefore cannot share a token with " +

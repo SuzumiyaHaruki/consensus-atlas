@@ -12,12 +12,45 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v18"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v19"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
 type scenarioAgentCallJournal struct {
-	core *statelessAgentCallJournal
+	core          *statelessAgentCallJournal
+	repairPending *controlexperiment.ScenarioAgentView
+}
+
+type scenarioPromptStepFeedback struct {
+	StepID        string                                     `json:"step_id"`
+	Outcome       string                                     `json:"outcome"`
+	ReasonCode    string                                     `json:"reason_code,omitempty"`
+	Decision      int                                        `json:"decision,omitempty"`
+	MatchCount    int                                        `json:"match_count,omitempty"`
+	Available     []controlexperiment.FrontierActionRef      `json:"available_actions,omitempty"`
+	SelectorTrace []controlexperiment.ScenarioSelectorFilter `json:"selector_trace,omitempty"`
+}
+
+func compactScenarioPromptSteps(
+	steps []controlexperiment.ScenarioStepFeedback,
+) []scenarioPromptStepFeedback {
+	result := make([]scenarioPromptStepFeedback, 0, len(steps))
+	for _, step := range steps {
+		compact := scenarioPromptStepFeedback{
+			StepID: step.StepID, Outcome: step.Outcome, ReasonCode: step.ReasonCode,
+			Decision: step.Decision, MatchCount: step.MatchCount,
+			SelectorTrace: append(
+				[]controlexperiment.ScenarioSelectorFilter(nil), step.SelectorTrace...,
+			),
+		}
+		if step.Outcome == controlexperiment.ScenarioStepRejected {
+			compact.Available = append(
+				[]controlexperiment.FrontierActionRef(nil), step.Available...,
+			)
+		}
+		result = append(result, compact)
+	}
+	return result
 }
 
 func newScenarioAgentCallJournal(
@@ -75,11 +108,25 @@ func (journal *scenarioAgentCallJournal) Planner(
 	if journal == nil || journal.core == nil {
 		return nil, controlexperiment.ModelWork{}, errors.New("SCENARIO_AGENT_CALL_JOURNAL_INVALID")
 	}
-	system, user, err := scenarioAgentPrompt(spec, view)
+	repair := journal.repairPending != nil
+	promptView := view
+	if repair {
+		if journal.repairPending.Frontier.Digest != view.Frontier.Digest {
+			return nil, controlexperiment.ModelWork{}, errors.New("SCENARIO_AGENT_REPAIR_FRONTIER_DRIFT")
+		}
+		promptView = *journal.repairPending
+	}
+	var system, user string
+	var err error
+	if repair {
+		system, user, err = scenarioAgentRepairPrompt(spec, promptView)
+	} else {
+		system, user, err = scenarioAgentPrompt(spec, promptView)
+	}
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
-	output, err := scenarioInvestigationStructuredOutput(view)
+	output, err := scenarioInvestigationStructuredOutput(promptView)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
@@ -87,15 +134,59 @@ func (journal *scenarioAgentCallJournal) Planner(
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
-	requestDigest, err := control.CanonicalDigest(view)
+	requestDigest, err := control.CanonicalDigest(promptView)
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
 	ordinal := journal.core.next + 1
-	return journal.core.planningCall(ctx, planningAgentCallPlan{
-		intentID:      fmt.Sprintf("scenario-agent-call-%d", ordinal),
+	intentID := fmt.Sprintf("scenario-agent-call-%d-binding-%s", ordinal, requestDigest)
+	if repair {
+		intentID = fmt.Sprintf(
+			"scenario-agent-repair-call-%d-from-%d-binding-%s",
+			ordinal, ordinal-1, requestDigest,
+		)
+	}
+	content, work, callErr := journal.core.planningCall(ctx, planningAgentCallPlan{
+		intentID:      intentID,
 		requestDigest: requestDigest, prepared: prepared, contentReady: true,
 	})
+	if errors.Is(callErr, errStatelessAgentCallKeyRequired) {
+		return nil, work, callErr
+	}
+	if repair {
+		journal.repairPending = nil
+	}
+	failureCode := statelessAgentFailureCode(callErr)
+	if failureCode == "" {
+		return content, work, callErr
+	}
+	reasonCode, responseFailure := scenarioProviderFailure(failureCode)
+	if !responseFailure {
+		return nil, work, callErr
+	}
+	repairable := failureCode == statelessAgentFailureFinishLength && !repair
+	if repairable {
+		pending := promptView
+		journal.repairPending = &pending
+	}
+	return nil, work, &controlexperiment.ScenarioPlannerResponseFailure{
+		Code: reasonCode, Repairable: repairable,
+	}
+}
+
+func scenarioProviderFailure(code string) (string, bool) {
+	switch code {
+	case statelessAgentFailureFinishLength:
+		return controlexperiment.ScenarioAgentReasonResponseFinishLength, true
+	case statelessAgentFailureEmptyContent:
+		return controlexperiment.ScenarioAgentReasonResponseEmptyContent, true
+	case statelessAgentFailureMalformed:
+		return controlexperiment.ScenarioAgentReasonResponseMalformed, true
+	case statelessAgentFailureResponseTooBig:
+		return controlexperiment.ScenarioAgentReasonResponseTooLarge, true
+	default:
+		return "", false
+	}
 }
 
 func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentView) (openRouterStructuredOutput, error) {
@@ -208,27 +299,100 @@ func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentV
 	return openRouterStructuredOutput{Name: scenarioInvestigationStructuredOutputName, Schema: encoded}, nil
 }
 
+// scenarioAgentRepairPrompt is used once after a charged response reaches the
+// provider output limit. It is bound to the same trusted frontier as the failed
+// call and omits repeated step evidence already summarized by ProgressDelta.
+func scenarioAgentRepairPrompt(
+	spec semantic.RiskWitnessSpec,
+	view controlexperiment.ScenarioAgentView,
+) (string, string, error) {
+	if err := validateScenarioPromptInput(spec, view); err != nil {
+		return "", "", err
+	}
+	type targetSurfaceView struct {
+		TargetID       string                          `json:"target_id"`
+		Nodes          []control.NodeID                `json:"nodes"`
+		FaultAllowance controlexperiment.FaultEnvelope `json:"fault_allowance"`
+	}
+	type priorView struct {
+		PreviousProposal     *controlexperiment.ScenarioInvestigationProposal `json:"previous_proposal,omitempty"`
+		NaturalProgressStop  string                                           `json:"natural_progress_stop,omitempty"`
+		ClosureCandidates    []controlexperiment.FrontierActionRef            `json:"closure_candidates,omitempty"`
+		ClosureHandoff       bool                                             `json:"closure_handoff,omitempty"`
+		ClosureHandoffStepID string                                           `json:"closure_handoff_step_id,omitempty"`
+		ProgressDelta        *controlexperiment.ScenarioProgressDelta         `json:"progress_delta,omitempty"`
+	}
+	var surface *targetSurfaceView
+	if view.TargetSurface != nil {
+		surface = &targetSurfaceView{
+			TargetID:       view.TargetSurface.TargetID,
+			Nodes:          append([]control.NodeID(nil), view.TargetSurface.Nodes...),
+			FaultAllowance: view.TargetSurface.FaultAllowance,
+		}
+	}
+	var prior *priorView
+	if view.Prior != nil {
+		prior = &priorView{
+			PreviousProposal:    view.Prior.PreviousProposal,
+			NaturalProgressStop: view.Prior.NaturalProgressStop,
+			ClosureCandidates: append(
+				[]controlexperiment.FrontierActionRef(nil), view.Prior.ClosureCandidates...,
+			),
+			ClosureHandoff:       view.Prior.ClosureHandoff,
+			ClosureHandoffStepID: view.Prior.ClosureHandoffStepID,
+			ProgressDelta:        view.Prior.ProgressDelta,
+		}
+	}
+	input := struct {
+		PromptVersion         string                                       `json:"prompt_version"`
+		RepairReason          string                                       `json:"repair_reason"`
+		AcceptedHypothesis    *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
+		TargetSurface         *targetSurfaceView                           `json:"target_surface,omitempty"`
+		OrderedMilestones     []string                                     `json:"ordered_milestones"`
+		Frontier              controlexperiment.RiskFrontierView           `json:"root_frontier"`
+		Semantics             controlexperiment.ScenarioSemanticExposure   `json:"action_semantics"`
+		MaxSteps              int                                          `json:"max_steps"`
+		DecisionAllowance     int                                          `json:"decision_allowance"`
+		RemainingDecisions    int                                          `json:"remaining_decisions"`
+		AvailableIntents      []string                                     `json:"available_intents"`
+		PostInterventionClose bool                                         `json:"post_intervention_closure"`
+		Prior                 *priorView                                   `json:"prior_feedback,omitempty"`
+	}{
+		PromptVersion:      scenarioAgentPromptVersion,
+		RepairReason:       controlexperiment.ScenarioAgentReasonResponseFinishLength,
+		AcceptedHypothesis: view.AcceptedHypothesis,
+		TargetSurface:      surface,
+		OrderedMilestones:  append([]string(nil), view.OrderedMilestones...),
+		Frontier:           view.Frontier, Semantics: view.Semantics,
+		MaxSteps: view.MaxSteps, DecisionAllowance: view.DecisionAllowance,
+		RemainingDecisions:    view.RemainingDecisions,
+		AvailableIntents:      append([]string(nil), view.AvailableIntents...),
+		PostInterventionClose: view.PostInterventionClosure,
+		Prior:                 prior,
+	}
+	encoded, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	system := "The preceding charged Scenario response reached the provider output limit. " +
+		"Return exactly one minimal ScenarioInvestigationProposal JSON object and no prose. " +
+		"Use one intent from available_intents. For continue/revise, return exactly one plan with exactly one " +
+		"strategic Action step selected from the supplied current root_frontier; omit every optional field not needed " +
+		"to identify that Action. Do not repeat analysis, evidence, rationale, assertions, verdicts, budgets, or digests."
+	user := "Repair only the truncated response against this unchanged trusted frontier. The previous response executed no " +
+		"Runtime Action. A proposal outside the current frontier or available intent remains invalid. Frozen repair input JSON:\n" +
+		string(encoded)
+	return system, user, nil
+}
+
 func scenarioAgentPrompt(
 	spec semantic.RiskWitnessSpec,
 	view controlexperiment.ScenarioAgentView,
 ) (string, string, error) {
-	selectionOnly := scenarioSelectionOnlyView(view)
-	if spec.Validate() != nil || view.Knowledge.Validate() != nil ||
-		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
-		view.Hypothesis.Validate(
-			view.Knowledge, spec, controlexperiment.ScenarioPlanningBackendID,
-		) != nil || view.AcceptedHypothesis != nil &&
-		view.AcceptedHypothesis.Validate(view.Knowledge, view.Hypothesis, spec) != nil ||
-		view.Frontier.Validate(spec) != nil ||
-		!scenarioPromptMilestonesMatch(spec, view.OrderedMilestones) ||
-		view.Semantics.Validate(view.Frontier) != nil ||
-		selectionOnly && (view.MaxSteps != 0 || view.DecisionAllowance != 0 ||
-			view.RemainingDecisions < 0 || len(view.Branches) == 0) ||
-		!selectionOnly && (view.MaxSteps <= 0 || view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
-			view.DecisionAllowance < view.MaxSteps || view.RemainingDecisions < view.DecisionAllowance ||
-			len(view.Frontier.Actions) == 0) {
-		return "", "", errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
+	if err := validateScenarioPromptInput(spec, view); err != nil {
+		return "", "", err
 	}
+	selectionOnly := scenarioSelectionOnlyView(view)
 	promptView := view
 	agentView := any(promptView)
 	implementationContext := "Use only the accepted candidate, current trusted frontier, action semantics, and recent mechanical feedback. "
@@ -248,8 +412,8 @@ func scenarioAgentPrompt(
 			CapabilityGaps       []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
 			AllowedIntents       []string                                            `json:"allowed_intents,omitempty"`
 			FailedStep           *controlexperiment.ScenarioStep                     `json:"failed_step,omitempty"`
-			Steps                []controlexperiment.ScenarioStepFeedback            `json:"steps,omitempty"`
-			NaturalProgress      []controlexperiment.ScenarioStepFeedback            `json:"natural_progress,omitempty"`
+			Steps                []scenarioPromptStepFeedback                        `json:"steps,omitempty"`
+			NaturalProgress      []scenarioPromptStepFeedback                        `json:"natural_progress,omitempty"`
 			NaturalProgressStop  string                                              `json:"natural_progress_stop,omitempty"`
 			ClosureCandidates    []controlexperiment.FrontierActionRef               `json:"closure_candidates,omitempty"`
 			ClosureHandoff       bool                                                `json:"closure_handoff,omitempty"`
@@ -274,13 +438,11 @@ func scenarioAgentPrompt(
 				PreviousProposal: promptView.Prior.PreviousProposal,
 				ValidationIssues: append([]controlexperiment.ScenarioProposalValidationIssue(nil),
 					promptView.Prior.ValidationIssues...),
-				CapabilityGaps: append([]controlexperiment.AgentCapabilityGap(nil), promptView.Prior.CapabilityGaps...),
-				AllowedIntents: append([]string(nil), promptView.Prior.AllowedIntents...),
-				FailedStep:     promptView.Prior.FailedStep,
-				Steps: append([]controlexperiment.ScenarioStepFeedback(nil),
-					promptView.Prior.Steps...),
-				NaturalProgress: append([]controlexperiment.ScenarioStepFeedback(nil),
-					promptView.Prior.NaturalProgress...),
+				CapabilityGaps:      append([]controlexperiment.AgentCapabilityGap(nil), promptView.Prior.CapabilityGaps...),
+				AllowedIntents:      append([]string(nil), promptView.Prior.AllowedIntents...),
+				FailedStep:          promptView.Prior.FailedStep,
+				Steps:               compactScenarioPromptSteps(promptView.Prior.Steps),
+				NaturalProgress:     compactScenarioPromptSteps(promptView.Prior.NaturalProgress),
 				NaturalProgressStop: promptView.Prior.NaturalProgressStop,
 				ClosureCandidates: append([]controlexperiment.FrontierActionRef(nil),
 					promptView.Prior.ClosureCandidates...),
@@ -407,6 +569,10 @@ func scenarioAgentPrompt(
 		"prior_feedback.closure_candidates is the complete trusted subset that can resolve the current Target-local ambiguity; " +
 		"use revise and select one of those exact enabled Action IDs. Do not substitute another frontier Action. " +
 		"Repetition and a missing milestone are not protocol verdicts. " +
+		"Not selecting an enabled Action does not block it because trusted natural progress may execute it. A temporal-fired milestone " +
+		"means one timer callback, not timeout expiry, unless later trusted milestone evidence establishes the protocol transition. Do not " +
+		"continue a mechanism whose claimed stall or timeout contradicts the supplied mechanical steps; revise to an Action-supported path " +
+		"or abandon it. " +
 		"decision_allowance bounds this proposal plus its deterministic natural-progress slice; remaining_decisions is the " +
 		"episode-wide successful Action budget still available. " +
 		"Frozen input JSON:\n" + string(encoded)
@@ -423,6 +589,30 @@ func scenarioAgentPrompt(
 			"earlier step rebuilds the frontier and may invalidate every current ActionID."
 	}
 	return system, user, nil
+}
+
+func validateScenarioPromptInput(
+	spec semantic.RiskWitnessSpec,
+	view controlexperiment.ScenarioAgentView,
+) error {
+	selectionOnly := scenarioSelectionOnlyView(view)
+	if spec.Validate() != nil || view.Knowledge.Validate() != nil ||
+		view.TargetSurface != nil && view.TargetSurface.Validate() != nil ||
+		view.Hypothesis.Validate(
+			view.Knowledge, spec, controlexperiment.ScenarioPlanningBackendID,
+		) != nil || view.AcceptedHypothesis != nil &&
+		view.AcceptedHypothesis.Validate(view.Knowledge, view.Hypothesis, spec) != nil ||
+		view.Frontier.Validate(spec) != nil ||
+		!scenarioPromptMilestonesMatch(spec, view.OrderedMilestones) ||
+		view.Semantics.Validate(view.Frontier) != nil ||
+		selectionOnly && (view.MaxSteps != 0 || view.DecisionAllowance != 0 ||
+			view.RemainingDecisions < 0 || len(view.Branches) == 0) ||
+		!selectionOnly && (view.MaxSteps <= 0 || view.MaxSteps > controlexperiment.ScenarioPlanMaxSteps ||
+			view.DecisionAllowance < view.MaxSteps || view.RemainingDecisions < view.DecisionAllowance ||
+			len(view.Frontier.Actions) == 0) {
+		return errors.New("SCENARIO_AGENT_PROMPT_VIEW_INVALID")
+	}
+	return nil
 }
 
 func scenarioSinglePathPromptView(view controlexperiment.ScenarioAgentView) bool {

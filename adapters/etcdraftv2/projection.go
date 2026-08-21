@@ -65,6 +65,95 @@ type NodeEvidence struct {
 	ApplicationPrefixes []ApplicationPrefixEvidence `json:"application_prefixes,omitempty"`
 }
 
+// ElectionEvidence is the narrow Adapter-owned projection used by the
+// target-local election Oracle. It exposes only persisted/current vote facts
+// and the leader's active voter configuration; it does not expose or call the
+// native tracker implementation.
+type ElectionEvidence struct {
+	Nodes []ElectionNodeEvidence `json:"nodes"`
+}
+
+type ElectionNodeEvidence struct {
+	Node          control.NodeID        `json:"node"`
+	RaftID        uint64                `json:"raft_id"`
+	Incarnation   uint64                `json:"incarnation"`
+	Running       bool                  `json:"running"`
+	Role          string                `json:"role"`
+	Term          uint64                `json:"term"`
+	Vote          uint64                `json:"vote"`
+	Configuration ElectionConfiguration `json:"configuration"`
+}
+
+type ElectionConfiguration struct {
+	Voters         []uint64 `json:"voters"`
+	VotersOutgoing []uint64 `json:"voters_outgoing,omitempty"`
+}
+
+func ProjectElectionEvidence(envelope control.EvidenceEnvelope) (ElectionEvidence, error) {
+	if err := envelope.Payload.Validate(); err != nil {
+		return ElectionEvidence{}, err
+	}
+	if envelope.Payload.SchemaVersion != evidenceSchema || envelope.Payload.Encoding != "json" {
+		return ElectionEvidence{}, fmt.Errorf(
+			"ETCDRAFT_V2_ELECTION_EVIDENCE_SCHEMA_MISMATCH: %s/%s",
+			envelope.Payload.SchemaVersion, envelope.Payload.Encoding,
+		)
+	}
+	var snapshot clusterSnapshot
+	if err := json.Unmarshal(envelope.Payload.Bytes, &snapshot); err != nil {
+		return ElectionEvidence{}, err
+	}
+	result := ElectionEvidence{Nodes: make([]ElectionNodeEvidence, 0, len(snapshot.Nodes))}
+	seenRaftIDs := make(map[uint64]bool, len(snapshot.Nodes))
+	for _, node := range snapshot.Nodes {
+		configuration := ElectionConfiguration{
+			Voters:         append([]uint64(nil), node.ConfState.Voters...),
+			VotersOutgoing: append([]uint64(nil), node.ConfState.VotersOutgoing...),
+		}
+		if node.Node == "" || node.RaftID == 0 || node.Incarnation == 0 || seenRaftIDs[node.RaftID] ||
+			!validElectionConfiguration(configuration) {
+			return ElectionEvidence{}, errors.New("ETCDRAFT_V2_ELECTION_EVIDENCE_NODE_INVALID")
+		}
+		seenRaftIDs[node.RaftID] = true
+		result.Nodes = append(result.Nodes, ElectionNodeEvidence{
+			Node: node.Node, RaftID: node.RaftID, Incarnation: node.Incarnation,
+			Running: node.Running, Role: node.Role, Term: node.Term, Vote: node.Vote,
+			Configuration: configuration,
+		})
+	}
+	sort.Slice(result.Nodes, func(i, j int) bool { return result.Nodes[i].Node < result.Nodes[j].Node })
+	for index := range result.Nodes {
+		if index > 0 && result.Nodes[index-1].Node == result.Nodes[index].Node {
+			return ElectionEvidence{}, errors.New("ETCDRAFT_V2_ELECTION_EVIDENCE_NODE_DUPLICATE")
+		}
+	}
+	return result, nil
+}
+
+func validElectionConfiguration(configuration ElectionConfiguration) bool {
+	validSet := func(values []uint64, allowEmpty bool) bool {
+		if len(values) == 0 {
+			return allowEmpty
+		}
+		seen := make(map[uint64]bool, len(values))
+		for _, value := range values {
+			if value == 0 || seen[value] {
+				return false
+			}
+			seen[value] = true
+		}
+		return true
+	}
+	// Bootstrap evidence can precede the Ready effect that installs the initial
+	// ConfState. An empty configuration is therefore observable for a node that
+	// has not become leader yet; the Oracle separately requires every observed
+	// leader to carry a non-empty legal voter configuration.
+	if len(configuration.Voters) == 0 {
+		return len(configuration.VotersOutgoing) == 0
+	}
+	return validSet(configuration.Voters, false) && validSet(configuration.VotersOutgoing, true)
+}
+
 // ProjectEvidence validates the opaque envelope and returns only the public
 // semantic projection. Protocol-independent packages should consume an
 // interface supplied by the composition root rather than import this Adapter.

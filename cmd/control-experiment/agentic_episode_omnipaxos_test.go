@@ -125,6 +125,29 @@ func TestAgenticArtifactDoesNotTreatUnknownProviderUsageAsZeroCost(t *testing.T)
 	}
 }
 
+func TestCurrentMethodRecoveryRequiresOracleAttribution(t *testing.T) {
+	current := &controlexperiment.AgenticMethodSpec{
+		ImplementationID: controlexperiment.AgenticMethodImplementationID,
+	}
+	legacy := &controlexperiment.AgenticMethodSpec{
+		ImplementationID: "consensus-atlas/agentic-method/m4n10-deep-candidate-investigation-v1",
+	}
+	if err := requireRecoveredScenarioOracleAttribution(current, true, nil); err == nil {
+		t.Fatal("current executed path recovered without Oracle attribution")
+	}
+	if err := requireRecoveredScenarioOracleAttribution(
+		current, true, &scenarioOracleAttribution{RootDecisions: 1},
+	); err != nil {
+		t.Fatalf("current attributed path was rejected: %v", err)
+	}
+	if err := requireRecoveredScenarioOracleAttribution(legacy, true, nil); err != nil {
+		t.Fatalf("legacy artifact lost read-only compatibility: %v", err)
+	}
+	if err := requireRecoveredScenarioOracleAttribution(current, false, nil); err != nil {
+		t.Fatalf("current non-executed episode incorrectly required attribution: %v", err)
+	}
+}
+
 func (adapter *failAfterInitialYieldAdapter) RunUntilYield(
 	ctx context.Context,
 ) (control.Yield, error) {

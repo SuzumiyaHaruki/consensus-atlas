@@ -68,9 +68,10 @@ func omnipaxosAgenticEpisodeRecoveryBinding() agenticEpisodeRecoveryBinding {
 			risk semantic.RiskWitnessResult,
 			spec semantic.RiskWitnessSpec,
 			riskProjector controlexperiment.SemanticPrefixProjector,
+			rootDecisions int,
 		) (scenarioTestingResult, error) {
 			registry := omnipaxosAgenticOracleRegistry()
-			result := newScenarioTestingResult(planID, bundle, risk, registry)
+			result := newScenarioTestingResult(planID, bundle, risk, registry, rootDecisions)
 			return result, validateScenarioTestingRisk(
 				result, spec, riskProjector, omnipaxosv2.DecisionProjector{}, registry,
 			)

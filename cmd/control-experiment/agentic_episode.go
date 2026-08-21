@@ -30,6 +30,7 @@ const (
 	agenticEvidenceOracleFinding        = "oracle-finding"
 	agenticEvidenceHypothesisNotReached = "hypothesis-not-reached"
 	agenticEvidenceHypothesisAbandoned  = "hypothesis-abandoned"
+	agenticEvidenceRootPrefixFinding    = "root-prefix-oracle-finding"
 )
 
 func addAgentModelWork(total *controlexperiment.ModelWork, value controlexperiment.ModelWork) {
@@ -84,6 +85,7 @@ type agenticEpisodeMetrics struct {
 	ProtocolPSSStates             int  `json:"protocol_pss_states,omitempty"`
 	ControlPSSStates              int  `json:"control_pss_states,omitempty"`
 	OracleFindings                int  `json:"oracle_findings"`
+	RootPrefixOracleFindings      int  `json:"root_prefix_oracle_findings,omitempty"`
 	CapabilityGapAttempts         int  `json:"capability_gap_attempts,omitempty"`
 	RepeatedCapabilityGapAttempts int  `json:"repeated_capability_gap_attempts,omitempty"`
 	CapabilityRepairAttempts      int  `json:"capability_repair_attempts,omitempty"`
@@ -123,6 +125,7 @@ type agenticEvidenceAssessment struct {
 	FidelityAssessment    string   `json:"fidelity_assessment,omitempty"`
 	FidelityBoundaryIDs   []string `json:"fidelity_boundary_ids,omitempty"`
 	FirstMissingMilestone string   `json:"first_missing_milestone,omitempty"`
+	RootPrefixFindings    int      `json:"root_prefix_findings,omitempty"`
 }
 
 type agenticEpisodeResult struct {
@@ -327,13 +330,13 @@ func runAgenticEpisode(
 				}
 				content, work, err = scenarioJournal.Planner(ctx, scenarioRisk.Spec, view)
 			}
-			if err == nil {
+			if work.TotalTokens > 0 {
 				scenarioObservedTokens += work.TotalTokens
-				if result.Work.Model.TotalTokens+scenarioObservedTokens > budget.MaxObservedTokens {
-					return nil, work, errAgenticEpisodeTokenThreshold
-				}
 			}
-			return content, work, err
+			return agenticScenarioTokenBoundary(
+				result.Work.Model.TotalTokens+scenarioObservedTokens,
+				budget.MaxObservedTokens, content, work, err,
+			)
 		},
 	)
 	result.Scenario = &scenario
@@ -399,6 +402,9 @@ func runAgenticEpisode(
 		case controlexperiment.ScenarioAgentStopCapabilityGap:
 			result.Assessment.Status = agenticEvidenceCapabilityGap
 			result.Assessment.ReasonCode = lastScenarioCapabilityGapCode(scenario.Agent)
+		case controlexperiment.ScenarioAgentStopProviderResponse:
+			result.Assessment.Status = agenticEvidenceInconclusive
+			result.Assessment.ReasonCode = controlexperiment.ScenarioAgentStopProviderResponse
 		default:
 			result.Assessment.Status = agenticEvidencePlanningFailed
 			result.Assessment.ReasonCode = "scenario-planning-failed"
@@ -423,6 +429,25 @@ func runAgenticEpisode(
 	)
 	result.Assessment = overrideWithBranchOracleFinding(result.Assessment, result.BranchTesting)
 	return result, nil
+}
+
+func agenticScenarioTokenBoundary(
+	observedTokens int,
+	maxTokens int,
+	content []byte,
+	work controlexperiment.ModelWork,
+	err error,
+) ([]byte, controlexperiment.ModelWork, error) {
+	if observedTokens <= maxTokens {
+		return content, work, err
+	}
+	var responseFailure *controlexperiment.ScenarioPlannerResponseFailure
+	if errors.As(err, &responseFailure) {
+		bounded := *responseFailure
+		bounded.Repairable = false
+		return nil, work, &bounded
+	}
+	return nil, work, errAgenticEpisodeTokenThreshold
 }
 
 func fixedScenarioCallAllowance(budget agenticEpisodeBudget, riskCalls int) (int, error) {
@@ -489,6 +514,14 @@ func assessUnselectedBranchEvidence(
 			return assessTestingEvidence(assessment, branch.Testing, scenario)
 		}
 	}
+	for _, branch := range branches {
+		assessment.RootPrefixFindings += len(branch.Testing.rootPrefixOracleViolations())
+	}
+	if scenario.StopReason == controlexperiment.ScenarioAgentStopProviderResponse {
+		assessment.Status = agenticEvidenceInconclusive
+		assessment.ReasonCode = controlexperiment.ScenarioAgentStopProviderResponse
+		return assessment
+	}
 	assessment.Status = agenticEvidenceInconclusive
 	assessment.ReasonCode = "scenario-final-selection-required"
 	if scenario.StopReason == controlexperiment.ScenarioAgentStopDecisionBudget {
@@ -503,9 +536,9 @@ func overrideWithBranchOracleFinding(
 	branches []agenticBranchTestingResult,
 ) agenticEvidenceAssessment {
 	for _, branch := range branches {
-		if len(branch.Testing.Oracle.Violations) > 0 {
+		if violations := branch.Testing.agentPathOracleViolations(); len(violations) > 0 {
 			assessment.Status = agenticEvidenceOracleFinding
-			assessment.ReasonCode = branch.Testing.Oracle.Violations[0].Monitor
+			assessment.ReasonCode = violations[0].Monitor
 			return assessment
 		}
 	}
@@ -571,9 +604,10 @@ func assessTestingEvidence(
 	testing scenarioTestingResult,
 	scenario controlexperiment.ScenarioAgentResult,
 ) agenticEvidenceAssessment {
-	if len(testing.Oracle.Violations) > 0 {
+	assessment.RootPrefixFindings += len(testing.rootPrefixOracleViolations())
+	if violations := testing.agentPathOracleViolations(); len(violations) > 0 {
 		assessment.Status = agenticEvidenceOracleFinding
-		assessment.ReasonCode = testing.Oracle.Violations[0].Monitor
+		assessment.ReasonCode = violations[0].Monitor
 		return assessment
 	}
 	if testing.Risk.Status == semantic.RiskWitnessReached {
@@ -586,6 +620,11 @@ func assessTestingEvidence(
 			assessment.Status = agenticEvidenceWitnessUnverified
 			assessment.ReasonCode = "property-oracle-not-executed"
 		}
+		return assessment
+	}
+	if scenario.StopReason == controlexperiment.ScenarioAgentStopProviderResponse {
+		assessment.Status = agenticEvidenceInconclusive
+		assessment.ReasonCode = controlexperiment.ScenarioAgentStopProviderResponse
 		return assessment
 	}
 	assessment.Status = agenticEvidenceInconclusive
@@ -602,6 +641,9 @@ func assessTestingEvidence(
 	case controlexperiment.ScenarioAgentStopCallBudget:
 		assessment.Status = agenticEvidenceBudgetExhausted
 		assessment.ReasonCode = "scenario-call-budget-exhausted"
+	}
+	if assessment.RootPrefixFindings > 0 && assessment.ReasonCode == agenticEvidenceHypothesisNotReached {
+		assessment.ReasonCode = agenticEvidenceRootPrefixFinding
 	}
 	return assessment
 }

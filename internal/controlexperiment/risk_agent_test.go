@@ -1101,6 +1101,46 @@ func riskCandidateWithSupport(candidate RiskCandidate, reference string) RiskCan
 	return candidate
 }
 
+func TestRiskSourceGroundingDistinguishesUsedAndUnusedReads(t *testing.T) {
+	read := KnowledgeReadResult{
+		Status:    KnowledgeDiscoveryCompleted,
+		Source:    KnowledgeSource{Reference: "suts/fixture/round.go"},
+		StartLine: 10, EndLine: 12, TotalLines: 30, Text: "func retryRound() {}",
+	}
+	candidate := RiskCandidate{MechanismSteps: []RiskMechanismStep{{
+		MilestoneID: "retry", Kind: semantic.ObservationMessageDelivered,
+		SupportRefs: []string{"source/suts/fixture/round.go"},
+	}}}
+	portfolio, err := json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := AnalyzeRiskSourceGrounding(RiskAgentResult{Attempts: []RiskAgentAttempt{
+		{KnowledgeRequests: []KnowledgeReadRequest{{Query: "retry"}}},
+		{KnowledgeRequests: []KnowledgeReadRequest{{Reference: "suts/fixture/round.go"}}, KnowledgeResults: []KnowledgeReadResult{read}},
+		{ResponseBytes: portfolio},
+	}})
+	if used.Validate() != nil || used.Status != RiskSourceGroundingCompletedUsed ||
+		!slices.Equal(used.ReadReferences, []string{"source/suts/fixture/round.go"}) ||
+		!slices.Equal(used.UsedReferences, used.ReadReferences) {
+		t.Fatalf("cited bounded read was not reported as used: %#v", used)
+	}
+
+	candidate.MechanismSteps[0].SupportRefs = nil
+	portfolio, err = json.Marshal(RiskCandidatePortfolio{Candidates: []RiskCandidate{candidate}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused := AnalyzeRiskSourceGrounding(RiskAgentResult{Attempts: []RiskAgentAttempt{
+		{KnowledgeRequests: []KnowledgeReadRequest{{Reference: "suts/fixture/round.go"}}, KnowledgeResults: []KnowledgeReadResult{read}},
+		{ResponseBytes: portfolio},
+	}})
+	if unused.Validate() != nil || unused.Status != RiskSourceGroundingCompletedUnused ||
+		len(unused.UsedReferences) != 0 {
+		t.Fatalf("uncited bounded read was not reported as unused: %#v", unused)
+	}
+}
+
 func riskAgentFixtureKnowledge(t *testing.T) ProtocolKnowledgePack {
 	t.Helper()
 	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{

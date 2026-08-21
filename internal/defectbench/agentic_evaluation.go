@@ -36,23 +36,25 @@ type AgenticReplayRunner func(
 // The CLI reconstructs ModelWork from the durable provider-call journals;
 // only the evaluator's projector and monitors may determine Result.
 type AgenticTrialEvidence struct {
-	TargetID              string
-	MethodSpecDigest      string
-	MethodSpec            controlexperiment.AgenticMethodSpec
-	EpisodeCount          int
-	EpisodeStatus         string
-	EvidenceStatus        string
-	Budget                controlexperiment.AgenticLogicalBudget
-	RiskAttempts          int
-	ScenarioAttempts      int
-	ScenarioDecisionsUsed int
-	ModelWork             controlexperiment.ModelWork
-	ScenarioFrontier      controlexperiment.PhaseWork
-	ScenarioSearch        controlexperiment.ScenarioExecutionWork
-	Preparation           controlexperiment.AgenticPreparationWork
-	DecisionProvenance    controlexperiment.AgenticDecisionProvenance
-	Bundle                *controlexperiment.ExecutionBundle
-	CandidateBundles      []controlexperiment.ExecutionBundle
+	TargetID               string
+	MethodSpecDigest       string
+	MethodSpec             controlexperiment.AgenticMethodSpec
+	EpisodeCount           int
+	EpisodeStatus          string
+	EvidenceStatus         string
+	Budget                 controlexperiment.AgenticLogicalBudget
+	RiskAttempts           int
+	ScenarioAttempts       int
+	ScenarioDecisionsUsed  int
+	ModelWork              controlexperiment.ModelWork
+	ScenarioFrontier       controlexperiment.PhaseWork
+	ScenarioSearch         controlexperiment.ScenarioExecutionWork
+	Preparation            controlexperiment.AgenticPreparationWork
+	DecisionProvenance     controlexperiment.AgenticDecisionProvenance
+	Bundle                 *controlexperiment.ExecutionBundle
+	BundleRootDecisions    int
+	CandidateBundles       []controlexperiment.ExecutionBundle
+	CandidateRootDecisions []int
 }
 
 type AgenticHoldoutTrialResult struct {
@@ -64,6 +66,7 @@ type AgenticHoldoutTrialResult struct {
 	ReplayAuthority       string                                      `json:"replay_authority"`
 	ScenarioDecisionsUsed int                                         `json:"scenario_decisions_used"`
 	DecisionProvenance    controlexperiment.AgenticDecisionProvenance `json:"decision_provenance"`
+	RootPrefixFindings    int                                         `json:"root_prefix_oracle_findings,omitempty"`
 	Result                BundleTrialResult                           `json:"trusted_result"`
 }
 
@@ -142,8 +145,10 @@ func EvaluateAgenticHoldoutBundles(
 				)
 			}
 			variant := formalBundleVariant(input.variant, input.kind, input.root)
+			rootPrefixFindings := 0
 			result := evaluateAgenticHoldoutTrial(
 				contract, budget, variant, current, replay, projector, monitors,
+				&rootPrefixFindings,
 			)
 			trusted = append(trusted, result)
 			report.Results = append(report.Results, AgenticHoldoutTrialResult{
@@ -152,6 +157,7 @@ func EvaluateAgenticHoldoutBundles(
 				ModelWork:             current.ModelWork,
 				ScenarioDecisionsUsed: current.ScenarioDecisionsUsed,
 				DecisionProvenance:    current.DecisionProvenance,
+				RootPrefixFindings:    rootPrefixFindings,
 				ReplayAuthority:       AgenticReplayAuthorityEvaluatorOwned, Result: result,
 			})
 		}
@@ -203,8 +209,9 @@ func evaluateAgenticHoldoutTrial(
 	replay AgenticReplayRunner,
 	projector semantic.DecisionProjector,
 	monitors []oracle.BundleMonitor,
+	rootPrefixFindings *int,
 ) BundleTrialResult {
-	bundles := agenticEvidenceBundles(evidence)
+	bundles, rootBoundaries, boundariesOK := agenticEvidenceBundles(evidence)
 	invalid := func(reason string) BundleTrialResult {
 		result := BundleTrialResult{
 			TrialID: variant.TrialID, VariantID: variant.VariantID, Kind: variant.Kind,
@@ -216,7 +223,7 @@ func evaluateAgenticHoldoutTrial(
 		}
 		return result
 	}
-	if !validAgenticTrialEvidence(evidence) {
+	if !boundariesOK || !validAgenticTrialEvidence(evidence) {
 		return invalid("AGENTIC_HOLDOUT_EPISODE_METADATA_INVALID")
 	}
 	if evidence.DecisionProvenance.Validate(evidence.ScenarioDecisionsUsed) != nil {
@@ -290,7 +297,7 @@ func evaluateAgenticHoldoutTrial(
 		return invalid("AGENTIC_HOLDOUT_PREPARATION_WORK_INVALID")
 	}
 	results := make([]BundleTrialResult, 0, len(bundles))
-	for _, bundle := range bundles {
+	for index, bundle := range bundles {
 		if bundle.SchemaVersion != contract.RequiredBundleSchema ||
 			bundle.Qualification.Profile.Digest != contract.ProfileDigest ||
 			bundle.Identity.MethodSpecDigest != contract.MethodSpecDigest || bundle.Recipe == nil ||
@@ -304,6 +311,12 @@ func evaluateAgenticHoldoutTrial(
 		result := evaluateBundleVariantWithMonitors(
 			budget, variant, fresh, projector, monitors,
 		)
+		result, rootFindings := attributeAgenticPostRootFinding(
+			result, rootBoundaries[index], fresh.Trace.Digest,
+		)
+		if rootPrefixFindings != nil {
+			*rootPrefixFindings += rootFindings
+		}
 		results = append(results, result)
 	}
 	for _, result := range results {
@@ -341,6 +354,51 @@ func evaluateAgenticHoldoutTrial(
 	result := results[0]
 	result.Decisions, result.PrimaryWork, result.ReplayWork = totalDecisions, totalPrimary, totalReplay
 	return result
+}
+
+// attributeAgenticPostRootFinding keeps the evaluator-owned complete Oracle
+// result for audit, but permits only a violation emitted after the sealed root
+// prefix to determine whether the Agent method found an issue. Trace-integrity
+// failures remain invalid before this function is called.
+func attributeAgenticPostRootFinding(
+	result BundleTrialResult,
+	rootDecisions int,
+	traceDigest string,
+) (BundleTrialResult, int) {
+	if result.Status == BundleStatusInvalid {
+		return result, 0
+	}
+	rootFindings := 0
+	var finding *oracle.Violation
+	for index := range result.Oracle.Violations {
+		violation := &result.Oracle.Violations[index]
+		if violation.Step <= rootDecisions {
+			rootFindings++
+			continue
+		}
+		if finding == nil {
+			finding = violation
+		}
+	}
+	result.Finding = nil
+	if finding != nil {
+		result.Finding = &BundleFinding{
+			Monitor: finding.Monitor, Step: finding.Step, Message: finding.Message,
+			TraceDigest: traceDigest,
+		}
+	}
+	if result.Kind == BundleKindControl {
+		if finding == nil {
+			result.Status = BundleStatusControlPass
+		} else {
+			result.Status = BundleStatusFalsePositive
+		}
+	} else if finding == nil {
+		result.Status = BundleStatusSurvived
+	} else {
+		result.Status = BundleStatusKilled
+	}
+	return result, rootFindings
 }
 
 func sameAgenticReplayEvidence(
@@ -433,13 +491,26 @@ func safeAgenticAdd(left int, right int) (int, bool) {
 	return left + right, true
 }
 
-func agenticEvidenceBundles(evidence AgenticTrialEvidence) []controlexperiment.ExecutionBundle {
+func agenticEvidenceBundles(
+	evidence AgenticTrialEvidence,
+) ([]controlexperiment.ExecutionBundle, []int, bool) {
 	bundles := make([]controlexperiment.ExecutionBundle, 0, len(evidence.CandidateBundles)+1)
+	rootBoundaries := make([]int, 0, len(evidence.CandidateBundles)+1)
 	if evidence.Bundle != nil {
 		bundles = append(bundles, *evidence.Bundle)
+		rootBoundaries = append(rootBoundaries, evidence.BundleRootDecisions)
 	}
 	bundles = append(bundles, evidence.CandidateBundles...)
-	return bundles
+	rootBoundaries = append(rootBoundaries, evidence.CandidateRootDecisions...)
+	if len(bundles) != len(rootBoundaries) {
+		return bundles, rootBoundaries, false
+	}
+	for index, boundary := range rootBoundaries {
+		if boundary < 0 || boundary > len(bundles[index].Trace.Records) {
+			return bundles, rootBoundaries, false
+		}
+	}
+	return bundles, rootBoundaries, true
 }
 
 func validAgenticTrialEvidence(evidence AgenticTrialEvidence) bool {
@@ -451,6 +522,8 @@ func validAgenticTrialEvidence(evidence AgenticTrialEvidence) bool {
 		evidence.RiskAttempts < 0 || evidence.ScenarioAttempts < 0 ||
 		evidence.RiskAttempts+evidence.ScenarioAttempts != evidence.ModelWork.Calls ||
 		evidence.ScenarioDecisionsUsed < 0 ||
+		(evidence.Bundle == nil && evidence.BundleRootDecisions != 0) ||
+		len(evidence.CandidateRootDecisions) != len(evidence.CandidateBundles) ||
 		len(evidence.CandidateBundles)+boolAgenticInt(evidence.Bundle != nil) > evidence.Budget.MaxAttempts {
 		return false
 	}
@@ -500,6 +573,7 @@ func (report AgenticHoldoutEvaluation) Validate() error {
 		_, provenanceOK := current.DecisionProvenance.Total()
 		if !validBundleID(current.TrialID) || seen[current.TrialID] || current.TargetID != report.TargetID ||
 			current.ReplayAuthority != report.ReplayAuthority ||
+			current.RootPrefixFindings < 0 ||
 			!provenanceOK || current.DecisionProvenance.Validate(current.ScenarioDecisionsUsed) != nil ||
 			current.TrialID != current.Result.TrialID || !validAgenticTrialMetadata(
 			current.TargetID, current.EpisodeStatus, current.EvidenceStatus, current.ModelWork,

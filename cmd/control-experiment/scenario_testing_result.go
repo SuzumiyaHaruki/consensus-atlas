@@ -25,7 +25,66 @@ type scenarioTestingResult struct {
 	UniqueCorePSSStates int                               `json:"unique_core_pss_states"`
 	Replay              controlexperiment.ReplayResult    `json:"replay"`
 	Oracle              oracle.Result                     `json:"oracle"`
+	OracleAttribution   *scenarioOracleAttribution        `json:"oracle_attribution,omitempty"`
 	Outcome             string                            `json:"outcome"`
+}
+
+// scenarioOracleAttribution stores only the Agent-owned execution boundary.
+// Root and post-root findings are derived from the complete Oracle report. This
+// is evaluation attribution, not a new Oracle or verdict source.
+type scenarioOracleAttribution struct {
+	RootDecisions int `json:"root_decisions"`
+}
+
+func newScenarioOracleAttribution(
+	rootDecisions int,
+	traceDecisions int,
+) (*scenarioOracleAttribution, error) {
+	if rootDecisions < 0 || rootDecisions > traceDecisions {
+		return nil, errors.New("SCENARIO_TESTING_ORACLE_BOUNDARY_INVALID")
+	}
+	return &scenarioOracleAttribution{RootDecisions: rootDecisions}, nil
+}
+
+func (attribution *scenarioOracleAttribution) validate(
+	traceDecisions int,
+) error {
+	if attribution == nil {
+		// Historical artifacts predate root/post-root attribution. They remain
+		// readable, but current executions always construct a non-nil value.
+		return nil
+	}
+	want, err := newScenarioOracleAttribution(attribution.RootDecisions, traceDecisions)
+	if err != nil || !reflect.DeepEqual(attribution, want) {
+		return errors.New("SCENARIO_TESTING_ORACLE_ATTRIBUTION_INVALID")
+	}
+	return nil
+}
+
+func (result scenarioTestingResult) agentPathOracleViolations() []oracle.Violation {
+	if result.OracleAttribution == nil {
+		return result.Oracle.Violations
+	}
+	violations := make([]oracle.Violation, 0, len(result.Oracle.Violations))
+	for _, violation := range result.Oracle.Violations {
+		if violation.Step > result.OracleAttribution.RootDecisions {
+			violations = append(violations, violation)
+		}
+	}
+	return violations
+}
+
+func (result scenarioTestingResult) rootPrefixOracleViolations() []oracle.Violation {
+	if result.OracleAttribution == nil {
+		return nil
+	}
+	violations := make([]oracle.Violation, 0, len(result.Oracle.Violations))
+	for _, violation := range result.Oracle.Violations {
+		if violation.Step <= result.OracleAttribution.RootDecisions {
+			violations = append(violations, violation)
+		}
+	}
+	return violations
 }
 
 func (result scenarioTestingResult) validateExecutionStructure() error {
@@ -35,6 +94,7 @@ func (result scenarioTestingResult) validateExecutionStructure() error {
 		result.CorePSSSamples != result.Bundle.Run.CorePSSSamples ||
 		result.UniqueCorePSSStates != result.Bundle.Run.UniqueCoreStates ||
 		result.Replay != result.Bundle.Run.Replay || !result.Replay.Required || !result.Replay.Stable ||
+		result.OracleAttribution.validate(len(result.Bundle.Trace.Records)) != nil ||
 		(result.Outcome != scenarioTestingOracleClean && result.Outcome != scenarioTestingOracleFinding) {
 		return errors.New("SCENARIO_TESTING_EXECUTION_INVALID")
 	}
@@ -46,8 +106,13 @@ func newScenarioTestingResult(
 	bundle controlexperiment.ExecutionBundle,
 	risk semantic.RiskWitnessResult,
 	registry targetoracles.Registry,
+	rootDecisions int,
 ) scenarioTestingResult {
 	verdict := registry.Check(bundle)
+	attribution, attributionErr := newScenarioOracleAttribution(rootDecisions, len(bundle.Trace.Records))
+	if attributionErr != nil {
+		attribution = &scenarioOracleAttribution{RootDecisions: -1}
+	}
 	outcome := scenarioTestingOracleClean
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingOracleFinding
@@ -55,7 +120,7 @@ func newScenarioTestingResult(
 	return scenarioTestingResult{
 		PlanID: planID, Bundle: bundle, Risk: risk,
 		CorePSSSamples: bundle.Run.CorePSSSamples, UniqueCorePSSStates: bundle.Run.UniqueCoreStates,
-		Replay: bundle.Run.Replay, Oracle: verdict, Outcome: outcome,
+		Replay: bundle.Run.Replay, Oracle: verdict, OracleAttribution: attribution, Outcome: outcome,
 	}
 }
 
@@ -81,7 +146,8 @@ func validateScenarioTestingRisk(
 	if len(verdict.Violations) > 0 {
 		outcome = scenarioTestingOracleFinding
 	}
-	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome {
+	if !reflect.DeepEqual(result.Oracle, verdict) || result.Outcome != outcome ||
+		result.OracleAttribution.validate(len(result.Bundle.Trace.Records)) != nil {
 		return errors.New("SCENARIO_TESTING_ORACLE_INVALID")
 	}
 	return nil

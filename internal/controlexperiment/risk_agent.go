@@ -261,6 +261,117 @@ type RiskAgentResult struct {
 	ModelWork  ModelWork                 `json:"model_work"`
 }
 
+const (
+	RiskSourceGroundingNotRequested    = "not-requested"
+	RiskSourceGroundingIncomplete      = "incomplete"
+	RiskSourceGroundingCompletedUnused = "completed-unused"
+	RiskSourceGroundingCompletedUsed   = "completed-used"
+)
+
+// RiskSourceGroundingUsage reports whether a completed bounded source read
+// was actually cited by any candidate returned in the same Risk Agent run. It
+// is descriptive evidence only: an unused read does not reject a candidate,
+// and a cited read does not establish a defect.
+type RiskSourceGroundingUsage struct {
+	Status         string   `json:"status"`
+	ReadReferences []string `json:"read_references,omitempty"`
+	UsedReferences []string `json:"used_references,omitempty"`
+}
+
+func (usage RiskSourceGroundingUsage) Validate() error {
+	validStatus := usage.Status == RiskSourceGroundingNotRequested ||
+		usage.Status == RiskSourceGroundingIncomplete ||
+		usage.Status == RiskSourceGroundingCompletedUnused ||
+		usage.Status == RiskSourceGroundingCompletedUsed
+	unique := func(values []string) bool {
+		for index := 1; index < len(values); index++ {
+			if values[index] == values[index-1] {
+				return false
+			}
+		}
+		return true
+	}
+	if !validStatus || !sort.StringsAreSorted(usage.ReadReferences) ||
+		!sort.StringsAreSorted(usage.UsedReferences) ||
+		!unique(usage.ReadReferences) || !unique(usage.UsedReferences) {
+		return errors.New("EXPERIMENT_RISK_SOURCE_GROUNDING_USAGE_INVALID")
+	}
+	read := make(map[string]bool, len(usage.ReadReferences))
+	for _, reference := range usage.ReadReferences {
+		if !strings.HasPrefix(reference, "source/") {
+			return errors.New("EXPERIMENT_RISK_SOURCE_GROUNDING_REFERENCE_INVALID")
+		}
+		read[reference] = true
+	}
+	for _, reference := range usage.UsedReferences {
+		if !read[reference] {
+			return errors.New("EXPERIMENT_RISK_SOURCE_GROUNDING_USE_INVALID")
+		}
+	}
+	switch usage.Status {
+	case RiskSourceGroundingNotRequested, RiskSourceGroundingIncomplete:
+		if len(usage.ReadReferences) != 0 || len(usage.UsedReferences) != 0 {
+			return errors.New("EXPERIMENT_RISK_SOURCE_GROUNDING_STATUS_INVALID")
+		}
+	case RiskSourceGroundingCompletedUnused:
+		if len(usage.ReadReferences) == 0 || len(usage.UsedReferences) != 0 {
+			return errors.New("EXPERIMENT_RISK_SOURCE_GROUNDING_STATUS_INVALID")
+		}
+	case RiskSourceGroundingCompletedUsed:
+		if len(usage.ReadReferences) == 0 || len(usage.UsedReferences) == 0 {
+			return errors.New("EXPERIMENT_RISK_SOURCE_GROUNDING_STATUS_INVALID")
+		}
+	}
+	return nil
+}
+
+func AnalyzeRiskSourceGrounding(result RiskAgentResult) RiskSourceGroundingUsage {
+	read := make(map[string]bool)
+	used := make(map[string]bool)
+	requested := false
+	for _, attempt := range result.Attempts {
+		requested = requested || len(attempt.KnowledgeRequests) > 0
+		for _, knowledge := range attempt.KnowledgeResults {
+			if knowledge.Status == KnowledgeDiscoveryCompleted && knowledge.Query == "" &&
+				knowledge.Source.Reference != "" {
+				read["source/"+knowledge.Source.Reference] = true
+			}
+		}
+		portfolio, _, isKnowledge, err := parseRiskAgentResponse(attempt.ResponseBytes)
+		if err != nil || isKnowledge {
+			continue
+		}
+		for _, candidate := range portfolio.Candidates {
+			for _, step := range candidate.MechanismSteps {
+				for _, reference := range step.SupportRefs {
+					if read[reference] {
+						used[reference] = true
+					}
+				}
+			}
+		}
+	}
+	usage := RiskSourceGroundingUsage{Status: RiskSourceGroundingNotRequested}
+	if requested {
+		usage.Status = RiskSourceGroundingIncomplete
+	}
+	for reference := range read {
+		usage.ReadReferences = append(usage.ReadReferences, reference)
+	}
+	for reference := range used {
+		usage.UsedReferences = append(usage.UsedReferences, reference)
+	}
+	sort.Strings(usage.ReadReferences)
+	sort.Strings(usage.UsedReferences)
+	if len(usage.ReadReferences) > 0 {
+		usage.Status = RiskSourceGroundingCompletedUnused
+		if len(usage.UsedReferences) > 0 {
+			usage.Status = RiskSourceGroundingCompletedUsed
+		}
+	}
+	return usage
+}
+
 type RiskPlanner func(context.Context, RiskAgentView) ([]byte, ModelWork, error)
 type RiskKnowledgeReader func(KnowledgeReadRequest) (KnowledgeReadResult, error)
 

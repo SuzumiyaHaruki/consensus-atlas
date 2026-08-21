@@ -50,7 +50,7 @@
       },
       {
         "id": "election-safety",
-        "summary": "At most one participant may act as leader in a term under the CFT assumptions exercised by the target.",
+        "summary": "Every observed leader must be backed by a legal voter quorum for its term, including both halves of a joint configuration, and at most one participant may act as leader in one term.",
         "evidence_level": "oracle-backed"
       },
       {

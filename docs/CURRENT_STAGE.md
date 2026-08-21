@@ -2,7 +2,7 @@
 
 更新时间：2026-08-21
 分支：`feature/agentic-consensus-testing`
-阶段：M4n10R 长盲测前审计收口
+阶段：M4n11 canary 响应恢复与选举 Oracle 收口
 
 ## 一句话状态
 
@@ -73,7 +73,7 @@ Risk Prompt 要求按 property → invariant → 合法 fault condition → 实�
 search→read→portfolio 后最多一次机械资格修复。
 
 新运行的 MethodSpec implementation identity 为
-`m4n10-deep-candidate-investigation-v1`，源码暴露模式为
+`m4n11-provider-recovery-and-quorum-oracle-v1`，旧 M4n10 工件仅作只读兼容；源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
 `risk-agent-navigation-v8`：search 前只暴露 search schema，成功 search 后只暴露其真实
 match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
@@ -81,22 +81,63 @@ match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema�
 
 模型预算不再共享或转移。每个候选固定获得 8 次 Scenario 调用、64 个 Runtime decisions、
 每次一个战略 Action、每次最多 4 个公共自然推进 decision；Risk 最多 4 次调用，Episode
-总上限为 12 calls、240,000 observed tokens 和 30 分钟。Risk 与 Scenario reasoning 均为
-high，Scenario 输出仍限制为 8,192 tokens。新 portfolio 的首候选与从队列恢复的候选使用
+总上限为 12 calls、240,000 observed tokens 和 30 分钟。Risk reasoning 保持 high，Scenario
+reasoning 降为 low，Scenario 输出仍限制为 8,192 tokens。新 portfolio 的首候选与从队列恢复的候选使用
 相同 Scenario 深度；Risk 未使用额度不再扩大某个候选的搜索机会。除统一 Episode/call/token/
 decision 预算外不再设置 portfolio 数量上限；发现 finding 不会提前终止。
 
-Scenario prompt 的压缩视图保留上一轮唯一战略 Action、机械执行步骤、自然推进切片和
-closure handoff step ID，使 stateless 调用可以针对实际 source/target/type 修订，而不恢复
-完整历史 Trace。
+Scenario prompt 的压缩视图保留 previous proposal、outcome/reason、selector failure、capability gap、
+closure handoff 和 ProgressDelta；删除每个执行/自然推进步骤中重复的完整 Choice、RiskProgress 及
+view/evidence digest。一次 enabled Action 未被选择不等于被阻塞，`temporal-fired` 只代表一次 callback；
+依赖持续不执行正常 Action 的机制若没有对应控制能力，Agent 应 revise/abandon 或声明 fidelity requirement。
+
+Provider 失败现在区分 `response-finish-length|response-empty-content|response-malformed|response-too-large`。
+已解析 HTTP 200 usage 与 response identity 时，durable journal 保留计费、response digest 和 finish reason。
+Scenario 首次 length 截断可在原 calls/tokens 预算内做一次同 frontier 最小 JSON repair；不重复 Runtime
+Action。repair 再失败时以 `provider-response-failed` in-band stop 保存此前执行，已有前缀仍进入 Bundle、
+fresh Replay 与 Oracle，portfolio 不因一个响应失败而丢失。
+durable journal 只允许精确的相邻 length→repair 序列继续：两次调用必须属于同一 root，使用同一冻结
+Scenario view digest，并由 repair intent 绑定原调用序号。length result、repair intent、repair result 后中断
+均可恢复；repair 已 dispatch 但 result 未落盘时保留为显式 unreconciled，不会重发未知远端结果。若失败响应
+本身越过 token 阈值，原 `response-*` 分类仍被保留，只禁止 repair；此前已执行路径仍正常生成 Bundle、
+fresh Replay 和 Oracle。
+
+Risk summary 新增 `risk_source_grounding.status`。成功 bounded read 若被任一候选 mechanism step 的
+`source/...` 引用则为 `completed-used`，否则为 `completed-unused`；它只描述源码 grounding 是否实际参与
+候选，不是资格 gate，也不是 Oracle verdict。
 
 Exploration Memory 新增 `property_ref` 与 `evidence_level`。它们只说明语义重复和候选可验证性，
 不能把 `oracle-backed` 解释成已有 finding，也不参与可信 verdict。当前仍不实现跨 Episode 的
 live Trace continuation；一个候选只在单 Episode 固定预算内深入调查。
 
-etcd/raft registry 新增 `etcdraft-election-safety`：它只读取 Adapter-owned Evidence，按 term
-记录实际运行的 `StateLeader`，同一 term 出现不同 leader 时产生 violation；不读取 vote
-tracker 或 Agent 结论。`election-safety` 因此由 observable-only 升为 oracle-backed。
+etcd/raft registry 的 `etcdraft-election-safety` 只读取从确定性 bootstrap 开始的完整 Trace 中的
+Adapter-owned Evidence。每个首次观察到的
+`StateLeader` 必须在同 term 获得当前 voters 的多数；joint configuration 同时要求 incoming/outgoing
+多数；同一 term 出现不同 leader 也产生 violation。它不读取 SUT vote tracker 或 Agent 结论。
+`election-safety` 的 property 表述同步为“合法 quorum 支持 + 同 term 唯一 leader”。
+leader observation 的去重键包含 term、RaftID 和 incarnation，避免同一逻辑节点重启后跳过重新检查；
+同 term leader 唯一性仍按稳定 NodeID 判断。
+该 monitor 不宣称能从任意中途快照恢复一次历史选举；以后若支持跨 Episode live Trace continuation，
+需要另行提供显式 election witness。
+
+Oracle attribution 已明确划分 deterministic root prefix 与 Agent path。在线 summary、主 Bundle 和分支
+evidence 保留完整 Oracle，只额外保存 root decision boundary；root 与 post-root violation 均从完整结果派生，
+不再重复持久化两份数组。Assessment 和 `oracle_findings` 只把 post-root violation 计作 Agent finding。
+formal loader 从 Episode summary 中的 Scenario frontier reconstruction work 推导 boundary，并与保存值以及主路径
+`Trace decisions - selected_path_decisions` 交叉核对。三项仍都是方法侧工件事实；当前不把这个
+boundary 表述为 evaluator-owned，也不声称能识别 artifact producer 对三项的一致篡改。
+private/formal evaluator 在 evaluator-owned SUT Replay 后
+重新执行完整 registry，并只以 post-root violation 决定 killed/false-positive；
+root violation 以 `root_prefix_oracle_findings` 单列，不能给 Agent 记功。
+当前 M4n11 MethodSpec 的已执行主路径和分支在 resume 时必须携带 attribution；
+只有历史 implementation ID 允许缺省，避免新工件被默认解释为 root=0。
+
+Evidence 结论优先级已统一为 `post-root Oracle finding → witness-instantiated → provider-response-failed
+→ hypothesis-not-reached`；未选择分支也使用同一规则，Provider 失败不会覆盖已经机械实例化的 witness，
+也不会被误写成 final-selection-required。Provider response identity 现在要求非空 ID/model/finish reason，
+且 `response-finish-length` 必须对应 `finish_reason=length`。Scenario journal 只保留构造修复 Prompt 所需的
+`repairPending`；一次修复限制继续由可信 Scenario core 和 durable 调用序列共同维护。普通与 repair Prompt
+复用同一输入校验，request digest 直接绑定冻结的 Scenario view。
 
 活动 `scenarioTestingResult.outcome` 只使用 `oracle-clean/oracle-finding`，不再把“当前
 Oracle 没有 violation”写成 `passed`。最终 finding 仍只来自 registry Oracle；
@@ -105,8 +146,13 @@ Oracle 没有 violation”写成 `passed`。最终 finding 仍只来自 registry
 不进入正式 Memory 的零模型/fixture 机械校准已经完成：search→read→portfolio→一次修复、
 search no-match 后换词成功、stopped read 后改读另一搜索结果、
 固定 8-call Scenario 配额、超过三次反馈循环、五节点 quorum 知识、端点 binding、fresh Replay
-和 election-safety 合成冲突回归均通过。下一步是先从干净独立 checkout 重新构建并运行一个
-不写入正式 Memory 的单 Episode 真模型 canary，确认 `search → bounded read → portfolio → Scenario`；
+和 election-safety 的双 leader、少数票 leader、joint configuration、restart incarnation 回归均通过。
+新增的无模型端到端 fixture 已覆盖合法 Action→length→repair failure→summary/Bundle→fresh Replay→Oracle→
+journal recovery；已有执行不会因 provider failure 丢失。干净上游 etcd/raft 的五节点真实 Trace 以及普通选举、
+joint/restart 校准均无 election-safety 误报，不建立长期 baseline。M4n10R canary v3
+作为失败工件保留，不在原目录恢复。下一步是在新目录运行不写入正式 Memory 的 canary v4，确认
+`search → bounded read → portfolio → Scenario → summary/Bundle/fresh Replay/Oracle`，并检查没有
+unreconciled call；
 canary 通过后，才在单独授权下运行六 Episode、约三小时的
 无修改特定提示的受控盲测；上限为 72 calls、1,440,000 observed tokens 和 384 Scenario
 decision allowance。盲测不提供变更文件、函数、diff 或测试名，但明确提供通用协议不变量、
@@ -257,7 +303,8 @@ Action 消耗完预算后返回 `closure-budget-exhausted`，没有退回公共�
 转换为 `closure-underdetermined`，不再作为执行错误。
 
 当前新运行的 MethodSpec implementation identity 已更新为
-`consensus-atlas/agentic-method/m4n10-deep-candidate-investigation-v1`。旧
+`consensus-atlas/agentic-method/m4n11-provider-recovery-and-quorum-oracle-v1`。旧
+`m4n10-deep-candidate-investigation-v1`、
 `m4n8-agent-semantics-portfolio-search-v1`、
 `m4n7-qualification-cost-cargo-replay-v1`、`m4n6-causal-closure-build-evidence-v1`、
 `m4n5-multinode-closure-v1`、`m4m4-risk-fidelity-v1`、
@@ -514,10 +561,9 @@ etcd application prefix 与 OmniPaxos decided prefix 已改为增量缓存，避
   和 Oracle 语义仍独立；
 - 弱语义 OmniPaxos v1 Risk 已从活动 `plans/agent/` 迁入 M4m3 实验目录，活动输入只保留 v2。
 
-本轮验证已完成：`go test ./...`、`go vet ./...`、`audit-no-v1`、
-`audit-race-shards` 和两个五节点 Agent/Replay/Oracle 定向回归通过。新增 race shard
-清单已与 `go test -list` 对齐；两个真实 Target 的联合聚焦 race 在 300 秒内未完成且
-未产生 race 报告，已按既定规则停止，未重复消耗时间。普通全量测试覆盖了同一路径。
+本轮已在当前工作树通过 `go test ./... -count=1`、`go vet ./...`、
+`audit-no-v1`、`audit-race-shards`、新增 provider/journal/Bundle 端到端、formal root attribution 与
+election incarnation 聚焦 race。正式 canary 尚未启动，也没有调用外部模型。
 
 ## 当前结果边界
 
@@ -537,7 +583,8 @@ etcd application prefix 与 OmniPaxos decided prefix 已改为增量缓存，避
 
 ## 下一步
 
-1. 选择一个历史问题版本或受控差异版本，先以零模型 Trace确认现有
-   Action/evidence/Oracle 能得到首个非零结果；
-2. 再让 Scenario Agent 从已知 Risk 复现同一干预，最后恢复 Risk Agent 完整流程；
-3. 设计同预算 Random/单 Agent/双 Agent 对照，再运行长时公开实验。
+1. 将 M4n11 修复形成明确版本，并准备根仓库与 SUT 均干净、源码 mount 与实际构建一致的独立 checkout；
+2. 在新目录运行一次不进入正式 Memory 的单 Episode canary v4，核对 journal、summary、Bundle、root/post-root
+   attribution、evaluator-owned Replay 和 Oracle；
+3. canary 通过后再单独授权六 Episode 长实验；若 root 已经出现异常，只能报告 Oracle sensitivity，不能报告
+   Agent discovery。

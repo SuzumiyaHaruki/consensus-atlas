@@ -22,14 +22,16 @@ const (
 )
 
 type agenticBranchEvidenceArtifact struct {
-	BranchID          string                       `json:"branch_id"`
-	Intent            string                       `json:"intent"`
-	ReferenceBranchID string                       `json:"reference_branch_id,omitempty"`
-	PlanID            string                       `json:"plan_id"`
-	RiskResultID      string                       `json:"risk_result_id"`
-	TraceDigest       string                       `json:"trace_digest"`
-	OracleFindings    int                          `json:"oracle_findings"`
-	Work              controlexperiment.WorkLedger `json:"work"`
+	BranchID           string                       `json:"branch_id"`
+	Intent             string                       `json:"intent"`
+	ReferenceBranchID  string                       `json:"reference_branch_id,omitempty"`
+	PlanID             string                       `json:"plan_id"`
+	RiskResultID       string                       `json:"risk_result_id"`
+	TraceDigest        string                       `json:"trace_digest"`
+	OracleFindings     int                          `json:"oracle_findings"`
+	RootOracleFindings int                          `json:"root_prefix_oracle_findings,omitempty"`
+	OracleAttribution  *scenarioOracleAttribution   `json:"oracle_attribution,omitempty"`
+	Work               controlexperiment.WorkLedger `json:"work"`
 }
 
 type agenticScenarioAttemptArtifact struct {
@@ -65,6 +67,7 @@ type agenticEpisodeArtifact struct {
 	ExecutableRisks            []controlexperiment.RiskCandidateAssessment `json:"executable_risks,omitempty"`
 	RiskAttempts               int                                         `json:"risk_attempts"`
 	RiskFeedback               *controlexperiment.RiskAgentFeedback        `json:"risk_feedback,omitempty"`
+	RiskSourceGrounding        controlexperiment.RiskSourceGroundingUsage  `json:"risk_source_grounding,omitempty"`
 	ScenarioStatus             string                                      `json:"scenario_status,omitempty"`
 	ScenarioStopReason         string                                      `json:"scenario_stop_reason,omitempty"`
 	ScenarioAttempts           int                                         `json:"scenario_attempts"`
@@ -80,6 +83,7 @@ type agenticEpisodeArtifact struct {
 	PlanID                     string                                      `json:"plan_id,omitempty"`
 	RiskResultID               string                                      `json:"risk_result_id,omitempty"`
 	TraceDigest                string                                      `json:"trace_digest,omitempty"`
+	OracleAttribution          *scenarioOracleAttribution                  `json:"oracle_attribution,omitempty"`
 	Metrics                    agenticEpisodeMetrics                       `json:"metrics"`
 	Work                       agenticEpisodeWork                          `json:"work"`
 	Assessment                 agenticEvidenceAssessment                   `json:"evidence_assessment,omitempty"`
@@ -94,6 +98,7 @@ type agenticEpisodeRecoveryBinding struct {
 		semantic.RiskWitnessResult,
 		semantic.RiskWitnessSpec,
 		controlexperiment.SemanticPrefixProjector,
+		int,
 	) (scenarioTestingResult, error)
 }
 
@@ -119,7 +124,8 @@ func newAgenticEpisodeArtifact(
 		ScenarioProviderCalls: append([]controlexperiment.StatelessAgentCallAudit(nil),
 			result.ScenarioProviderCalls...),
 		Failure: cloneAgenticEpisodeFailure(result.Failure), Metrics: result.Metrics, Work: result.Work,
-		Assessment: result.Assessment,
+		Assessment:          result.Assessment,
+		RiskSourceGrounding: controlexperiment.AnalyzeRiskSourceGrounding(result.RiskAgent),
 	}
 	if result.RiskAgent.Accepted != nil {
 		accepted := *result.RiskAgent.Accepted
@@ -196,14 +202,18 @@ func newAgenticEpisodeArtifact(
 		artifact.PlanID = result.Testing.PlanID
 		artifact.RiskResultID = result.Testing.Risk.ID
 		artifact.TraceDigest = result.Testing.Bundle.Trace.Digest
+		artifact.OracleAttribution = cloneScenarioOracleAttribution(result.Testing.OracleAttribution)
 	}
 	for _, branch := range result.BranchTesting {
 		artifact.BranchEvidence = append(artifact.BranchEvidence, agenticBranchEvidenceArtifact{
 			BranchID: branch.BranchID, Intent: branch.Intent,
 			ReferenceBranchID: branch.ReferenceBranchID,
 			PlanID:            branch.Testing.PlanID, RiskResultID: branch.Testing.Risk.ID,
-			TraceDigest:    branch.Testing.Bundle.Trace.Digest,
-			OracleFindings: len(branch.Testing.Oracle.Violations), Work: branch.Testing.Bundle.Work,
+			TraceDigest:        branch.Testing.Bundle.Trace.Digest,
+			OracleFindings:     len(branch.Testing.agentPathOracleViolations()),
+			RootOracleFindings: len(branch.Testing.rootPrefixOracleViolations()),
+			OracleAttribution:  cloneScenarioOracleAttribution(branch.Testing.OracleAttribution),
+			Work:               branch.Testing.Bundle.Work,
 		})
 	}
 	if err := artifact.validateCompact(); err != nil {
@@ -301,6 +311,11 @@ func recoverAgenticEpisodeArtifacts(
 		return recovered, true, nil
 	}
 	if artifact.PlanID != "" {
+		if err := requireRecoveredScenarioOracleAttribution(
+			recovered.MethodSpec, true, artifact.OracleAttribution,
+		); err != nil {
+			return recoveredAgenticEpisode{}, false, err
+		}
 		var bundle controlexperiment.ExecutionBundle
 		if err := readStrictJSONFile(filepath.Join(clean, agenticEpisodeBundleFile), 64<<20, &bundle); err != nil ||
 			bundle.Validate() != nil || bundle.Trace.Digest != artifact.TraceDigest {
@@ -308,6 +323,7 @@ func recoverAgenticEpisodeArtifacts(
 		}
 		testing, err := recoverAgenticTesting(
 			artifact, binding, artifact.PlanID, artifact.RiskResultID, bundle,
+			artifact.OracleAttribution,
 		)
 		if err != nil {
 			return recoveredAgenticEpisode{}, false, err
@@ -325,6 +341,11 @@ func recoverAgenticEpisodeArtifacts(
 		}
 		for index, branch := range stored {
 			summary := artifact.BranchEvidence[index]
+			if err := requireRecoveredScenarioOracleAttribution(
+				recovered.MethodSpec, true, summary.OracleAttribution,
+			); err != nil {
+				return recoveredAgenticEpisode{}, false, err
+			}
 			if branch.BranchID != summary.BranchID || branch.Intent != summary.Intent ||
 				branch.ReferenceBranchID != summary.ReferenceBranchID ||
 				branch.Testing.PlanID != summary.PlanID || branch.Testing.Risk.ID != summary.RiskResultID ||
@@ -333,9 +354,11 @@ func recoverAgenticEpisodeArtifacts(
 			}
 			testing, err := recoverAgenticTesting(
 				artifact, binding, summary.PlanID, summary.RiskResultID, branch.Testing.Bundle,
+				summary.OracleAttribution,
 			)
 			if err != nil || !reflect.DeepEqual(testing, branch.Testing) ||
-				len(testing.Oracle.Violations) != summary.OracleFindings ||
+				len(testing.agentPathOracleViolations()) != summary.OracleFindings ||
+				len(testing.rootPrefixOracleViolations()) != summary.RootOracleFindings ||
 				!reflect.DeepEqual(testing.Bundle.Work, summary.Work) {
 				return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_BRANCH_EVIDENCE_DRIFT")
 			}
@@ -361,12 +384,29 @@ func recoverAgenticEpisodeArtifacts(
 	return recovered, true, nil
 }
 
+// Current M4n11 artifacts use root/post-root Oracle attribution as part of
+// their execution meaning. Historical MethodSpecs predate that field and stay
+// readable, but a current executed path must not silently recover as root=0.
+func requireRecoveredScenarioOracleAttribution(
+	spec *controlexperiment.AgenticMethodSpec,
+	hasExecution bool,
+	attribution *scenarioOracleAttribution,
+) error {
+	if hasExecution && spec != nil &&
+		spec.ImplementationID == controlexperiment.AgenticMethodImplementationID &&
+		attribution == nil {
+		return errors.New("AGENTIC_EPISODE_RECOVERY_ORACLE_ATTRIBUTION_REQUIRED")
+	}
+	return nil
+}
+
 func recoverAgenticTesting(
 	artifact agenticEpisodeArtifact,
 	binding agenticEpisodeRecoveryBinding,
 	planID string,
 	riskResultID string,
 	bundle controlexperiment.ExecutionBundle,
+	attribution *scenarioOracleAttribution,
 ) (scenarioTestingResult, error) {
 	if bundle.Validate() != nil {
 		return scenarioTestingResult{}, errors.New("AGENTIC_EPISODE_RECOVERY_BUNDLE_INVALID")
@@ -379,7 +419,30 @@ func recoverAgenticTesting(
 	if err != nil {
 		return scenarioTestingResult{}, err
 	}
-	return binding.Testing(planID, bundle, risk, assessment.Spec, projector)
+	rootDecisions := 0
+	if attribution != nil {
+		rootDecisions = attribution.RootDecisions
+	}
+	testing, err := binding.Testing(
+		planID, bundle, risk, assessment.Spec, projector, rootDecisions,
+	)
+	if err != nil {
+		return scenarioTestingResult{}, err
+	}
+	if attribution == nil {
+		testing.OracleAttribution = nil
+	}
+	return testing, testing.validateExecutionStructure()
+}
+
+func cloneScenarioOracleAttribution(
+	value *scenarioOracleAttribution,
+) *scenarioOracleAttribution {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func branchExecutionWorkMatches(
@@ -450,7 +513,8 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.Work.Model != modelWorkFromAgentAudits(append(
 			append([]controlexperiment.StatelessAgentCallAudit(nil), artifact.RiskProviderCalls...),
 			artifact.ScenarioProviderCalls...,
-		)) {
+		)) || artifact.RiskSourceGrounding.Status != "" && artifact.RiskSourceGrounding.Validate() != nil ||
+		artifact.OracleAttribution != nil && artifact.OracleAttribution.RootDecisions < 0 {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_ACCOUNTING_INVALID")
 	}
 	provenanceDecisions := artifact.DecisionProvenance.AgentSelected +
@@ -541,7 +605,9 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	for index, branch := range artifact.BranchEvidence {
 		if branch.BranchID == "" || strings.ContainsAny(branch.BranchID, " /\\") ||
 			branch.Intent == "" || branch.PlanID == "" || branch.RiskResultID == "" ||
-			len(branch.TraceDigest) != 64 || branch.OracleFindings < 0 || seenBranches[branch.BranchID] ||
+			len(branch.TraceDigest) != 64 || branch.OracleFindings < 0 ||
+			branch.RootOracleFindings < 0 || seenBranches[branch.BranchID] ||
+			branch.OracleAttribution != nil && branch.OracleAttribution.RootDecisions < 0 ||
 			artifact.Work.BranchQualifiedExecutions[index].BranchID != branch.BranchID ||
 			!reflect.DeepEqual(artifact.Work.BranchQualifiedExecutions[index].Work, branch.Work) {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_BRANCH_EVIDENCE_INVALID")
@@ -580,13 +646,14 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	case agenticEpisodeRiskStopped:
 		if artifact.Failure != nil || artifact.Accepted != nil || artifact.Metrics.CandidateAccepted ||
 			artifact.ScenarioStatus != "" || artifact.PlanID != "" || artifact.RiskResultID != "" ||
-			artifact.TraceDigest != "" ||
+			artifact.TraceDigest != "" || artifact.OracleAttribution != nil ||
 			len(artifact.BranchEvidence) != 0 {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_RISK_STOP_INVALID")
 		}
 	case agenticEpisodeScenarioStopped, agenticEpisodeTokenStopped:
 		if artifact.Failure != nil || artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
 			artifact.PlanID != "" || artifact.RiskResultID != "" || artifact.TraceDigest != "" ||
+			artifact.OracleAttribution != nil ||
 			len(artifact.BranchEvidence) != 0 {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_STOP_INVALID")
 		}
@@ -595,6 +662,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			artifact.Failure.Phase == "" || artifact.Failure.Code == "" || artifact.Failure.Decision <= 0 ||
 			artifact.Failure.Terminal == nil || artifact.Failure.Terminal.Validate() != nil ||
 			artifact.PlanID != "" || artifact.RiskResultID != "" || artifact.TraceDigest != "" ||
+			artifact.OracleAttribution != nil ||
 			len(artifact.BranchEvidence) != 0 {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_EXECUTION_FAILURE_INVALID")
 		}
@@ -730,7 +798,7 @@ func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
 	if assessment.Status == "" {
 		return true
 	}
-	if assessment.ReasonCode == "" ||
+	if assessment.ReasonCode == "" || assessment.RootPrefixFindings < 0 ||
 		(assessment.EvidenceLevel != "" &&
 			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceHypothesis &&
 			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceObservable &&
@@ -925,6 +993,8 @@ func agenticEpisodeMetricsFromEvidence(
 			testing.Risk.Status == semantic.RiskWitnessReached
 		metrics.CorePSSSamples += testing.CorePSSSamples
 		metrics.OracleFindings += len(testing.Oracle.Violations)
+		metrics.OracleFindings -= len(testing.rootPrefixOracleViolations())
+		metrics.RootPrefixOracleFindings += len(testing.rootPrefixOracleViolations())
 		for _, sample := range testing.Bundle.CorePSS {
 			keys, err := psscore.Keys(sample.State)
 			if err != nil {

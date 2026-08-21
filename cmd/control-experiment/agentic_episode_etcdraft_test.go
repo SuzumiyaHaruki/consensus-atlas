@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,6 +60,79 @@ func TestFixedScenarioCallBudgetDoesNotDependOnRiskUsage(t *testing.T) {
 	}
 	if _, err := fixedScenarioCallAllowance(budget, 5); err == nil {
 		t.Fatal("Risk work above its own allowance reached Scenario execution")
+	}
+}
+
+func TestAgenticAssessmentSeparatesRootAndAgentOracleFindings(t *testing.T) {
+	rootViolation := oracle.Violation{
+		Monitor: targetoracles.ElectionSafetyMonitorID, Step: 12,
+		Message: "leader was already invalid in the deterministic root",
+	}
+	agentViolation := oracle.Violation{
+		Monitor: targetoracles.ElectionSafetyMonitorID, Step: 14,
+		Message: "leader became invalid after the Agent boundary",
+	}
+	base := agenticEvidenceAssessment{
+		Status: agenticEvidencePlanningFailed, ReasonCode: "scenario-not-executed",
+	}
+	rootOnly := scenarioTestingResult{
+		Risk: semantic.RiskWitnessResult{
+			Status: semantic.RiskWitnessNotReached, MissingMilestones: []string{"post-root"},
+		},
+		Oracle:            oracle.Result{Violations: []oracle.Violation{rootViolation}},
+		OracleAttribution: &scenarioOracleAttribution{RootDecisions: 12},
+	}
+	rootAssessment := assessTestingEvidence(base, rootOnly, controlexperiment.ScenarioAgentResult{})
+	if rootAssessment.Status == agenticEvidenceOracleFinding ||
+		rootAssessment.RootPrefixFindings != 1 ||
+		rootAssessment.ReasonCode != agenticEvidenceRootPrefixFinding {
+		t.Fatalf("root finding was attributed to the Agent: %#v", rootAssessment)
+	}
+	providerAssessment := assessTestingEvidence(base, rootOnly, controlexperiment.ScenarioAgentResult{
+		StopReason: controlexperiment.ScenarioAgentStopProviderResponse,
+	})
+	if providerAssessment.Status != agenticEvidenceInconclusive ||
+		providerAssessment.ReasonCode != controlexperiment.ScenarioAgentStopProviderResponse ||
+		providerAssessment.RootPrefixFindings != 1 {
+		t.Fatalf("provider failure did not outrank hypothesis non-reach: %#v", providerAssessment)
+	}
+	witness := rootOnly
+	witness.Risk.Status = semantic.RiskWitnessReached
+	witness.Risk.MissingMilestones = nil
+	witnessAssessment := assessTestingEvidence(base, witness, controlexperiment.ScenarioAgentResult{
+		StopReason: controlexperiment.ScenarioAgentStopProviderResponse,
+	})
+	if witnessAssessment.Status != agenticEvidenceWitnessUnverified ||
+		witnessAssessment.ReasonCode != "missing-property-oracle" {
+		t.Fatalf("provider failure hid an instantiated witness: %#v", witnessAssessment)
+	}
+	agentPath := rootOnly
+	agentPath.Oracle.Violations = append(agentPath.Oracle.Violations, agentViolation)
+	agentPath.OracleAttribution = &scenarioOracleAttribution{RootDecisions: 12}
+	agentAssessment := assessTestingEvidence(base, agentPath, controlexperiment.ScenarioAgentResult{
+		StopReason: controlexperiment.ScenarioAgentStopProviderResponse,
+	})
+	if agentAssessment.Status != agenticEvidenceOracleFinding ||
+		agentAssessment.ReasonCode != targetoracles.ElectionSafetyMonitorID ||
+		agentAssessment.RootPrefixFindings != 1 {
+		t.Fatalf("post-root finding did not outrank provider failure: %#v", agentAssessment)
+	}
+}
+
+func TestScenarioResponseFailureKeepsClassificationAtTokenBoundary(t *testing.T) {
+	work := controlexperiment.ModelWork{Calls: 1, InputTokens: 8, OutputTokens: 5, TotalTokens: 13}
+	content, keptWork, err := agenticScenarioTokenBoundary(
+		101, 100, nil, work, &controlexperiment.ScenarioPlannerResponseFailure{
+			Code: controlexperiment.ScenarioAgentReasonResponseFinishLength, Repairable: true,
+		},
+	)
+	var failure *controlexperiment.ScenarioPlannerResponseFailure
+	if len(content) != 0 || keptWork != work || !errors.As(err, &failure) ||
+		failure.Code != controlexperiment.ScenarioAgentReasonResponseFinishLength || failure.Repairable {
+		t.Fatalf("token threshold replaced the charged response failure: %q/%#v/%v", content, keptWork, err)
+	}
+	if _, _, err := agenticScenarioTokenBoundary(101, 100, []byte(`{}`), work, nil); !errors.Is(err, errAgenticEpisodeTokenThreshold) {
+		t.Fatalf("successful over-budget response did not retain the ordinary threshold stop: %v", err)
 	}
 }
 
@@ -574,6 +648,25 @@ func TestUnselectedReplayStableBranchRunsIndependentOracle(t *testing.T) {
 	if err != nil || calls != 1 || len(branches) != 1 ||
 		assessment.Status != agenticEvidenceOracleFinding || assessment.ReasonCode != "agreement" {
 		t.Fatalf("unselected replay-stable branch bypassed the independent Oracle: %#v/%v", branches, err)
+	}
+}
+
+func TestUnselectedBranchProviderFailureRemainsTyped(t *testing.T) {
+	branch := agenticBranchTestingResult{Testing: scenarioTestingResult{
+		Risk: semantic.RiskWitnessResult{
+			Status: semantic.RiskWitnessNotReached, MissingMilestones: []string{"decision"},
+		},
+	}}
+	assessment := assessUnselectedBranchEvidence(
+		agenticEvidenceAssessment{Status: agenticEvidenceInconclusive},
+		[]agenticBranchTestingResult{branch},
+		controlexperiment.ScenarioAgentResult{
+			StopReason: controlexperiment.ScenarioAgentStopProviderResponse,
+		},
+	)
+	if assessment.Status != agenticEvidenceInconclusive ||
+		assessment.ReasonCode != controlexperiment.ScenarioAgentStopProviderResponse {
+		t.Fatalf("unselected branch hid provider failure: %#v", assessment)
 	}
 }
 

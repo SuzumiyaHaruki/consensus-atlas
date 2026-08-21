@@ -43,3 +43,60 @@ func TestPlanningAgentCallIntentAndContentReadyRemainSchemaNeutral(t *testing.T)
 		t.Fatal("content-ready transport result acquired proposal authority")
 	}
 }
+
+func TestFailedPlanningCallCanPreserveObservedProviderResponse(t *testing.T) {
+	requestDigest := strings.Repeat("3", 64)
+	transport := AgentTransportFreeze{
+		Provider: "fixture", Endpoint: "https://example.invalid/v1", Model: "fixture-model",
+		Thinking: "low", StructuredOutputMode: "json-object", RequestTimeoutMS: 1_000,
+		RoutingPolicy: "fixture-fixed", MaxOutputTokens: 200, MaxCallsPerArm: 1, MaxRetries: 0,
+	}
+	intent, err := NewPlanningAgentCallIntent(
+		"scenario-call-1", 1, "scenario-root", requestDigest, transport,
+		[]byte(`[{"role":"user","content":"repair"}]`), []byte(`{"model":"fixture-model"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch, err := NewStatelessAgentCallDispatch(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, err := NewStatelessAgentCallResult(intent, dispatch, StatelessAgentCallResult{
+		Status: StatelessAgentCallFailed, FailureCode: "response-finish-length",
+		ResponseDigest: strings.Repeat("7", 64),
+		Response: &AgentResponseIdentity{
+			ID: "fixture-truncated", Model: "fixture-model", FinishReason: "length",
+		},
+		Work:              ModelWork{Calls: 1, InputTokens: 40, OutputTokens: 16, TotalTokens: 56},
+		TransportAttempts: 1, ProviderUsageStatus: "observed",
+	})
+	if err != nil || failed.ValidateInputs(intent, dispatch) != nil || failed.Response == nil ||
+		failed.Response.FinishReason != "length" || failed.FailureCode != "response-finish-length" {
+		t.Fatalf("known failed response was not durable: %#v/%v", failed, err)
+	}
+	tampered := failed
+	tampered.Response = nil
+	if tampered.ValidateInputs(intent, dispatch) == nil {
+		t.Fatal("response-known failure was accepted after dropping only its response identity")
+	}
+	for name, result := range map[string]StatelessAgentCallResult{
+		"empty identity": {
+			Status: StatelessAgentCallContentReady, Content: []byte(`{}`),
+			ResponseDigest: strings.Repeat("7", 64), Response: &AgentResponseIdentity{},
+			Work: ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+		},
+		"length mismatch": {
+			Status: StatelessAgentCallFailed, FailureCode: "response-finish-length",
+			ResponseDigest: strings.Repeat("7", 64), Response: &AgentResponseIdentity{
+				ID: "fixture-truncated", Model: "fixture-model", FinishReason: "stop",
+			},
+			Work:                ModelWork{Calls: 1, InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+			ProviderUsageStatus: "observed",
+		},
+	} {
+		if _, err := NewStatelessAgentCallResult(intent, dispatch, result); err == nil {
+			t.Fatalf("%s response metadata was accepted", name)
+		}
+	}
+}

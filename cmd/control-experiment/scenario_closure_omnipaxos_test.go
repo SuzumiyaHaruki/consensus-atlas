@@ -196,7 +196,7 @@ func TestOmnipaxosMessageLossClosureSharedPrefix(t *testing.T) {
 	}
 	mismatchedRegistry := etcdraftAgenticOracleRegistry()
 	mismatchedResult := newScenarioTestingResult(
-		target.PlanID, qualified.Bundle, qualified.Risk, mismatchedRegistry,
+		target.PlanID, qualified.Bundle, qualified.Risk, mismatchedRegistry, len(prefix.Records),
 	)
 	if validateScenarioTestingRisk(
 		mismatchedResult, spec, projector, omnipaxosv2.DecisionProjector{}, mismatchedRegistry,

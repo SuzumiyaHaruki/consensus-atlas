@@ -55,6 +55,7 @@ func TestAgenticHoldoutClassifiesIncompleteEpisodeAsInvalidTrial(t *testing.T) {
 	incomplete := evidence[trialID]
 	incomplete.EpisodeStatus, incomplete.EvidenceStatus = AgenticEpisodeRiskStopped, "planning-failed"
 	incomplete.Bundle, incomplete.CandidateBundles = nil, nil
+	incomplete.BundleRootDecisions, incomplete.CandidateRootDecisions = 0, nil
 	evidence[trialID] = incomplete
 	report, err := EvaluateAgenticHoldoutBundles(
 		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{}, oracle.BundleAgreement{},
@@ -215,12 +216,15 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 	branchOnlyID := contract.Pairs[0].Control.TrialID
 	branchOnly := evidence[branchOnlyID]
 	branchOnly.Bundle = nil
+	branchOnly.BundleRootDecisions = 0
 	branchOnly.CandidateBundles = []controlexperiment.ExecutionBundle{branchBundle}
+	branchOnly.CandidateRootDecisions = []int{0}
 	evidence[branchOnlyID] = branchOnly
 
 	findingID := contract.Pairs[0].Candidate.TrialID
 	withBranch := evidence[findingID]
 	withBranch.CandidateBundles = []controlexperiment.ExecutionBundle{branchBundle}
+	withBranch.CandidateRootDecisions = []int{0}
 	evidence[findingID] = withBranch
 
 	report, err := EvaluateAgenticHoldoutBundles(
@@ -272,6 +276,81 @@ func TestAgenticHoldoutEvaluatesBranchOnlyAndUnselectedCandidateBundles(t *testi
 			t.Fatalf("multi-candidate budget was not aggregated before finding: %#v", result.Result)
 		}
 	}
+}
+
+func TestAgenticHoldoutAttributesFreshOracleFindingsAfterRoot(t *testing.T) {
+	contract, _, evidence := agenticHoldoutFixture(t)
+	for trialID, current := range evidence {
+		current.BundleRootDecisions = 1
+		evidence[trialID] = current
+	}
+	contract.Composition.MonitorIDs = []string{targetoracles.LogProgressMonitorID}
+	contract, err := contract.Seal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := contract.OpaqueView()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, err := AuditFormalExposure(
+		contract, view, []FormalPublicArtifact{{Bytes: []byte(`{"trial_id":"opaque-01"}`)}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{},
+		rootAndPostFindingMonitor{postRoot: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range report.Results {
+		if result.RootPrefixFindings != 1 || len(result.Result.Oracle.Violations) != 2 ||
+			result.Result.Finding == nil || result.Result.Finding.Step <= 0 {
+			t.Fatalf("fresh Oracle attribution = %#v", result)
+		}
+	}
+
+	report, err = EvaluateAgenticHoldoutBundles(
+		contract, exposure, evidence, agenticReplayFixture, etcdraftv2.DecisionProjector{},
+		rootAndPostFindingMonitor{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range report.Results {
+		wantStatus := BundleStatusSurvived
+		if result.Result.Kind == BundleKindControl {
+			wantStatus = BundleStatusControlPass
+		}
+		if result.RootPrefixFindings != 1 || len(result.Result.Oracle.Violations) != 1 ||
+			result.Result.Finding != nil || result.Result.Status != wantStatus {
+			t.Fatalf("root-only Oracle finding affected Agent result = %#v", result)
+		}
+	}
+}
+
+type rootAndPostFindingMonitor struct {
+	postRoot bool
+}
+
+func (rootAndPostFindingMonitor) Name() string { return targetoracles.LogProgressMonitorID }
+
+func (monitor rootAndPostFindingMonitor) CheckBundle(
+	bundle controlexperiment.ExecutionBundle,
+) []oracle.Violation {
+	violations := []oracle.Violation{{
+		Monitor: monitor.Name(), Step: 1, Message: "finding already present in root",
+	}}
+	if monitor.postRoot {
+		violations = append(violations, oracle.Violation{
+			Monitor: monitor.Name(), Step: len(bundle.Trace.Records), Message: "finding after root",
+		})
+	}
+	return violations
 }
 
 type digestFindingMonitor struct {

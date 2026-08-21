@@ -187,6 +187,13 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   policy、workload 与 Target config）；private input 额外提供 build audit、SUT binary
   和可信 executor。evaluator 在隔离子进程中调用现有 qualified executor，逐 Action
   比较 fresh Trace，然后才重新投影并运行 Oracle；
+- Scenario root 的 decision boundary 随主 Bundle 和每个候选 Bundle 一起进入 evaluator 输入；formal loader
+  从 Episode summary 中的 Scenario frontier reconstruction work 推导它，并与保存值以及主路径
+  Trace 长度减去 selected-path decisions 交叉核对。这是多字段交叉验证的方法侧边界，不是
+  独立 evaluator-owned root boundary；当前 formal 威胁模型不声称防止 artifact producer 一致篡改
+  这三项事实。完整 Oracle
+  结果不删除 root violation，但正式 finding 只由 evaluator-owned Replay 中 root 之后的 violation 产生。
+  root 中已有的异常单独报告为 Oracle sensitivity，不能归因于 Agent；
 - Target preparation 受独立 wall-clock deadline 约束；qualification report/case 数量、
   root 构造的 primary/replay work 和实际耗时进入 Episode 工件。root work 进入 formal
   primary/replay 成本；qualification 通过协议中立 Adapter `WorkMeter` 记录真实 Reset、
@@ -263,12 +270,16 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
 - closure handoff、正式 Risk 输入、节点规模/调用预算和因果实例绑定属于方法实现变化，当前
-  MethodSpec implementation identity 为 `m4n10-deep-candidate-investigation-v1`；旧
+  MethodSpec implementation identity 为 `m4n11-provider-recovery-and-quorum-oracle-v1`；旧
+  `m4n10-deep-candidate-investigation-v1`/
   `m4n8-agent-semantics-portfolio-search-v1`/`m4n6-causal-closure-build-evidence-v1`/
   `m4n5-multinode-closure-v1`/`m4m4-risk-fidelity-v1`/
   `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
   `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
+- M4n11 已执行的主路径和候选分支必须封存 root/post-root Oracle attribution；
+  campaign resume 按已有 MethodSpec implementation ID 机械区分当前与历史工件。只有旧版本
+  可以缺省 attribution，当前版本不会将缺失字段默认恢复为 root=0；
 - M4n10 的新工件只使用“机械可执行”（兼容 wire value `executable`）→
   `witness-instantiated → oracle-finding` 三层结论；
   `scenarioTestingResult.outcome` 为 `oracle-clean|oracle-finding`，不能再用 `passed`
@@ -290,19 +301,27 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v8`
   按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
   portfolio；query 是单行匹配的一个大小写不敏感字面子串，不分词且不执行 OR。oracle-backed 是 prompt
-  的可验证性软偏好，不是可信侧准入条件；已通过机械审查的 observable-only/
+  的可验证性软偏好，不是可信侧准入条件；已完成的 read 按候选 mechanism step 是否引用 `source/...`
+  报告为 `completed-used|completed-unused`，该口径不形成 gate；已通过机械审查的 observable-only/
   hypothesis-only 候选仍必须保留。源码只确认实现机制与 contract，不能作为 defect verdict；
 - 取消共享调用池。每个新候选或队列候选都固定获得 8 次 Scenario 调用、64 decisions、单步计划
   和每轮至多 4 个自然推进 decision；Episode 总预算为 12 calls、240k observed tokens、30 分钟，
-  Risk/Scenario reasoning 均为 high，Scenario 输出上限为 8192 tokens；
+  Risk reasoning 保持 high，Scenario reasoning 降为 low，Scenario 输出上限仍为 8192 tokens；
+  HTTP 200 的结构化响应失败必须区分 length/empty/malformed/too-large，并在已知时保留 usage、
+  response identity 与 finish reason。首次 `finish_reason=length` 只允许在现有预算内做一次绑定同一
+  frontier 的最小 JSON repair；repair 不执行或重放 Runtime Action，二次失败以 in-band stop 保存
+  已验证前缀并继续 Bundle、fresh Replay 与 Oracle。journal 恢复只允许精确相邻、同 root、同冻结 view、
+  绑定原调用序号的 length→repair；dispatch 后缺少 result 的调用保持显式 unreconciled，绝不静默重发。
+  失败响应跨过 token 阈值时保留原 failure classification，只停止后续模型调用；
 - Exploration Memory 增加 `property_ref`/`evidence_level`，只用于识别语义重复和理解可验证性，
   不把 oracle-backed 当作 finding，也不参与可信 verdict；
 - 六 Episode 长调查不设独立 portfolio 数量上限，只受统一 Episode/call/token/decision 预算约束；
   按原顺序调查最多六个候选，总上限 72 calls、
   1.44M observed tokens、384 Scenario decision allowance；不因首个 finding 提前停止，且暂不
   实现跨 Episode live Trace continuation；
-- Scenario 的 stateless 压缩反馈必须保留上一轮唯一战略 Action、机械步骤、自然推进切片和
-  closure handoff step ID；`token-stopped` 只停止当前 Episode，已 accepted 但未进入
+- Scenario 的 stateless 压缩反馈必须保留 previous proposal、outcome/reason、selector failure、
+  capability gap、closure handoff 与 ProgressDelta；逐步反馈删除重复的 Choice、RiskProgress 和
+  view/evidence digest。`token-stopped` 只停止当前 Episode，已 accepted 但未进入
   Scenario 的候选必须在 Investigation 总预算尚可启动时由下一 Episode 继续；
 - M4n10 的零模型/fixture 校准已经机械验证 source search/read、一次 portfolio 修复、固定
   Scenario 深度、超过三次反馈循环、协议 quorum 知识、端点 binding、fresh Replay 与

@@ -50,7 +50,44 @@ const (
 	ScenarioAgentStopFinalSelectionRequired = "final-selection-required"
 	ScenarioAgentStopHypothesisAbandoned    = "hypothesis-abandoned"
 	ScenarioAgentStopCapabilityGap          = "capability-gap"
+	ScenarioAgentStopProviderResponse       = "provider-response-failed"
+	ScenarioAgentReasonResponseFinishLength = "response-finish-length"
+	ScenarioAgentReasonResponseEmptyContent = "response-empty-content"
+	ScenarioAgentReasonResponseMalformed    = "response-malformed"
+	ScenarioAgentReasonResponseTooLarge     = "response-too-large"
 )
+
+// ScenarioPlannerResponseFailure describes a charged provider response that
+// produced no executable proposal. It is not a transport ambiguity and never
+// authorizes hidden Runtime work. Repairable is used only for one explicit
+// output-length repair call within the existing call/token budget.
+type ScenarioPlannerResponseFailure struct {
+	Code       string
+	Repairable bool
+}
+
+func (failure *ScenarioPlannerResponseFailure) Error() string {
+	if failure == nil {
+		return ScenarioAgentStopProviderResponse
+	}
+	return failure.Code
+}
+
+func validScenarioPlannerResponseFailure(failure *ScenarioPlannerResponseFailure) bool {
+	if failure == nil {
+		return false
+	}
+	switch failure.Code {
+	case ScenarioAgentReasonResponseFinishLength:
+		return true
+	case ScenarioAgentReasonResponseEmptyContent,
+		ScenarioAgentReasonResponseMalformed,
+		ScenarioAgentReasonResponseTooLarge:
+		return !failure.Repairable
+	default:
+		return false
+	}
+}
 
 type ScenarioAgentFeedback struct {
 	Attempt              int                               `json:"attempt"`
@@ -289,6 +326,8 @@ func exploreScenarioWithPlanner(
 	branches := make(map[string]scenarioInvestigationBranchState)
 	usedDecisions := 0
 	var prior *ScenarioAgentFeedback
+	var pendingRepairView *ScenarioAgentView
+	repairUsed := false
 	for ordinal := 1; ordinal <= maxCalls; ordinal++ {
 		remaining := maxDecisions - usedDecisions
 		selectionOnly := !singlePath && len(result.Branches) > 0 && (remaining <= 0 || ordinal == maxCalls)
@@ -341,9 +380,46 @@ func exploreScenarioWithPlanner(
 			Branches:                cloneScenarioBranches(result.Branches),
 			Prior:                   cloneScenarioFeedback(prior),
 		}
+		repairAttempt := pendingRepairView != nil
+		if repairAttempt {
+			if pendingRepairView.Frontier.Digest != view.Frontier.Digest {
+				return result, errors.New("EXPERIMENT_SCENARIO_AGENT_REPAIR_FRONTIER_DRIFT")
+			}
+			view = cloneScenarioAgentView(*pendingRepairView)
+			pendingRepairView = nil
+		}
 		response, work, err := planner(ctx, view)
 		if err != nil {
-			return result, err
+			var responseFailure *ScenarioPlannerResponseFailure
+			if !errors.As(err, &responseFailure) || !validScenarioPlannerResponseFailure(responseFailure) {
+				return result, err
+			}
+			if !validStatelessPlannerWork(work) {
+				return result, errors.New("EXPERIMENT_SCENARIO_AGENT_MODEL_WORK_INVALID")
+			}
+			addScenarioModelWork(&result.ModelWork, work)
+			attempt := ScenarioAgentAttempt{
+				Ordinal: ordinal, ModelWork: work,
+				Feedback: ScenarioAgentFeedback{
+					Attempt: ordinal, Outcome: ScenarioAgentStopped,
+					ReasonCode:     responseFailure.Code,
+					AllowedIntents: append([]string(nil), view.AvailableIntents...),
+				},
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			if responseFailure.Repairable {
+				// A length repair is the same logical proposal against the same
+				// frontier. Do not let this transport-level outcome change the
+				// Scenario intent phase before the one allowed repair call.
+				if repairUsed || ordinal == maxCalls {
+					return finishScenarioAgentResult(result, root, ScenarioAgentStopProviderResponse), nil
+				}
+				repairUsed = true
+				frozen := cloneScenarioAgentView(view)
+				pendingRepairView = &frozen
+				continue
+			}
+			return finishScenarioAgentResult(result, root, ScenarioAgentStopProviderResponse), nil
 		}
 		if !validStatelessPlannerWork(work) {
 			return result, errors.New("EXPERIMENT_SCENARIO_AGENT_MODEL_WORK_INVALID")
@@ -367,6 +443,9 @@ func exploreScenarioWithPlanner(
 				attempt.Feedback.PreviousProposal = cloneScenarioProposal(&proposal)
 			}
 			result.Attempts = append(result.Attempts, attempt)
+			if repairAttempt {
+				return finishScenarioAgentResult(result, root, ScenarioAgentStopProviderResponse), nil
+			}
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
 		}
@@ -383,6 +462,9 @@ func exploreScenarioWithPlanner(
 				PreviousProposal: cloneScenarioProposal(&proposal),
 			}
 			result.Attempts = append(result.Attempts, attempt)
+			if repairAttempt {
+				return finishScenarioAgentResult(result, root, ScenarioAgentStopProviderResponse), nil
+			}
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
 			continue
 		}
@@ -612,6 +694,19 @@ func finishScenarioAgentResult(
 		result.SelectedPathDecisions = len(result.Execution.FinalTrace.Records) - len(root.Records)
 	}
 	return result
+}
+
+func cloneScenarioAgentView(view ScenarioAgentView) ScenarioAgentView {
+	view.Knowledge = cloneProtocolKnowledge(view.Knowledge)
+	view.AcceptedHypothesis = cloneAcceptedHypothesisContext(view.AcceptedHypothesis)
+	view.TargetSurface = cloneAgentTargetSurface(view.TargetSurface)
+	view.OrderedMilestones = append([]string(nil), view.OrderedMilestones...)
+	view.Frontier = cloneScenarioFrontier(view.Frontier)
+	view.Semantics = cloneScenarioSemantics(view.Semantics)
+	view.AvailableIntents = append([]string(nil), view.AvailableIntents...)
+	view.Branches = cloneScenarioBranches(view.Branches)
+	view.Prior = cloneScenarioFeedback(view.Prior)
+	return view
 }
 
 func scenarioMilestoneIDs(spec semantic.RiskWitnessSpec) []string {

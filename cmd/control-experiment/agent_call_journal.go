@@ -19,6 +19,36 @@ const (
 
 var errStatelessAgentCallKeyRequired = errors.New("STATELESS_AGENT_CALL_KEY_REQUIRED")
 
+const (
+	statelessAgentFailureTransport      = "agent-transport-ambiguous"
+	statelessAgentFailureHTTP           = "agent-http-status-rejected"
+	statelessAgentFailureFinishLength   = "response-finish-length"
+	statelessAgentFailureEmptyContent   = "response-empty-content"
+	statelessAgentFailureMalformed      = "response-malformed"
+	statelessAgentFailureResponseTooBig = "response-too-large"
+)
+
+type statelessAgentTerminalFailure struct{ Code string }
+
+func (failure *statelessAgentTerminalFailure) Error() string {
+	if failure == nil {
+		return "STATELESS_AGENT_CALL_TERMINAL_FAILURE"
+	}
+	return failure.Code
+}
+
+func statelessAgentFailure(code string) error {
+	return &statelessAgentTerminalFailure{Code: code}
+}
+
+func statelessAgentFailureCode(err error) string {
+	var failure *statelessAgentTerminalFailure
+	if errors.As(err, &failure) {
+		return failure.Code
+	}
+	return ""
+}
+
 type statelessAgentCallJournal struct {
 	directory string
 	rootID    string
@@ -148,10 +178,15 @@ func recoverStatelessAgentCallJournal(
 		if err != nil {
 			return nil, err
 		}
-		if index+1 < len(entries) && (call.result == nil || !statelessAgentCallCanContinue(call.result.Status)) {
+		recovered = append(recovered, call)
+	}
+	for index := 0; index+1 < len(recovered); index++ {
+		if !statelessAgentCallSequenceCanContinue(recovered[index], recovered[index+1]) {
 			return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_TERMINAL_NOT_LAST")
 		}
-		recovered = append(recovered, call)
+	}
+	if !validStatelessScenarioRepairSequence(recovered) {
+		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_REPAIR_SEQUENCE_INVALID")
 	}
 	return &statelessAgentCallJournal{
 		directory: clean, client: client, transport: transport,
@@ -162,6 +197,84 @@ func recoverStatelessAgentCallJournal(
 func statelessAgentCallCanContinue(status string) bool {
 	return status == controlexperiment.StatelessAgentCallCompleted ||
 		status == controlexperiment.StatelessAgentCallContentReady
+}
+
+// statelessAgentCallSequenceCanContinue keeps the generic journal terminal by
+// default. The only failed result that may have a successor is the exact
+// Scenario length-repair pair: adjacent ordinals under the same root, a
+// response-finish-length result, and a repair intent bound to the same frozen
+// Scenario view digest and the original provider-call ordinal.
+func statelessAgentCallSequenceCanContinue(
+	current statelessAgentRecoveredCall,
+	next statelessAgentRecoveredCall,
+) bool {
+	if current.result != nil && statelessAgentCallCanContinue(current.result.Status) {
+		_, _, _, nextIsRepair := parseScenarioRepairIntentID(next.intent.ID)
+		return !nextIsRepair
+	}
+	if current.result == nil || current.result.Status != controlexperiment.StatelessAgentCallFailed ||
+		current.result.FailureCode != statelessAgentFailureFinishLength ||
+		current.intent.RootID != next.intent.RootID ||
+		current.intent.Ordinal+1 != next.intent.Ordinal ||
+		current.intent.SearchRequestDigest != next.intent.SearchRequestDigest {
+		return false
+	}
+	callOrdinal, callBinding, callOK := parseScenarioCallIntentID(current.intent.ID)
+	repairOrdinal, repairFrom, repairBinding, repairOK := parseScenarioRepairIntentID(next.intent.ID)
+	return callOK && repairOK && callOrdinal == current.intent.Ordinal &&
+		repairOrdinal == next.intent.Ordinal && repairFrom == current.intent.Ordinal &&
+		callBinding == repairBinding && callBinding == current.intent.SearchRequestDigest
+}
+
+func validStatelessScenarioRepairSequence(calls []statelessAgentRecoveredCall) bool {
+	repairs := 0
+	for index, call := range calls {
+		_, _, _, repair := parseScenarioRepairIntentID(call.intent.ID)
+		if !repair {
+			continue
+		}
+		repairs++
+		if repairs > 1 || index == 0 ||
+			!statelessAgentCallSequenceCanContinue(calls[index-1], call) {
+			return false
+		}
+	}
+	return true
+}
+
+func parseScenarioCallIntentID(value string) (int, string, bool) {
+	const prefix = "scenario-agent-call-"
+	const separator = "-binding-"
+	if !strings.HasPrefix(value, prefix) {
+		return 0, "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(value, prefix), separator, 2)
+	if len(parts) != 2 || !validAgenticSHA256(parts[1]) {
+		return 0, "", false
+	}
+	ordinal, err := strconv.Atoi(parts[0])
+	return ordinal, parts[1], err == nil && ordinal > 0
+}
+
+func parseScenarioRepairIntentID(value string) (int, int, string, bool) {
+	const prefix = "scenario-agent-repair-call-"
+	const fromSeparator = "-from-"
+	const bindingSeparator = "-binding-"
+	if !strings.HasPrefix(value, prefix) {
+		return 0, 0, "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(value, prefix), fromSeparator, 2)
+	if len(parts) != 2 {
+		return 0, 0, "", false
+	}
+	remainder := strings.SplitN(parts[1], bindingSeparator, 2)
+	if len(remainder) != 2 || !validAgenticSHA256(remainder[1]) {
+		return 0, 0, "", false
+	}
+	ordinal, ordinalErr := strconv.Atoi(parts[0])
+	from, fromErr := strconv.Atoi(remainder[0])
+	return ordinal, from, remainder[1], ordinalErr == nil && fromErr == nil &&
+		ordinal > 0 && from > 0
 }
 
 func recoverStatelessAgentCall(
@@ -287,7 +400,7 @@ func (journal *statelessAgentCallJournal) planningCall(
 		if recovered.result != nil {
 			journal.next = ordinal
 			if recovered.result.Status != plan.successStatus() {
-				return nil, recovered.result.Work, errors.New("STATELESS_AGENT_CALL_RECOVERED_TERMINAL_FAILURE")
+				return nil, recovered.result.Work, statelessAgentFailure(recovered.result.FailureCode)
 			}
 			return append([]byte(nil), recovered.result.Content...), recovered.result.Work, nil
 		}
@@ -350,14 +463,25 @@ func (journal *statelessAgentCallJournal) dispatch(
 	var terminalErr error
 	if transportErr != nil || call.FailureCode != "" {
 		result.Status = controlexperiment.StatelessAgentCallFailed
-		result.FailureCode = "agent-transport-ambiguous"
+		result.FailureCode = statelessAgentFailureTransport
 		if transportErr == nil && call.FailureCode == agentFailureHTTP {
-			result.FailureCode = "agent-http-status-rejected"
-		} else if transportErr == nil && call.FailureCode != agentFailureTransport {
-			result.FailureCode = "agent-response-rejected"
+			result.FailureCode = statelessAgentFailureHTTP
+		} else if transportErr == nil {
+			switch call.FailureCode {
+			case agentFailureResponseFinishLength:
+				result.FailureCode = statelessAgentFailureFinishLength
+			case agentFailureResponseEmptyContent:
+				result.FailureCode = statelessAgentFailureEmptyContent
+			case agentFailureResponseTooLarge:
+				result.FailureCode = statelessAgentFailureResponseTooBig
+			case agentFailureResponseMalformed:
+				result.FailureCode = statelessAgentFailureMalformed
+			default:
+				result.FailureCode = statelessAgentFailureMalformed
+			}
 		}
-		result.Content, result.Response = nil, nil
-		terminalErr = errors.New(result.FailureCode)
+		result.Content = nil
+		terminalErr = statelessAgentFailure(result.FailureCode)
 	} else if !plan.contentReady {
 		proposalDigest, parseErr := plan.validateOutput(call.Content)
 		if parseErr != nil {

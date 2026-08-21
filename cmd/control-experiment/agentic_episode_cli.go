@@ -39,7 +39,7 @@ func runAgenticEpisodeCLI(
 	})
 	if result.Summary.TargetID != "" {
 		fmt.Fprintf(stdout,
-			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d executable=%t witness_instantiated=%t pss_protocol=%d pss_control=%d pss_joint=%d pss_samples=%d oracle_findings=%d\n",
+			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d executable=%t witness_instantiated=%t pss_protocol=%d pss_control=%d pss_joint=%d pss_samples=%d agent_oracle_findings=%d root_prefix_oracle_findings=%d\n",
 			options.CampaignDirectory, result.Summary.TargetID, result.Summary.Status,
 			result.Summary.RiskAttempts, result.Summary.ScenarioAttempts,
 			result.Summary.Work.Model.Calls, result.Summary.Work.Model.TotalTokens,
@@ -47,6 +47,7 @@ func runAgenticEpisodeCLI(
 			result.Summary.Metrics.ProtocolPSSStates, result.Summary.Metrics.ControlPSSStates,
 			result.Summary.Metrics.UniquePSSStates, result.Summary.Metrics.CorePSSSamples,
 			result.Summary.Metrics.OracleFindings,
+			result.Summary.Metrics.RootPrefixOracleFindings,
 		)
 	} else if result.UnreconciledModelCalls > 0 {
 		fmt.Fprintf(stdout, "episode=%s unreconciled_model_calls=%d\n",
