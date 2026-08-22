@@ -499,7 +499,7 @@ func executeBoundedScenarioPlan(
 			}
 			effectiveGoal := automaticGoal
 			if effectiveGoal.autoInvoke &&
-				scenarioRiskHasMilestone(result.FinalRisk, effectiveGoal.invokeMilestone) {
+				scenarioRiskHasMilestone(result.FinalRisk, effectiveGoal.targetMilestone) {
 				effectiveGoal.autoInvoke = false
 			}
 			live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(

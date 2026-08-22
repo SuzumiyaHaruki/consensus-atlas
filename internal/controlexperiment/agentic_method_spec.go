@@ -12,7 +12,8 @@ const (
 	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                                                = "agentic-episode-v1"
-	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n26-strategic-frontier-and-oracle-scope-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n27-typed-milestone-before-strategy-v1"
+	agenticMethodImplementationM4n26                                       = "consensus-atlas/agentic-method/m4n26-strategic-frontier-and-oracle-scope-v1"
 	agenticMethodImplementationM4n25                                       = "consensus-atlas/agentic-method/m4n25-public-prerequisite-progress-v1"
 	agenticMethodImplementationM4n24                                       = "consensus-atlas/agentic-method/m4n24-scoped-grounding-and-setup-reserve-v1"
 	agenticMethodImplementationM4n23                                       = "consensus-atlas/agentic-method/m4n23-automatic-coordinator-setup-v1"
@@ -271,6 +272,7 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodImplementationM4n26 ||
 		id == agenticMethodImplementationM4n25 ||
 		id == agenticMethodImplementationM4n24 ||
 		id == agenticMethodImplementationM4n23 ||
@@ -305,6 +307,7 @@ func validAgenticMethodImplementationID(id string) bool {
 // not accidentally weaken it when the current implementation ID advances.
 func AgenticMethodRequiresOracleAttribution(implementationID string) bool {
 	return implementationID == AgenticMethodImplementationID ||
+		implementationID == agenticMethodImplementationM4n26 ||
 		implementationID == agenticMethodImplementationM4n25 ||
 		implementationID == agenticMethodImplementationM4n24 ||
 		implementationID == agenticMethodImplementationM4n23 ||

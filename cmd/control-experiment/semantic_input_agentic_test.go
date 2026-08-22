@@ -275,36 +275,40 @@ func TestEtcdraftBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testing
 }
 
 func TestEtcdraftBootstrapSkipsPublicPrerequisitesBeforeFirstPlanner(t *testing.T) {
-	ctx, cancel := context.WithTimeout(
-		context.Background(), controlExperimentTestTimeout(120*time.Second),
-	)
-	defer cancel()
-	inputs, err := prepareEtcdraftAgenticEpisodeWithOverrides(
-		ctx, "", etcdraftAgenticTestInputPath, fixtureOpenRouterIntentClient(),
-		agenticInputOverrides{NodeCount: 3},
-	)
-	if err != nil {
-		t.Fatal(err)
+	for _, nodeCount := range []int{3, 5} {
+		t.Run(fmt.Sprintf("nodes-%d", nodeCount), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(
+				context.Background(), controlExperimentTestTimeout(120*time.Second),
+			)
+			defer cancel()
+			inputs, err := prepareEtcdraftAgenticEpisodeWithOverrides(
+				ctx, "", etcdraftAgenticTestInputPath, fixtureOpenRouterIntentClient(),
+				agenticInputOverrides{NodeCount: nodeCount},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := newEtcdraftAgenticEpisodeTarget(inputs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := etcdraftAlternateQuorumRiskCandidate()
+			candidate.ID += "-after-natural-delivery"
+			candidate.Predicates = insertNaturalPredicateAfterInvoke(
+				candidate.Predicates,
+				semantic.ObservationPredicate{
+					MilestoneID: "append-delivered-before-drop",
+					Kind:        semantic.ObservationMessageDelivered,
+					Constraints: []semantic.ObservationConstraint{{
+						Field: semantic.ObservationFieldMessageRole, Equals: "MsgApp",
+					}},
+				},
+			)
+			assertBootstrapScenarioEstablishesCoordination(
+				t, ctx, target, candidate, "etcdraft", nodeCount,
+			)
+		})
 	}
-	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidate := etcdraftAlternateQuorumRiskCandidate()
-	publicDelivery := semantic.ObservationPredicate{
-		MilestoneID: "append-delivered-before-drop",
-		Kind:        semantic.ObservationMessageDelivered,
-		Constraints: []semantic.ObservationConstraint{{
-			Field: semantic.ObservationFieldMessageRole, Equals: "MsgApp",
-		}},
-	}
-	candidate.Predicates = append(
-		append([]semantic.ObservationPredicate(nil), candidate.Predicates[:1]...),
-		append([]semantic.ObservationPredicate{publicDelivery}, candidate.Predicates[1:]...)...,
-	)
-	assertBootstrapScenarioEstablishesCoordination(
-		t, ctx, target, candidate, "etcdraft", 3,
-	)
 }
 
 func TestOmnipaxosBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testing.T) {
@@ -335,8 +339,29 @@ func TestOmnipaxosBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testin
 			assertBootstrapScenarioEstablishesCoordination(
 				t, ctx, target, existing.Candidate, "omnipaxos", nodeCount,
 			)
+			candidate := existing.Candidate
+			candidate.ID += "-after-natural-timer"
+			candidate.Predicates = insertNaturalPredicateAfterInvoke(
+				candidate.Predicates,
+				semantic.ObservationPredicate{
+					MilestoneID: "pulse-before-drop",
+					Kind:        semantic.ObservationTemporalFired,
+				},
+			)
+			assertBootstrapScenarioEstablishesCoordination(
+				t, ctx, target, candidate, "omnipaxos", nodeCount,
+			)
 		})
 	}
+}
+
+func insertNaturalPredicateAfterInvoke(
+	predicates []semantic.ObservationPredicate,
+	natural semantic.ObservationPredicate,
+) []semantic.ObservationPredicate {
+	result := make([]semantic.ObservationPredicate, 0, len(predicates)+1)
+	result = append(result, predicates[0], natural)
+	return append(result, predicates[1:]...)
 }
 
 func assertBootstrapScenarioEstablishesCoordination(

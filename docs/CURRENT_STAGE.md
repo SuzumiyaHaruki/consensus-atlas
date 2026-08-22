@@ -1,6 +1,6 @@
 # 当前阶段
 
-阶段：M4n26 strategic frontier 与 Oracle finding scope 收口
+阶段：M4n27 typed milestone 顺序与战略 frontier 收口
 
 ## 当前结论
 
@@ -35,11 +35,11 @@ Runtime、决定 Replay 或产生 finding；finding 只来自独立 Oracle。
 当前 MethodSpec implementation ID 为：
 
 ```text
-consensus-atlas/agentic-method/m4n26-strategic-frontier-and-oracle-scope-v1
+consensus-atlas/agentic-method/m4n27-typed-milestone-before-strategy-v1
 ```
 
 Risk/Scenario prompt 分别为 `risk-agent-navigation-v11` 与
-`scenario-agent-investigation-v25`。M4n25 及历史 MethodSpec 的
+`scenario-agent-investigation-v25`。M4n26 及历史 MethodSpec 的
 `closure_mode` 仍可读取，但当前 CLI 不再暴露 `-closure-mode`，活动组合固定使用公共推进。
 
 ## 当前执行语义
@@ -294,3 +294,42 @@ Crash，随后在首个 `apply` milestone 尚未满足时 abandon，所以结果
 violation 是 step 37 的 election-safety，发生在 root boundary step 40 之前，因而只记为 1 个
 root-prefix finding，没有归因给 Agent。该结果验证了 strategic-only frontier、成本账本、Replay 和
 finding attribution 的真实主链，不证明 Agent 已能完成所选恢复假设，也不触发第二次 canary。
+
+### M4n26 OmniPaxos 单 Episode canary
+
+全新目录 `artifacts/agentic/m4n26-omnipaxos-single-canary-v1` 使用本地 `suts/omnipaxos` 离线重建
+worker，并完成 4 次 Risk、1 次 Scenario，共 5 calls / 88,010 observed tokens。Risk Agent 产生 3 个
+executable candidates，选中 `inflight-ballot-handoff-client-binding`；SUT search/read 成功但候选未引用
+读取的 `atomic_storage_test.rs`，因此 grounding 为 `completed-unused`。
+
+Scenario 的唯一战略 Action 是 step 24 丢弃 `n1→n2 ble/heartbeat-request`，随后公共推进到 client
+terminal；它没有满足候选要求的首个 `n2-pulse-a` milestone，所以 witness 未实例化，停止原因为
+`strategic-frontier-unavailable`。28-step Bundle fresh Replay stable，独立 evaluator 重算
+trace-integrity、agreement 与 omnipaxos-client-decision-binding，均为 0 violation。
+
+该结果暴露一个协议无关的编排缺口：候选下一 milestone 是受 participant binding 约束的 natural timer，
+但 strategic-only Agent view 隐藏 Timer；与此同时，普通 Drop frontier 会让公共推进过早把控制权交还
+Agent。后续应在 Core 按 accepted predicate 区分“需要可信继续完成的自然 milestone”与“等待 Agent
+选择的战略 milestone”，而不是为 OmniPaxos 增加消息名或专用 selector。
+
+## M4n27 typed milestone 顺序修复
+
+- 可信层现在只处理 `first_missing_milestone`，不再因为 frontier 中存在任意 Drop/Crash 就提前调用
+  Scenario Agent。当前 milestone 是 `message-delivered` 或 `temporal-fired` 时，分别优先选择真实
+  enabled 的 Deliver 或 Timer；coordinator/epoch/decision 等其他自然 milestone 继续复用公共 causal
+  progress。milestone 满足后才重新计算下一目标。
+- predicate 中已由可信 witness 解析的 participant binding 会收窄自然推进方向；首次未解析的 binding
+  仍按稳定公共顺序选择，随后同名 binding 必须沿用真实观察到的节点。Core 只读取通用 Observation
+  field，不解释变量名，也不包含 Raft/OmniPaxos 消息词汇。
+- 当前 milestone 是战略 predicate 时，公共层只推进普通 Action，直到与该 predicate 的类型化约束匹配
+  的 Action 真正进入 enabled frontier；无关 Drop 不能抢占控制权。匹配 Action 仍由 Agent 选择，公共层
+  不执行故障干预，并至少保留一个 Runtime decision 给该选择。
+- 三/五节点零模型回归已覆盖 etcd/raft 的 `Invoke → MsgApp delivered → Drop` 与 OmniPaxos 的
+  `Invoke → temporal-fired → operation Drop`。第一次 Planner 调用不包含自然 Action，且只在当前
+  typed 战略 frontier 可执行时发生；两个 Target 的 qualified Bundle、fresh Replay 与 Oracle 路径保持
+  通过。
+- 本轮没有调用外部模型，也没有修改两个协议实现。M4n26 工件继续只读兼容；新的执行语义使用
+  `m4n27-typed-milestone-before-strategy-v1`，避免旧、新方法工件混合恢复。
+- `go test ./... -count=1 -timeout=360s`、`go vet ./...`、两项仓库审计与 `git diff --check`
+  均通过；公共 milestone 选择的聚焦 race 通过。两个真实 Target 合并运行的聚焦 race 在 360 秒
+  总超时处终止，未报告数据竞争；普通跨协议回归已通过，因此记录该超时且不重复消耗时间。

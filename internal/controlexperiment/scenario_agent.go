@@ -236,22 +236,38 @@ func exploreScenarioWithPlanner(
 	var prior *ScenarioAgentFeedback
 	var pendingRepairView *ScenarioAgentView
 	repairUsed := false
+	automaticSequence := 0
 	for ordinal := 1; ordinal <= maxCalls; ordinal++ {
 		remaining := maxDecisions - usedDecisions
 		if remaining <= 0 {
 			break
 		}
 		automaticGoal := scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
-		if len(preparer) == 1 && automaticGoal.autoInvoke {
+		for automaticGoal.autoInvoke || automaticGoal.naturalPredicate != nil ||
+			automaticGoal.strategicPredicate != nil {
+			if automaticGoal.strategicPredicate != nil && scenarioStrategicFrontierAvailable(
+				*automaticGoal.strategicPredicate, currentRisk,
+				currentFrontier.Actions, &currentSemantics,
+			) {
+				break
+			}
 			setupAllowance := scenarioAutomaticSetupAllowance(remaining, automaticGoal)
 			if setupAllowance <= 0 {
 				return finishScenarioAgentResult(result, root, ScenarioAgentStopSetupBudget), nil
 			}
+			var automaticPreparer ScenarioActionPreparer
+			if automaticGoal.autoInvoke {
+				if len(preparer) != 1 {
+					return finishScenarioAgentResult(result, root, ScenarioAgentStopSetupQuiescent), nil
+				}
+				automaticPreparer = preparer[0]
+			}
+			automaticSequence++
 			automatic, frontier, semantics, applied, automaticErr :=
 				executeScenarioAutomaticGoal(
-					ctx, ordinal, setupAllowance, spec, currentRisk, currentTrace, currentSemantics,
+					ctx, automaticSequence, setupAllowance, spec, currentRisk, currentTrace, currentSemantics,
 					runtimeConfig, faultEnvelope, newAdapter, projector,
-					semanticProjector, automaticGoal, preparer[0],
+					semanticProjector, automaticGoal, automaticPreparer,
 				)
 			if automaticErr != nil {
 				return result, automaticErr
@@ -260,7 +276,12 @@ func exploreScenarioWithPlanner(
 				executed := len(automatic.FinalTrace.Records) - len(currentTrace.Records)
 				usedDecisions += executed
 				result.DecisionsUsed = usedDecisions
-				addScenarioExecutionWork(&result.SetupWork, automatic.Work)
+				beforeAgentAction := result.Execution == nil || len(result.Execution.Steps) == 0
+				if beforeAgentAction {
+					addScenarioExecutionWork(&result.SetupWork, automatic.Work)
+				} else {
+					addScenarioExecutionWork(&result.TrustedProgressWork, automatic.Work)
+				}
 				addScenarioExecutionWork(&result.ExecutionWork, automatic.Work)
 				mergeScenarioExecution(&result, automatic)
 				currentTrace, currentRisk = automatic.FinalTrace, automatic.FinalRisk
@@ -281,13 +302,14 @@ func exploreScenarioWithPlanner(
 				automaticGoal, currentRisk, currentFrontier, currentSemantics,
 			) {
 				switch automatic.NaturalProgressStop {
-				case ScenarioProgressQuiescent:
+				case ScenarioProgressQuiescent, ScenarioProgressClientTerminal:
 					return finishScenarioAgentResult(result, root, ScenarioAgentStopSetupQuiescent), nil
 				case ScenarioProgressBudget:
 					return finishScenarioAgentResult(result, root, ScenarioAgentStopSetupBudget), nil
 				}
 				return finishScenarioAgentResult(result, root, ScenarioAgentStopSetupQuiescent), nil
 			}
+			automaticGoal = scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
 		}
 		agentFrontier := cloneScenarioFrontier(currentFrontier)
 		agentSemantics := cloneScenarioSemantics(currentSemantics)
@@ -307,8 +329,9 @@ func exploreScenarioWithPlanner(
 				return finishScenarioAgentResult(result, root, ScenarioAgentStopDecisionBudget), nil
 			}
 			beforeAgentAction := result.Execution == nil || len(result.Execution.Steps) == 0
+			automaticSequence++
 			automatic, frontier, semantics, applied, automaticErr := executeScenarioAutomaticGoal(
-				ctx, ordinal, remaining, spec, currentRisk, currentTrace, currentSemantics,
+				ctx, automaticSequence, remaining, spec, currentRisk, currentTrace, currentSemantics,
 				runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 				scenarioAutomaticProgressGoal{yieldForStrategic: true}, nil,
 			)
@@ -648,27 +671,32 @@ func scenarioAutomaticGoalFor(
 	missing := current.MissingMilestones[0]
 	for index, predicate := range accepted.Candidate.Predicates {
 		if predicate.MilestoneID == missing {
-			strategic := false
-			switch predicate.Kind {
-			case semantic.ObservationMessageDropped,
-				semantic.ObservationNodeCrashed,
-				semantic.ObservationNodeRestarted:
-				strategic = true
-			}
 			goal := scenarioAutomaticProgressGoal{
-				autoInvoke:        predicate.Kind == semantic.ObservationWorkloadInvoked,
-				yieldForStrategic: strategic,
-				invokeMilestone:   predicate.MilestoneID,
+				autoInvoke:      predicate.Kind == semantic.ObservationWorkloadInvoked,
+				targetMilestone: predicate.MilestoneID,
 			}
-			if goal.autoInvoke {
+			if scenarioAutomaticPrerequisiteKind(predicate.Kind) {
+				copyPredicate := predicate
+				copyPredicate.Constraints = append(
+					[]semantic.ObservationConstraint(nil), predicate.Constraints...,
+				)
+				goal.naturalPredicate = &copyPredicate
+			}
+			if _, strategic := scenarioStrategicPredicateSelector(predicate, current); strategic {
+				copyPredicate := predicate
+				copyPredicate.Constraints = append(
+					[]semantic.ObservationConstraint(nil), predicate.Constraints...,
+				)
+				goal.targetMilestone = ""
+				goal.yieldForStrategic = true
+				goal.reserveStrategic = true
+				goal.strategicPredicate = &copyPredicate
+			}
+			if goal.autoInvoke || goal.naturalPredicate != nil {
 				for nextIndex := index + 1; nextIndex < len(accepted.Candidate.Predicates); nextIndex++ {
 					next := accepted.Candidate.Predicates[nextIndex]
 					if _, ok := scenarioStrategicPredicateSelector(next, current); ok {
-						next.Constraints = append(
-							[]semantic.ObservationConstraint(nil), next.Constraints...,
-						)
-						goal.yieldForStrategic = true
-						goal.strategicPredicate = &next
+						goal.reserveStrategic = true
 						break
 					}
 					if !scenarioAutomaticPrerequisiteKind(next.Kind) {
@@ -699,7 +727,7 @@ func scenarioAutomaticSetupAllowance(remaining int, goal scenarioAutomaticProgre
 	if remaining <= 0 {
 		return 0
 	}
-	if goal.strategicPredicate != nil {
+	if goal.reserveStrategic {
 		return remaining - 1
 	}
 	return remaining
@@ -711,15 +739,12 @@ func scenarioAutomaticGoalReached(
 	frontier RiskFrontierView,
 	semantics ScenarioSemanticExposure,
 ) bool {
-	if !scenarioRiskHasMilestone(risk, goal.invokeMilestone) {
-		return false
+	if goal.strategicPredicate != nil {
+		return scenarioStrategicFrontierAvailable(
+			*goal.strategicPredicate, risk, frontier.Actions, &semantics,
+		)
 	}
-	if goal.strategicPredicate == nil {
-		return true
-	}
-	return scenarioStrategicFrontierAvailable(
-		*goal.strategicPredicate, risk, frontier.Actions, &semantics,
-	)
+	return goal.targetMilestone != "" && scenarioRiskHasMilestone(risk, goal.targetMilestone)
 }
 
 func executeScenarioAutomaticGoal(

@@ -39,7 +39,9 @@ type scenarioCausalProgressFocus struct {
 type scenarioAutomaticProgressGoal struct {
 	autoInvoke         bool
 	yieldForStrategic  bool
-	invokeMilestone    string
+	reserveStrategic   bool
+	targetMilestone    string
+	naturalPredicate   *semantic.ObservationPredicate
 	strategicPredicate *semantic.ObservationPredicate
 }
 
@@ -164,9 +166,10 @@ func executeScenarioNaturalProgress(
 	closeWith := func(cause error) error {
 		return errors.Join(cause, runtime.Close())
 	}
+	focus := scenarioNaturalPredicateFocus(goal.naturalPredicate, rootRisk)
 	live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
-		faultEnvelope, runtime, projector, nil, semanticProjector, rootSemantics, goal, preparer,
+		faultEnvelope, runtime, projector, focus, semanticProjector, rootSemantics, goal, preparer,
 	)
 	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
@@ -297,7 +300,7 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 				return result, errors.New("EXPERIMENT_SCENARIO_AUTOMATIC_INVOKE_MISMATCH")
 			}
 		} else {
-			action, ok = scenarioNaturalProgressActionWithFocus(view.Actions, focus)
+			action, ok = scenarioNaturalProgressActionForGoal(view.Actions, focus, goal)
 		}
 		if !ok {
 			result.StopReason = ScenarioProgressQuiescent
@@ -413,15 +416,15 @@ func scenarioPublicProgressShouldYield(
 	currentSemantics *ScenarioSemanticExposure,
 	goal scenarioAutomaticProgressGoal,
 ) bool {
-	if goal.autoInvoke && scenarioRiskHasMilestone(currentRisk, goal.invokeMilestone) &&
-		goal.strategicPredicate != nil &&
-		scenarioStrategicFrontierAvailable(*goal.strategicPredicate, currentRisk, actions, currentSemantics) {
-		return true
+	if goal.targetMilestone != "" {
+		return scenarioRiskHasMilestone(currentRisk, goal.targetMilestone)
+	}
+	if goal.strategicPredicate != nil {
+		return scenarioStrategicFrontierAvailable(
+			*goal.strategicPredicate, currentRisk, actions, currentSemantics,
+		)
 	}
 	if len(currentRisk.SatisfiedMilestones) > len(rootRisk.SatisfiedMilestones) {
-		if goal.autoInvoke && goal.strategicPredicate != nil {
-			return false
-		}
 		return true
 	}
 	if rootSemantics != nil && currentSemantics != nil &&
@@ -429,9 +432,6 @@ func scenarioPublicProgressShouldYield(
 		rootCoordination := *rootSemantics.Coordination
 		currentCoordination := *currentSemantics.Coordination
 		if scenarioCoordinationMeaningfullyChanged(rootCoordination, currentCoordination) {
-			if goal.autoInvoke && !scenarioRiskHasMilestone(currentRisk, goal.invokeMilestone) {
-				return false
-			}
 			if goal.autoInvoke && rootCoordination.Status != ConsensusCoordinatorPresent &&
 				scenarioCoordinationInvokeReady(currentSemantics) {
 				return false
@@ -453,9 +453,6 @@ func scenarioPublicProgressShouldYield(
 		// that intervention is recorded and the next trusted milestone is
 		// ordinary protocol progress, newly derived fault controls are choices
 		// for another investigation, not a reason to interrupt this one.
-		return false
-	}
-	if goal.autoInvoke && goal.strategicPredicate != nil {
 		return false
 	}
 	current, err := scenarioStrategicActionKeys(actions)
@@ -553,6 +550,38 @@ func scenarioResolvedRiskBinding(risk semantic.RiskWitnessResult, name string) s
 	return ""
 }
 
+func scenarioNaturalPredicateFocus(
+	predicate *semantic.ObservationPredicate,
+	risk semantic.RiskWitnessResult,
+) *scenarioCausalProgressFocus {
+	if predicate == nil {
+		return nil
+	}
+	nodes := make(map[control.NodeID]struct{})
+	for _, constraint := range predicate.Constraints {
+		value := constraint.Equals
+		if value == "" && constraint.BindAs != "" {
+			value = scenarioResolvedRiskBinding(risk, constraint.BindAs)
+		}
+		if value == "" {
+			continue
+		}
+		switch constraint.Field {
+		case semantic.ObservationFieldParticipantNode,
+			semantic.ObservationFieldRelatedNode,
+			semantic.ObservationFieldMessageSourceNode,
+			semantic.ObservationFieldMessageTargetNode,
+			semantic.ObservationFieldNewCoordinatorNode,
+			semantic.ObservationFieldPreviousCoordinatorNode:
+			nodes[control.NodeID(value)] = struct{}{}
+		}
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+	return &scenarioCausalProgressFocus{nodes: nodes, items: make(map[control.ItemID]struct{})}
+}
+
 func scenarioCoordinationMeaningfullyChanged(
 	root ConsensusCoordinationStatus,
 	current ConsensusCoordinationStatus,
@@ -591,15 +620,51 @@ func scenarioNaturalProgressAction(actions []FrontierActionRef) (FrontierActionR
 	return scenarioNaturalProgressActionWithFocus(actions, nil)
 }
 
+func scenarioNaturalProgressActionForGoal(
+	actions []FrontierActionRef,
+	focus *scenarioCausalProgressFocus,
+	goal scenarioAutomaticProgressGoal,
+) (FrontierActionRef, bool) {
+	priority := scenarioNaturalProgressPriority
+	if goal.naturalPredicate != nil {
+		switch goal.naturalPredicate.Kind {
+		case semantic.ObservationMessageDelivered:
+			priority = []control.ActionKind{control.ActionDeliverMessage}
+		case semantic.ObservationTemporalFired:
+			priority = []control.ActionKind{control.ActionFireTemporal}
+		}
+	}
+	selected, ok := scenarioNaturalProgressActionByPriority(actions, focus, priority)
+	if ok || len(priority) == len(scenarioNaturalProgressPriority) {
+		return selected, ok
+	}
+	// A direct observation may not yet be enabled. Ordinary prerequisite work
+	// remains eligible, but the requested natural Action wins as soon as it is
+	// present in the authoritative frontier.
+	return scenarioNaturalProgressActionByPriority(
+		actions, focus, scenarioNaturalProgressPriority,
+	)
+}
+
 func scenarioNaturalProgressActionWithFocus(
 	actions []FrontierActionRef,
 	focus *scenarioCausalProgressFocus,
+) (FrontierActionRef, bool) {
+	return scenarioNaturalProgressActionByPriority(
+		actions, focus, scenarioNaturalProgressPriority,
+	)
+}
+
+func scenarioNaturalProgressActionByPriority(
+	actions []FrontierActionRef,
+	focus *scenarioCausalProgressFocus,
+	priority []control.ActionKind,
 ) (FrontierActionRef, bool) {
 	// First preserve the selected causal direction across Action kinds. An
 	// unrelated CompleteEffect must not preempt a vote/prepare delivery that
 	// continues the participant direction the planner just selected.
 	if focus != nil {
-		for _, kind := range scenarioNaturalProgressPriority {
+		for _, kind := range priority {
 			var dependent FrontierActionRef
 			for _, action := range actions {
 				if action.Kind == kind && scenarioProgressActionDependsOnFocus(action, focus) &&
@@ -611,7 +676,7 @@ func scenarioNaturalProgressActionWithFocus(
 				return dependent, true
 			}
 		}
-		for _, kind := range scenarioNaturalProgressPriority {
+		for _, kind := range priority {
 			var focused FrontierActionRef
 			for _, action := range actions {
 				if action.Kind == kind && scenarioProgressActionInFocus(action, focus) &&
@@ -624,7 +689,7 @@ func scenarioNaturalProgressActionWithFocus(
 			}
 		}
 	}
-	for _, kind := range scenarioNaturalProgressPriority {
+	for _, kind := range priority {
 		var selected FrontierActionRef
 		for _, action := range actions {
 			if action.Kind != kind {

@@ -47,8 +47,7 @@ func TestScenarioAgentDistinguishesSliceExhaustionFromEpisodeBudgetAndStall(t *t
 }
 
 func TestScenarioAutomaticSetupReservesOneStrategicDecision(t *testing.T) {
-	strategic := semantic.ObservationPredicate{Kind: semantic.ObservationMessageDropped}
-	goal := scenarioAutomaticProgressGoal{autoInvoke: true, strategicPredicate: &strategic}
+	goal := scenarioAutomaticProgressGoal{autoInvoke: true, reserveStrategic: true}
 	if got := scenarioAutomaticSetupAllowance(64, goal); got != 63 {
 		t.Fatalf("setup did not reserve one strategic decision: %d", got)
 	}
@@ -60,7 +59,7 @@ func TestScenarioAutomaticSetupReservesOneStrategicDecision(t *testing.T) {
 	}
 }
 
-func TestScenarioAutomaticGoalSkipsOnlyPublicPrerequisitesBeforeStrategicAction(t *testing.T) {
+func TestScenarioAutomaticGoalAdvancesOnlyTheImmediateMissingMilestone(t *testing.T) {
 	accepted := &AcceptedHypothesisContext{Candidate: RiskCandidate{Predicates: []semantic.ObservationPredicate{
 		{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
 		{MilestoneID: "append", Kind: semantic.ObservationMessageDelivered},
@@ -70,9 +69,27 @@ func TestScenarioAutomaticGoalSkipsOnlyPublicPrerequisitesBeforeStrategicAction(
 	goal := scenarioAutomaticGoalFor(accepted, semantic.RiskWitnessResult{
 		MissingMilestones: []string{"invoke", "append", "ack", "crash"},
 	})
-	if !goal.autoInvoke || !goal.yieldForStrategic || goal.strategicPredicate == nil ||
-		goal.strategicPredicate.MilestoneID != "crash" {
-		t.Fatalf("public prerequisites hid the first strategic predicate: %#v", goal)
+	if !goal.autoInvoke || goal.targetMilestone != "invoke" || goal.yieldForStrategic ||
+		goal.naturalPredicate != nil || !goal.reserveStrategic {
+		t.Fatalf("Invoke was not retained as the immediate trusted goal: %#v", goal)
+	}
+	goal = scenarioAutomaticGoalFor(accepted, semantic.RiskWitnessResult{
+		SatisfiedMilestones: []string{"invoke"},
+		MissingMilestones:   []string{"append", "ack", "crash"},
+	})
+	if goal.autoInvoke || goal.targetMilestone != "append" || goal.yieldForStrategic ||
+		goal.naturalPredicate == nil || goal.naturalPredicate.Kind != semantic.ObservationMessageDelivered ||
+		!goal.reserveStrategic {
+		t.Fatalf("natural prerequisite was skipped in favor of a future fault: %#v", goal)
+	}
+	goal = scenarioAutomaticGoalFor(accepted, semantic.RiskWitnessResult{
+		SatisfiedMilestones: []string{"invoke", "append", "ack"},
+		MissingMilestones:   []string{"crash"},
+	})
+	if goal.autoInvoke || goal.targetMilestone != "" || !goal.yieldForStrategic ||
+		goal.naturalPredicate != nil || !goal.reserveStrategic ||
+		goal.strategicPredicate == nil || goal.strategicPredicate.MilestoneID != "crash" {
+		t.Fatalf("current strategic milestone was not returned to the Agent: %#v", goal)
 	}
 	accepted.Candidate.Predicates[2] = semantic.ObservationPredicate{
 		MilestoneID: "second-invoke", Kind: semantic.ObservationWorkloadInvoked,
@@ -80,8 +97,100 @@ func TestScenarioAutomaticGoalSkipsOnlyPublicPrerequisitesBeforeStrategicAction(
 	goal = scenarioAutomaticGoalFor(accepted, semantic.RiskWitnessResult{
 		MissingMilestones: []string{"invoke", "append", "second-invoke", "crash"},
 	})
-	if !goal.autoInvoke || goal.strategicPredicate != nil || goal.yieldForStrategic {
+	if !goal.autoInvoke || goal.reserveStrategic || goal.yieldForStrategic ||
+		goal.strategicPredicate != nil {
 		t.Fatalf("automatic setup crossed a non-public prerequisite: %#v", goal)
+	}
+}
+
+func TestScenarioImmediateStrategicGoalWaitsForMatchingFrontier(t *testing.T) {
+	predicate := semantic.ObservationPredicate{
+		MilestoneID: "drop", Kind: semantic.ObservationMessageDropped,
+		Constraints: []semantic.ObservationConstraint{{
+			Field: semantic.ObservationFieldMessageTargetNode, Equals: "n2",
+		}},
+	}
+	goal := scenarioAutomaticProgressGoal{
+		yieldForStrategic: true, reserveStrategic: true, strategicPredicate: &predicate,
+	}
+	semantics := ScenarioSemanticExposure{
+		Mode: ScenarioSemanticExposureFull,
+		ActionHints: []ConsensusActionHint{{
+			ActionID: "unrelated", ActionDigest: "unrelated-digest",
+			ActorRole: ConsensusSemanticUnknown, MessageClass: ConsensusSemanticUnknown,
+			EpochRelation: ConsensusSemanticUnknown, OperationState: ConsensusSemanticUnknown,
+		}},
+	}
+	unrelated := []FrontierActionRef{{
+		ActionID: "unrelated", ActionDigest: "unrelated-digest", Kind: control.ActionDropMessage,
+		MessageSource: control.NodeRef{Node: "n1", Incarnation: 1}, MessageTarget: "n3",
+	}}
+	if scenarioPublicProgressShouldYield(
+		semantic.RiskWitnessResult{}, semantic.RiskWitnessResult{}, map[string]struct{}{},
+		unrelated, nil, &semantics, goal,
+	) {
+		t.Fatal("unrelated strategic Action preempted the immediate typed milestone")
+	}
+	matching := append([]FrontierActionRef(nil), unrelated...)
+	matching[0].MessageTarget = "n2"
+	if !scenarioPublicProgressShouldYield(
+		semantic.RiskWitnessResult{}, semantic.RiskWitnessResult{}, map[string]struct{}{},
+		matching, nil, &semantics, goal,
+	) {
+		t.Fatal("matching strategic frontier was not returned to the Agent")
+	}
+}
+
+func TestScenarioNaturalMilestonePrefersItsActionKind(t *testing.T) {
+	actions := []FrontierActionRef{
+		{ActionID: "effect", ActionDigest: "effect-digest", Kind: control.ActionCompleteEffect},
+		{ActionID: "deliver", ActionDigest: "deliver-digest", Kind: control.ActionDeliverMessage},
+		{ActionID: "timer", ActionDigest: "timer-digest", Kind: control.ActionFireTemporal},
+	}
+	timer := semantic.ObservationPredicate{Kind: semantic.ObservationTemporalFired}
+	selected, ok := scenarioNaturalProgressActionForGoal(
+		actions, nil, scenarioAutomaticProgressGoal{naturalPredicate: &timer},
+	)
+	if !ok || selected.ActionID != "timer" {
+		t.Fatalf("timer milestone was preempted by unrelated natural work: %#v", selected)
+	}
+	delivered := semantic.ObservationPredicate{Kind: semantic.ObservationMessageDelivered}
+	selected, ok = scenarioNaturalProgressActionForGoal(
+		actions, nil, scenarioAutomaticProgressGoal{naturalPredicate: &delivered},
+	)
+	if !ok || selected.ActionID != "deliver" {
+		t.Fatalf("delivery milestone was preempted by unrelated natural work: %#v", selected)
+	}
+}
+
+func TestScenarioNaturalMilestoneUsesTrustedResolvedParticipantBinding(t *testing.T) {
+	predicate := semantic.ObservationPredicate{
+		Kind: semantic.ObservationTemporalFired,
+		Constraints: []semantic.ObservationConstraint{{
+			Field: semantic.ObservationFieldParticipantNode, BindAs: "pulse-node",
+		}},
+	}
+	risk := semantic.RiskWitnessResult{Milestones: []semantic.RiskWitnessMilestoneEvidence{{
+		MilestoneID: "pulse-a",
+		Bindings: []semantic.RiskWitnessBindingEvidence{{
+			Name: "pulse-node", Field: semantic.ObservationFieldParticipantNode, Value: "n2",
+		}},
+	}}}
+	focus := scenarioNaturalPredicateFocus(&predicate, risk)
+	actions := []FrontierActionRef{
+		{ActionID: "n1-timer", ActionDigest: "n1-digest", Kind: control.ActionFireTemporal,
+			Node: control.NodeRef{Node: "n1", Incarnation: 1}},
+		{ActionID: "n2-timer", ActionDigest: "n2-digest", Kind: control.ActionFireTemporal,
+			Node: control.NodeRef{Node: "n2", Incarnation: 1}},
+	}
+	selected, ok := scenarioNaturalProgressActionForGoal(
+		actions, focus, scenarioAutomaticProgressGoal{naturalPredicate: &predicate},
+	)
+	if !ok || selected.ActionID != "n2-timer" {
+		t.Fatalf("trusted participant binding did not focus natural progress: %#v", selected)
+	}
+	if !reflect.DeepEqual(actions[0].Node.Node, control.NodeID("n1")) {
+		t.Fatal("natural selection mutated the authoritative frontier")
 	}
 }
 
@@ -230,7 +339,7 @@ func TestScenarioBootstrapProgressYieldsOnlyOnTrustedSemanticChange(t *testing.T
 	}
 	if scenarioPublicProgressShouldYield(
 		rootRisk, currentRisk, map[string]struct{}{}, newFaultChoice, &root, &present,
-		scenarioAutomaticProgressGoal{autoInvoke: true, invokeMilestone: "invoke"},
+		scenarioAutomaticProgressGoal{autoInvoke: true, targetMilestone: "invoke"},
 	) {
 		t.Fatal("operation Risk yielded before typed automatic Invoke could run")
 	}

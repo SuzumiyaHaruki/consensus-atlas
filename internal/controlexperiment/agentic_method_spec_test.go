@@ -54,6 +54,18 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		spec.ImplementationID != AgenticMethodImplementationID {
 		t.Fatalf("Agentic MethodSpec invalid: %#v/%v", spec, err)
 	}
+	m4n26Legacy := spec
+	m4n26Legacy.ImplementationID = agenticMethodImplementationM4n26
+	m4n26Legacy.Digest = ""
+	m4n26LegacyDigest, err := control.CanonicalDigest(m4n26Legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m4n26Legacy.Digest = m4n26LegacyDigest
+	if m4n26Legacy.Validate() != nil || m4n26Legacy.Digest == spec.Digest ||
+		!AgenticMethodRequiresOracleAttribution(m4n26Legacy.ImplementationID) {
+		t.Fatalf("M4n26 legacy MethodSpec lost read-only validation: %#v", m4n26Legacy)
+	}
 	m4n25Legacy := spec
 	m4n25Legacy.ImplementationID = agenticMethodImplementationM4n25
 	m4n25Legacy.Digest = ""

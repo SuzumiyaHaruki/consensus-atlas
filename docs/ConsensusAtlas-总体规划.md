@@ -284,7 +284,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   战略 Action，整条 Trace 都属于 setup；
 - 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进、
   token-stop 证据封存和 Provider 失败恢复属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n26-strategic-frontier-and-oracle-scope-v1`；M4n25 及更早版本只读兼容；
+  `m4n27-typed-milestone-before-strategy-v1`；M4n26 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
@@ -402,6 +402,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   支持已实例化当前假设的 finding。etcd/raft 的 durable commit 检查留在 target-local Oracle，
   OmniPaxos 继续用自身决定与请求绑定证据；公共 Core 不理解两种协议的持久化或 ballot/term。
   setup、Agent attempt 与 Agent 后可信推进成本分别记账，并机械聚合为完整 Scenario search work；
+- M4n27 按可信 `first_missing_milestone` 串行推进：当前自然 predicate 由公共执行满足，当前战略
+  predicate 只有在匹配其类型化约束的 enabled Action 出现后才交给 Agent。已解析 participant binding
+  可收窄自然方向，无关战略 Action 不能抢占；实现仅依赖通用 Observation field 和 ActionKind，并由
+  三/五节点 etcd/raft、OmniPaxos 零模型回归共同约束；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。
