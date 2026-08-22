@@ -12,7 +12,6 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
@@ -495,15 +494,14 @@ func TestAgenticEvidenceUsesGlobalScenarioDecisionAccounting(t *testing.T) {
 	scenario := controlexperiment.ScenarioAgentResult{
 		Status:        controlexperiment.ScenarioAgentCompleted,
 		StopReason:    controlexperiment.ScenarioAgentStopDecisionBudget,
-		DecisionsUsed: 512, SelectedPathDecisions: 112,
-		BranchExplorationDecisions: 400,
-		Execution:                  &controlexperiment.ScenarioExecution{},
+		DecisionsUsed: 512, SelectedPathDecisions: 512,
+		Execution: &controlexperiment.ScenarioExecution{},
 	}
 	result := assessTestingEvidence(assessment, testing, scenario)
 	if result.Status != agenticEvidenceBudgetExhausted ||
 		result.ReasonCode != "runtime-decision-budget-exhausted" ||
 		result.FirstMissingMilestone != "ordered-intervention" {
-		t.Fatalf("global branch cost was inferred from the shorter selected trace: %#v", result)
+		t.Fatalf("global Scenario cost was not used at the budget boundary: %#v", result)
 	}
 	scenario.StopReason = controlexperiment.ScenarioAgentStopCallBudget
 	result = assessTestingEvidence(assessment, testing, scenario)
@@ -615,61 +613,6 @@ func TestAgenticCapabilityAdaptationMetricsUseDurableAttemptOrder(t *testing.T) 
 	}
 	if investigation := agenticInvestigationCapabilityAdaptation(episodes); investigation != metrics {
 		t.Fatalf("Investigation metrics lost cross-Episode repair: %#v/%#v", investigation, metrics)
-	}
-}
-
-func TestUnselectedReplayStableBranchRunsIndependentOracle(t *testing.T) {
-	calls := 0
-	target := agenticEpisodeTarget{Execute: func(
-		context.Context,
-		controlexperiment.ScenarioRiskHypothesis,
-		controlexperiment.SemanticPrefixProjector,
-		controlexperiment.ScenarioExecution,
-		string,
-	) (scenarioTestingResult, error) {
-		calls++
-		return scenarioTestingResult{Oracle: oracle.Result{
-			Checked:    []string{"agreement"},
-			Violations: []oracle.Violation{{Monitor: "agreement", Step: 1, Message: "candidate violation"}},
-		}}, nil
-	}}
-	scenario := controlexperiment.ScenarioAgentResult{
-		StopReason: controlexperiment.ScenarioAgentStopDecisionBudget,
-		CandidateExecutions: []controlexperiment.ScenarioCandidateExecution{{
-			BranchID: "final-treatment", Intent: controlexperiment.ScenarioIntentBranch,
-			Execution: controlexperiment.ScenarioExecution{
-				FinalTrace: controlruntime.Trace{Digest: "candidate-trace"},
-			},
-		}},
-	}
-	branches, err := executeAgenticBranchCandidates(
-		context.Background(), target, controlexperiment.ScenarioRiskHypothesis{}, nil, scenario,
-	)
-	assessment := assessUnselectedBranchEvidence(
-		agenticEvidenceAssessment{Status: agenticEvidenceInconclusive}, branches, scenario,
-	)
-	if err != nil || calls != 1 || len(branches) != 1 ||
-		assessment.Status != agenticEvidenceOracleFinding || assessment.ReasonCode != "agreement" {
-		t.Fatalf("unselected replay-stable branch bypassed the independent Oracle: %#v/%v", branches, err)
-	}
-}
-
-func TestUnselectedBranchProviderFailureRemainsTyped(t *testing.T) {
-	branch := agenticBranchTestingResult{Testing: scenarioTestingResult{
-		Risk: semantic.RiskWitnessResult{
-			Status: semantic.RiskWitnessNotReached, MissingMilestones: []string{"decision"},
-		},
-	}}
-	assessment := assessUnselectedBranchEvidence(
-		agenticEvidenceAssessment{Status: agenticEvidenceInconclusive},
-		[]agenticBranchTestingResult{branch},
-		controlexperiment.ScenarioAgentResult{
-			StopReason: controlexperiment.ScenarioAgentStopProviderResponse,
-		},
-	)
-	if assessment.Status != agenticEvidenceInconclusive ||
-		assessment.ReasonCode != controlexperiment.ScenarioAgentStopProviderResponse {
-		t.Fatalf("unselected branch hid provider failure: %#v", assessment)
 	}
 }
 

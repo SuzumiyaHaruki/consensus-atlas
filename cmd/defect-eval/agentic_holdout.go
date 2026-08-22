@@ -44,20 +44,19 @@ type agenticHoldoutInputs struct {
 // fields remain outside the trusted verdict path; Bundles are validated
 // independently.
 type agenticEpisodeSummaryProjection struct {
-	TargetID                   string                                      `json:"target_id"`
-	MethodSpecDigest           string                                      `json:"method_spec_digest"`
-	Status                     string                                      `json:"status"`
-	RiskAttempts               int                                         `json:"risk_attempts"`
-	ScenarioAttempts           int                                         `json:"scenario_attempts"`
-	ScenarioDecisionsUsed      int                                         `json:"scenario_decisions_used"`
-	SelectedPathDecisions      int                                         `json:"selected_path_decisions"`
-	BranchExplorationDecisions int                                         `json:"branch_exploration_decisions"`
-	DecisionProvenance         controlexperiment.AgenticDecisionProvenance `json:"decision_provenance"`
-	PlanID                     string                                      `json:"plan_id"`
-	RiskResultID               string                                      `json:"risk_result_id"`
-	TraceDigest                string                                      `json:"trace_digest"`
-	OracleAttribution          *agenticOracleAttributionProjection         `json:"oracle_attribution,omitempty"`
-	Budget                     struct {
+	TargetID              string                                      `json:"target_id"`
+	MethodSpecDigest      string                                      `json:"method_spec_digest"`
+	Status                string                                      `json:"status"`
+	RiskAttempts          int                                         `json:"risk_attempts"`
+	ScenarioAttempts      int                                         `json:"scenario_attempts"`
+	ScenarioDecisionsUsed int                                         `json:"scenario_decisions_used"`
+	SelectedPathDecisions int                                         `json:"selected_path_decisions"`
+	DecisionProvenance    controlexperiment.AgenticDecisionProvenance `json:"decision_provenance"`
+	PlanID                string                                      `json:"plan_id"`
+	RiskResultID          string                                      `json:"risk_result_id"`
+	TraceDigest           string                                      `json:"trace_digest"`
+	OracleAttribution     *agenticOracleAttributionProjection         `json:"oracle_attribution,omitempty"`
+	Budget                struct {
 		MaxRiskCalls         int                                     `json:"max_risk_calls"`
 		MaxScenarioCalls     int                                     `json:"max_scenario_calls"`
 		MaxTotalCalls        int                                     `json:"max_total_calls"`
@@ -66,17 +65,15 @@ type agenticEpisodeSummaryProjection struct {
 		MaxRuntimeDecisions  int                                     `json:"max_runtime_decisions"`
 		Logical              *controlexperiment.AgenticLogicalBudget `json:"logical_budget"`
 	} `json:"budget"`
-	BranchEvidence          []agenticBranchSummaryProjection            `json:"branch_evidence"`
 	RiskProviderCalls       []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
 	ScenarioProviderCalls   []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls"`
 	ScenarioAttemptFeedback []agenticScenarioAttemptWorkProjection      `json:"scenario_attempt_feedback"`
 	Work                    struct {
-		Preparation               controlexperiment.AgenticPreparationWork `json:"preparation"`
-		Model                     controlexperiment.ModelWork              `json:"model"`
-		ScenarioFrontier          controlexperiment.PhaseWork              `json:"scenario_frontier"`
-		ScenarioSearch            controlexperiment.ScenarioExecutionWork  `json:"scenario_search"`
-		QualifiedExecution        controlexperiment.WorkLedger             `json:"qualified_execution"`
-		BranchQualifiedExecutions []agenticBranchWorkProjection            `json:"branch_qualified_executions"`
+		Preparation        controlexperiment.AgenticPreparationWork `json:"preparation"`
+		Model              controlexperiment.ModelWork              `json:"model"`
+		ScenarioFrontier   controlexperiment.PhaseWork              `json:"scenario_frontier"`
+		ScenarioSearch     controlexperiment.ScenarioExecutionWork  `json:"scenario_search"`
+		QualifiedExecution controlexperiment.WorkLedger             `json:"qualified_execution"`
 	} `json:"work"`
 	Assessment struct {
 		Status string `json:"status"`
@@ -89,43 +86,8 @@ type agenticScenarioAttemptWorkProjection struct {
 	ExecutionWork    *controlexperiment.ScenarioExecutionWork `json:"execution_work"`
 }
 
-type agenticBranchSummaryProjection struct {
-	BranchID          string                              `json:"branch_id"`
-	Intent            string                              `json:"intent"`
-	ReferenceBranchID string                              `json:"reference_branch_id"`
-	PlanID            string                              `json:"plan_id"`
-	RiskResultID      string                              `json:"risk_result_id"`
-	TraceDigest       string                              `json:"trace_digest"`
-	OracleAttribution *agenticOracleAttributionProjection `json:"oracle_attribution,omitempty"`
-	Work              controlexperiment.WorkLedger        `json:"work"`
-}
-
 type agenticOracleAttributionProjection struct {
 	RootDecisions int `json:"root_decisions"`
-}
-
-type agenticBranchWorkProjection struct {
-	BranchID string                       `json:"branch_id"`
-	Work     controlexperiment.WorkLedger `json:"work"`
-}
-
-// The private evaluator deliberately projects only the independently checked
-// execution bundle from each persisted branch. Agent-reported Risk and Oracle
-// fields remain outside the trusted verdict path.
-type agenticBranchEvidenceProjection struct {
-	BranchID          string          `json:"branch_id"`
-	Intent            string          `json:"intent"`
-	ReferenceBranchID string          `json:"reference_branch_id,omitempty"`
-	Testing           json.RawMessage `json:"testing"`
-}
-
-type agenticTestingProjection struct {
-	PlanID            string                              `json:"plan_id"`
-	Bundle            controlexperiment.ExecutionBundle   `json:"execution_bundle"`
-	OracleAttribution *agenticOracleAttributionProjection `json:"oracle_attribution,omitempty"`
-	Risk              struct {
-		ID string `json:"id"`
-	} `json:"risk"`
 }
 
 func runAgenticHoldoutFreshEvaluation(
@@ -421,47 +383,6 @@ func loadAgenticEpisodeEvidence(
 	} else if summary.PlanID != "" || summary.OracleAttribution != nil {
 		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BUNDLE_INVALID: %s", trialID)
 	}
-	branchPath := filepath.Join(directory, "branch-evidence.json")
-	if branchInfo, branchErr := os.Lstat(branchPath); branchErr == nil {
-		if !branchInfo.Mode().IsRegular() || branchInfo.Mode()&os.ModeSymlink != 0 {
-			return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", trialID)
-		}
-		var branches []agenticBranchEvidenceProjection
-		if err := readStrictJSON(branchPath, &branches); err != nil || len(branches) == 0 ||
-			len(branches) > controlexperiment.ScenarioAgentMaxCalls || len(branches) != len(summary.BranchEvidence) {
-			return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", trialID)
-		}
-		seenBranches := make(map[string]bool, len(branches))
-		for index, branch := range branches {
-			declared := summary.BranchEvidence[index]
-			if strings.TrimSpace(branch.BranchID) == "" || strings.TrimSpace(branch.Intent) == "" ||
-				seenBranches[branch.BranchID] || len(branch.Testing) == 0 || branch.BranchID != declared.BranchID ||
-				branch.Intent != declared.Intent || branch.ReferenceBranchID != declared.ReferenceBranchID {
-				return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", trialID)
-			}
-			var testing agenticTestingProjection
-			if err := json.Unmarshal(branch.Testing, &testing); err != nil ||
-				!agenticSummaryBundleMatches(summary.MethodSpecDigest, declared.PlanID, declared.RiskResultID,
-					declared.TraceDigest, declared.Work, testing.Bundle) ||
-				testing.PlanID != declared.PlanID || testing.Risk.ID != declared.RiskResultID ||
-				declared.OracleAttribution == nil || testing.OracleAttribution == nil ||
-				declared.OracleAttribution.RootDecisions != testing.OracleAttribution.RootDecisions ||
-				testing.OracleAttribution.RootDecisions != summary.Work.ScenarioFrontier.SchedulerDecisions ||
-				testing.OracleAttribution.RootDecisions < 0 ||
-				testing.OracleAttribution.RootDecisions > len(testing.Bundle.Trace.Records) {
-				return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", trialID)
-			}
-			current.CandidateBundles = append(current.CandidateBundles, testing.Bundle)
-			current.CandidateRootDecisions = append(
-				current.CandidateRootDecisions, summary.Work.ScenarioFrontier.SchedulerDecisions,
-			)
-			seenBranches[branch.BranchID] = true
-		}
-	} else if !errors.Is(branchErr, os.ErrNotExist) {
-		return defectbench.AgenticTrialEvidence{}, branchErr
-	} else if len(summary.BranchEvidence) != 0 {
-		return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BRANCH_EVIDENCE_INVALID: %s", trialID)
-	}
 	return current, nil
 }
 
@@ -731,28 +652,16 @@ func validAgenticEpisodeSummaryProjection(
 		summary.RiskAttempts+summary.ScenarioAttempts != summary.Work.Model.Calls ||
 		summary.ScenarioDecisionsUsed < 0 ||
 		summary.ScenarioDecisionsUsed > summary.Budget.MaxRuntimeDecisions ||
-		summary.SelectedPathDecisions < 0 || summary.BranchExplorationDecisions < 0 ||
+		summary.SelectedPathDecisions < 0 ||
 		summary.SelectedPathDecisions > summary.ScenarioDecisionsUsed ||
-		summary.BranchExplorationDecisions > summary.ScenarioDecisionsUsed ||
 		hasPrimary != (summary.PlanID != "" || summary.RiskResultID != "" || summary.TraceDigest != "") ||
 		!hasPrimary && !reflect.DeepEqual(
 			summary.Work.QualifiedExecution, controlexperiment.WorkLedger{},
-		) ||
-		len(summary.BranchEvidence) != len(summary.Work.BranchQualifiedExecutions) ||
-		len(summary.BranchEvidence) > summary.ScenarioAttempts ||
-		len(summary.BranchEvidence) > controlexperiment.ScenarioAgentMaxCalls {
+		) {
 		return false
 	}
 	if !agenticSummaryProviderWorkValid(summary) || !agenticSummaryScenarioWorkValid(summary) {
 		return false
-	}
-	for index, branch := range summary.BranchEvidence {
-		work := summary.Work.BranchQualifiedExecutions[index]
-		if branch.BranchID == "" || branch.Intent == "" || branch.PlanID == "" ||
-			branch.RiskResultID == "" || branch.TraceDigest == "" ||
-			work.BranchID != branch.BranchID || !reflect.DeepEqual(work.Work, branch.Work) {
-			return false
-		}
 	}
 	return true
 }

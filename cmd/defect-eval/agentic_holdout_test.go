@@ -63,7 +63,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 			if err := os.MkdirAll(directory, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			summary := agenticHoldoutTestSummary(t, contract, bundle, false)
+			summary := agenticHoldoutTestSummary(t, contract, bundle)
 			if err := writeJSON(filepath.Join(directory, "summary.json"), summary); err != nil {
 				t.Fatal(err)
 			}
@@ -80,31 +80,8 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 			episodeByTrial[trialID] = directory
 		}
 	}
-	branchOnlyTrial := contract.Pairs[2].Candidate.TrialID
-	branchOnlyDirectory := episodeByTrial[branchOnlyTrial]
-	if err := os.Remove(filepath.Join(branchOnlyDirectory, "bundle.json")); err != nil {
-		t.Fatal(err)
-	}
-	branchEvidence := []map[string]any{{
-		"branch_id": "treatment-final", "intent": "branch",
-		"testing": map[string]any{
-			"plan_id": "branch-plan", "risk": map[string]any{"id": "branch-risk"},
-			"execution_bundle":   bundle,
-			"oracle_attribution": map[string]any{"root_decisions": 1},
-		},
-	}}
-	if err := writeJSON(
-		filepath.Join(branchOnlyDirectory, "summary.json"),
-		agenticHoldoutTestSummary(t, contract, bundle, true),
-	); err != nil {
-		t.Fatal(err)
-	}
-	writeAgenticHoldoutTestJournals(
-		t, branchOnlyDirectory, agenticHoldoutTestSummary(t, contract, bundle, true),
-	)
-	if err := writeJSON(filepath.Join(branchOnlyDirectory, "branch-evidence.json"), branchEvidence); err != nil {
-		t.Fatal(err)
-	}
+	accountingDirectory := episodeByTrial[contract.Pairs[2].Candidate.TrialID]
+
 	inputsPath := filepath.Join(root, "agentic-inputs.json")
 	if err := writeJSON(inputsPath, inputs); err != nil {
 		t.Fatal(err)
@@ -136,7 +113,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	}
 	boundaryTrial := contract.Pairs[0].Control.TrialID
 	boundaryDirectory := episodeByTrial[boundaryTrial]
-	tamperedBoundary := agenticHoldoutTestSummary(t, contract, bundle, false)
+	tamperedBoundary := agenticHoldoutTestSummary(t, contract, bundle)
 	tamperedBoundary["oracle_attribution"] = map[string]any{"root_decisions": 2}
 	if err := writeJSON(filepath.Join(boundaryDirectory, "summary.json"), tamperedBoundary); err != nil {
 		t.Fatal(err)
@@ -149,14 +126,14 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	}
 	if err := writeJSON(
 		filepath.Join(boundaryDirectory, "summary.json"),
-		agenticHoldoutTestSummary(t, contract, bundle, false),
+		agenticHoldoutTestSummary(t, contract, bundle),
 	); err != nil {
 		t.Fatal(err)
 	}
-	tamperedAccounting := agenticHoldoutTestSummary(t, contract, bundle, true)
+	tamperedAccounting := agenticHoldoutTestSummary(t, contract, bundle)
 	tamperedWork := tamperedAccounting["work"].(map[string]any)
 	tamperedWork["model"] = controlexperiment.ModelWork{}
-	if err := writeJSON(filepath.Join(branchOnlyDirectory, "summary.json"), tamperedAccounting); err != nil {
+	if err := writeJSON(filepath.Join(accountingDirectory, "summary.json"), tamperedAccounting); err != nil {
 		t.Fatal(err)
 	}
 	if err := runAgenticHoldoutEvaluation(
@@ -166,13 +143,13 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 		t.Fatalf("summary model work drift from provider audits was accepted: %v", err)
 	}
 	if err := writeJSON(
-		filepath.Join(branchOnlyDirectory, "summary.json"),
-		agenticHoldoutTestSummary(t, contract, bundle, true),
+		filepath.Join(accountingDirectory, "summary.json"),
+		agenticHoldoutTestSummary(t, contract, bundle),
 	); err != nil {
 		t.Fatal(err)
 	}
 	journalResultPath := filepath.Join(
-		branchOnlyDirectory, "scenario-agent", "model-calls", "001-scenario-root", "result.json",
+		accountingDirectory, "scenario-agent", "model-calls", "001-scenario-root", "result.json",
 	)
 	var journalResult controlexperiment.StatelessAgentCallResult
 	if err := readStrictJSON(journalResultPath, &journalResult); err != nil {
@@ -189,23 +166,9 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 		t.Fatalf("tampered provider journal was accepted: %v", err)
 	}
 	writeAgenticHoldoutTestJournals(
-		t, branchOnlyDirectory, agenticHoldoutTestSummary(t, contract, bundle, true),
+		t, accountingDirectory, agenticHoldoutTestSummary(t, contract, bundle),
 	)
-	undeclaredTrial := contract.Pairs[0].Control.TrialID
-	undeclaredDirectory := episodeByTrial[undeclaredTrial]
-	if err := writeJSON(filepath.Join(undeclaredDirectory, "branch-evidence.json"), branchEvidence); err != nil {
-		t.Fatal(err)
-	}
-	undeclaredOutput := filepath.Join(root, "agentic-undeclared-branch.json")
-	if err := runAgenticHoldoutEvaluation(
-		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"),
-		inputsPath, undeclaredOutput, agenticHoldoutTestReplayFactory,
-	); err == nil || !strings.Contains(err.Error(), "BRANCH_EVIDENCE_INVALID") {
-		t.Fatalf("summary-undeclared branch evidence was accepted: %v", err)
-	}
-	if err := os.Remove(filepath.Join(undeclaredDirectory, "branch-evidence.json")); err != nil {
-		t.Fatal(err)
-	}
+
 	_, _, otherMethodBundle := formalCLITestExecutionForMethod(t, "other-formal-method")
 	replacedTrial := contract.Pairs[1].Candidate.TrialID
 	replacedDirectory := episodeByTrial[replacedTrial]
@@ -222,7 +185,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	if err := writeJSON(filepath.Join(replacedDirectory, "bundle.json"), bundle); err != nil {
 		t.Fatal(err)
 	}
-	driftSummary := agenticHoldoutTestSummary(t, contract, bundle, false)
+	driftSummary := agenticHoldoutTestSummary(t, contract, bundle)
 	driftBudget := driftSummary["budget"].(map[string]any)
 	driftBudget["max_scenario_plan_steps"] = 3
 	if err := writeJSON(filepath.Join(replacedDirectory, "summary.json"), driftSummary); err != nil {
@@ -235,7 +198,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 		t.Fatalf("Episode limits drift was accepted: %v", err)
 	}
 	if err := writeJSON(
-		filepath.Join(replacedDirectory, "summary.json"), agenticHoldoutTestSummary(t, contract, bundle, false),
+		filepath.Join(replacedDirectory, "summary.json"), agenticHoldoutTestSummary(t, contract, bundle),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -276,23 +239,7 @@ func TestAgenticHoldoutCLIConsumesEpisodeDirectoriesAndWritesTrustedResults(t *t
 	if evaluation.Summary.InvalidTrials != 1 || evaluation.Summary.KilledCandidates != 0 {
 		t.Fatalf("incomplete Episode was not isolated as invalid: %#v", evaluation.Summary)
 	}
-	oversized := make([]map[string]any, controlexperiment.ScenarioAgentMaxCalls+1)
-	for index := range oversized {
-		oversized[index] = map[string]any{
-			"branch_id": "oversized-" + string(rune('a'+index)), "intent": "branch",
-			"testing": map[string]any{"execution_bundle": bundle},
-		}
-	}
-	if err := writeJSON(filepath.Join(branchOnlyDirectory, "branch-evidence.json"), oversized); err != nil {
-		t.Fatal(err)
-	}
-	oversizedOutput := filepath.Join(root, "agentic-oversized-evaluation.json")
-	if err := runAgenticHoldoutEvaluation(
-		filepath.Join(root, "contract.json"), filepath.Join(root, "exposure.json"),
-		inputsPath, oversizedOutput, agenticHoldoutTestReplayFactory,
-	); err == nil || !strings.Contains(err.Error(), "BRANCH_EVIDENCE_INVALID") {
-		t.Fatalf("oversized branch evidence was accepted: %v", err)
-	}
+
 }
 
 func TestAgenticHoldoutCLIRequiresCompleteInvestigationAndAggregatesPriorEpisodes(t *testing.T) {
@@ -366,7 +313,7 @@ func TestAgenticHoldoutCLIRequiresCompleteInvestigationAndAggregatesPriorEpisode
 					writeAgenticHoldoutTestJournals(t, directory, summary)
 					continue
 				}
-				summary := agenticHoldoutTestSummary(t, contract, bundle, false)
+				summary := agenticHoldoutTestSummary(t, contract, bundle)
 				summary["budget"] = agenticHoldoutTestBudgetForLogical(episodeBudget)
 				if err := writeJSON(filepath.Join(directory, "summary.json"), summary); err != nil {
 					t.Fatal(err)
@@ -490,7 +437,6 @@ func agenticHoldoutTestSummary(
 	t *testing.T,
 	contract defectbench.FormalBenchmarkContract,
 	bundle controlexperiment.ExecutionBundle,
-	branchOnly bool,
 ) map[string]any {
 	rootDecisions := 1
 	pathDecisions := len(bundle.Trace.Records) - rootDecisions
@@ -528,24 +474,6 @@ func agenticHoldoutTestSummary(
 		"evidence_assessment":       map[string]any{"status": "oracle-finding"},
 		"forward_compatible_detail": map[string]any{"ignored_by_evaluator": true},
 	}
-	if !branchOnly {
-		return summary
-	}
-	work["qualified_execution"] = controlexperiment.WorkLedger{}
-	work["branch_qualified_executions"] = []map[string]any{{
-		"branch_id": "treatment-final", "work": bundle.Work,
-	}}
-	delete(summary, "plan_id")
-	delete(summary, "risk_result_id")
-	delete(summary, "trace_digest")
-	delete(summary, "oracle_attribution")
-	summary["selected_path_decisions"] = 0
-	summary["branch_exploration_decisions"] = pathDecisions
-	summary["branch_evidence"] = []map[string]any{{
-		"branch_id": "treatment-final", "intent": "branch", "plan_id": "branch-plan",
-		"risk_result_id": "branch-risk", "trace_digest": bundle.Trace.Digest, "work": bundle.Work,
-		"oracle_attribution": map[string]any{"root_decisions": rootDecisions},
-	}}
 	return summary
 }
 

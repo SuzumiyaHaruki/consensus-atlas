@@ -163,14 +163,6 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	if err != nil || !bytes.Equal(replayed, content) || work != result.ModelWork || transportCalls != 1 {
 		t.Fatalf("risk recovery changed evidence: %q/%#v/%v calls=%d", replayed, work, err, transportCalls)
 	}
-	selectionOutput, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
-		MaxSteps: 0, DecisionAllowance: 0, RemainingDecisions: 0,
-		AvailableIntents: []string{controlexperiment.ScenarioIntentSelect},
-	})
-	if err != nil || !bytes.Contains(selectionOutput.Schema, []byte("from_branch_id")) ||
-		bytes.Contains(selectionOutput.Schema, []byte(`"plan"`)) {
-		t.Fatalf("final selection schema can still request Runtime work: %s/%v", selectionOutput.Schema, err)
-	}
 	abandonOutput, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
 		MaxSteps: 2, DecisionAllowance: 4, RemainingDecisions: 8,
 		AvailableIntents: []string{

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -16,23 +15,9 @@ import (
 )
 
 const (
-	agenticEpisodeSummaryFile        = "summary.json"
-	agenticEpisodeBundleFile         = "bundle.json"
-	agenticEpisodeBranchEvidenceFile = "branch-evidence.json"
+	agenticEpisodeSummaryFile = "summary.json"
+	agenticEpisodeBundleFile  = "bundle.json"
 )
-
-type agenticBranchEvidenceArtifact struct {
-	BranchID           string                       `json:"branch_id"`
-	Intent             string                       `json:"intent"`
-	ReferenceBranchID  string                       `json:"reference_branch_id,omitempty"`
-	PlanID             string                       `json:"plan_id"`
-	RiskResultID       string                       `json:"risk_result_id"`
-	TraceDigest        string                       `json:"trace_digest"`
-	OracleFindings     int                          `json:"oracle_findings"`
-	RootOracleFindings int                          `json:"root_prefix_oracle_findings,omitempty"`
-	OracleAttribution  *scenarioOracleAttribution   `json:"oracle_attribution,omitempty"`
-	Work               controlexperiment.WorkLedger `json:"work"`
-}
 
 type agenticScenarioAttemptArtifact struct {
 	Ordinal              int                                                 `json:"ordinal"`
@@ -55,38 +40,35 @@ type agenticScenarioAttemptArtifact struct {
 type agenticDecisionProvenance = controlexperiment.AgenticDecisionProvenance
 
 // agenticEpisodeArtifact is deliberately compact. Exact prompts and provider
-// responses remain in the two journals; full Traces remain in the selected
-// Bundle and optional branch evidence. This summary keeps only navigation and
-// accounting facts.
+// responses remain in the two journals; the full Trace remains in the single
+// selected Bundle. This summary keeps only navigation and accounting facts.
 type agenticEpisodeArtifact struct {
-	TargetID                   string                                      `json:"target_id"`
-	MethodSpecDigest           string                                      `json:"method_spec_digest,omitempty"`
-	Status                     string                                      `json:"status"`
-	Budget                     agenticEpisodeBudget                        `json:"budget"`
-	Accepted                   *controlexperiment.RiskCandidateAssessment  `json:"accepted_risk,omitempty"`
-	ExecutableRisks            []controlexperiment.RiskCandidateAssessment `json:"executable_risks,omitempty"`
-	RiskAttempts               int                                         `json:"risk_attempts"`
-	RiskFeedback               *controlexperiment.RiskAgentFeedback        `json:"risk_feedback,omitempty"`
-	RiskSourceGrounding        controlexperiment.RiskSourceGroundingUsage  `json:"risk_source_grounding,omitempty"`
-	ScenarioStatus             string                                      `json:"scenario_status,omitempty"`
-	ScenarioStopReason         string                                      `json:"scenario_stop_reason,omitempty"`
-	ScenarioAttempts           int                                         `json:"scenario_attempts"`
-	ScenarioAttemptFeedback    []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
-	ScenarioDecisionsUsed      int                                         `json:"scenario_decisions_used"`
-	DecisionProvenance         agenticDecisionProvenance                   `json:"decision_provenance"`
-	SelectedPathDecisions      int                                         `json:"selected_path_decisions"`
-	BranchExplorationDecisions int                                         `json:"branch_exploration_decisions"`
-	BranchEvidence             []agenticBranchEvidenceArtifact             `json:"branch_evidence,omitempty"`
-	RiskProviderCalls          []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
-	ScenarioProviderCalls      []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
-	Failure                    *controlexperiment.MethodFailure            `json:"failure,omitempty"`
-	PlanID                     string                                      `json:"plan_id,omitempty"`
-	RiskResultID               string                                      `json:"risk_result_id,omitempty"`
-	TraceDigest                string                                      `json:"trace_digest,omitempty"`
-	OracleAttribution          *scenarioOracleAttribution                  `json:"oracle_attribution,omitempty"`
-	Metrics                    agenticEpisodeMetrics                       `json:"metrics"`
-	Work                       agenticEpisodeWork                          `json:"work"`
-	Assessment                 agenticEvidenceAssessment                   `json:"evidence_assessment,omitempty"`
+	TargetID                string                                      `json:"target_id"`
+	MethodSpecDigest        string                                      `json:"method_spec_digest,omitempty"`
+	Status                  string                                      `json:"status"`
+	Budget                  agenticEpisodeBudget                        `json:"budget"`
+	Accepted                *controlexperiment.RiskCandidateAssessment  `json:"accepted_risk,omitempty"`
+	ExecutableRisks         []controlexperiment.RiskCandidateAssessment `json:"executable_risks,omitempty"`
+	RiskAttempts            int                                         `json:"risk_attempts"`
+	RiskFeedback            *controlexperiment.RiskAgentFeedback        `json:"risk_feedback,omitempty"`
+	RiskSourceGrounding     controlexperiment.RiskSourceGroundingUsage  `json:"risk_source_grounding,omitempty"`
+	ScenarioStatus          string                                      `json:"scenario_status,omitempty"`
+	ScenarioStopReason      string                                      `json:"scenario_stop_reason,omitempty"`
+	ScenarioAttempts        int                                         `json:"scenario_attempts"`
+	ScenarioAttemptFeedback []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
+	ScenarioDecisionsUsed   int                                         `json:"scenario_decisions_used"`
+	DecisionProvenance      agenticDecisionProvenance                   `json:"decision_provenance"`
+	SelectedPathDecisions   int                                         `json:"selected_path_decisions"`
+	RiskProviderCalls       []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
+	ScenarioProviderCalls   []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
+	Failure                 *controlexperiment.MethodFailure            `json:"failure,omitempty"`
+	PlanID                  string                                      `json:"plan_id,omitempty"`
+	RiskResultID            string                                      `json:"risk_result_id,omitempty"`
+	TraceDigest             string                                      `json:"trace_digest,omitempty"`
+	OracleAttribution       *scenarioOracleAttribution                  `json:"oracle_attribution,omitempty"`
+	Metrics                 agenticEpisodeMetrics                       `json:"metrics"`
+	Work                    agenticEpisodeWork                          `json:"work"`
+	Assessment              agenticEvidenceAssessment                   `json:"evidence_assessment,omitempty"`
 }
 
 type agenticEpisodeRecoveryBinding struct {
@@ -106,7 +88,6 @@ type recoveredAgenticEpisode struct {
 	Summary                agenticEpisodeArtifact
 	MethodSpec             *controlexperiment.AgenticMethodSpec
 	Testing                *scenarioTestingResult
-	BranchTesting          []agenticBranchTestingResult
 	UnreconciledModelCalls int
 }
 
@@ -144,7 +125,6 @@ func newAgenticEpisodeArtifact(
 		artifact.ScenarioAttempts = len(result.Scenario.Agent.Attempts)
 		artifact.ScenarioDecisionsUsed = result.Scenario.Agent.DecisionsUsed
 		artifact.SelectedPathDecisions = result.Scenario.Agent.SelectedPathDecisions
-		artifact.BranchExplorationDecisions = result.Scenario.Agent.BranchExplorationDecisions
 		for _, attempt := range result.Scenario.Agent.Attempts {
 			compact := agenticScenarioAttemptArtifact{
 				Ordinal: attempt.Ordinal, Intent: attempt.Feedback.Intent,
@@ -204,38 +184,21 @@ func newAgenticEpisodeArtifact(
 		artifact.TraceDigest = result.Testing.Bundle.Trace.Digest
 		artifact.OracleAttribution = cloneScenarioOracleAttribution(result.Testing.OracleAttribution)
 	}
-	for _, branch := range result.BranchTesting {
-		artifact.BranchEvidence = append(artifact.BranchEvidence, agenticBranchEvidenceArtifact{
-			BranchID: branch.BranchID, Intent: branch.Intent,
-			ReferenceBranchID: branch.ReferenceBranchID,
-			PlanID:            branch.Testing.PlanID, RiskResultID: branch.Testing.Risk.ID,
-			TraceDigest:        branch.Testing.Bundle.Trace.Digest,
-			OracleFindings:     len(branch.Testing.agentPathOracleViolations()),
-			RootOracleFindings: len(branch.Testing.rootPrefixOracleViolations()),
-			OracleAttribution:  cloneScenarioOracleAttribution(branch.Testing.OracleAttribution),
-			Work:               branch.Testing.Bundle.Work,
-		})
-	}
 	if err := artifact.validateCompact(); err != nil {
 		return agenticEpisodeArtifact{}, err
 	}
 	if result.Status == agenticEpisodeCompleted ||
-		result.Status == agenticEpisodeTokenStopped &&
-			(result.Testing != nil || len(result.BranchTesting) != 0) {
-		metrics, metricsErr := agenticEpisodeMetricsFromEvidence(result.Testing, result.BranchTesting)
+		result.Status == agenticEpisodeTokenStopped && result.Testing != nil {
+		metrics, metricsErr := agenticEpisodeMetricsFromEvidence(result.Testing)
 		primaryValid := result.Testing == nil && artifact.PlanID == "" && artifact.RiskResultID == "" ||
 			result.Testing != nil && result.Testing.validateExecutionStructure() == nil &&
 				reflect.DeepEqual(artifact.Work.QualifiedExecution, result.Testing.Bundle.Work)
-		if artifact.Accepted == nil || len(result.BranchTesting) != len(artifact.BranchEvidence) ||
-			result.Testing == nil && len(result.BranchTesting) == 0 || !primaryValid ||
+		if artifact.Accepted == nil || result.Testing == nil || !primaryValid ||
 			metricsErr != nil || artifact.Metrics != metrics ||
-			!branchExecutionWorkMatches(artifact.Work.BranchQualifiedExecutions, result.BranchTesting) ||
-			!agenticEvidenceMethodMatches(
-				artifact.MethodSpecDigest, result.Testing, result.BranchTesting,
-			) {
+			!agenticEvidenceMethodMatches(artifact.MethodSpecDigest, result.Testing) {
 			return agenticEpisodeArtifact{}, errors.New("AGENTIC_EPISODE_ARTIFACT_TESTING_INVALID")
 		}
-	} else if result.Testing != nil || len(result.BranchTesting) != 0 {
+	} else if result.Testing != nil {
 		return agenticEpisodeArtifact{}, errors.New("AGENTIC_EPISODE_ARTIFACT_UNEXPECTED_TESTING")
 	}
 	return artifact, nil
@@ -253,13 +216,6 @@ func persistAgenticEpisodeArtifacts(
 	}
 	if result.Testing != nil {
 		if err := writeStatelessAgentJSON(directory, agenticEpisodeBundleFile, result.Testing.Bundle); err != nil {
-			return agenticEpisodeArtifact{}, err
-		}
-	}
-	if len(result.BranchTesting) > 0 {
-		if err := writeStatelessAgentJSON(
-			directory, agenticEpisodeBranchEvidenceFile, result.BranchTesting,
-		); err != nil {
 			return agenticEpisodeArtifact{}, err
 		}
 	}
@@ -304,14 +260,10 @@ func recoverAgenticEpisodeArtifacts(
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_METHOD_SPEC")
 	}
 	hasSealedEvidence := artifact.Status == agenticEpisodeCompleted ||
-		artifact.Status == agenticEpisodeTokenStopped &&
-			(artifact.PlanID != "" || len(artifact.BranchEvidence) != 0)
+		artifact.Status == agenticEpisodeTokenStopped && artifact.PlanID != ""
 	if !hasSealedEvidence {
 		if _, err := os.Lstat(filepath.Join(clean, agenticEpisodeBundleFile)); !os.IsNotExist(err) {
 			return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BUNDLE")
-		}
-		if _, err := os.Lstat(filepath.Join(clean, agenticEpisodeBranchEvidenceFile)); !os.IsNotExist(err) {
-			return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BRANCH_EVIDENCE")
 		}
 		return recovered, true, nil
 	}
@@ -337,53 +289,14 @@ func recoverAgenticEpisodeArtifacts(
 	} else if _, err := os.Lstat(filepath.Join(clean, agenticEpisodeBundleFile)); !os.IsNotExist(err) {
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BUNDLE")
 	}
-	if len(artifact.BranchEvidence) > 0 {
-		var stored []agenticBranchTestingResult
-		if err := readStrictJSONFile(
-			filepath.Join(clean, agenticEpisodeBranchEvidenceFile), 256<<20, &stored,
-		); err != nil || len(stored) != len(artifact.BranchEvidence) {
-			return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_BRANCH_EVIDENCE_INVALID")
-		}
-		for index, branch := range stored {
-			summary := artifact.BranchEvidence[index]
-			if err := requireRecoveredScenarioOracleAttribution(
-				recovered.MethodSpec, true, summary.OracleAttribution,
-			); err != nil {
-				return recoveredAgenticEpisode{}, false, err
-			}
-			if branch.BranchID != summary.BranchID || branch.Intent != summary.Intent ||
-				branch.ReferenceBranchID != summary.ReferenceBranchID ||
-				branch.Testing.PlanID != summary.PlanID || branch.Testing.Risk.ID != summary.RiskResultID ||
-				branch.Testing.Bundle.Trace.Digest != summary.TraceDigest {
-				return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_BRANCH_EVIDENCE_DRIFT")
-			}
-			testing, err := recoverAgenticTesting(
-				artifact, binding, summary.PlanID, summary.RiskResultID, branch.Testing.Bundle,
-				summary.OracleAttribution,
-			)
-			if err != nil || !reflect.DeepEqual(testing, branch.Testing) ||
-				len(testing.agentPathOracleViolations()) != summary.OracleFindings ||
-				len(testing.rootPrefixOracleViolations()) != summary.RootOracleFindings ||
-				!reflect.DeepEqual(testing.Bundle.Work, summary.Work) {
-				return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_BRANCH_EVIDENCE_DRIFT")
-			}
-			branch.Testing = testing
-			recovered.BranchTesting = append(recovered.BranchTesting, branch)
-		}
-	} else if _, err := os.Lstat(filepath.Join(clean, agenticEpisodeBranchEvidenceFile)); !os.IsNotExist(err) {
-		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_UNEXPECTED_BRANCH_EVIDENCE")
-	}
-	metrics, metricsErr := agenticEpisodeMetricsFromEvidence(recovered.Testing, recovered.BranchTesting)
+	metrics, metricsErr := agenticEpisodeMetricsFromEvidence(recovered.Testing)
 	applyAgenticCapabilityAdaptationMetrics(&metrics, artifact.ScenarioAttemptFeedback)
 	if metricsErr != nil || !agenticMetricsMatchArtifact(
 		metrics, artifact.Metrics, artifact.PlanID != "",
 	) ||
 		recovered.Testing != nil && !reflect.DeepEqual(
 			artifact.Work.QualifiedExecution, recovered.Testing.Bundle.Work,
-		) || !branchExecutionWorkMatches(artifact.Work.BranchQualifiedExecutions, recovered.BranchTesting) ||
-		!agenticEvidenceMethodMatches(
-			artifact.MethodSpecDigest, recovered.Testing, recovered.BranchTesting,
-		) {
+		) || !agenticEvidenceMethodMatches(artifact.MethodSpecDigest, recovered.Testing) {
 		return recoveredAgenticEpisode{}, false, errors.New("AGENTIC_EPISODE_RECOVERY_EVIDENCE_DRIFT")
 	}
 	return recovered, true, nil
@@ -450,36 +363,16 @@ func cloneScenarioOracleAttribution(
 	return &cloned
 }
 
-func branchExecutionWorkMatches(
-	work []agenticBranchExecutionWork,
-	branches []agenticBranchTestingResult,
-) bool {
-	if len(work) != len(branches) {
-		return false
-	}
-	for index := range branches {
-		if work[index].BranchID != branches[index].BranchID ||
-			!reflect.DeepEqual(work[index].Work, branches[index].Testing.Bundle.Work) {
-			return false
-		}
-	}
-	return true
-}
-
 func agenticEvidenceMethodMatches(
 	methodSpecDigest string,
 	selected *scenarioTestingResult,
-	branches []agenticBranchTestingResult,
 ) bool {
 	if methodSpecDigest != "" && !validAgenticSHA256(methodSpecDigest) {
 		return false
 	}
-	bundles := make([]controlexperiment.ExecutionBundle, 0, len(branches)+1)
+	var bundles []controlexperiment.ExecutionBundle
 	if selected != nil {
 		bundles = append(bundles, selected.Bundle)
-	}
-	for _, branch := range branches {
-		bundles = append(bundles, branch.Testing.Bundle)
 	}
 	for _, bundle := range bundles {
 		if bundle.Identity.MethodSpecDigest != methodSpecDigest ||
@@ -502,8 +395,6 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.ScenarioDecisionsUsed > artifact.Budget.MaxRuntimeDecisions ||
 		artifact.SelectedPathDecisions < 0 ||
 		artifact.SelectedPathDecisions > artifact.ScenarioDecisionsUsed ||
-		artifact.BranchExplorationDecisions < 0 ||
-		artifact.BranchExplorationDecisions > artifact.ScenarioDecisionsUsed ||
 		artifact.DecisionProvenance.AgentSelected < 0 ||
 		artifact.DecisionProvenance.AgentSelected > artifact.ScenarioDecisionsUsed ||
 		artifact.DecisionProvenance.TargetClosure < 0 ||
@@ -527,15 +418,9 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	if provenanceDecisions != 0 && provenanceDecisions != artifact.ScenarioDecisionsUsed {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_DECISION_PROVENANCE_INVALID")
 	}
-	expectedCandidates := len(artifact.BranchEvidence) + boolInt(artifact.PlanID != "")
-	legacyCandidateAccounting := len(artifact.BranchEvidence) == 0 && artifact.PlanID != "" &&
-		artifact.Metrics.ExecutedCandidates == 0 && artifact.Metrics.BranchCandidates == 0
-	if artifact.Metrics.BranchCandidates != len(artifact.BranchEvidence) ||
-		artifact.Metrics.ExecutedCandidates != expectedCandidates && !legacyCandidateAccounting ||
-		len(artifact.Work.BranchQualifiedExecutions) != len(artifact.BranchEvidence) ||
-		len(artifact.BranchEvidence) > artifact.ScenarioAttempts ||
-		len(artifact.BranchEvidence) > controlexperiment.ScenarioAgentMaxCalls {
-		return errors.New("AGENTIC_EPISODE_ARTIFACT_BRANCH_ACCOUNTING_INVALID")
+	expectedCandidates := boolInt(artifact.PlanID != "")
+	if artifact.Metrics.ExecutedCandidates != expectedCandidates {
+		return errors.New("AGENTIC_EPISODE_ARTIFACT_CANDIDATE_ACCOUNTING_INVALID")
 	}
 	if len(artifact.ScenarioAttemptFeedback) != 0 &&
 		len(artifact.ScenarioAttemptFeedback) != artifact.ScenarioAttempts {
@@ -606,19 +491,6 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.Metrics.CapabilityRepairExecutions != expectedAdaptation.RepairExecutions {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_CAPABILITY_METRICS_INVALID")
 	}
-	seenBranches := make(map[string]bool, len(artifact.BranchEvidence))
-	for index, branch := range artifact.BranchEvidence {
-		if branch.BranchID == "" || strings.ContainsAny(branch.BranchID, " /\\") ||
-			branch.Intent == "" || branch.PlanID == "" || branch.RiskResultID == "" ||
-			len(branch.TraceDigest) != 64 || branch.OracleFindings < 0 ||
-			branch.RootOracleFindings < 0 || seenBranches[branch.BranchID] ||
-			branch.OracleAttribution != nil && branch.OracleAttribution.RootDecisions < 0 ||
-			artifact.Work.BranchQualifiedExecutions[index].BranchID != branch.BranchID ||
-			!reflect.DeepEqual(artifact.Work.BranchQualifiedExecutions[index].Work, branch.Work) {
-			return errors.New("AGENTIC_EPISODE_ARTIFACT_BRANCH_EVIDENCE_INVALID")
-		}
-		seenBranches[branch.BranchID] = true
-	}
 	for _, audit := range append(
 		append([]controlexperiment.StatelessAgentCallAudit(nil), artifact.RiskProviderCalls...),
 		artifact.ScenarioProviderCalls...,
@@ -651,20 +523,18 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	case agenticEpisodeRiskStopped:
 		if artifact.Failure != nil || artifact.Accepted != nil || artifact.Metrics.CandidateAccepted ||
 			artifact.ScenarioStatus != "" || artifact.PlanID != "" || artifact.RiskResultID != "" ||
-			artifact.TraceDigest != "" || artifact.OracleAttribution != nil ||
-			len(artifact.BranchEvidence) != 0 {
+			artifact.TraceDigest != "" || artifact.OracleAttribution != nil {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_RISK_STOP_INVALID")
 		}
 	case agenticEpisodeScenarioStopped:
 		if artifact.Failure != nil || artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
 			artifact.PlanID != "" || artifact.RiskResultID != "" || artifact.TraceDigest != "" ||
-			artifact.OracleAttribution != nil ||
-			len(artifact.BranchEvidence) != 0 {
+			artifact.OracleAttribution != nil {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_STOP_INVALID")
 		}
 	case agenticEpisodeTokenStopped:
 		hasPrimary := artifact.PlanID != "" && artifact.RiskResultID != ""
-		hasEvidence := hasPrimary || len(artifact.BranchEvidence) != 0
+		hasEvidence := hasPrimary
 		if artifact.Failure != nil || artifact.Metrics.CandidateAccepted != (artifact.Accepted != nil) ||
 			artifact.PlanID == "" != (artifact.RiskResultID == "") ||
 			hasPrimary != (artifact.TraceDigest != "") ||
@@ -678,8 +548,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			artifact.Failure.Phase == "" || artifact.Failure.Code == "" || artifact.Failure.Decision <= 0 ||
 			artifact.Failure.Terminal == nil || artifact.Failure.Terminal.Validate() != nil ||
 			artifact.PlanID != "" || artifact.RiskResultID != "" || artifact.TraceDigest != "" ||
-			artifact.OracleAttribution != nil ||
-			len(artifact.BranchEvidence) != 0 {
+			artifact.OracleAttribution != nil {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_EXECUTION_FAILURE_INVALID")
 		}
 	case agenticEpisodeCompleted:
@@ -688,9 +557,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			artifact.PlanID == "" != (artifact.RiskResultID == "") ||
 			hasPrimary != (artifact.TraceDigest != "") ||
 			artifact.TraceDigest != "" && !validAgenticSHA256(artifact.TraceDigest) ||
-			!hasPrimary && len(artifact.BranchEvidence) == 0 ||
-			artifact.ScenarioStatus != controlexperiment.ScenarioAgentCompleted &&
-				!(artifact.ScenarioStatus == controlexperiment.ScenarioAgentStopped && !hasPrimary) {
+			!hasPrimary || artifact.ScenarioStatus != controlexperiment.ScenarioAgentCompleted {
 			return errors.New("AGENTIC_EPISODE_ARTIFACT_COMPLETED_INVALID")
 		}
 	default:
@@ -736,10 +603,6 @@ func validAgenticScenarioAttemptIntents(values []string) bool {
 		switch value {
 		case controlexperiment.ScenarioIntentContinue,
 			controlexperiment.ScenarioIntentRevise,
-			controlexperiment.ScenarioIntentBranch,
-			controlexperiment.ScenarioIntentControl,
-			controlexperiment.ScenarioIntentAblate,
-			controlexperiment.ScenarioIntentSelect,
 			controlexperiment.ScenarioIntentAbandon:
 		default:
 			return false
@@ -808,8 +671,7 @@ func agenticMetricsMatchArtifact(
 			return true
 		}
 	}
-	if hasPrimary && stored.ExecutedCandidates == 0 && stored.BranchCandidates == 0 &&
-		actual.ExecutedCandidates == 1 && actual.BranchCandidates == 0 {
+	if hasPrimary && stored.ExecutedCandidates == 0 && actual.ExecutedCandidates == 1 {
 		actual.ExecutedCandidates = 0
 		return actual == stored
 	}
@@ -993,18 +855,14 @@ func jsonEquivalent(left any, right any) bool {
 
 func agenticEpisodeMetricsFromEvidence(
 	selected *scenarioTestingResult,
-	branches []agenticBranchTestingResult,
 ) (agenticEpisodeMetrics, error) {
-	metrics := agenticEpisodeMetrics{CandidateAccepted: true, BranchCandidates: len(branches)}
+	metrics := agenticEpisodeMetrics{CandidateAccepted: true}
 	protocolStates := make(map[string]bool)
 	controlStates := make(map[string]bool)
 	jointStates := make(map[string]bool)
-	results := make([]scenarioTestingResult, 0, len(branches)+1)
+	var results []scenarioTestingResult
 	if selected != nil {
 		results = append(results, *selected)
-	}
-	for _, branch := range branches {
-		results = append(results, branch.Testing)
 	}
 	metrics.ExecutedCandidates = len(results)
 	if len(results) == 0 {
@@ -1047,7 +905,7 @@ func deriveAgenticExplorationMemory(
 	seenCandidates := make(map[string]bool)
 	seenProtocolStates := make(map[string]bool)
 	for index, episode := range episodes {
-		hasEvidence := episode.Testing != nil || len(episode.BranchTesting) > 0
+		hasEvidence := episode.Testing != nil
 		statusAllowsEvidence := episode.Summary.Status == agenticEpisodeCompleted ||
 			episode.Summary.Status == agenticEpisodeTokenStopped
 		if episode.Summary.validateCompact() != nil ||
@@ -1092,8 +950,8 @@ func deriveAgenticExplorationMemory(
 				seenCandidates[entry.CandidateID] = true
 			}
 		}
-		if episode.Testing != nil || len(episode.BranchTesting) > 0 {
-			metrics, err := agenticEpisodeMetricsFromEvidence(episode.Testing, episode.BranchTesting)
+		if episode.Testing != nil {
+			metrics, err := agenticEpisodeMetricsFromEvidence(episode.Testing)
 			applyAgenticCapabilityAdaptationMetrics(
 				&metrics, episode.Summary.ScenarioAttemptFeedback,
 			)
@@ -1102,7 +960,7 @@ func deriveAgenticExplorationMemory(
 			) {
 				return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_EVIDENCE_INVALID")
 			}
-			representative := representativeAgenticTesting(episode.Testing, episode.BranchTesting)
+			representative := episode.Testing
 			entry.RiskStatus = representative.Risk.Status
 			entry.SatisfiedMilestones = append(
 				[]string(nil), representative.Risk.SatisfiedMilestones...,
@@ -1111,21 +969,12 @@ func deriveAgenticExplorationMemory(
 				entry.FirstMissingMilestone = representative.Risk.MissingMilestones[0]
 			}
 			localProtocolStates := make(map[string]bool)
-			allTesting := make([]scenarioTestingResult, 0, len(episode.BranchTesting)+1)
-			if episode.Testing != nil {
-				allTesting = append(allTesting, *episode.Testing)
-			}
-			for _, branch := range episode.BranchTesting {
-				allTesting = append(allTesting, branch.Testing)
-			}
-			for _, testing := range allTesting {
-				for _, sample := range testing.Bundle.CorePSS {
-					keys, err := psscore.Keys(sample.State)
-					if err != nil {
-						return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_PSS_INVALID")
-					}
-					localProtocolStates[keys.Protocol] = true
+			for _, sample := range episode.Testing.Bundle.CorePSS {
+				keys, err := psscore.Keys(sample.State)
+				if err != nil {
+					return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_PSS_INVALID")
 				}
+				localProtocolStates[keys.Protocol] = true
 			}
 			entry.ProtocolPSSStates = len(localProtocolStates)
 			for key := range localProtocolStates {
@@ -1142,24 +991,6 @@ func deriveAgenticExplorationMemory(
 		memory = memory[len(memory)-controlexperiment.RiskExplorationMemoryMax:]
 	}
 	return memory, nil
-}
-
-func representativeAgenticTesting(
-	selected *scenarioTestingResult,
-	branches []agenticBranchTestingResult,
-) *scenarioTestingResult {
-	if selected != nil && selected.Risk.Status == semantic.RiskWitnessReached {
-		return selected
-	}
-	for index := range branches {
-		if branches[index].Testing.Risk.Status == semantic.RiskWitnessReached {
-			return &branches[index].Testing
-		}
-	}
-	if selected != nil {
-		return selected
-	}
-	return &branches[0].Testing
 }
 
 func agenticMemoryEpisodeOutcome(
@@ -1191,9 +1022,6 @@ func agenticEvidenceExecutionWorkUnits(work agenticEpisodeWork) int {
 	result := work.Preparation.Qualification.WorkUnits +
 		work.Preparation.Root.Primary.WorkUnits + work.Preparation.Root.Replay.WorkUnits +
 		work.QualifiedExecution.Primary.WorkUnits + work.QualifiedExecution.Replay.WorkUnits
-	for _, branch := range work.BranchQualifiedExecutions {
-		result += branch.Work.Primary.WorkUnits + branch.Work.Replay.WorkUnits
-	}
 	return result
 }
 

@@ -508,7 +508,7 @@ func TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback(t *testing
 		len(result.Attempts) != 4 || result.Attempts[3].Feedback.ProgressDelta == nil ||
 		result.Attempts[3].Feedback.ProgressDelta.Decisions != 5 ||
 		result.StopReason != ScenarioAgentStopCallBudget || result.DecisionsUsed != 20 ||
-		result.SelectedPathDecisions != 20 || result.BranchExplorationDecisions != 0 ||
+		result.SelectedPathDecisions != 20 ||
 		result.ExecutionWork.ChildMaterialization.SchedulerDecisions != 20 ||
 		result.ExecutionWork.FrontierReconstruction.SetupAttempts > 12 ||
 		result.ExecutionWork.ChildVerification.SetupAttempts > 8 {
@@ -1416,314 +1416,6 @@ func containsActionKind(values []control.ActionKind, want control.ActionKind) bo
 	return false
 }
 
-func TestScenarioInvestigationBranchesControlAblationAndPromotesChosenPath(t *testing.T) {
-	ctx := context.Background()
-	runtimeConfig := RuntimeConfig{SeedHex: "613964322d6272616e63682d636f6e74726f6c", MaxClones: 1}
-	root := fixtureInitialTrace(t, ctx, runtimeConfig)
-	envelope := &FaultEnvelope{MaxCrashes: 2, MaxConcurrentCrashes: 2}
-	factory := func() (control.Adapter, error) { return fixture.New(), nil }
-	spec, err := semantic.NewRiskWitnessSpec(
-		"fixture-investigation-risk", "fixture-cft", "branch-control-ablate",
-		[]string{"never-reached"}, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	projector := fixtureSemanticPrefixProjector{preferred: "never-selected"}
-	rootRisk, err := projector.Project("fixture-investigation-root-risk", spec, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	frontier, _, _, err := ReconstructRiskFrontierState(
-		ctx, "fixture-investigation-frontier", spec, rootRisk, root, len(root.Records),
-		runtimeConfig, envelope, factory,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
-		ID: "fixture-investigation-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
-		Knowledge: []KnowledgeStatement{{ID: "comparison", Text: "Compare interventions from one checkpoint."}},
-		Risks: []ProtocolRisk{{
-			ID: spec.RiskID, Summary: "Exercise treatment, control and ablation from one root.",
-			RequiredCapabilities: []string{"natural-time"},
-			RequiredActions:      []control.ActionKind{control.ActionCrash, control.ActionRestart},
-			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hypothesis, err := NewTestHypothesis(
-		"fixture-investigation-hypothesis", knowledge, spec,
-		"Use a same-root comparison before choosing the continuation path.", ScenarioPlanningBackendID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := 0
-	result, err := ExploreScenarioWithPlanner(
-		ctx, 5, 2, 40, knowledge, hypothesis, spec, frontier,
-		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
-		nil, nil, factory, projector,
-		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
-			return unknownScenarioSemantics(t, next), nil
-		},
-		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
-			calls++
-			var proposal ScenarioInvestigationProposal
-			switch calls {
-			case 1:
-				if !reflect.DeepEqual(view.AvailableIntents, []string{ScenarioIntentContinue}) {
-					t.Fatalf("unexpected initial investigation intents: %#v", view.AvailableIntents)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentContinue,
-					Plan: ScenarioPlan{ID: "establish-current-path", Steps: []ScenarioStep{
-						{ID: "crash-path", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n2"}},
-						{ID: "restart-path", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: "n2"}},
-					}},
-				}
-			case 2:
-				if !containsString(view.AvailableIntents, ScenarioIntentBranch) {
-					t.Fatalf("successful current path did not unlock comparison: %#v", view.AvailableIntents)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentBranch, BranchID: "treatment",
-					Plan: ScenarioPlan{ID: "treatment-plan", Steps: []ScenarioStep{
-						{ID: "crash-treatment", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"}},
-						{ID: "restart-treatment", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: "n1"}},
-					}},
-				}
-			case 3:
-				if len(view.Branches) != 1 || view.Branches[0].ID != "treatment" ||
-					view.Branches[0].RootDecision != view.Frontier.PrefixDecisions+1 ||
-					view.Branches[0].FinalDecision <= view.Branches[0].RootDecision ||
-					len(view.Branches[0].AppliedInterventions) != 2 ||
-					view.Branches[0].AppliedInterventions[0].Action.Kind != control.ActionCrash ||
-					view.Branches[0].AppliedInterventions[1].Action.Kind != control.ActionRestart ||
-					len(view.Branches[0].AvailableActions) == 0 ||
-					!containsString(view.AvailableIntents, ScenarioIntentControl) ||
-					!containsString(view.AvailableIntents, ScenarioIntentAblate) {
-					t.Fatalf("treatment checkpoint was not exposed mechanically: %#v", view)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentControl, BranchID: "control", ReferenceBranchID: "treatment",
-					Plan: ScenarioPlan{ID: "control-plan", Steps: []ScenarioStep{
-						{ID: "crash-control", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n2"}},
-						{ID: "restart-control", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: "n2"}},
-					}},
-				}
-			case 4:
-				if len(view.Branches) != 2 ||
-					view.Branches[1].RootDecision != view.Branches[0].RootDecision {
-					t.Fatalf("control did not use the treatment root checkpoint: %#v", view.Branches)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentAblate, BranchID: "ablation", ReferenceBranchID: "treatment",
-					OmittedStepIDs: []string{"restart-treatment"},
-					Plan: ScenarioPlan{ID: "ablation-plan", Steps: []ScenarioStep{
-						{ID: "crash-treatment", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"}},
-					}},
-				}
-			case 5:
-				if len(view.Branches) != 3 || view.Branches[2].Intent != ScenarioIntentAblate ||
-					view.Branches[2].RootDecision != view.Branches[0].RootDecision ||
-					view.Branches[0].RootDecision != view.Frontier.PrefixDecisions+1 || view.MaxSteps != 0 ||
-					view.DecisionAllowance != 0 ||
-					!reflect.DeepEqual(view.AvailableIntents, []string{ScenarioIntentSelect}) {
-					t.Fatalf("ablation did not retain the same root: %#v", view.Branches)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentSelect, FromBranchID: "treatment",
-				}
-			}
-			encoded, marshalErr := json.Marshal(proposal)
-			return encoded, ModelWork{}, marshalErr
-		},
-	)
-	seedDecisions := 0
-	selectedBranchDecisions := 0
-	if len(result.Branches) > 0 {
-		seedDecisions = result.Branches[0].RootDecision - (len(root.Records) + 1)
-		selectedBranchDecisions = result.Branches[0].FinalDecision - result.Branches[0].RootDecision
-	}
-	if err != nil || calls != 5 || result.Status != ScenarioAgentCompleted ||
-		len(result.Branches) != 3 || len(result.Attempts) != 5 || result.Execution == nil ||
-		result.StopReason != ScenarioAgentStopPathSelected || seedDecisions <= 0 ||
-		result.BranchExplorationDecisions <= 0 ||
-		result.DecisionsUsed != seedDecisions+result.BranchExplorationDecisions ||
-		result.SelectedPathDecisions != seedDecisions+selectedBranchDecisions ||
-		len(result.Execution.FinalTrace.Records) != len(root.Records)+result.SelectedPathDecisions {
-		t.Fatalf("branch comparison did not promote the chosen deterministic path: %#v calls=%d err=%v",
-			result, calls, err)
-	}
-
-	unselectedCalls := 0
-	unselected, err := ExploreScenarioWithPlanner(
-		ctx, 3, 2, 32, knowledge, hypothesis, spec, frontier,
-		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, envelope,
-		nil, nil, factory, projector,
-		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
-			return unknownScenarioSemantics(t, next), nil
-		},
-		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
-			unselectedCalls++
-			if unselectedCalls > 2 {
-				return []byte(`{"not":"a-proposal"}`), ModelWork{}, nil
-			}
-			proposal := ScenarioInvestigationProposal{
-				Intent: ScenarioIntentContinue,
-				Plan: ScenarioPlan{ID: "unselected-seed", Steps: []ScenarioStep{
-					{ID: "seed-crash", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n2"}},
-					{ID: "seed-restart", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: "n2"}},
-				}},
-			}
-			if unselectedCalls == 2 {
-				if !containsString(view.AvailableIntents, ScenarioIntentBranch) {
-					t.Fatalf("successful seed path did not unlock unselected branch: %#v", view.AvailableIntents)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentBranch, BranchID: "unselected-treatment",
-					Plan: ScenarioPlan{ID: "unselected-plan", Steps: []ScenarioStep{
-						{ID: "crash", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"}},
-						{ID: "restart", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: "n1"}},
-					}},
-				}
-			}
-			encoded, marshalErr := json.Marshal(proposal)
-			return encoded, ModelWork{}, marshalErr
-		},
-	)
-	if err != nil || unselected.Status != ScenarioAgentCompleted ||
-		unselected.StopReason != ScenarioAgentStopCallBudget ||
-		unselected.Execution == nil || len(unselected.Branches) != 1 ||
-		unselected.DecisionsUsed == 0 || unselected.BranchExplorationDecisions == 0 ||
-		unselected.SelectedPathDecisions+unselected.BranchExplorationDecisions != unselected.DecisionsUsed {
-		t.Fatalf("unselected experiment branch became final evidence: %#v err=%v", unselected, err)
-	}
-}
-
-func TestScenarioBranchAtDecisionLimitRetainsRiskReachedCandidate(t *testing.T) {
-	ctx := context.Background()
-	runtimeConfig := RuntimeConfig{SeedHex: "6c6173742d6272616e63682d7269736b", MaxClones: 1}
-	root := fixtureInitialTrace(t, ctx, runtimeConfig)
-	factory := func() (control.Adapter, error) { return fixture.New(), nil }
-	spec, err := semantic.NewRiskWitnessSpec(
-		"last-branch-risk", "fixture-cft", "last-branch-risk",
-		[]string{"preferred-prefix"}, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	probeProjector := fixtureSemanticPrefixProjector{preferred: "not-selected"}
-	probeRisk, err := probeProjector.Project("last-branch-probe", spec, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	frontier, _, _, err := ReconstructRiskFrontierState(
-		ctx, "last-branch-frontier", spec, probeRisk, root, len(root.Records),
-		runtimeConfig, nil, factory,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var crash FrontierActionRef
-	var seedCrash FrontierActionRef
-	for _, action := range frontier.Actions {
-		if action.Kind == control.ActionCrash && action.Node.Node == "n1" {
-			crash = action
-		}
-		if action.Kind == control.ActionCrash && action.Node.Node == "n2" {
-			seedCrash = action
-		}
-	}
-	if crash.ActionID == "" || seedCrash.ActionID == "" {
-		t.Fatal("fixture did not expose two distinct crash Actions")
-	}
-	projector := fixtureSemanticPrefixProjector{preferred: crash.ActionID}
-	rootRisk, err := projector.Project("last-branch-root-risk", spec, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	frontier, _, _, err = ReconstructRiskFrontierState(
-		ctx, "last-branch-frontier", spec, rootRisk, root, len(root.Records),
-		runtimeConfig, nil, factory,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	knowledge, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{
-		ID: "last-branch-knowledge", Family: spec.FamilyID, Protocol: "fixture-consensus",
-		Knowledge: []KnowledgeStatement{{ID: "last-branch", Text: "Retain a replayed final branch."}},
-		Risks: []ProtocolRisk{{
-			ID: spec.RiskID, Summary: "Reach the witness on the final branch Action.",
-			RequiredCapabilities: []string{"natural-time"},
-			RequiredActions:      []control.ActionKind{control.ActionCrash},
-			AllowedBackendIDs:    []string{ScenarioPlanningBackendID},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hypothesis, err := NewTestHypothesis(
-		"last-branch-hypothesis", knowledge, spec,
-		"Preserve the final replayed candidate for independent Oracle evaluation.", ScenarioPlanningBackendID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := 0
-	result, err := ExploreScenarioWithPlanner(
-		ctx, 3, 1, 3, knowledge, hypothesis, spec, frontier,
-		unknownScenarioSemantics(t, frontier), rootRisk, root, runtimeConfig, nil,
-		nil, nil, factory, projector,
-		func(_ controlruntime.Trace, next RiskFrontierView, _ controlruntime.Snapshot) (ScenarioSemanticExposure, error) {
-			return unknownScenarioSemantics(t, next), nil
-		},
-		func(_ context.Context, view ScenarioAgentView) ([]byte, ModelWork, error) {
-			calls++
-			proposal := ScenarioInvestigationProposal{}
-			switch calls {
-			case 1:
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentContinue,
-					Plan: ScenarioPlan{ID: "establish-current-path", Steps: []ScenarioStep{{
-						ID: "seed", Selector: FrontierActionSelector{ActionID: seedCrash.ActionID},
-					}}},
-				}
-			case 2:
-				if !containsString(view.AvailableIntents, ScenarioIntentBranch) {
-					t.Fatalf("successful current path did not unlock final branch: %#v", view.AvailableIntents)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentBranch, BranchID: "final-treatment",
-					Plan: ScenarioPlan{ID: "final-treatment-plan", Steps: []ScenarioStep{{
-						ID: "reach-risk", Selector: FrontierActionSelector{ActionID: crash.ActionID},
-					}}},
-				}
-			case 3:
-				if view.RemainingDecisions != 0 || view.DecisionAllowance != 0 || view.MaxSteps != 0 ||
-					!reflect.DeepEqual(view.AvailableIntents, []string{ScenarioIntentSelect}) {
-					t.Fatalf("final selection call was not reserved after decision exhaustion: %#v", view)
-				}
-				proposal = ScenarioInvestigationProposal{
-					Intent: ScenarioIntentSelect, FromBranchID: "final-treatment",
-				}
-			}
-			encoded, marshalErr := json.Marshal(proposal)
-			return encoded, ModelWork{}, marshalErr
-		},
-	)
-	if err != nil || calls != 3 || result.Execution == nil || result.DecisionsUsed != 3 ||
-		result.StopReason != ScenarioAgentStopWitnessInstantiated || result.SelectedPathDecisions != 3 ||
-		len(result.CandidateExecutions) != 1 ||
-		result.CandidateExecutions[0].Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
-		result.CandidateExecutions[0].Execution.FinalTrace.Digest == "" {
-		t.Fatalf("last budget Action was not retained and selected: %#v/%v", result, err)
-	}
-}
-
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
@@ -1759,12 +1451,21 @@ func TestScenarioPlanValidationRejectsMixedSelector(t *testing.T) {
 	}
 }
 
-func TestScenarioInvestigationProposalParsingSeparatesStrategyFromPlan(t *testing.T) {
-	valid := []byte(`{"intent":"control","branch_id":"control-a","reference_branch_id":"treatment-a","plan":{"id":"control-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
+func TestScenarioInvestigationProposalKeepsOnlySinglePathIntents(t *testing.T) {
+	valid := []byte(`{"intent":"continue","plan":{"id":"continue-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
 	proposal, err := parseScenarioInvestigationProposalForTest(valid)
-	if err != nil || proposal.Intent != ScenarioIntentControl ||
-		proposal.ReferenceBranchID != "treatment-a" || proposal.Plan.ID != "control-plan" {
-		t.Fatalf("valid investigation proposal rejected: %#v/%v", proposal, err)
+	if err != nil || proposal.Intent != ScenarioIntentContinue || proposal.Plan.ID != "continue-plan" {
+		t.Fatalf("valid single-path proposal rejected: %#v/%v", proposal, err)
+	}
+	for _, retired := range [][]byte{
+		[]byte(`{"intent":"branch","branch_id":"treatment","plan":{"id":"branch-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`),
+		[]byte(`{"intent":"control","reference_branch_id":"treatment","plan":{"id":"control-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`),
+		[]byte(`{"intent":"ablate","omitted_step_ids":["crash"],"plan":{"id":"ablate-plan","steps":[{"id":"restart","selector":{"kind":"restart","node":"n1"}}]}}`),
+		[]byte(`{"intent":"select","from_branch_id":"treatment"}`),
+	} {
+		if _, err := parseScenarioInvestigationProposalForTest(retired); err == nil {
+			t.Fatalf("retired branch protocol was accepted: %s", retired)
+		}
 	}
 	barePlan := []byte(`{"id":"old-plan","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}`)
 	if _, err := parseScenarioInvestigationProposalForTest(barePlan); err == nil {
@@ -1772,54 +1473,14 @@ func TestScenarioInvestigationProposalParsingSeparatesStrategyFromPlan(t *testin
 	}
 	verdict := []byte(`{"intent":"continue","verdict":"unsafe","plan":{"id":"bad-authority","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
 	if _, err := parseScenarioInvestigationProposalForTest(verdict); err == nil {
-		t.Fatal("Agent-authored verdict field was accepted by the investigation protocol")
-	}
-	exactControl := []byte(`{"intent":"control","branch_id":"control-b","reference_branch_id":"treatment-a","plan":{"id":"control-exact","steps":[{"id":"crash","selector":{"action_id":"stale-action"}}]}}`)
-	if _, err := parseScenarioInvestigationProposalForTest(exactControl); err == nil {
-		t.Fatal("control accepted a checkpoint-local exact ActionID")
-	}
-	exactAblation := []byte(`{"intent":"ablate","branch_id":"ablation-b","reference_branch_id":"treatment-a","omitted_step_ids":["restart"],"plan":{"id":"ablation-exact","steps":[{"id":"crash","selector":{"action_id":"stale-action"}}]}}`)
-	if _, err := parseScenarioInvestigationProposalForTest(exactAblation); err == nil {
-		t.Fatal("ablation accepted a checkpoint-local exact ActionID")
-	}
-	reviseBranch := []byte(`{"intent":"revise","from_branch_id":"treatment-a","plan":{"id":"revise-branch","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
-	if _, err := parseScenarioInvestigationProposalForTest(reviseBranch); err == nil {
-		t.Fatal("revise implicitly promoted an experimental branch")
-	}
-	selectBranch := []byte(`{"intent":"select","from_branch_id":"treatment-a"}`)
-	selected, err := parseScenarioInvestigationProposalForTest(selectBranch)
-	if err != nil || selected.Intent != ScenarioIntentSelect || selected.FromBranchID != "treatment-a" {
-		t.Fatalf("zero-Action branch selection was rejected: %#v/%v", selected, err)
-	}
-	selectWithPlan := []byte(`{"intent":"select","from_branch_id":"treatment-a","plan":{"id":"not-zero-cost","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)
-	if _, err := parseScenarioInvestigationProposalForTest(selectWithPlan); err == nil {
-		t.Fatal("select accepted a Runtime plan")
+		t.Fatal("Agent-authored verdict field was accepted")
 	}
 	abandoned, err := parseScenarioInvestigationProposalForTest([]byte(`{"intent":"abandon"}`))
 	if err != nil || abandoned.Intent != ScenarioIntentAbandon {
-		t.Fatalf("zero-Action hypothesis abandonment was rejected: %#v/%v", abandoned, err)
+		t.Fatalf("zero-Action abandonment rejected: %#v/%v", abandoned, err)
 	}
 	if _, err := parseScenarioInvestigationProposalForTest([]byte(`{"intent":"abandon","plan":{"id":"work","steps":[{"id":"crash","selector":{"kind":"crash","node":"n1"}}]}}`)); err == nil {
-		t.Fatal("abandon accepted a Runtime plan")
-	}
-	reference := ScenarioInvestigationBranch{
-		ID: "partial", Intent: ScenarioIntentBranch, Outcome: ScenarioStatusStopped,
-		Plan: ScenarioPlan{ID: "partial-plan", Steps: []ScenarioStep{
-			{ID: "crash", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"}},
-			{ID: "restart", Selector: FrontierActionSelector{Kind: control.ActionRestart, Node: "n1"}},
-		}},
-		AppliedInterventions: []ScenarioAppliedIntervention{{StepID: "crash"}},
-	}
-	ablation := ScenarioInvestigationProposal{
-		Intent: ScenarioIntentAblate, BranchID: "partial-ablation", ReferenceBranchID: reference.ID,
-		OmittedStepIDs: []string{"restart"},
-		Plan: ScenarioPlan{ID: "partial-ablation-plan", Steps: []ScenarioStep{
-			{ID: "crash", Selector: FrontierActionSelector{Kind: control.ActionCrash, Node: "n1"}},
-		}},
-	}
-	if validScenarioAblation(ablation, reference) ||
-		containsString(scenarioAvailableIntents(nil, []ScenarioInvestigationBranch{reference}), ScenarioIntentAblate) {
-		t.Fatal("a non-applied intervention was accepted as an ablation reference")
+		t.Fatal("abandon accepted Runtime work")
 	}
 }
 
@@ -1833,51 +1494,22 @@ func parseScenarioInvestigationProposalForTest(
 	return proposal, nil
 }
 
-func TestM4dRealDeepSeekProposalsReceivePreciseRepairFeedback(t *testing.T) {
-	responses := []string{
-		`{"branch_id":"bounded-recovery-drop-coupling-b1","intent":"continue","plan":{"id":"bounded-recovery-drop-coupling-plan","steps":[{"id":"s1","selector":{"action_id":"action-7aa63ca911cfb7928180f252099b0d17a5af7d85bc905bcf22b800d0fb16bb25"}},{"id":"s2","selector":{"action_id":"action-8194c0e7da0f0419bd0befa4ac4d23b73ceb1e6b1cb99b43a0b6654cf42f29bc"}},{"id":"s3","selector":{"action_id":"action-575016e4961ca56db580d138c62e69577e212e29276bc9ca8c5da690e4fbaf4b"}}]}}`,
-		`{"intent":"continue","branch_id":"bounded-recovery-drop-coupling-continue","plan":{"id":"bounded-recovery-drop-coupling-plan","steps":[{"id":"step-1","selector":{"kind":"drop-message","node":"n1","message_source":"n1","message_target":"n2"}},{"id":"step-2","selector":{"kind":"fire-temporal-event","node":"n2"}},{"id":"step-3","selector":{"kind":"deliver-message","node":"n2","message_source":"n1","message_target":"n2"}}]}}`,
-		`{"intent":"continue","branch_id":"branch-1","plan":{"id":"plan-1","steps":[{"id":"step-1","selector":{"action_id":"action-7aa63ca911cfb7928180f252099b0d17a5af7d85bc905bcf22b800d0fb16bb25"}},{"id":"step-2","selector":{"kind":"fire-temporal-event","node":"n2","temporal_kind":"periodic-pulse"}},{"id":"step-3","selector":{"kind":"deliver-message","node":"n2","message_source":"n1","message_target":"n2"}}]}}`,
-		`{"branch_id":"aligned-timer-ballot-oscillation-continue","intent":"continue","plan":{"id":"aligned-timer-ballot-oscillation-continue-plan","steps":[{"id":"step-1","selector":{"action_id":"action-8194c0e7da0f0419bd0befa4ac4d23b73ceb1e6b1cb99b43a0b6654cf42f29bc"}},{"id":"step-2","selector":{"action_id":"action-c57ca872170559dfe02dc674a896c7421a79b6fbd1b31de8804525efb6a2f3ef"}},{"id":"step-3","selector":{"action_id":"action-575016e4961ca56db580d138c62e69577e212e29276bc9ca8c5da690e4fbaf4b"}},{"id":"step-4","selector":{"action_id":"action-f867ad00a86ef76d1a0fc546c7c81f6c37104236a466608eb20f49fa83c9b714"}}]}}`,
-		`{"intent":"continue","branch_id":"aligned-timer-ballot-oscillation-b1","plan":{"id":"aligned-timer-ballot-oscillation-b1-plan","steps":[{"id":"step-1","selector":{"kind":"invoke","node":"n1"}},{"id":"step-2","selector":{"kind":"fire-temporal-event","node":"n2","temporal_kind":"periodic-pulse"}},{"id":"step-3","selector":{"kind":"fire-temporal-event","node":"n3","temporal_kind":"periodic-pulse"}}]}}`,
-		`{"intent":"continue","branch_id":"branch-aligned-timer-ballot-oscillation-3","plan":{"id":"plan-aligned-timer-ballot-oscillation-3","steps":[{"id":"step-1","selector":{"kind":"invoke","node":"n1","owner":"n1"}},{"id":"step-2","selector":{"kind":"fire-temporal-event","node":"n2","owner":"n2","temporal_kind":"periodic-pulse"}},{"id":"step-3","selector":{"kind":"fire-temporal-event","node":"n3","owner":"n3","temporal_kind":"periodic-pulse"}},{"id":"step-4","selector":{"kind":"deliver-message","node":"n3","owner":"n1","message_source":"n1","message_target":"n3"}}]}}`,
-	}
-	for index, response := range responses {
-		proposal, issue := InspectScenarioInvestigationProposal([]byte(response))
-		if issue == nil || issue.Code != ScenarioProposalIssueContinueBranch ||
-			issue.Field != "branch_id" || issue.Validate() != nil ||
-			proposal.Intent != ScenarioIntentContinue || proposal.BranchID == "" ||
-			proposal.Plan.ID == "" {
-			t.Fatalf("real response %d did not preserve precise repair evidence: %#v %#v", index+1, proposal, issue)
-		}
-	}
-
-	laterExact := []byte(`{"intent":"continue","plan":{"id":"stale-later-action","steps":[{"id":"first","selector":{"kind":"invoke","node":"n1"}},{"id":"second","selector":{"action_id":"stale-after-first"}}]}}`)
-	proposal, issue := InspectScenarioInvestigationProposal(laterExact)
-	if issue == nil || issue.Code != ScenarioProposalIssueLaterExactActionID ||
-		issue.Field != "plan.steps[].selector.action_id" || proposal.Plan.ID != "stale-later-action" {
-		t.Fatalf("later ActionID did not receive precise repair feedback: %#v %#v", proposal, issue)
-	}
-}
-
 func TestM4dScenarioIntentPhasesMatchRepairContract(t *testing.T) {
-	if got := scenarioAvailableIntents(nil, nil); !reflect.DeepEqual(got, []string{ScenarioIntentContinue}) {
+	if got := scenarioSinglePathIntents(nil); !reflect.DeepEqual(got, []string{ScenarioIntentContinue}) {
 		t.Fatalf("initial phase exposed experimental intents: %#v", got)
 	}
 	stopped := &ScenarioAgentFeedback{Outcome: ScenarioAgentStopped}
-	if got := scenarioAvailableIntents(stopped, nil); !reflect.DeepEqual(got, []string{ScenarioIntentRevise}) {
+	if got := scenarioSinglePathIntents(stopped); !reflect.DeepEqual(got, []string{ScenarioIntentRevise}) {
 		t.Fatalf("repair phase exposed incompatible intents: %#v", got)
 	}
 	stopped.ProgressDelta = &ScenarioProgressDelta{Decisions: 1}
-	if got := scenarioAvailableIntents(stopped, nil); !reflect.DeepEqual(
+	if got := scenarioSinglePathIntents(stopped); !reflect.DeepEqual(
 		got, []string{ScenarioIntentRevise, ScenarioIntentAbandon},
 	) {
 		t.Fatalf("progress repair phase lost bounded abandonment: %#v", got)
 	}
 	completed := &ScenarioAgentFeedback{Outcome: ScenarioStatusCompleted}
-	if got := scenarioAvailableIntents(completed, nil); !reflect.DeepEqual(
-		got, []string{ScenarioIntentContinue, ScenarioIntentBranch},
-	) {
-		t.Fatalf("completed path did not expose comparison phase: %#v", got)
+	if got := scenarioSinglePathIntents(completed); !reflect.DeepEqual(got, []string{ScenarioIntentContinue}) {
+		t.Fatalf("completed path did not remain single-path: %#v", got)
 	}
 }

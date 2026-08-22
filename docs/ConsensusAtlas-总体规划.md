@@ -119,13 +119,13 @@ milestone、需要的能力和 fidelity。它不能编写 Oracle 或预设 verdi
 把 executable Risk 逐步实例化为语义轨迹。默认协议是单路径、每次一个战略 Action；
 它获得当前 target surface、enabled frontier
 摘要、首个缺失 milestone、附近 Trace slice、ProgressDelta、循环深度和能力
-缺口。正常主线只需 `continue`、`revise`、`abandon`；复杂分支实验由真实需求
-驱动，不默认扩展状态机。
+缺口。活动协议只含 `continue`、`revise`、`abandon`；对照、消融和多候选调查由
+外层多个 Episode 在统一预算中完成，不在 Episode 内扩展分支状态机。
 
 ### 分析与自我修复
 
-源码导航、proposal repair、control/ablation 和 trace minimization 可以由后续
-Agent 能力承担，但任何修改后的候选仍必须重新经过可信执行和 Replay。当前不
+源码导航和 proposal repair 由 Agent 承担；control/ablation 与 trace minimization 若有真实需求，
+由外层实验对保存 Trace 编排，但任何修改后的候选仍必须重新经过可信执行和 Replay。当前不
 因为“多 Agent”名义增加第三套协议或第二个执行框架。
 
 ## 6. 可信性与成本
@@ -278,7 +278,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
 - closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n14-recorded-invoke-and-risk-length-repair-v1`；旧 M4n13 及更早版本只读兼容；
+  `m4n15-single-path-artifact-v1`；旧 M4n14 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/

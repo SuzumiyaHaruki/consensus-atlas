@@ -36,7 +36,7 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
               PSS / Risk progress / Oracle
                          │
                          ▼
-     summary.json + bundle.json / branch-evidence.json
+             summary.json + bundle.json
 ```
 
 客户端 workload 返回只结束当前自然推进段，不等于调查结束。Risk 尚未达到且模型、决策预算仍存在时，系统会把
@@ -44,8 +44,8 @@ ProtocolKnowledgePack + Target Dossier + workload/预算
 共享同一 live Runtime；形成候选后再做一次 fresh Replay。
 `ProgressDelta` 区分 milestone 停滞/推进、客户端返回、自然闭包静止和重复调度，并分别统计 Timer callback 与
 真实逻辑时钟推进；它还报告 fault 配额消耗和当前可用干预，不把这些机械事实解释成协议 verdict。
-高级 branch/control/ablate 仍可用于受控实验，但不是默认调查主线。已有分支候选不会隐式覆盖主路径；
-每个唯一且 fresh-Replay 稳定的候选仍会独立运行 Target Oracle。跨 Episode Memory 不包含 Oracle finding
+Scenario 调查只保留 `continue/revise/abandon` 单路径协议；对照和消融由外层实验编排，而不是在一次
+Episode 内维护分支状态。跨 Episode portfolio 仍会在统一总预算内逐候选调查，Memory 不包含 Oracle finding
 或 Oracle 派生 outcome。
 
 ## 本地 SUT 源码
@@ -132,7 +132,6 @@ Replay，不理解 term、ballot 或具体消息语义。
 - Risk/Scenario provider journal，支持精确恢复且不重复已完成调用；
 - `summary.json`：停止原因、预算、Risk、PSS 和 Oracle 摘要；
 - `bundle.json`：完整 Trace、决策投影、Replay 和执行证据；
-- `branch-evidence.json`：未选择但已验证候选的 Bundle、Oracle 和独立执行成本；
 - capability gap、fidelity notice、planning/execution failure 的分离状态。
 
 PSS、Risk reached 和 candidate accepted 都不是缺陷 verdict。缺陷结论必须来自 replay-stable 的独立 Oracle，或由
@@ -142,8 +141,8 @@ violation 只计为 Oracle sensitivity，只有 root 之后首次出现的 viola
 从 Scenario frontier reconstruction work 推导 root boundary，并与保存的 boundary 以及
 `Trace decisions - selected_path_decisions` 交叉核对；evaluator-owned Replay 后用该机械核对过的 boundary
 重新归因，不能用初始状态已有的问题给 Agent 记功。evaluator 当前不独立重建生成 Scenario root 的策略。
-对 formal trial，evaluator 在给予 finding credit 前汇总主路径和全部分支的 decisions 与
-qualified primary work，不允许每个分支单独重用完整预算。
+对 formal Investigation trial，evaluator 在给予 finding credit 前汇总全部 Episode 主路径的 decisions 与
+qualified primary work，不允许每个 Episode 单独重用完整预算。
 
 ## 代码结构
 

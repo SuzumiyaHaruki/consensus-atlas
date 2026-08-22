@@ -542,9 +542,6 @@ func runAgenticEpisodeDirectory(
 		testing := *result.Testing
 		recovered.Testing = &testing
 	}
-	recovered.BranchTesting = append(
-		[]agenticBranchTestingResult(nil), result.BranchTesting...,
-	)
 	return recovered, nil
 }
 

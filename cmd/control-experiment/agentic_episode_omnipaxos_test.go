@@ -239,13 +239,17 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 					controlexperiment.ScenarioIntentRevise,
 					controlexperiment.ScenarioIntentAbandon,
 				}
+			} else if view.Prior != nil && view.Prior.ProgressDelta != nil {
+				wantIntents = append(wantIntents, controlexperiment.ScenarioIntentAbandon)
 			}
+			planRequired := len(wantIntents) == 1
 			if view.AcceptedHypothesis == nil ||
 				view.AcceptedHypothesis.Candidate.ID != omnipaxosDiscoveredRiskCandidate().ID ||
 				view.TargetSurface == nil || view.TargetSurface.TargetID != "omnipaxos-v2" ||
 				len(view.TargetSurface.Workload.Invocations) != 1 ||
 				!reflect.DeepEqual(view.AvailableIntents, wantIntents) ||
-				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"required":["intent","plan"]`)) ||
+				planRequired != bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"required":["intent","plan"]`)) ||
+				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"plan"`)) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"message_class"`)) ||
 				!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"replication"`)) ||
 				bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"branch_id"`)) ||
@@ -393,41 +397,6 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		!reflect.DeepEqual(recoveredArtifact.Testing.Oracle, result.Testing.Oracle) {
 		t.Fatalf("terminal artifact recovery drifted: %#v terminal=%t err=%v",
 			recoveredArtifact, terminal, err)
-	}
-	branchOnly := result
-	branchOnly.Testing = nil
-	branchOnly.BranchTesting = []agenticBranchTestingResult{{
-		BranchID: "offline-treatment", Intent: controlexperiment.ScenarioIntentBranch,
-		Testing: *result.Testing,
-	}}
-	branchOnly.Metrics, err = agenticEpisodeMetricsFromEvidence(nil, branchOnly.BranchTesting)
-	if err != nil {
-		t.Fatal(err)
-	}
-	branchOnly.Work.QualifiedExecution = controlexperiment.WorkLedger{}
-	branchOnly.Work.BranchQualifiedExecutions = []agenticBranchExecutionWork{{
-		BranchID: "offline-treatment", Work: result.Testing.Bundle.Work,
-	}}
-	scenarioCopy := *result.Scenario
-	scenarioCopy.Agent.Status = controlexperiment.ScenarioAgentStopped
-	scenarioCopy.Agent.StopReason = controlexperiment.ScenarioAgentStopFinalSelectionRequired
-	scenarioCopy.Agent.SelectedPathDecisions = 0
-	scenarioCopy.Agent.BranchExplorationDecisions = scenarioCopy.Agent.DecisionsUsed
-	branchOnly.Scenario = &scenarioCopy
-	branchDirectory := t.TempDir()
-	if _, err := persistAgenticEpisodeArtifacts(
-		branchDirectory, "omnipaxos-v2", budget, branchOnly,
-	); err != nil {
-		t.Fatal(err)
-	}
-	recoveredBranch, terminal, err := recoverAgenticEpisodeArtifacts(
-		branchDirectory, omnipaxosAgenticEpisodeRecoveryBinding(),
-	)
-	if err != nil || !terminal || recoveredBranch.Testing != nil ||
-		len(recoveredBranch.BranchTesting) != 1 ||
-		recoveredBranch.BranchTesting[0].Testing.Bundle.Trace.Digest != result.Testing.Bundle.Trace.Digest {
-		t.Fatalf("offline branch evidence was not durably recoverable: %#v terminal=%t err=%v",
-			recoveredBranch, terminal, err)
 	}
 	memory, err := deriveAgenticExplorationMemory([]recoveredAgenticEpisode{
 		recoveredArtifact, recoveredArtifact,

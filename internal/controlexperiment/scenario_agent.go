@@ -45,10 +45,8 @@ const (
 	ScenarioAgentExecutionFailed = "execution-failed"
 
 	ScenarioAgentStopWitnessInstantiated    = "witness-instantiated"
-	ScenarioAgentStopPathSelected           = "path-selected"
 	ScenarioAgentStopDecisionBudget         = "decision-budget-exhausted"
 	ScenarioAgentStopCallBudget             = "call-budget-exhausted"
-	ScenarioAgentStopFinalSelectionRequired = "final-selection-required"
 	ScenarioAgentStopHypothesisAbandoned    = "hypothesis-abandoned"
 	ScenarioAgentStopCapabilityGap          = "capability-gap"
 	ScenarioAgentStopProviderResponse       = "provider-response-failed"
@@ -93,8 +91,6 @@ func validScenarioPlannerResponseFailure(failure *ScenarioPlannerResponseFailure
 type ScenarioAgentFeedback struct {
 	Attempt              int                               `json:"attempt"`
 	Intent               string                            `json:"intent,omitempty"`
-	BranchID             string                            `json:"branch_id,omitempty"`
-	ReferenceBranchID    string                            `json:"reference_branch_id,omitempty"`
 	Outcome              string                            `json:"outcome"`
 	ReasonCode           string                            `json:"reason_code,omitempty"`
 	ValidationIssues     []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
@@ -115,20 +111,19 @@ type ScenarioAgentView struct {
 	// Provider prompts use AcceptedHypothesis when present and omit the two
 	// overlapping construction contracts below. They remain available to
 	// trusted validation and direct composition tests.
-	Knowledge               ProtocolKnowledgePack         `json:"knowledge"`
-	Hypothesis              TestHypothesis                `json:"hypothesis"`
-	AcceptedHypothesis      *AcceptedHypothesisContext    `json:"accepted_hypothesis,omitempty"`
-	TargetSurface           *AgentTargetSurface           `json:"target_surface,omitempty"`
-	OrderedMilestones       []string                      `json:"ordered_milestones"`
-	Frontier                RiskFrontierView              `json:"root_frontier"`
-	Semantics               ScenarioSemanticExposure      `json:"action_semantics"`
-	MaxSteps                int                           `json:"max_steps"`
-	DecisionAllowance       int                           `json:"decision_allowance"`
-	RemainingDecisions      int                           `json:"remaining_decisions"`
-	AvailableIntents        []string                      `json:"available_intents"`
-	PostInterventionClosure bool                          `json:"post_intervention_closure"`
-	Branches                []ScenarioInvestigationBranch `json:"branches,omitempty"`
-	Prior                   *ScenarioAgentFeedback        `json:"prior_feedback,omitempty"`
+	Knowledge               ProtocolKnowledgePack      `json:"knowledge"`
+	Hypothesis              TestHypothesis             `json:"hypothesis"`
+	AcceptedHypothesis      *AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
+	TargetSurface           *AgentTargetSurface        `json:"target_surface,omitempty"`
+	OrderedMilestones       []string                   `json:"ordered_milestones"`
+	Frontier                RiskFrontierView           `json:"root_frontier"`
+	Semantics               ScenarioSemanticExposure   `json:"action_semantics"`
+	MaxSteps                int                        `json:"max_steps"`
+	DecisionAllowance       int                        `json:"decision_allowance"`
+	RemainingDecisions      int                        `json:"remaining_decisions"`
+	AvailableIntents        []string                   `json:"available_intents"`
+	PostInterventionClosure bool                       `json:"post_intervention_closure"`
+	Prior                   *ScenarioAgentFeedback     `json:"prior_feedback,omitempty"`
 }
 
 type ScenarioAgentAttempt struct {
@@ -141,32 +136,17 @@ type ScenarioAgentAttempt struct {
 }
 
 type ScenarioAgentResult struct {
-	Status                     string                        `json:"status"`
-	StopReason                 string                        `json:"stop_reason"`
-	DecisionsUsed              int                           `json:"decisions_used"`
-	SelectedPathDecisions      int                           `json:"selected_path_decisions"`
-	BranchExplorationDecisions int                           `json:"branch_exploration_decisions"`
-	Attempts                   []ScenarioAgentAttempt        `json:"attempts"`
-	Branches                   []ScenarioInvestigationBranch `json:"branches,omitempty"`
-	CandidateExecutions        []ScenarioCandidateExecution  `json:"candidate_executions,omitempty"`
-	Execution                  *ScenarioExecution            `json:"execution,omitempty"`
-	ExecutionWork              ScenarioExecutionWork         `json:"execution_work"`
-	ModelWork                  ModelWork                     `json:"model_work"`
+	Status                string                 `json:"status"`
+	StopReason            string                 `json:"stop_reason"`
+	DecisionsUsed         int                    `json:"decisions_used"`
+	SelectedPathDecisions int                    `json:"selected_path_decisions"`
+	Attempts              []ScenarioAgentAttempt `json:"attempts"`
+	Execution             *ScenarioExecution     `json:"execution,omitempty"`
+	ExecutionWork         ScenarioExecutionWork  `json:"execution_work"`
+	ModelWork             ModelWork              `json:"model_work"`
 }
 
 type ScenarioPlanner func(context.Context, ScenarioAgentView) ([]byte, ModelWork, error)
-
-type scenarioInvestigationBranchState struct {
-	public         ScenarioInvestigationBranch
-	rootTrace      controlruntime.Trace
-	rootRisk       semantic.RiskWitnessResult
-	rootFrontier   RiskFrontierView
-	rootExecution  *ScenarioExecution
-	finalTrace     controlruntime.Trace
-	finalRisk      semantic.RiskWitnessResult
-	finalFrontier  RiskFrontierView
-	finalExecution *ScenarioExecution
-}
 
 // ScenarioSemanticProjector is target-owned. Generic continuation rebuilds
 // the trusted frontier and snapshot; the target may only classify that exact
@@ -203,7 +183,7 @@ func ExploreScenarioWithPlanner(
 		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
 		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
 		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		nil, false, false, planner, preparers...,
+		nil, false, planner, preparers...,
 	)
 }
 
@@ -237,7 +217,7 @@ func ExploreScenarioWithPlannerAndClosure(
 		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
 		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
 		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		closureFactory, closureFactory != nil, false, planner, preparers...,
+		closureFactory, closureFactory != nil, planner, preparers...,
 	)
 }
 
@@ -273,7 +253,7 @@ func ExploreScenarioWithPlannerAndScopedClosure(
 		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
 		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
 		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		closureFactory, advertiseClosure, true, planner, preparers...,
+		closureFactory, advertiseClosure, planner, preparers...,
 	)
 }
 
@@ -298,7 +278,6 @@ func exploreScenarioWithPlanner(
 	semanticProjector ScenarioSemanticProjector,
 	closureFactory ScenarioClosureFactory,
 	advertiseClosure bool,
-	singlePath bool,
 	planner ScenarioPlanner,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioAgentResult, error) {
@@ -324,52 +303,34 @@ func exploreScenarioWithPlanner(
 	currentSemantics := cloneScenarioSemantics(rootSemantics)
 	currentRisk := rootRisk
 	currentTrace := root
-	branches := make(map[string]scenarioInvestigationBranchState)
 	usedDecisions := 0
 	var prior *ScenarioAgentFeedback
 	var pendingRepairView *ScenarioAgentView
 	repairUsed := false
 	for ordinal := 1; ordinal <= maxCalls; ordinal++ {
 		remaining := maxDecisions - usedDecisions
-		selectionOnly := !singlePath && len(result.Branches) > 0 && (remaining <= 0 || ordinal == maxCalls)
-		if remaining <= 0 && !selectionOnly {
+		if remaining <= 0 {
 			break
 		}
-		progressQuantum, viewMaxSteps, attemptAllowance := 0, 0, 0
-		availableIntents := []string{ScenarioIntentSelect}
-		if !selectionOnly {
-			remainingCalls := maxCalls - ordinal + 1
-			progressQuantum = (remaining + remainingCalls - 1) / remainingCalls
-			progressLimit := ScenarioNaturalProgressSlice
-			if currentSemantics.Coordination != nil &&
-				currentSemantics.Coordination.Status != ConsensusCoordinatorPresent {
-				progressLimit = ScenarioBootstrapProgressSlice
-			}
-			if progressQuantum > progressLimit {
-				progressQuantum = progressLimit
-			}
-			viewMaxSteps = maxPlanSteps
-			if singlePath {
-				viewMaxSteps = 1
-			}
-			if remaining < viewMaxSteps {
-				viewMaxSteps = remaining
-			}
-			attemptAllowance = viewMaxSteps + progressQuantum
-			if remaining < attemptAllowance {
-				attemptAllowance = remaining
-			}
-			availableIntents = scenarioAvailableIntents(prior, result.Branches)
-			if singlePath {
-				availableIntents = scenarioSinglePathIntents(prior)
-			}
-			if ordinal == maxCalls {
-				availableIntents = scenarioFinalExplorationIntents(prior)
-				if singlePath {
-					availableIntents = scenarioSinglePathIntents(prior)
-				}
-			}
+		remainingCalls := maxCalls - ordinal + 1
+		progressQuantum := (remaining + remainingCalls - 1) / remainingCalls
+		progressLimit := ScenarioNaturalProgressSlice
+		if currentSemantics.Coordination != nil &&
+			currentSemantics.Coordination.Status != ConsensusCoordinatorPresent {
+			progressLimit = ScenarioBootstrapProgressSlice
 		}
+		if progressQuantum > progressLimit {
+			progressQuantum = progressLimit
+		}
+		viewMaxSteps := maxPlanSteps
+		if remaining < viewMaxSteps {
+			viewMaxSteps = remaining
+		}
+		attemptAllowance := viewMaxSteps + progressQuantum
+		if remaining < attemptAllowance {
+			attemptAllowance = remaining
+		}
+		availableIntents := scenarioSinglePathIntents(prior)
 		view := ScenarioAgentView{
 			Knowledge:               cloneProtocolKnowledge(knowledge),
 			TargetSurface:           cloneAgentTargetSurface(targetSurface),
@@ -383,7 +344,6 @@ func exploreScenarioWithPlanner(
 			RemainingDecisions:      remaining,
 			AvailableIntents:        availableIntents,
 			PostInterventionClosure: advertiseClosure,
-			Branches:                cloneScenarioBranches(result.Branches),
 			Prior:                   cloneScenarioFeedback(prior),
 		}
 		repairAttempt := pendingRepairView != nil
@@ -444,8 +404,6 @@ func exploreScenarioWithPlanner(
 			if validationIssue.Code != ScenarioProposalIssueJSONInvalid {
 				attempt.Proposal = cloneScenarioProposal(&proposal)
 				attempt.Feedback.Intent = proposal.Intent
-				attempt.Feedback.BranchID = proposal.BranchID
-				attempt.Feedback.ReferenceBranchID = proposal.ReferenceBranchID
 				attempt.Feedback.PreviousProposal = cloneScenarioProposal(&proposal)
 			}
 			result.Attempts = append(result.Attempts, attempt)
@@ -458,9 +416,8 @@ func exploreScenarioWithPlanner(
 		if !containsScenarioIntent(view.AvailableIntents, proposal.Intent) {
 			attempt.Proposal = cloneScenarioProposal(&proposal)
 			attempt.Feedback = ScenarioAgentFeedback{
-				Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
-				ReferenceBranchID: proposal.ReferenceBranchID,
-				Outcome:           ScenarioAgentStopped, ReasonCode: ScenarioAgentProposalInvalid,
+				Attempt: ordinal, Intent: proposal.Intent,
+				Outcome: ScenarioAgentStopped, ReasonCode: ScenarioAgentProposalInvalid,
 				ValidationIssues: []ScenarioProposalValidationIssue{{
 					Code: ScenarioProposalIssueIntentUnavailable, Field: "intent",
 				}},
@@ -487,49 +444,25 @@ func exploreScenarioWithPlanner(
 			), nil
 		}
 		plan := proposal.Plan
-		selected, reason := selectScenarioProposalRoot(
-			proposal, currentTrace, currentRisk, currentFrontier, result.Execution, prior, branches,
-		)
-		if reason != "" {
-			attempt.Feedback = rejectedScenarioIntentFeedback(ordinal, proposal, reason)
-			result.Attempts = append(result.Attempts, attempt)
-			prior = &result.Attempts[len(result.Attempts)-1].Feedback
-			continue
-		}
-		if proposal.Intent == ScenarioIntentSelect {
-			result.Execution = cloneScenarioExecution(selected.execution)
-			if result.Execution == nil {
-				attempt.Feedback = rejectedScenarioIntentFeedback(
-					ordinal, proposal, ScenarioReasonBranchUnknown,
-				)
-				result.Attempts = append(result.Attempts, attempt)
-				prior = &result.Attempts[len(result.Attempts)-1].Feedback
-				continue
-			}
-			currentTrace, currentRisk = selected.trace, selected.risk
-			currentFrontier = cloneScenarioFrontier(selected.frontier)
-			result.SelectedPathDecisions = len(currentTrace.Records) - len(root.Records)
+		if proposal.Intent == ScenarioIntentRevise && prior == nil {
 			attempt.Feedback = ScenarioAgentFeedback{
-				Attempt: ordinal, Intent: proposal.Intent, Outcome: ScenarioStatusCompleted,
+				Attempt: ordinal, Intent: proposal.Intent, Outcome: ScenarioAgentStopped,
+				ReasonCode:       ScenarioReasonRevisionUnavailable,
 				PreviousProposal: cloneScenarioProposal(&proposal),
 			}
 			result.Attempts = append(result.Attempts, attempt)
 			prior = &result.Attempts[len(result.Attempts)-1].Feedback
-			if currentRisk.Status == semantic.RiskWitnessReached {
-				return finishScenarioAgentResult(result, root, ScenarioAgentStopWitnessInstantiated), nil
-			}
-			return finishScenarioAgentResult(result, root, ScenarioAgentStopPathSelected), nil
+			continue
 		}
 		if targetSurface != nil {
-			gaps, gapErr := targetSurface.ScenarioCapabilityGaps(plan, selected.frontier.Actions)
+			gaps, gapErr := targetSurface.ScenarioCapabilityGaps(plan, currentFrontier.Actions)
 			if gapErr != nil {
 				return result, gapErr
 			}
 			if len(gaps) > 0 {
 				attempt.Feedback = ScenarioAgentFeedback{
-					Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
-					ReferenceBranchID: proposal.ReferenceBranchID,
-					Outcome:           ScenarioAgentStopped, ReasonCode: gaps[0].Code,
+					Attempt: ordinal, Intent: proposal.Intent,
+					Outcome: ScenarioAgentStopped, ReasonCode: gaps[0].Code,
 					CapabilityGaps:   cloneAgentCapabilityGaps(gaps),
 					PreviousProposal: cloneScenarioProposal(&proposal),
 					FailedStep:       scenarioPlanStepByID(plan, gaps[0].Reference),
@@ -539,16 +472,16 @@ func exploreScenarioWithPlanner(
 				continue
 			}
 		}
-		attemptRootTrace, attemptRootRisk := selected.trace, selected.risk
+		attemptRootTrace, attemptRootRisk := currentTrace, currentRisk
 		naturalProgressAllowance := progressQuantum
 		if attemptAllowance < naturalProgressAllowance {
 			naturalProgressAllowance = attemptAllowance
 		}
-		inheritedIntervention := latestScenarioExecutionClosureIntervention(selected.execution)
-		inheritedClosureChoices := scenarioExecutionClosureChoices(selected.execution)
+		inheritedIntervention := latestScenarioExecutionClosureIntervention(result.Execution)
+		inheritedClosureChoices := scenarioExecutionClosureChoices(result.Execution)
 		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
 			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, remaining,
-			spec, selected.risk, selected.trace,
+			spec, currentRisk, currentTrace,
 			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 			closureFactory, inheritedIntervention, inheritedClosureChoices,
 			naturalProgressAllowance, preparer...,
@@ -557,8 +490,7 @@ func exploreScenarioWithPlanner(
 		if err != nil {
 			attempt.Execution = &execution
 			attempt.Feedback = ScenarioAgentFeedback{
-				Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
-				ReferenceBranchID: proposal.ReferenceBranchID, Outcome: ScenarioAgentStopped,
+				Attempt: ordinal, Intent: proposal.Intent, Outcome: ScenarioAgentStopped,
 				ReasonCode: ScenarioAgentExecutionFailed, PreviousProposal: cloneScenarioProposal(&proposal),
 				Steps: cloneScenarioStepFeedback(execution.Steps),
 			}
@@ -567,8 +499,7 @@ func exploreScenarioWithPlanner(
 		}
 		attempt.Execution = &execution
 		attempt.Feedback = ScenarioAgentFeedback{
-			Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
-			ReferenceBranchID: proposal.ReferenceBranchID, Outcome: execution.Status,
+			Attempt: ordinal, Intent: proposal.Intent, Outcome: execution.Status,
 			PreviousProposal:     cloneScenarioProposal(&proposal),
 			Steps:                cloneScenarioStepFeedback(execution.Steps),
 			NaturalProgress:      cloneScenarioStepFeedback(execution.AutomaticProgress),
@@ -607,11 +538,7 @@ func exploreScenarioWithPlanner(
 		executedDecisions := len(execution.FinalTrace.Records) - len(attemptRootTrace.Records)
 		usedDecisions += executedDecisions
 		result.DecisionsUsed = usedDecisions
-		promote := proposal.Intent == ScenarioIntentContinue || proposal.Intent == ScenarioIntentRevise
-		if !promote {
-			result.BranchExplorationDecisions += executedDecisions
-		}
-		path := ScenarioAgentResult{Execution: cloneScenarioExecution(selected.execution)}
+		path := ScenarioAgentResult{Execution: cloneScenarioExecution(result.Execution)}
 		mergeScenarioExecution(&path, committed)
 		finalTrace, finalRisk := execution.FinalTrace, execution.FinalRisk
 		delta, deltaErr := NewScenarioProgressDelta(
@@ -636,54 +563,21 @@ func exploreScenarioWithPlanner(
 			&delta, execution.NaturalProgressStop, faultEnvelope, finalTrace, frontier.Actions,
 		)
 		attempt.Feedback.ProgressDelta = &delta
-		if promote {
-			currentTrace, currentRisk = finalTrace, finalRisk
-			currentFrontier, currentSemantics = frontier, semantics
-			result.Execution = path.Execution
-			result.SelectedPathDecisions = len(currentTrace.Records) - len(root.Records)
-		}
-		if proposal.BranchID != "" {
-			public := ScenarioInvestigationBranch{
-				ID: proposal.BranchID, Intent: proposal.Intent,
-				ReferenceBranchID: proposal.ReferenceBranchID,
-				RootDecision:      selected.frontier.NextDecision,
-				FinalDecision:     frontier.NextDecision,
-				AvailableActions:  cloneFrontierActionRefs(frontier.Actions), Plan: plan,
-				AppliedInterventions: appliedScenarioInterventions(execution),
-				Outcome:              attempt.Feedback.Outcome, ReasonCode: attempt.Feedback.ReasonCode,
-				ProgressDelta: cloneScenarioProgressDelta(attempt.Feedback.ProgressDelta),
-			}
-			state := scenarioInvestigationBranchState{
-				public: public, rootTrace: selected.trace, rootRisk: selected.risk,
-				rootFrontier:  cloneScenarioFrontier(selected.frontier),
-				rootExecution: cloneScenarioExecution(selected.execution), finalTrace: finalTrace,
-				finalRisk: finalRisk, finalFrontier: cloneScenarioFrontier(frontier),
-				finalExecution: cloneScenarioExecution(path.Execution),
-			}
-			branches[proposal.BranchID] = state
-			result.Branches = append(result.Branches, public)
-			result.CandidateExecutions = append(result.CandidateExecutions, ScenarioCandidateExecution{
-				BranchID: proposal.BranchID, Intent: proposal.Intent,
-				ReferenceBranchID: proposal.ReferenceBranchID,
-				Execution:         *cloneScenarioExecution(path.Execution),
-			})
-		}
+		currentTrace, currentRisk = finalTrace, finalRisk
+		currentFrontier, currentSemantics = frontier, semantics
+		result.Execution = path.Execution
+		result.SelectedPathDecisions = len(currentTrace.Records) - len(root.Records)
 		result.Attempts = append(result.Attempts, attempt)
 		prior = &result.Attempts[len(result.Attempts)-1].Feedback
-		if promote && currentRisk.Status == semantic.RiskWitnessReached {
+		if currentRisk.Status == semantic.RiskWitnessReached {
 			return finishScenarioAgentResult(result, root, ScenarioAgentStopWitnessInstantiated), nil
 		}
 		if usedDecisions >= maxDecisions {
-			if ordinal < maxCalls && len(result.Branches) > 0 {
-				continue
-			}
 			return finishScenarioAgentResult(result, root, ScenarioAgentStopDecisionBudget), nil
 		}
 	}
 	stop := ScenarioAgentStopCallBudget
-	if result.Execution == nil && len(result.Branches) > 0 {
-		stop = ScenarioAgentStopFinalSelectionRequired
-	} else if prior != nil && len(prior.CapabilityGaps) > 0 {
+	if prior != nil && len(prior.CapabilityGaps) > 0 {
 		stop = ScenarioAgentStopCapabilityGap
 	}
 	return finishScenarioAgentResult(result, root, stop), nil
@@ -710,7 +604,6 @@ func cloneScenarioAgentView(view ScenarioAgentView) ScenarioAgentView {
 	view.Frontier = cloneScenarioFrontier(view.Frontier)
 	view.Semantics = cloneScenarioSemantics(view.Semantics)
 	view.AvailableIntents = append([]string(nil), view.AvailableIntents...)
-	view.Branches = cloneScenarioBranches(view.Branches)
 	view.Prior = cloneScenarioFeedback(view.Prior)
 	return view
 }
@@ -723,54 +616,16 @@ func scenarioMilestoneIDs(spec semantic.RiskWitnessSpec) []string {
 	return result
 }
 
-func scenarioAvailableIntents(
-	prior *ScenarioAgentFeedback,
-	branches []ScenarioInvestigationBranch,
-) []string {
+func scenarioSinglePathIntents(prior *ScenarioAgentFeedback) []string {
 	if prior == nil {
 		return []string{ScenarioIntentContinue}
 	}
-	if prior.Outcome == ScenarioAgentStopped {
-		result := []string{ScenarioIntentRevise}
+	if prior.Outcome != ScenarioAgentStopped {
+		result := []string{ScenarioIntentContinue}
 		if prior.ProgressDelta != nil {
 			result = append(result, ScenarioIntentAbandon)
 		}
 		return result
-	}
-	result := []string{ScenarioIntentContinue, ScenarioIntentBranch}
-	if prior.ProgressDelta != nil {
-		result = append(result, ScenarioIntentAbandon)
-	}
-	if len(branches) > 0 {
-		result = append(result, ScenarioIntentControl)
-		for _, branch := range branches {
-			if branch.Outcome == ScenarioStatusCompleted && len(branch.Plan.Steps) > 1 &&
-				len(branch.AppliedInterventions) == len(branch.Plan.Steps) {
-				result = append(result, ScenarioIntentAblate)
-				break
-			}
-		}
-	}
-	return result
-}
-
-func scenarioFinalExplorationIntents(prior *ScenarioAgentFeedback) []string {
-	if prior == nil {
-		return []string{ScenarioIntentContinue}
-	}
-	result := []string{ScenarioIntentContinue}
-	if prior.Outcome == ScenarioAgentStopped {
-		result = []string{ScenarioIntentRevise}
-	}
-	if prior.ProgressDelta != nil {
-		result = append(result, ScenarioIntentAbandon)
-	}
-	return result
-}
-
-func scenarioSinglePathIntents(prior *ScenarioAgentFeedback) []string {
-	if prior == nil || prior.Outcome != ScenarioAgentStopped {
-		return []string{ScenarioIntentContinue}
 	}
 	result := []string{ScenarioIntentRevise}
 	if prior.ProgressDelta != nil {
@@ -786,111 +641,6 @@ func containsScenarioIntent(values []string, intent string) bool {
 		}
 	}
 	return false
-}
-
-type scenarioProposalRootSelection struct {
-	trace     controlruntime.Trace
-	risk      semantic.RiskWitnessResult
-	frontier  RiskFrontierView
-	execution *ScenarioExecution
-}
-
-func selectScenarioProposalRoot(
-	proposal ScenarioInvestigationProposal,
-	currentTrace controlruntime.Trace,
-	currentRisk semantic.RiskWitnessResult,
-	currentFrontier RiskFrontierView,
-	currentExecution *ScenarioExecution,
-	prior *ScenarioAgentFeedback,
-	branches map[string]scenarioInvestigationBranchState,
-) (scenarioProposalRootSelection, string) {
-	selected := scenarioProposalRootSelection{
-		trace: currentTrace, risk: currentRisk, frontier: currentFrontier,
-		execution: currentExecution,
-	}
-	if proposal.BranchID != "" {
-		if _, exists := branches[proposal.BranchID]; exists {
-			return scenarioProposalRootSelection{}, ScenarioReasonBranchDuplicate
-		}
-	}
-	if proposal.Intent == ScenarioIntentRevise && prior == nil {
-		return scenarioProposalRootSelection{}, ScenarioReasonRevisionUnavailable
-	}
-	if proposal.FromBranchID != "" {
-		branch, exists := branches[proposal.FromBranchID]
-		if !exists {
-			return scenarioProposalRootSelection{}, ScenarioReasonBranchUnknown
-		}
-		selected = scenarioProposalRootSelection{
-			trace: branch.finalTrace, risk: branch.finalRisk,
-			frontier: branch.finalFrontier, execution: branch.finalExecution,
-		}
-	}
-	if proposal.Intent != ScenarioIntentControl && proposal.Intent != ScenarioIntentAblate {
-		return selected, ""
-	}
-	reference, exists := branches[proposal.ReferenceBranchID]
-	if !exists {
-		return scenarioProposalRootSelection{}, ScenarioReasonBranchUnknown
-	}
-	if proposal.Intent == ScenarioIntentAblate && !validScenarioAblation(proposal, reference.public) {
-		return scenarioProposalRootSelection{}, ScenarioReasonAblationInvalid
-	}
-	return scenarioProposalRootSelection{
-		trace: reference.rootTrace, risk: reference.rootRisk,
-		frontier: reference.rootFrontier, execution: reference.rootExecution,
-	}, ""
-}
-
-func validScenarioAblation(proposal ScenarioInvestigationProposal, reference ScenarioInvestigationBranch) bool {
-	if reference.Outcome != ScenarioStatusCompleted ||
-		len(reference.AppliedInterventions) != len(reference.Plan.Steps) ||
-		len(proposal.Plan.Steps) >= len(reference.Plan.Steps) {
-		return false
-	}
-	appliedIDs := make(map[string]bool, len(reference.AppliedInterventions))
-	for _, intervention := range reference.AppliedInterventions {
-		appliedIDs[intervention.StepID] = true
-	}
-	omittedIDs := make(map[string]bool, len(proposal.OmittedStepIDs))
-	for _, omitted := range proposal.OmittedStepIDs {
-		if !appliedIDs[omitted] {
-			return false
-		}
-		omittedIDs[omitted] = true
-	}
-	expected := make([]ScenarioStep, 0, len(reference.Plan.Steps)-len(omittedIDs))
-	for _, step := range reference.Plan.Steps {
-		if !omittedIDs[step.ID] {
-			expected = append(expected, step)
-		}
-	}
-	return reflect.DeepEqual(proposal.Plan.Steps, expected)
-}
-
-func appliedScenarioInterventions(execution ScenarioExecution) []ScenarioAppliedIntervention {
-	var result []ScenarioAppliedIntervention
-	for _, step := range execution.Steps {
-		if step.Outcome != ScenarioStepApplied || step.Choice == nil {
-			continue
-		}
-		result = append(result, ScenarioAppliedIntervention{
-			StepID: step.StepID, Decision: step.Decision, Action: step.Choice.Action,
-		})
-	}
-	return result
-}
-
-func rejectedScenarioIntentFeedback(
-	ordinal int,
-	proposal ScenarioInvestigationProposal,
-	reason string,
-) ScenarioAgentFeedback {
-	return ScenarioAgentFeedback{
-		Attempt: ordinal, Intent: proposal.Intent, BranchID: proposal.BranchID,
-		ReferenceBranchID: proposal.ReferenceBranchID, Outcome: ScenarioAgentStopped,
-		ReasonCode: reason, PreviousProposal: cloneScenarioProposal(&proposal),
-	}
 }
 
 // committedScenarioPrefix retains only the mechanically applied leading
@@ -991,22 +741,8 @@ func cloneScenarioProposal(proposal *ScenarioInvestigationProposal) *ScenarioInv
 		return nil
 	}
 	value := *proposal
-	value.OmittedStepIDs = append([]string(nil), proposal.OmittedStepIDs...)
 	value.Plan = *cloneScenarioPlan(&proposal.Plan)
 	return &value
-}
-
-func cloneScenarioBranches(branches []ScenarioInvestigationBranch) []ScenarioInvestigationBranch {
-	result := append([]ScenarioInvestigationBranch(nil), branches...)
-	for index := range result {
-		result[index].AvailableActions = cloneFrontierActionRefs(branches[index].AvailableActions)
-		result[index].Plan = *cloneScenarioPlan(&branches[index].Plan)
-		result[index].AppliedInterventions = append(
-			[]ScenarioAppliedIntervention(nil), branches[index].AppliedInterventions...,
-		)
-		result[index].ProgressDelta = cloneScenarioProgressDelta(branches[index].ProgressDelta)
-	}
-	return result
 }
 
 func cloneScenarioExecution(execution *ScenarioExecution) *ScenarioExecution {

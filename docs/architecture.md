@@ -266,26 +266,14 @@ membership 计算 quorum，再把能够绑定未选参与者的 exact enabled Ac
 qualified Bundle。测试同时要求 target-local epoch/ballot Observation、protocol/control/joint PSS、stable Replay
 和完整 Oracle registry。没有 workload 的校准 Risk 保持 `not-reached`；它验证执行容量，不伪装为缺陷发现。
 
-`branch` 保存可信 Trace 检查点和路径结果；`control`、`ablate` 从参考 branch 的根检查点重建 Runtime，因而比较
-共享相同前置状态。三种实验 intent 只创建候选，不隐式覆盖最终证据。`continue + from_branch_id`
-选择并继续路径；`select + from_branch_id` 只选择已有路径，其 proposal 不带计划、不消耗 Runtime decision。
-存在分支时，最后 Scenario 调用会收窄为 select-only view；即使 decision 已为零也能执行该调用，
-但 provider call 和 token 仍按普通模型工作计费。
-调用耗尽但尚未选择时仍返回 `final-selection-required`，不任取最后执行的实验路径。分支探索全部计入
-同一 decision budget，结果分别记录总 Action、最终选中路径 Action 和实验分支 Action。
-
-选择不是 Oracle admission。Coordinator 保留每个 fresh-Replay 成功的候选，按 Trace digest 去重后逐个运行
-qualified execution 和 Target Oracle。主路径写入 `bundle.json`，其他候选及独立 work 写入
-`branch-evidence.json`。在线 Agent 不获取私有 Oracle 反馈；终态恢复和 holdout evaluator 均重新验证全部
-候选，因此“实际执行到问题但 Agent 未选该分支”不会变成漏报。
+Scenario Agent 只使用 `continue/revise/abandon`：可信 coordinator 持有唯一当前 Trace，成功的
+continue/revise 直接推进这条路径，abandon 不执行 Runtime Action。对照、消融和方法配对由外层实验运行多个
+Episode 完成，不在一个 Episode 内复制 checkpoint 或维护 branch 状态。每个 Episode 最多生成一个
+`bundle.json`，终态恢复和 holdout evaluator 重新验证该 Bundle；多 Episode Investigation 的成本与 Bundle
+仍在一个 formal trial 内聚合。在线 Agent 不获取私有 Oracle 反馈。
 
 跨 Episode Memory 不属于 Oracle 边界。它只暴露枚举的机械 outcome、Risk milestone、PSS 和成本；
-Oracle violation 数量、Oracle 派生 assessment 以及基于 Oracle 选出的代表分支都禁止进入 Risk Agent prompt。
-
-每条 branch 公开可信执行得到的 `applied_interventions`。ablate 只能引用完整成功的干预计划，被删除 ID 必须属于
-实际执行成功的战略步骤；control/ablate 在可信解析层禁止 checkpoint-local `action_id`，必须在共享根重新用语义
-selector 绑定。Agent 只看到根/终点 decision、最终可用 Action、计划、实际干预和 `ProgressDelta`；完整分支 Trace
-不重复进入模型输入。
+Oracle violation 数量和 Oracle 派生 assessment 都禁止进入 Risk Agent prompt。
 
 ### 6.2 终止状态
 
@@ -359,13 +347,12 @@ Qualification 验证 Adapter/Runtime 的机械能力。Target surface 进一步�
 
 ## 10. 输出与评测
 
-Agentic Episode 保存紧凑 `summary.json`、可选主路径 `bundle.json` 和可选
-`branch-evidence.json`。summary 可以从 bundle、branch evidence、journal 和 Target recovery binding
-重新派生；终态恢复不访问 SUT、provider 或 key。
+Agentic Episode 保存紧凑 `summary.json` 和可选主路径 `bundle.json`。summary 可以从 bundle、journal 和
+Target recovery binding 重新派生；终态恢复不访问 SUT、provider 或 key。
 
 `cmd/defect-eval` 支持保存 Bundle/MethodSpec 的旧评测，也能通过 `-agentic-inputs` 直接消费
 单 Episode 或完整 Agentic Investigation 目录。私有 contract 提供 pair、SUT 身份、预算和 monitor composition；
-summary 只提供方法状态/成本，独立 evaluator 从主路径及所有分支 Bundle 重算 verdict。
+summary 只提供方法状态/成本，独立 evaluator 从每个 Episode 的主路径 Bundle 重算 verdict。
 公开 capability 实验可以使用 `-oracle-bundle <bundle> -target <target> -out <audit>`：该模式先验证保存的
 Bundle 与注册 projector，再执行同一 Target registry，并输出 checked/violation 证据。
 v1 audit 的兼容字段 `replay_stable` 只是 Bundle 中已封存的 fresh Replay 结果；audit 不重新启动 Runtime
