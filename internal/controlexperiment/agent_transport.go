@@ -39,7 +39,7 @@ func (transport AgentTransportFreeze) valid() bool {
 		transport.RequestTimeoutMS > 0 && transport.RequestTimeoutMS <= 30*60*1000 &&
 		validMethodToken(transport.RoutingPolicy) &&
 		transport.Temperature == 0 && transport.MaxOutputTokens > 0 &&
-		transport.MaxOutputTokens <= 32000 && transport.MaxCallsPerArm == 1 &&
+		transport.MaxOutputTokens <= 64000 && transport.MaxCallsPerArm == 1 &&
 		transport.MaxRetries >= 0 && transport.MaxRetries <= 2
 }
 

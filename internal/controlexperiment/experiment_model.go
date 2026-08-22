@@ -180,12 +180,22 @@ func (policy Policy) Validate(decisionBudget int) error {
 		if err := rule.Kind.Validate(); err != nil {
 			return err
 		}
-		if rule.Kind == control.ActionPartition {
+		switch rule.Kind {
+		case control.ActionPartition:
 			parameters, err := control.DecodePartitionParameters(rule.Parameters)
 			if err != nil || rule.ActionID == "" || parameters.ID == "" {
 				return errors.New("EXPERIMENT_POLICY_PARTITION_PREPARATION_INVALID")
 			}
-		} else if len(rule.Parameters) != 0 {
+		case control.ActionInvoke:
+			var parameters control.AdapterInvokeParameters
+			if rule.ActionID == "" || rule.Node == "" ||
+				json.Unmarshal(rule.Parameters, &parameters) != nil || parameters.Input.Validate() != nil {
+				return errors.New("EXPERIMENT_POLICY_INVOKE_PREPARATION_INVALID")
+			}
+		default:
+			if len(rule.Parameters) == 0 {
+				break
+			}
 			return errors.New("EXPERIMENT_POLICY_PREPARATION_PARAMETERS_UNEXPECTED")
 		}
 		seenDecisions[rule.Decision] = true

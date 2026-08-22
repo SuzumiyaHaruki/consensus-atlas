@@ -786,7 +786,7 @@ func CompileScenarioPolicy(
 			Decision: index + 1, Kind: record.Action.Kind,
 			Node: record.Action.Node.Node, ActionID: record.Action.ID,
 		}
-		if record.Action.Kind == control.ActionPartition {
+		if record.Action.Kind == control.ActionPartition || record.Action.Kind == control.ActionInvoke {
 			rule.Parameters = append(json.RawMessage(nil), record.Action.Parameters...)
 		}
 		rules[index] = rule

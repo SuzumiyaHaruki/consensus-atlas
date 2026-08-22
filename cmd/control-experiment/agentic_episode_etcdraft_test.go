@@ -205,7 +205,7 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		composition.Budget.MaxRuntimeDecisions != 64 ||
 		composition.Budget.MaxTotalCalls != 12 || composition.Budget.MaxObservedTokens != 240000 ||
 		transport.Model != openRouterFixtureModel || transport.Thinking != "high" ||
-		transport.MaxOutputTokens != 32000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {
+		transport.MaxOutputTokens != 64000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {
 		t.Fatalf("etcd/raft registry composition drifted: %#v err=%v", composition, err)
 	}
 	publicOptions := controlExperimentOptions{

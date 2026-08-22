@@ -257,7 +257,7 @@
     "scenario_semantic_exposure": "full",
     "model_reasoning_effort": "high",
     "model_exclude_reasoning": true,
-    "model_max_output_tokens": 32000,
+    "model_max_output_tokens": 64000,
     "model_max_retries": 0,
     "session_budget": {
       "max_attempts": 1,

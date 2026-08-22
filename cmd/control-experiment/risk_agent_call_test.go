@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/etcdraftv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
@@ -195,6 +197,114 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 			bytes.Contains(minimal.Schema, []byte(`"reference_branch_id"`)) {
 			t.Fatalf("%s phase did not receive a minimal path schema: %s/%v", intent, minimal.Schema, err)
 		}
+	}
+}
+
+func TestRiskAgentCompactsPortfolioAfterLengthWithoutRepeatingGrounding(t *testing.T) {
+	knowledge, _, _, err := loadEtcdraftAgenticAuthoringSource(etcdraftAgenticTestInputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := etcdraftAlternateQuorumRiskCandidate()
+	for _, predicate := range candidate.Predicates {
+		candidate.MechanismSteps = append(candidate.MechanismSteps, controlexperiment.RiskMechanismStep{
+			MilestoneID: predicate.MilestoneID,
+			Kind:        predicate.Kind,
+			Rationale:   "Exercise the ordered etcd/raft replication-loss milestone.",
+			SupportRefs: []string{"primer/epoch-and-replication"},
+		})
+	}
+	candidate.SuspectedMechanism = ""
+	content, err := json.Marshal(controlexperiment.RiskCandidatePortfolio{
+		Candidates: []controlexperiment.RiskCandidate{candidate},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCalls := 0
+	client := fixtureOpenRouterIntentClient()
+	client.HTTP = agentHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls++
+		var payload openRouterChatRequest
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if providerCalls == 1 {
+			if payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio" {
+				t.Fatalf("initial call did not request a portfolio: %s", payload.ResponseFormat.JSONSchema.Name)
+			}
+			response, marshalErr := json.Marshal(map[string]any{
+				"id": "risk-length", "model": openRouterFixtureModel,
+				"system_fingerprint": "fixture-provider", "choices": []any{map[string]any{
+					"index": 0, "message": map[string]any{
+						"role": "assistant", "content": `{"candidates":[`,
+					}, "finish_reason": "length",
+				}},
+				"usage": map[string]int{"prompt_tokens": 4, "completion_tokens": 32, "total_tokens": 36},
+			})
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
+		}
+		if providerCalls != 2 ||
+			payload.ResponseFormat.JSONSchema.Name != "risk_candidate_portfolio_compact_repair" ||
+			!bytes.Contains(payload.ResponseFormat.JSONSchema.Schema, []byte(`"maxItems":1`)) ||
+			!strings.Contains(payload.Messages[1].Content, "preceding portfolio response reached") ||
+			strings.Contains(payload.Messages[1].Content, "source grounding is mandatory") {
+			t.Fatalf("compact repair request drifted: call=%d name=%s", providerCalls,
+				payload.ResponseFormat.JSONSchema.Name)
+		}
+		response := fixtureOpenRouterResponse(t, providerCalls, content)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
+	})
+	directory := filepath.Join(t.TempDir(), "risk-length-repair")
+	journal, err := newStatelessAgentCallJournal(directory, client, "")
+	if err != nil || journal.SetRoot("risk-length-root") != nil {
+		t.Fatalf("journal setup failed: %#v/%v", journal, err)
+	}
+	planner := func(ctx context.Context, view controlexperiment.RiskAgentView) (
+		[]byte, controlexperiment.ModelWork, error,
+	) {
+		response, work, callErr := planRiskCandidate(ctx, journal, view)
+		if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
+			return response, work, callErr
+		}
+		if err := journal.ActivateKey("fixture-key"); err != nil {
+			return nil, work, err
+		}
+		return planRiskCandidate(ctx, journal, view)
+	}
+	result, err := controlexperiment.DiscoverRiskWithPlanner(
+		context.Background(), controlexperiment.RiskAgentBudget{MaxCalls: 2, MaxTokens: 100},
+		knowledge, (etcdraftv2.ObservationProjector{}).Capabilities(),
+		[]control.ActionKind{
+			control.ActionInvoke, control.ActionCompleteEffect, control.ActionDeliverMessage,
+			control.ActionDropMessage, control.ActionFireTemporal,
+		}, nil, nil, nil, planner,
+	)
+	if err != nil || result.Status != controlexperiment.RiskAgentAccepted || result.Accepted == nil ||
+		len(result.Attempts) != 2 ||
+		result.Attempts[0].Feedback.ReasonCode != controlexperiment.RiskAgentReasonResponseFinishLength ||
+		len(result.Attempts[0].ResponseBytes) != 0 || result.ModelWork.Calls != 2 ||
+		result.ModelWork.TotalTokens != 43 || providerCalls != 2 {
+		t.Fatalf("Risk length repair did not close: result=%#v err=%v calls=%d", result, err, providerCalls)
+	}
+	audits, err := journal.Audits()
+	if err != nil || len(audits) != 2 ||
+		audits[0].Status != controlexperiment.StatelessAgentCallFailed ||
+		journal.recovered[0].result.FailureCode != statelessAgentFailureFinishLength ||
+		audits[1].Status != controlexperiment.StatelessAgentCallContentReady {
+		t.Fatalf("Risk length evidence missing: %#v/%v", audits, err)
+	}
+	recovered, err := recoverStatelessAgentCallJournal(directory, client)
+	if err != nil || recovered.SetRoot("risk-length-root") != nil {
+		t.Fatalf("Risk length repair journal did not recover: %#v/%v", recovered, err)
+	}
+	recoveredAudits, err := recovered.Audits()
+	if err != nil || len(recoveredAudits) != 2 || providerCalls != 2 {
+		t.Fatalf("Risk recovery repeated provider work: %#v/%v calls=%d",
+			recoveredAudits, err, providerCalls)
 	}
 }
 

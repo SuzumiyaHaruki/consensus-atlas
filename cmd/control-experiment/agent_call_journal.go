@@ -185,7 +185,7 @@ func recoverStatelessAgentCallJournal(
 			return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_TERMINAL_NOT_LAST")
 		}
 	}
-	if !validStatelessScenarioRepairSequence(recovered) {
+	if !validStatelessRepairSequence(recovered) {
 		return nil, errors.New("STATELESS_AGENT_CALL_RECOVERY_REPAIR_SEQUENCE_INVALID")
 	}
 	return &statelessAgentCallJournal{
@@ -200,37 +200,46 @@ func statelessAgentCallCanContinue(status string) bool {
 }
 
 // statelessAgentCallSequenceCanContinue keeps the generic journal terminal by
-// default. The only failed result that may have a successor is the exact
-// Scenario length-repair pair: adjacent ordinals under the same root, a
-// response-finish-length result, and a repair intent bound to the same frozen
-// Scenario view digest and the original provider-call ordinal.
+// default. The only failed result that may have a successor is an exact
+// Scenario or Risk length-repair pair with adjacent ordinals and an identity
+// bound to the failed provider call.
 func statelessAgentCallSequenceCanContinue(
 	current statelessAgentRecoveredCall,
 	next statelessAgentRecoveredCall,
 ) bool {
 	if current.result != nil && statelessAgentCallCanContinue(current.result.Status) {
 		_, _, _, nextIsRepair := parseScenarioRepairIntentID(next.intent.ID)
-		return !nextIsRepair
+		_, _, _, nextIsRiskRepair := parseRiskRepairIntentID(next.intent.ID)
+		return !nextIsRepair && !nextIsRiskRepair
 	}
 	if current.result == nil || current.result.Status != controlexperiment.StatelessAgentCallFailed ||
 		current.result.FailureCode != statelessAgentFailureFinishLength ||
 		current.intent.RootID != next.intent.RootID ||
-		current.intent.Ordinal+1 != next.intent.Ordinal ||
-		current.intent.SearchRequestDigest != next.intent.SearchRequestDigest {
+		current.intent.Ordinal+1 != next.intent.Ordinal {
 		return false
 	}
 	callOrdinal, callBinding, callOK := parseScenarioCallIntentID(current.intent.ID)
 	repairOrdinal, repairFrom, repairBinding, repairOK := parseScenarioRepairIntentID(next.intent.ID)
-	return callOK && repairOK && callOrdinal == current.intent.Ordinal &&
+	if callOK && repairOK && current.intent.SearchRequestDigest == next.intent.SearchRequestDigest &&
+		callOrdinal == current.intent.Ordinal &&
 		repairOrdinal == next.intent.Ordinal && repairFrom == current.intent.Ordinal &&
-		callBinding == repairBinding && callBinding == current.intent.SearchRequestDigest
+		callBinding == repairBinding && callBinding == current.intent.SearchRequestDigest {
+		return true
+	}
+	riskCallOrdinal, riskCallOK := parseRiskCallIntentID(current.intent.ID)
+	riskRepairOrdinal, riskRepairFrom, sourceIntentDigest, riskRepairOK :=
+		parseRiskRepairIntentID(next.intent.ID)
+	return riskCallOK && riskRepairOK && riskCallOrdinal == current.intent.Ordinal &&
+		riskRepairOrdinal == next.intent.Ordinal && riskRepairFrom == current.intent.Ordinal &&
+		sourceIntentDigest == current.intent.Digest
 }
 
-func validStatelessScenarioRepairSequence(calls []statelessAgentRecoveredCall) bool {
+func validStatelessRepairSequence(calls []statelessAgentRecoveredCall) bool {
 	repairs := 0
 	for index, call := range calls {
 		_, _, _, repair := parseScenarioRepairIntentID(call.intent.ID)
-		if !repair {
+		_, _, _, riskRepair := parseRiskRepairIntentID(call.intent.ID)
+		if !repair && !riskRepair {
 			continue
 		}
 		repairs++
@@ -240,6 +249,36 @@ func validStatelessScenarioRepairSequence(calls []statelessAgentRecoveredCall) b
 		}
 	}
 	return true
+}
+
+func parseRiskCallIntentID(value string) (int, bool) {
+	const prefix = "risk-agent-call-"
+	if !strings.HasPrefix(value, prefix) {
+		return 0, false
+	}
+	ordinal, err := strconv.Atoi(strings.TrimPrefix(value, prefix))
+	return ordinal, err == nil && ordinal > 0
+}
+
+func parseRiskRepairIntentID(value string) (int, int, string, bool) {
+	const prefix = "risk-agent-repair-call-"
+	const fromSeparator = "-from-"
+	const intentSeparator = "-intent-"
+	if !strings.HasPrefix(value, prefix) {
+		return 0, 0, "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(value, prefix), fromSeparator, 2)
+	if len(parts) != 2 {
+		return 0, 0, "", false
+	}
+	remainder := strings.SplitN(parts[1], intentSeparator, 2)
+	if len(remainder) != 2 || !validAgenticSHA256(remainder[1]) {
+		return 0, 0, "", false
+	}
+	ordinal, ordinalErr := strconv.Atoi(parts[0])
+	from, fromErr := strconv.Atoi(remainder[0])
+	return ordinal, from, remainder[1], ordinalErr == nil && fromErr == nil &&
+		ordinal > 0 && from > 0
 }
 
 func parseScenarioCallIntentID(value string) (int, string, bool) {

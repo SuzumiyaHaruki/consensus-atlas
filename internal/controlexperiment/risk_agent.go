@@ -58,6 +58,7 @@ const (
 	RiskAgentReasonKnowledgeUnavailable = "risk-knowledge-reader-unavailable"
 	RiskAgentReasonKnowledgeBudget      = "risk-knowledge-request-budget-exceeded"
 	RiskAgentReasonKnowledgeGrounding   = "risk-knowledge-grounding-required"
+	RiskAgentReasonResponseFinishLength = "response-finish-length"
 	RiskAgentReasonFidelity             = AgentCapabilityGapTargetFidelity
 
 	RiskCandidateExecutable = "executable"
@@ -170,6 +171,20 @@ type riskAgentResponseEnvelope struct {
 type RiskAgentBudget struct {
 	MaxCalls  int `json:"max_calls"`
 	MaxTokens int `json:"max_tokens"`
+}
+
+// RiskPlannerResponseFailure preserves charged provider work while allowing
+// one bounded, typed repair attempt. It never carries partial provider output.
+type RiskPlannerResponseFailure struct {
+	Code       string
+	Repairable bool
+}
+
+func (failure *RiskPlannerResponseFailure) Error() string {
+	if failure == nil || failure.Code == "" {
+		return "EXPERIMENT_RISK_PLANNER_RESPONSE_FAILED"
+	}
+	return failure.Code
 }
 
 type RiskAgentFeedback struct {
@@ -460,15 +475,29 @@ func DiscoverRiskWithPlanner(
 			view.MaxKnowledgeRequests = min(RiskKnowledgeRequestsPerCall, remainingKnowledgeRequests)
 		}
 		response, work, err := planner(ctx, view)
-		if err != nil {
-			return result, err
-		}
 		if !validStatelessPlannerWork(work) {
 			return result, errors.New("EXPERIMENT_RISK_AGENT_MODEL_WORK_INVALID")
 		}
 		addModelWork(&result.ModelWork, work)
 		attempt := RiskAgentAttempt{
 			Ordinal: ordinal, ResponseBytes: append([]byte(nil), response...), ModelWork: work,
+		}
+		if err != nil {
+			var failure *RiskPlannerResponseFailure
+			if !errors.As(err, &failure) || failure.Code == "" {
+				return result, err
+			}
+			attempt.ResponseBytes = nil
+			attempt.Feedback = RiskAgentFeedback{Outcome: RiskAgentStopped, ReasonCode: failure.Code}
+			if result.ModelWork.TotalTokens > budget.MaxTokens {
+				attempt.Feedback.ReasonCode = RiskAgentReasonTokenBudget
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			if result.ModelWork.TotalTokens > budget.MaxTokens || !failure.Repairable || ordinal == budget.MaxCalls {
+				return result, nil
+			}
+			prior = &result.Attempts[len(result.Attempts)-1].Feedback
+			continue
 		}
 		if result.ModelWork.TotalTokens > budget.MaxTokens {
 			attempt.Feedback = RiskAgentFeedback{Outcome: RiskAgentStopped, ReasonCode: RiskAgentReasonTokenBudget}

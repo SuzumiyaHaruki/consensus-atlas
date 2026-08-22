@@ -18,8 +18,8 @@ const (
 	openRouterProvider               = "openrouter"
 	openRouterChatEndpoint           = "https://openrouter.ai/api/v1/chat/completions"
 	openRouterMaxResponse            = 2 << 20
-	openRouterDefaultTokens          = 32000
-	openRouterMaxOutputTokens        = 32000
+	openRouterDefaultTokens          = 64000
+	openRouterMaxOutputTokens        = 64000
 	openRouterDefaultReasoningEffort = "high"
 	openRouterDefaultTimeout         = 900 * time.Second
 	scenarioAgentMaxOutputTokens     = 8192

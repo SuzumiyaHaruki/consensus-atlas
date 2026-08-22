@@ -29,7 +29,7 @@ func TestAgentTransportFreezeKeepsProviderAuthorityBounded(t *testing.T) {
 		func() AgentTransportFreeze { changed := valid; changed.Temperature = 1; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.MaxCallsPerArm = 2; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.MaxRetries = 3; return changed }(),
-		func() AgentTransportFreeze { changed := valid; changed.MaxOutputTokens = 32001; return changed }(),
+		func() AgentTransportFreeze { changed := valid; changed.MaxOutputTokens = 64001; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.RequestTimeoutMS = 0; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.StructuredOutputMode = "yaml"; return changed }(),
 		func() AgentTransportFreeze { changed := valid; changed.Model = "Fixture/Model Name"; return changed }(),

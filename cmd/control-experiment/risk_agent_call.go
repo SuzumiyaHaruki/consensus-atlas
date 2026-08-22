@@ -22,11 +22,24 @@ func planRiskCandidate(
 	if journal == nil || journal.client == nil || !journal.client.ready() || view.Validate() != nil {
 		return nil, controlexperiment.ModelWork{}, errors.New("RISK_AGENT_CALL_INPUT_INVALID")
 	}
-	system, user, err := riskAgentPrompt(view)
+	repair := view.Prior != nil &&
+		view.Prior.ReasonCode == controlexperiment.RiskAgentReasonResponseFinishLength
+	var system, user string
+	var err error
+	if repair {
+		system, user, err = riskAgentCompactRepairPrompt(view)
+	} else {
+		system, user, err = riskAgentPrompt(view)
+	}
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
 	output, err := riskAgentStructuredOutput(view)
+	if repair && err == nil {
+		output, err = riskAgentStructuredOutputWithLimit(
+			view, 1, "risk_candidate_portfolio_compact_repair",
+		)
+	}
 	if err != nil {
 		return nil, controlexperiment.ModelWork{}, err
 	}
@@ -39,10 +52,56 @@ func planRiskCandidate(
 		return nil, controlexperiment.ModelWork{}, err
 	}
 	ordinal := journal.next + 1
-	return journal.planningCall(ctx, planningAgentCallPlan{
-		intentID: fmt.Sprintf("risk-agent-call-%d", ordinal), requestDigest: requestDigest,
+	intentID := fmt.Sprintf("risk-agent-call-%d", ordinal)
+	if repair {
+		sourceIndex := ordinal - 2
+		if sourceIndex < 0 || sourceIndex >= len(journal.recovered) ||
+			journal.recovered[sourceIndex].result == nil ||
+			journal.recovered[sourceIndex].result.FailureCode != statelessAgentFailureFinishLength {
+			return nil, controlexperiment.ModelWork{}, errors.New("RISK_AGENT_REPAIR_SOURCE_MISSING")
+		}
+		previous := journal.recovered[sourceIndex]
+		intentID = fmt.Sprintf(
+			"risk-agent-repair-call-%d-from-%d-intent-%s",
+			ordinal, previous.intent.Ordinal, previous.intent.Digest,
+		)
+	}
+	content, work, callErr := journal.planningCall(ctx, planningAgentCallPlan{
+		intentID: intentID, requestDigest: requestDigest,
 		prepared: prepared, contentReady: true,
 	})
+	if errors.Is(callErr, errStatelessAgentCallKeyRequired) {
+		return nil, work, callErr
+	}
+	failureCode := statelessAgentFailureCode(callErr)
+	if failureCode == statelessAgentFailureFinishLength {
+		return nil, work, &controlexperiment.RiskPlannerResponseFailure{
+			Code:       controlexperiment.RiskAgentReasonResponseFinishLength,
+			Repairable: !repair && view.MaxKnowledgeRequests == 0,
+		}
+	}
+	return content, work, callErr
+}
+
+func riskAgentCompactRepairPrompt(
+	view controlexperiment.RiskAgentView,
+) (string, string, error) {
+	if view.Validate() != nil || view.MaxKnowledgeRequests != 0 || view.Prior == nil ||
+		view.Prior.ReasonCode != controlexperiment.RiskAgentReasonResponseFinishLength {
+		return "", "", errors.New("RISK_AGENT_COMPACT_REPAIR_VIEW_INVALID")
+	}
+	encoded, err := json.MarshalIndent(view, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	system := "Return exactly one RiskCandidatePortfolio JSON object and no prose. The candidates array must contain " +
+		"exactly one complete RiskCandidate. Do not repeat general protocol explanation."
+	user := "The preceding portfolio response reached the provider output limit and was discarded without parsing. " +
+		"Using the same completed source grounding and trusted Target surface, return only the single highest-priority " +
+		"falsifiable candidate. Preserve property_ref, mechanism_steps, ordered predicates, bindings, required_fidelity " +
+		"and visible support references, but keep summary and rationales concise. Do not request another search or source " +
+		"read and do not emit a verdict. Input JSON:\n" + string(encoded)
+	return system, user, nil
 }
 
 func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, error) {
@@ -152,8 +211,19 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 func riskAgentStructuredOutput(
 	view controlexperiment.RiskAgentView,
 ) (openRouterStructuredOutput, error) {
+	return riskAgentStructuredOutputWithLimit(view, view.MaxCandidates, "risk_candidate_portfolio")
+}
+
+func riskAgentStructuredOutputWithLimit(
+	view controlexperiment.RiskAgentView,
+	portfolioLimit int,
+	portfolioName string,
+) (openRouterStructuredOutput, error) {
 	if view.Validate() != nil {
 		return openRouterStructuredOutput{}, errors.New("RISK_AGENT_OUTPUT_SCHEMA_INVALID")
+	}
+	if portfolioLimit <= 0 || portfolioLimit > view.MaxCandidates || portfolioName == "" {
+		return openRouterStructuredOutput{}, errors.New("RISK_AGENT_OUTPUT_LIMIT_INVALID")
 	}
 	token := map[string]any{
 		"type": "string", "minLength": 1, "maxLength": 128,
@@ -302,7 +372,7 @@ func riskAgentStructuredOutput(
 		"type": "object", "additionalProperties": false,
 		"properties": map[string]any{
 			"candidates": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": view.MaxCandidates,
+				"type": "array", "minItems": 1, "maxItems": portfolioLimit,
 				"items": candidateSchema,
 			},
 		},
@@ -312,7 +382,7 @@ func riskAgentStructuredOutput(
 	if err != nil {
 		return openRouterStructuredOutput{}, err
 	}
-	return openRouterStructuredOutput{Name: "risk_candidate_portfolio", Schema: encoded}, nil
+	return openRouterStructuredOutput{Name: portfolioName, Schema: encoded}, nil
 }
 
 func targetFidelityBoundaryIDs(surface *controlexperiment.AgentTargetSurface) []string {

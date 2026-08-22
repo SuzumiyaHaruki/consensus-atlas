@@ -1,8 +1,8 @@
 # 当前阶段
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 分支：`feature/agentic-consensus-testing`
-阶段：M4n13 bootstrap 因果推进、紧凑反馈与证据封存收口
+阶段：M4n14 精确 Invoke 重放与 Risk 截断修复收口
 
 ## 一句话状态
 
@@ -38,6 +38,12 @@ decision 的有界切片，并优先沿所选 Action 的 item dependency、再�
 term/ballot 状态或 milestone 发生可信变化时返回 `ProgressDelta`；仅因普通选举消息派生出新的
 Drop/Duplicate 控制不会立即打断 bootstrap 切片。Target closure 仍可持续拥有已接管的因果闭合，且
 只能消费公共 Runtime 已 enabled 的 Effect/Deliver/Temporal。
+
+Agent 在 bootstrap 之后延迟选择 `Invoke` 的 Trace 现已能编译为真正的精确执行策略：策略保留
+原 ActionID、节点和 opaque input，并只在 Trace 记录的 decision 调用 `OfferInvoke`；执行器不再
+把 workload 在 decision 1 提前投放。篡改 input 会因重新生成的 ActionID 不匹配而拒绝。三/五节点
+etcd/raft 与三节点 OmniPaxos 的零模型主路径均覆盖“先建立协调者、再一次 Invoke、qualified Bundle、
+fresh Replay、Oracle”闭环。
 
 `RiskWitnessProgress` v2 将实际 milestone participant、related participant 和跨 milestone
 binding 的可信解析结果反馈给 Scenario Agent，避免模型从摘要猜测“同一请求/参与者”。
@@ -75,9 +81,9 @@ Risk Prompt 要求按 property → invariant → 合法 fault condition → 实�
 search→read→portfolio 后最多一次机械资格修复。
 
 新运行的 MethodSpec implementation identity 为
-`m4n13-causal-bootstrap-and-sealed-token-stop-v1`，M4n12 及更早工件仅作只读兼容；源码暴露模式为
+`m4n14-recorded-invoke-and-risk-length-repair-v1`，M4n13 及更早工件仅作只读兼容；源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
-`risk-agent-navigation-v9`：search 前只暴露 search schema，成功 search 后只暴露其真实
+`risk-agent-navigation-v10`：search 前只暴露 search schema，成功 search 后只暴露其真实
 match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
 单行上的一个大小写不敏感字面子串，不进行分词或 OR；最多只允许一次 stopped grounding 重试。
 同一物理源码文件经多个 mount/reference prefix 暴露时只占一个搜索结果，稳定保留按 reference
@@ -89,7 +95,8 @@ Runtime decisions，初始五节点 frontier 更大的 OmniPaxos 提供 128 个�
 总上限为 12 calls、240,000 observed tokens 和 30 分钟。Risk reasoning 保持 high，Scenario
 reasoning 降为 low，Scenario 输出仍限制为 8,192 tokens。新 portfolio 的首候选与从队列恢复的候选使用
 相同 Scenario 深度；Risk 未使用额度不再扩大某个候选的搜索机会。除统一 Episode/call/token/
-decision 预算外不再设置 portfolio 数量上限；发现 finding 不会提前终止。
+decision 预算外不再设置 portfolio 数量上限；发现 finding 不会提前终止。Provider transport 的 Risk
+输出能力上限提升为 64,000 tokens，但不把大输出当作正确性条件。
 
 Scenario prompt v21 把 `next_missing_milestone`、可信 resolved bindings、上一条 Agent Action 的
 紧凑效果、协调状态和当前候选 Action 放在最前面，并保留 previous proposal、outcome/reason、selector failure、capability gap、
@@ -106,8 +113,12 @@ Provider 失败现在区分 `response-finish-length|response-empty-content|respo
 Scenario 首次 length 截断可在原 calls/tokens 预算内做一次同 frontier 最小 JSON repair；不重复 Runtime
 Action。repair 再失败时以 `provider-response-failed` in-band stop 保存此前执行，已有前缀仍进入 Bundle、
 fresh Replay 与 Oracle，portfolio 不因一个响应失败而丢失。
+Risk portfolio 首次 length 截断同样不会解析或保存残缺 JSON；若 grounding 已完成且 calls/tokens 仍有
+余额，系统只允许一次相邻的 compact repair，Schema 强制只返回一个候选且禁止重新 search/read。
+repair intent 绑定原失败 intent digest，durable recovery 不会重新收费或重复发送；若首次截断已经越过
+Episode token 阈值，则机械停止而不再 repair。
 durable journal 只允许精确的相邻 length→repair 序列继续：两次调用必须属于同一 root，使用同一冻结
-Scenario view digest，并由 repair intent 绑定原调用序号。length result、repair intent、repair result 后中断
+Scenario view digest（Scenario repair）或绑定原 Risk intent digest（Risk repair），并由 repair intent 绑定原调用序号。length result、repair intent、repair result 后中断
 均可恢复；repair 已 dispatch 但 result 未落盘时保留为显式 unreconciled，不会重发未知远端结果。若失败响应
 本身越过 token 阈值，原 `response-*` 分类仍被保留，只禁止 repair；此前已执行路径仍正常生成 Bundle、
 fresh Replay 和 Oracle。
@@ -142,7 +153,7 @@ boundary 表述为 evaluator-owned，也不声称能识别 artifact producer 对
 private/formal evaluator 在 evaluator-owned SUT Replay 后
 重新执行完整 registry，并只以 post-root violation 决定 killed/false-positive；
 root violation 以 `root_prefix_oracle_findings` 单列，不能给 Agent 记功。
-M4n11 以及当前 M4n12/M4n13 MethodSpec 的已执行主路径和分支在 resume 时必须携带 attribution；
+M4n11 以及当前 M4n12/M4n13/M4n14 MethodSpec 的已执行主路径和分支在 resume 时必须携带 attribution；
 只有 M4n10 及更早 implementation ID 允许缺省，避免方法版本前移后把 M4n11 工件错误解释为 root=0。
 
 Evidence 结论优先级已统一为 `post-root Oracle finding → witness-instantiated → provider-response-failed
@@ -603,12 +614,11 @@ election incarnation 聚焦 race。canary v4 已调用外部模型，使用 11 c
 
 ## 下一步
 
-1. M4n12 的两次真实 canary 保持为失败诊断工件；其后续 M4n13 零模型回归已证明 etcd/raft 与
-   OmniPaxos 的三/五节点 bootstrap 均可建立唯一协调者并执行 Invoke，不改写历史实验结果。
-2. 在新提交和干净 checkout 上各运行一次短 canary，确认真实模型使用紧凑 `action_frontier`、协调反馈和
-   因果推进后能到达首个 workload milestone；若 token 在已提交路径后停止，必须看到 Bundle、stable Replay、
-   Oracle 结果以及 `oracle_evaluated=true`。
-3. 两个短 canary 均闭合后，再单独授权六 Episode 长实验；不把本轮零模型回归作为 Agent 效果证据。
+1. M4n14 先作为独立提交收口；不从 dirty `suts/etcdraft` 运行或提交其 gitlink。
+2. 下一独立阶段删除默认单路径协议已经不可达的 branch/control/ablate/select/minimize 状态与工件字段，
+   保留 continue/revise/abandon、单路径反馈、qualified execution 和 Oracle 主线。
+3. 随后把公共固定推进与 Target 因果选择统一到一个可选 selector 接口，再运行一次短 canary；不在结构
+   收敛期间启动六 Episode 长实验。
 4. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
    attribution capability，不作为 Agent discovery benchmark。正式报告披露 Oracle-backed portfolio 偏置，
    仅将 witness 已实例化且对应 property 出现 post-root finding 的结果称为 Agent discovery。

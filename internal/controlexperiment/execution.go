@@ -233,20 +233,29 @@ func executeRun(
 	}
 	currentEvidence := initialTrace.InitialEvidence
 	offeredWorkload := 0
+	preparedWorkload := policyPreparedWorkloadCount(plan.Policy)
+	if preparedWorkload > 0 &&
+		(plan.Workload == nil || preparedWorkload != len(plan.Workload.Invocations)) {
+		return RunReport{}, nil, executionFailure(
+			"primary-prepare", "EXPERIMENT_POLICY_WORKLOAD_PREPARATION_MISMATCH",
+			plan.Run, 0, *work, errors.New("EXPERIMENT_POLICY_WORKLOAD_PREPARATION_MISMATCH"),
+		)
+	}
 	faultUsage := FaultUsage{}
 	termination := RunTerminationBudget
 	strictWorkload := schemaVersion == SchemaVersion
 	var selections []SelectionAudit
 	for decision := 1; decision <= decisionBudget; decision++ {
 		prepareBefore := runtime.Snapshot()
-		offeredAction, offered, err := offerPolicyPreparation(plan.Policy, decision, runtime)
+		offeredAction, offered, workloadOffered, err := offerPolicyPreparation(
+			ctx, plan.Policy, decision, runtime,
+		)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-prepare", "EXPERIMENT_POLICY_PREPARE_FAILED", plan.Run, decision, *work, err,
 			)
 		}
-		workloadOffered := false
-		if !offered {
+		if !offered && preparedWorkload == 0 {
 			offeredAction, workloadOffered, err = offerNextWorkloadInvocation(
 				ctx, plan.Workload, offeredWorkload, runtime, router, currentEvidence, strictWorkload,
 			)
@@ -502,35 +511,65 @@ func executeRun(
 	return runReport, samples, nil
 }
 
+func policyPreparedWorkloadCount(policy Policy) int {
+	count := 0
+	for _, rule := range policy.Rules {
+		if rule.Kind == control.ActionInvoke {
+			count++
+		}
+	}
+	return count
+}
+
 // offerPolicyPreparation reconstructs an exact author-supplied Action before
-// policy selection. Ordinary Runtime actions and workload Invokes do not pass
-// through this path.
+// policy selection. Ordinary Runtime actions remain enabled without this path;
+// recorded Partition and Invoke actions retain their original offer point.
 func offerPolicyPreparation(
+	ctx context.Context,
 	policy Policy,
 	decision int,
 	runtime *controlruntime.Runtime,
-) (control.ActionID, bool, error) {
+) (control.ActionID, bool, bool, error) {
 	for _, rule := range policy.Rules {
-		if rule.Decision != decision || rule.Kind != control.ActionPartition {
+		if rule.Decision != decision {
 			continue
 		}
-		parameters, err := control.DecodePartitionParameters(rule.Parameters)
-		if err != nil {
-			return "", false, fmt.Errorf("EXPERIMENT_POLICY_PARTITION_DECODE_FAILED: %w", err)
+		var (
+			actionID        control.ActionID
+			workloadOffered bool
+			err             error
+		)
+		switch rule.Kind {
+		case control.ActionPartition:
+			var parameters control.PartitionParameters
+			parameters, err = control.DecodePartitionParameters(rule.Parameters)
+			if err == nil {
+				actionID, err = runtime.OfferPartition(parameters.Left, parameters.Right)
+			}
+		case control.ActionInvoke:
+			var parameters control.AdapterInvokeParameters
+			err = json.Unmarshal(rule.Parameters, &parameters)
+			if err == nil {
+				actionID, err = runtime.OfferInvoke(ctx, rule.Node, parameters.Input)
+				workloadOffered = err == nil
+			}
+		default:
+			return "", false, false, nil
 		}
-		actionID, err := runtime.OfferPartition(parameters.Left, parameters.Right)
 		if err != nil {
-			return "", false, fmt.Errorf("EXPERIMENT_POLICY_PARTITION_OFFER_FAILED: %w", err)
-		}
-		if actionID != rule.ActionID {
-			return "", false, fmt.Errorf(
-				"EXPERIMENT_POLICY_PARTITION_ID_MISMATCH: expected=%s actual=%s",
-				rule.ActionID, actionID,
+			return "", false, false, fmt.Errorf(
+				"EXPERIMENT_POLICY_PREPARATION_FAILED: %s: %w", rule.Kind, err,
 			)
 		}
-		return actionID, true, nil
+		if actionID != rule.ActionID {
+			return "", false, false, fmt.Errorf(
+				"EXPERIMENT_POLICY_PREPARATION_ID_MISMATCH: kind=%s expected=%s actual=%s",
+				rule.Kind, rule.ActionID, actionID,
+			)
+		}
+		return actionID, true, workloadOffered, nil
 	}
-	return "", false, nil
+	return "", false, false, nil
 }
 
 func finalTraceEvidence(trace controlruntime.Trace) control.EvidenceEnvelope {

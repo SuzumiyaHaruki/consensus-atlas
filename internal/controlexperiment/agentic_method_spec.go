@@ -12,7 +12,8 @@ const (
 	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                                                = "agentic-episode-v1"
-	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n13-causal-bootstrap-and-sealed-token-stop-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n14-recorded-invoke-and-risk-length-repair-v1"
+	agenticMethodImplementationM4n13                                       = "consensus-atlas/agentic-method/m4n13-causal-bootstrap-and-sealed-token-stop-v1"
 	agenticMethodImplementationM4n12                                       = "consensus-atlas/agentic-method/m4n12-bootstrap-root-and-action-coherence-v1"
 	agenticMethodImplementationM4n11                                       = "consensus-atlas/agentic-method/m4n11-provider-recovery-and-quorum-oracle-v1"
 	agenticMethodM4n10LegacyID                                             = "consensus-atlas/agentic-method/m4n10-deep-candidate-investigation-v1"
@@ -259,6 +260,7 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodImplementationM4n13 ||
 		id == agenticMethodImplementationM4n12 ||
 		id == agenticMethodImplementationM4n11 ||
 		id == agenticMethodM4n10LegacyID ||
@@ -281,6 +283,7 @@ func validAgenticMethodImplementationID(id string) bool {
 // not accidentally weaken it when the current implementation ID advances.
 func AgenticMethodRequiresOracleAttribution(implementationID string) bool {
 	return implementationID == AgenticMethodImplementationID ||
+		implementationID == agenticMethodImplementationM4n13 ||
 		implementationID == agenticMethodImplementationM4n12 ||
 		implementationID == agenticMethodImplementationM4n11
 }

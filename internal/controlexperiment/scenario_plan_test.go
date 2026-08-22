@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/fixture"
@@ -35,6 +36,61 @@ func fixtureInitialTrace(t *testing.T, ctx context.Context, config RuntimeConfig
 		t.Fatal(err)
 	}
 	return trace
+}
+
+func TestRecordedInvokePreparationRejectsParameterDrift(t *testing.T) {
+	ctx := context.Background()
+	runtimeConfig, err := (RuntimeConfig{SeedHex: "6d346e31342d696e766f6b652d74616d706572"}).runtimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpOneShot, Delay: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := controlruntime.New(ctx, fixture.New(), runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedID, err := reference.OfferInvoke(ctx, "n1", original)
+	if closeErr := reference.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered, err := fixture.InputPayload(fixture.Input{Operation: fixture.OpOneShot, Delay: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := json.Marshal(control.AdapterInvokeParameters{Input: tampered})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := Policy{
+		Version: PolicyVersion,
+		ID:      "recorded-invoke-parameter-drift",
+		Rules: []DecisionRule{{
+			Decision:   1,
+			Kind:       control.ActionInvoke,
+			Node:       "n1",
+			ActionID:   expectedID,
+			Parameters: parameters,
+		}},
+		Priority: []control.ActionKind{control.ActionFireTemporal},
+	}
+	if err := policy.Validate(1); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := controlruntime.New(ctx, fixture.New(), runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	if _, _, _, err := offerPolicyPreparation(ctx, policy, 1, runtime); err == nil ||
+		!strings.Contains(err.Error(), "EXPERIMENT_POLICY_PREPARATION_ID_MISMATCH") {
+		t.Fatalf("tampered Invoke parameters were not rejected: %v", err)
+	}
 }
 
 func (fixtureSemanticPrefixProjector) ID() string { return "fixture-semantic-prefix-projector-v1" }

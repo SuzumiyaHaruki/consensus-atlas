@@ -278,7 +278,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
 - closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n13-causal-bootstrap-and-sealed-token-stop-v1`；旧
+  `m4n14-recorded-invoke-and-risk-length-repair-v1`；旧 M4n13 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
@@ -310,7 +310,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   使用 ballot/prepare/promise/accepted/decided/recovery 术语，不把协议语义写入公共 Core；
 - Risk 固定最多 4 次调用：正常路径为一次中立 search、一次 bounded read、一次 portfolio、
   最多一次可信资格反馈修复。一次 search/read 返回 `stopped` 时可重试一次，但会占用原本的
-  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v9`
+  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v10`
   按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
   portfolio；query 是单行匹配的一个大小写不敏感字面子串，不分词且不执行 OR。oracle-backed 是 prompt
   的可验证性软偏好，不是可信侧准入条件；已完成的 read 按候选 mechanism step 是否引用 `source/...`

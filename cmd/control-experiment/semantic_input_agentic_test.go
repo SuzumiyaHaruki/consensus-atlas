@@ -355,6 +355,14 @@ func assertBootstrapScenarioEstablishesCoordination(
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
+			if invokePlanned {
+				encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+					Intent: controlexperiment.ScenarioIntentAbandon,
+				})
+				return encoded, controlexperiment.ModelWork{
+					Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5,
+				}, marshalErr
+			}
 			coordination := view.Semantics.Coordination
 			if coordination == nil {
 				t.Fatal("bootstrap feedback omitted trusted coordination status")
@@ -423,15 +431,26 @@ func assertBootstrapScenarioEstablishesCoordination(
 		t.Fatalf("bootstrap path did not establish coordination and Invoke: calls=%d decisions=%d log=%v",
 			len(result.Agent.Attempts), result.Agent.DecisionsUsed, planningLog)
 	}
-	foundInvoke := false
+	invokeCount := 0
 	for _, record := range result.Agent.Execution.FinalTrace.Records {
 		if record.Action.Kind == control.ActionInvoke {
-			foundInvoke = true
-			break
+			invokeCount++
 		}
 	}
-	if !foundInvoke {
-		t.Fatalf("bootstrap execution did not materialize Invoke: %#v", result.Agent.Execution)
+	if invokeCount != 1 {
+		t.Fatalf("bootstrap execution materialized %d Invokes, want exactly one: %#v",
+			invokeCount, result.Agent.Execution)
+	}
+	qualified, err := target.Execute(ctx, risk, projector, *result.Agent.Execution, "")
+	if err != nil {
+		t.Fatalf("bootstrap Scenario did not seal as a qualified Bundle: %v", err)
+	}
+	if !qualified.Replay.Stable ||
+		qualified.Bundle.Trace.Digest != result.Agent.Execution.FinalTrace.Digest ||
+		len(qualified.Oracle.Violations) != 0 {
+		t.Fatalf("bootstrap qualified evidence drifted: trace=%s scenario=%s replay=%#v oracle=%#v",
+			qualified.Bundle.Trace.Digest, result.Agent.Execution.FinalTrace.Digest,
+			qualified.Replay, qualified.Oracle)
 	}
 }
 
