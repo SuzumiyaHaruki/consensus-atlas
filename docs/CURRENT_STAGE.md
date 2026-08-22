@@ -1,6 +1,6 @@
 # 当前阶段
 
-阶段：M4n20 bootstrap-only 与 PSS 离线化
+阶段：M4n21 第三 Adapter composition 试接入
 
 ## 当前结论
 
@@ -116,12 +116,29 @@ Decision provenance 只分：
 - 没有直接删除 PSS schema：当前 CorePSS 仍绑定 Bundle validation 和历史正式工件；直接移除会
   同时改写 Bundle、Report、evaluator 与两个 Adapter mapper，不属于安全的次要瘦身。
 
-下一步用 HashiCorp Raft 做一次无模型 composition 试接入，检查新 Target 是否只需 Adapter、
-workload/router、semantic projector、Oracle registry、protocol knowledge 和可选源码 mount。
+## M4n21 HashiCorp composition 结果
+
+现有 HashiCorp Raft Adapter 与 qualification 无模型复核通过，但资格结果仍为：
+
+```text
+Total=9 Required=8 Validated=3 Unsupported=6 Qualified=false
+```
+
+它已经具备 Adapter factory、Runtime-owned message、crash/restart 和 opaque Invoke；尚缺活动
+WorkloadRouter、Observation/Decision projector、Oracle registry、Agent knowledge 与本地源码 mount。
+更关键的是 wall-clock/random timeout 不受调度器控制，strict Replay、natural temporal progress 与
+audited entropy Replay 明确未支持。
+
+试接入没有要求修改 Scenario 状态机、recorded Schedule executor、Provider journal、Bundle 或公共
+progress。当前结论不是“第三 Target 已接入”，而是“公共边界未被推翻，阻塞准确位于 SUT 可测试性和
+Target-local 组件”。详见 `docs/hashicorp-composition-trial.md`。
+
+下一步只准备两个活动 Target 的单 Episode canary；外部模型调用必须另行获得本轮明确授权。HashiCorp
+在提供可测试性端口和本地源码 checkout 前不进入付费 Agent 实验。
 
 ## 验证
 
-M4n20 完成前必须通过：
+M4n21 完成前必须通过：
 
 ```text
 go test ./...

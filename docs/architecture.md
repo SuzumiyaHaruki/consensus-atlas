@@ -45,12 +45,15 @@ Agent authoring JSON
                   ▼
       fresh Replay + qualified execution
                   │
-       ┌──────────┼──────────┐
-       ▼          ▼          ▼
-      PSS       Risk       Oracle
-       └──────────┼──────────┘
+             ┌────┴────┐
+             ▼         ▼
+            Risk     Oracle
+             └────┬────┘
                   ▼
         summary / bundle / journals
+                  │
+                  ▼
+          offline PSS exploration
 ```
 
 ## 3. 公共控制面
@@ -133,17 +136,24 @@ Execute(risk, projector, scenarioExecution)
 ```
 
 `ScenarioInputs` 提供 root、RuntimeConfig、FaultEnvelope、Adapter factory、可选 Action preparer 和语义 projector。
-`Execute` 把已验证 Scenario 编译为精确 Policy，在相同 Target 上进行 fresh qualified execution。
+`Execute` 直接把已验证 Scenario 的完整 Trace 作为 recorded Schedule，在相同 Target 上进行 fresh
+qualified execution；Invoke/Partition 只按记录参数在原 offer point 重建，不再把 Agent Trace 二次翻译
+为另一套 Policy。
 
 新增协议时需要实现 Target 的真实差异，但不应修改公共 Core 来枚举协议名。允许 Target 增加：
 
 - namespaced Observation；
-- protocol-specific PSS；
+- protocol-specific PSS（仅用于保存 Trace 的离线探索）；
 - target-local monitor；
 - Action preparer；
 - fidelity boundary。
 
 这些扩展是“薄但不虚假的适配”，而不是追求所有协议只有一个同构接口。
+
+HashiCorp Raft 的 M4n21 无模型试接入进一步验证了边界：现有 Adapter 能直接复用 Runtime 和
+conformance，但严格 Replay、虚拟时钟和受控随机性尚未资格化，且缺少 router、projector、Oracle
+registry 与知识材料。因此它还不是活动 Agent Target；该缺口属于 SUT/Target-local 接入，不构成向
+公共 Scenario、Schedule、Bundle 或 Provider journal 增加协议特判的理由。
 
 成员配置属于 Target configuration，而不是公共 Action。活动 Target 从 JSON 读取配置，
 Adapter 先在任何成员数组或 worker cluster 分配前校验界限，再生成规范成员列表。省略

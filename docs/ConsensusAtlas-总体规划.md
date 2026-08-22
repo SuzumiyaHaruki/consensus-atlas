@@ -22,7 +22,7 @@
 2. 协议知识包：角色、轮次/任期、消息族、关键边界和待检验性质；
 3. 薄 Adapter：将目标实现 API 翻译为统一 Action/Item/Observation；
 4. capability/fidelity 声明：实际可控、可观测、可 Replay 的边界；
-5. Target composition：语义投影、PSS 映射和确定性 Oracle registry；
+5. Target composition：语义投影、确定性 Oracle registry 和可选离线 PSS 映射；
 6. Agent 可查询的只读源码目录；
 7. 模型、时间、调用、token 和 Runtime 工作预算。
 
@@ -53,7 +53,9 @@ Scenario Agent
 Control Runtime
   执行 enabled Action，保存完整 Trace 和成本
         ↓
-fresh Replay → Observation/PSS/witness 重算 → Oracle registry
+fresh Replay → Observation/witness 重算 → Oracle registry
+        ↓
+保存 Trace 的离线 PSS 探索
         ↓
 artifact/evaluator → finding、探索、能力缺口和完整成本
 ```
@@ -65,7 +67,7 @@ Agent 可以提出不确定或错误的候选；本地类型、capability 和 en
 
 - 可 Replay 的 Action Trace 与 Execution Bundle；
 - 独立 Oracle finding、首次违例位置及 control false positive；
-- witness milestone、PSS state/transition 和探索增量；
+- witness milestone 与探索增量；离线报告可附 PSS state/transition；
 - missing-action/observation/oracle、fidelity gap 和预算停止原因；
 - Agent calls/tokens、primary/replay work、时间和资源成本；
 - 可用于同预算方法对照的结构化结果。
@@ -307,7 +309,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   使用 ballot/prepare/promise/accepted/decided/recovery 术语，不把协议语义写入公共 Core；
 - Risk 固定最多 4 次调用：正常路径为一次中立 search、一次 bounded read、一次 portfolio、
   最多一次可信资格反馈修复。一次 search/read 返回 `stopped` 时可重试一次，但会占用原本的
-  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v10`
+  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v11`
   按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
   portfolio；query 是单行匹配的一个大小写不敏感字面子串，不分词且不执行 OR。oracle-backed 是 prompt
   的可验证性软偏好，不是可信侧准入条件；已完成的 read 按候选 mechanism step 是否引用 `source/...`
@@ -337,7 +339,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - Scenario 的 stateless 压缩反馈必须优先展示 next missing milestone、resolved bindings、协调状态、上一条 Agent
   Action 的可信效果和当前候选 Action；每个 enabled Action 只在合并后的 `action_frontier` 中出现一次，
   并保留 previous proposal、outcome/reason、selector failure、
-  capability gap、closure handoff 与 ProgressDelta；逐步反馈删除重复的 Choice、RiskProgress 和
+  capability gap 与 ProgressDelta；逐步反馈删除重复的 Choice、RiskProgress 和
   view/evidence digest。`token-stopped` 只停止当前 Episode，已 accepted 但未进入
   Scenario 的候选必须在 Investigation 总预算尚可启动时由下一 Episode 继续；
 - M4n10 的零模型/fixture 校准已经机械验证 source search/read、一次 portfolio 修复、固定
@@ -345,9 +347,8 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   election-safety 合成冲突；这些校准结果不进入后续正式盲测 Memory；
 - Investigation 同时报告预留 decision allowance 与实际 Scenario decisions；全部 Episode 完成时
   优先报告 `episode-limit-reached`，只有预留额度阻止下一 Episode 启动时才报告 decision limit；
-- 同一实现内的 `public-fixed` 与 `target-local` 必须由 Target composition 的实际
-  factory 状态派生到现有 `AgenticMethodSpec.closure_mode`；调用方不能只改标签，
-  composition 与字段不一致时拒绝运行，两个 arm 使用不同 digest；
+- 历史 `public-fixed/target-local` 配对由其原 Git 提交复核；当前活动 CLI 与 MethodSpec
+  不再生成 closure mode，所有新运行固定使用公共 progress；
 - Risk 输入是正式的二选一方法参数：默认 `agent-generated`；`existing-candidate` 可从
   独立候选、assessment 或已有 Episode summary 读取。已有 qualification 不复用，必须
   按当前 Target 重算；规范化候选 digest 进入 MethodSpec，并允许跨 Episode、closure、
@@ -363,75 +364,23 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 
 ### S3：效果实验
 
-- 先做三节点 etcd 短公开 capability pilot。首轮自由 Risk Agent 两臂生成了不同
-  Risk，故只保留为可运行性样本；修正版使用经过当前 Target 重新资格审查的公开
-  existing Risk，跳过 Risk provider，仅比较 Scenario Agent。Risk digest、输入模式
-  和 `closure_mode` 均由现有 MethodSpec 绑定；除 `closure_mode` 外，leaf semantic
-  view、模型/prompt/seed、预算、Replay 与 Oracle 必须相同；
-- existing Risk 首次真实配对已消除 Risk 漂移，但两个 arm 均未 reached。target-local
-  已执行正确 drop，随后因 Agent 继续猜测未 enabled 的闭合消息而 `no-match`。M4l7
-  已增加可信前缀 handoff：Scenario view/prompt 暴露 closure，且 Target factory 在每个
-  成功前缀后机械确认是否接管；确认后忽略剩余预测步骤并执行受限 closure。以相同
-  Risk 重跑已经完成：两个 arm 共享到同一 `MsgAppResp n2→n1` drop 的精确 Trace 前缀；
-  public-fixed 以 3 次调用/83,202 tokens 未 reached，target-local 在 drop 后 handoff，以
-  2 次调用/41,133 tokens reached 并提交同一 RequestID，fresh Replay stable、Oracle
-  finding 为 0。两臂 view/prompt 因 closure mode 而不同，public 还包含一次无效 revise；
-  token 差额只能归于完整方法臂。保存 Bundle 已由 evaluator 侧按既有 Target registry
-  重算四个 monitor，并作为 canonical gzip 保留；
-- M4l8 已从上述真实 step-31 共同 Trace 做零模型后端消融：14-decision 等预算且执行
-  work 相同时，只有 target-local reached；public-fixed 需要19个后干预 decision 才得到
-  同一 committed RequestID。该结果隔离了 prompt、token 和 proposal 波动，但仍只是
-  单 Risk/单拓扑 capability 证据；下一步用少量同预算模型重复估计方差，不把一次成功
-  提升为总体方法结论；
-- M4l9 已按预注册的五组交替顺序完成上述重复。两臂正确干预率均为 5/5；
-  target-local reached 5/5，public-fixed reached 2/5。target-local 使用 12 次调用和
-  265,819 observed tokens，public-fixed 使用 15 次调用和 395,236 tokens。10 个
-  Bundle 均记录 stable Replay，并由 evaluator 校验 Bundle/projection、重算四个
-  monitor、0 violation。干预是语义等价的 follower→leader `MsgAppResp`，并非全部
-  固定为 n2→n1；target-local 直接闭合为 4/5，旧 per-call quantum 在一轮中导致
-  handoff 后又出现额外 Crash；
-- M4m1 将 closure 所有权提升到 Episode 剩余全局 decision 预算：接管后不因本轮
-  quantum 耗尽而重新调用 Agent，除非歧义、无候选或全局预算真正耗尽；现有 etcd
-  5+12 回归不再产生额外 Crash；
-- M4m2 已用 OmniPaxos 验证第二条相同接口的垂直切片。真实首请求使用
-  `accept-sync→accepted→decide` 路径；丢弃 step-26 `accept-sync n1→n2` 后，4-decision
-  等预算下只有 target-local reached，公共顺序需 8 decisions。factory 仅选择实际
-  enabled 的 `prepare/promise/accept-sync/accepted`，同一 RequestID completed、fresh
-  Replay stable、Agreement 0 violation。该结果把跨协议复用从设计主张推进为两个
-  Target 的代码证据，但仍不是 finding 或总体优越性证明；
-- M4m2R 已以当前 Target 重新资格审查的 existing Risk 走通
-  `Scenario Agent→handoff→closure→qualified Bundle`。规范 Risk ID 保持精确匹配，
-  不把 factory 放宽到任意消息丢失候选；零模型 Planner 只调用一次，三步计划加四步
-  closure 形成与脚本消融相同的 Trace/Bundle，同一 RequestID、Replay 和 Oracle 均闭合。
-  后续 M4m3 真实模型实验只替换 Planner，没有改变 Risk、Runtime、closure、Replay 或 Oracle；
-- M4m2O 新增窄的 `omnipaxos-client-decision-binding` monitor。它从同一 Bundle 联结
-  Invoke、completed ClientResult 中的 worker decision，以及对应 decided-prefix 位置，
-  并把 `client-operation-continuity` 提升为 oracle-backed。正常、RequestID 篡改、决定
-  内容/映射篡改、缺失 witness 与 pending 边界均由普通测试覆盖；公共 Action、Runtime、
-  Bundle schema 和 worker evidence 不变；
-- M4m3 已按预注册镜像顺序完成四个 Scenario-only Episode。Risk provider 为 0，总计
-  10 次 Scenario 调用、181,093 observed tokens，无传输歧义。target-local 两轮均选择
-  operation-carrying `accept-sync`、发生 handoff 并直接闭合，同一 RequestID、recorded
-  fresh Replay 和三个 Oracle 均闭合；public-fixed 两轮机械 Risk 也 reached，但实际
-  Drop 均为 `prepare`，不满足预注册干预口径。故当前证据是“跨协议真实模型 handoff
-  2/2”，不是总体优越性；它还暴露出 Risk 可执行谓词弱于自然语言 summary 的明确缺口；
-- M4m4 以 Target-local Observation 修复该缺口，没有扩展公共 Action 或时序 DSL。
-  operation Drop 必须来自带 `entry_count > 0` 和 RequestID 的 `accept-sync|accept-decide`；
-  Decision RequestID 从实际消息 dependency 链唯一回溯；v2 Risk 用同一请求绑定 Invoke、
-  Drop 和 Decision。四个 M4m3 Bundle 离线重投影后，旧谓词 4/4 reached，严格谓词为
-  public 0/2、target-local 2/2。该结果只作事后 fidelity 诊断，不覆盖预注册结论；
-  implementation identity 同步更新为 `m4m4-risk-fidelity-v1`，旧 `m4m1` 只读有效；
-- M4m4R 将 closure 激活收紧到可信 Risk 中与当前 intervention decision 相同的 Drop
-  milestone，并要求当前 Trace 只有一个、且 RequestID 与被丢消息一致的 Invoke。
-  这使现有单请求能力闭合，同时把多请求/批量消息明确保留为未支持边界；没有新增
-  公共 Action、gate 或第二套执行器；
-- 上述证据支持“Agent 选干预 + Target-local 闭合”的窄 capability 结论，但仍不是
-  跨协议普适性、缺陷发现能力或总体方法优越性证据；
+- 历史 M4l/M4m 配对与消融证明 Agent 能选择语义干预、两个 Target 能稳定 Replay 并运行
+  Oracle；它们也促成了 RequestID binding、严格 Risk predicate 和公共 progress。详细数字由对应
+  Git 提交与精简实验报告复核，不再作为当前架构说明长期展开；
+- M4n19 已证明 closure 所支持的两条 Drop 路径都可由公共 progress 有界闭合，并删除
+  target-local closure。后续效果实验只评价当前公共主线，不把已删除的方法混入新结果；
+- 先运行 etcd/raft、再运行 OmniPaxos 单 Episode canary，必须观察完整
+  `search → read → portfolio → Scenario → strategic Action → Bundle → evaluator Replay → Oracle`；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。
 
 ### S4：第三协议与接入成本
+
+M4n21 已先用现有 HashiCorp Raft Adapter 做无模型 composition 试接入。公共 Runtime 与
+conformance 无需修改，但该 Target 只有 3/9 项资格能力，严格 Replay、自然时间与受控随机性
+未支持，同时缺少 router、projector、Oracle registry、知识材料和本地源码 mount。因此它保留为
+能力边界样本，不进入 Agent 付费实验，也不能通过放宽 qualification 凑成第三 Target。
 
 选择 HotStuff/Tendermint 类非 Raft/Paxos 日志复制实现，测量新增代码是否主要
 局限于 Adapter、target-local Observation 和 Oracle。目标是薄且可解释的适配，
