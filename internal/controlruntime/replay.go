@@ -69,10 +69,11 @@ func ReplayWithProgress(
 		})
 	}
 	for _, want := range expected.Records {
-		if want.Action.Kind == control.ActionInvoke || want.Action.Kind == control.ActionPartition {
-			if err := runtime.reofferExpected(ctx, want.Action); err != nil {
-				return fail(err)
-			}
+		prepared, err := runtime.PrepareRecordedAction(ctx, want.Action)
+		if err != nil {
+			return fail(err)
+		}
+		if prepared {
 			progress.PrepareActions++
 			if want.Action.Kind == control.ActionInvoke {
 				progress.WorkloadOffers++
@@ -83,17 +84,9 @@ func ReplayWithProgress(
 		if err != nil {
 			return fail(err)
 		}
-		wantDigest, err := control.CanonicalDigest(want)
-		if err != nil {
-			return fail(err)
-		}
-		gotDigest, err := control.CanonicalDigest(got)
-		if err != nil {
-			return fail(err)
-		}
-		if wantDigest != gotDigest {
+		if err := ValidateRecordedActionRecord(want, got); err != nil {
 			return fail(&ReplayDivergenceError{
-				Step: want.Step, Expected: wantDigest, Actual: gotDigest,
+				Step: want.Step, Expected: string(want.Action.ID), Actual: string(got.Action.ID),
 			})
 		}
 	}
@@ -109,10 +102,17 @@ func ReplayWithProgress(
 	return runtime, progress, nil
 }
 
-// reofferExpected reconstructs author-supplied actions through the same public
-// validation path used during primary execution. Saved traces are evidence,
-// not permission to inject directly into Runtime-owned state.
-func (runtime *Runtime) reofferExpected(ctx context.Context, expected control.Action) error {
+// PrepareRecordedAction reconstructs an author-supplied action through the
+// same public validation path used during ordinary execution. A recorded
+// schedule is evidence, not permission to inject directly into Runtime-owned
+// state. Runtime-owned actions need no preparation and return false.
+func (runtime *Runtime) PrepareRecordedAction(
+	ctx context.Context,
+	expected control.Action,
+) (bool, error) {
+	if expected.Kind != control.ActionInvoke && expected.Kind != control.ActionPartition {
+		return false, nil
+	}
 	var (
 		id  control.ActionID
 		err error
@@ -121,7 +121,7 @@ func (runtime *Runtime) reofferExpected(ctx context.Context, expected control.Ac
 	case control.ActionInvoke:
 		var parameters control.AdapterInvokeParameters
 		if err := json.Unmarshal(expected.Parameters, &parameters); err != nil {
-			return fmt.Errorf("REPLAY_PREPARATION_PARAMETERS_INVALID: %w", err)
+			return false, fmt.Errorf("REPLAY_PREPARATION_PARAMETERS_INVALID: %w", err)
 		}
 		id, err = runtime.OfferInvoke(ctx, expected.Node.Node, parameters.Input)
 	case control.ActionPartition:
@@ -131,23 +131,41 @@ func (runtime *Runtime) reofferExpected(ctx context.Context, expected control.Ac
 			id, err = runtime.OfferPartition(parameters.Left, parameters.Right)
 		}
 	default:
-		return fmt.Errorf("REPLAY_PREPARATION_KIND_UNSUPPORTED: %s", expected.Kind)
+		return false, fmt.Errorf("REPLAY_PREPARATION_KIND_UNSUPPORTED: %s", expected.Kind)
 	}
 	if err != nil {
-		return fmt.Errorf("REPLAY_PREPARATION_REJECTED: %s: %w", expected.Kind, err)
+		return false, fmt.Errorf("REPLAY_PREPARATION_REJECTED: %s: %w", expected.Kind, err)
 	}
 	actual := runtime.offered[id]
 	wantDigest, digestErr := control.CanonicalDigest(expected)
 	if digestErr != nil {
-		return digestErr
+		return false, digestErr
 	}
 	actualDigest, digestErr := control.CanonicalDigest(actual)
 	if digestErr != nil {
-		return digestErr
+		return false, digestErr
 	}
 	if id != expected.ID || actualDigest != wantDigest {
 		delete(runtime.offered, id)
-		return fmt.Errorf("REPLAY_PREPARATION_MISMATCH: %s", expected.ID)
+		return false, fmt.Errorf("REPLAY_PREPARATION_MISMATCH: %s", expected.ID)
+	}
+	return true, nil
+}
+
+// ValidateRecordedActionRecord is shared by primary recorded-schedule
+// execution and fresh Replay. It compares the complete canonical record, not
+// only ActionID, so parameter, evidence and state-digest drift are rejected.
+func ValidateRecordedActionRecord(expected ActionRecord, actual ActionRecord) error {
+	wantDigest, err := control.CanonicalDigest(expected)
+	if err != nil {
+		return err
+	}
+	gotDigest, err := control.CanonicalDigest(actual)
+	if err != nil {
+		return err
+	}
+	if wantDigest != gotDigest {
+		return fmt.Errorf("RECORDED_ACTION_RECORD_MISMATCH: expected=%s actual=%s", wantDigest, gotDigest)
 	}
 	return nil
 }

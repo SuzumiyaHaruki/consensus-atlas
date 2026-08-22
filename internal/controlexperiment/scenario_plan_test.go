@@ -288,20 +288,18 @@ func TestScenarioPlanConcretizesTwoLifecycleStepsAndReturnsMechanicalFailures(t 
 		result.Work.ChildVerification.SchedulerDecisions != len(result.FinalTrace.Records) {
 		t.Fatalf("scenario did not retain one live branch and one promotion replay: %#v", result.Work)
 	}
-	policy, err := CompileScenarioPolicy(
-		"fixture-a4-qualified-policy", root, result,
-		[]control.ActionKind{control.ActionFireTemporal},
+	policy, err := RecordedScenarioSchedulePolicy(
+		"fixture-a4-recorded-schedule", root, result,
 	)
-	if err != nil || len(policy.Rules) != len(result.FinalTrace.Records) ||
-		policy.Rules[len(policy.Rules)-1].ActionID != result.Steps[1].Choice.Action.ActionID {
-		t.Fatalf("successful scenario did not compile to exact policy: %#v/%v", policy, err)
+	if err != nil || len(policy.Rules) != 0 || len(policy.Priority) == 0 {
+		t.Fatalf("successful scenario did not validate as a recorded schedule: %#v/%v", policy, err)
 	}
 	tamperedExecution := result
 	tamperedChoice := *tamperedExecution.Steps[1].Choice
 	tamperedChoice.Action.ActionID = "not-the-executed-action"
 	tamperedExecution.Steps[1].Choice = &tamperedChoice
-	if _, err := CompileScenarioPolicy("fixture-a4-tampered", root, tamperedExecution, nil); err == nil {
-		t.Fatal("scenario choice detached from the executed Trace compiled to a policy")
+	if _, err := RecordedScenarioSchedulePolicy("fixture-a4-tampered", root, tamperedExecution); err == nil {
+		t.Fatal("scenario choice detached from the executed Trace validated as a schedule")
 	}
 
 	noMatch := ScenarioPlan{ID: "fixture-a4-no-match", Steps: []ScenarioStep{{

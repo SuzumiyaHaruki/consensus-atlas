@@ -2,10 +2,10 @@ package controlexperiment
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
@@ -747,13 +747,14 @@ func scenarioRiskHasMilestone(result semantic.RiskWitnessResult, id string) bool
 	return false
 }
 
-// CompileScenarioPolicy converts one successful, already replay-verified
-// execution into exact rules for the existing qualified executor.
-func CompileScenarioPolicy(
+// RecordedScenarioSchedulePolicy validates a successful Scenario execution and
+// returns only the Action-kind surface required by the existing Config model.
+// The policy carries no per-decision rules and is never used to select an
+// Action: execution.FinalTrace is the recorded schedule.
+func RecordedScenarioSchedulePolicy(
 	id string,
 	root controlruntime.Trace,
 	execution ScenarioExecution,
-	fallback []control.ActionKind,
 ) (Policy, error) {
 	if !validMethodToken(id) || root.Validate() != nil || execution.Status != ScenarioStatusCompleted ||
 		execution.FinalTrace.Validate() != nil || len(execution.Steps) == 0 ||
@@ -780,25 +781,30 @@ func CompileScenarioPolicy(
 	if len(covered) != len(execution.FinalTrace.Records)-len(root.Records) {
 		return Policy{}, errors.New("EXPERIMENT_SCENARIO_POLICY_STEP_INVALID")
 	}
-	rules := make([]DecisionRule, len(execution.FinalTrace.Records))
-	for index, record := range execution.FinalTrace.Records {
-		rule := DecisionRule{
-			Decision: index + 1, Kind: record.Action.Kind,
-			Node: record.Action.Node.Node, ActionID: record.Action.ID,
+	priority := make([]control.ActionKind, 0, len(execution.FinalTrace.Records))
+	seenKinds := make(map[control.ActionKind]bool)
+	for _, record := range execution.FinalTrace.Records {
+		if !seenKinds[record.Action.Kind] {
+			seenKinds[record.Action.Kind] = true
+			priority = append(priority, record.Action.Kind)
 		}
-		if record.Action.Kind == control.ActionPartition || record.Action.Kind == control.ActionInvoke {
-			rule.Parameters = append(json.RawMessage(nil), record.Action.Parameters...)
-		}
-		rules[index] = rule
 	}
 	policy := Policy{
-		Version: PolicyVersion, ID: id, Rules: rules,
-		Priority: append([]control.ActionKind(nil), fallback...),
+		Version: PolicyVersion, ID: id, Priority: priority,
 	}
-	if err := policy.Validate(len(rules)); err != nil {
+	if err := policy.Validate(len(execution.FinalTrace.Records)); err != nil {
 		return Policy{}, err
 	}
 	return policy, nil
+}
+
+// UsesRecordedScenarioSchedule identifies the narrow compatibility marker in
+// Config. It does not authorize execution; the separately supplied, validated
+// Trace remains the complete schedule.
+func UsesRecordedScenarioSchedule(config Config) bool {
+	return len(config.Runs) == 1 && config.Runs[0].Policy.Version == PolicyVersion &&
+		len(config.Runs[0].Policy.Rules) == 0 &&
+		strings.HasSuffix(config.Runs[0].Policy.ID, "-recorded-schedule")
 }
 
 func scenarioFeedbackMatchesRecord(feedback ScenarioStepFeedback, record controlruntime.ActionRecord) bool {

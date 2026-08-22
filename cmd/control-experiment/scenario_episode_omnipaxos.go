@@ -235,11 +235,8 @@ func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 		len(execution.Steps) == 0 || len(execution.Steps) > len(execution.FinalTrace.Records) {
 		return scenarioTestingResult{}, errors.New("OMNIPAXOS_SCENARIO_QUALIFIED_INPUT_INVALID")
 	}
-	policy, err := controlexperiment.CompileScenarioPolicy(
-		"omnipaxos-scenario-qualified-policy", root, execution,
-		[]control.ActionKind{
-			control.ActionInvoke, control.ActionDeliverMessage, control.ActionFireTemporal,
-		},
+	policy, err := controlexperiment.RecordedScenarioSchedulePolicy(
+		"omnipaxos-scenario-recorded-schedule", root, execution,
 	)
 	if err != nil {
 		return scenarioTestingResult{}, err
@@ -265,13 +262,13 @@ func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 	}
 	var bundle controlexperiment.ExecutionBundle
 	if methodSpecDigest == "" {
-		_, bundle, err = controlexperiment.ExecuteQualifiedBundle(
-			ctx, config, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
+		_, bundle, err = controlexperiment.ExecuteQualifiedRecordedBundle(
+			ctx, config, execution.FinalTrace, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
 			omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{},
 		)
 	} else {
-		_, bundle, err = controlexperiment.ExecuteQualifiedBundleV3(
-			ctx, config, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
+		_, bundle, err = controlexperiment.ExecuteQualifiedRecordedBundleV3(
+			ctx, config, execution.FinalTrace, qualification.Bundle, factory, omnipaxosv2.CorePSSMapper{},
 			omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{}, methodSpecDigest,
 		)
 	}

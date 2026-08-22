@@ -76,9 +76,11 @@ type ExecutionBundle struct {
 	Digest           string                          `json:"digest"`
 }
 
-// ExecutionRecipe contains the public, machine-independent inputs required
-// to execute the exact policy again. TargetConfig is target-local JSON; local
-// executable paths remain private evaluator input.
+// ExecutionRecipe contains the public, machine-independent inputs required to
+// execute the Bundle again. Current Agentic recipes take the recorded Trace
+// from the Bundle as their schedule; historical hand-written experiments use
+// Config.Policy. TargetConfig is target-local JSON and local executable paths
+// remain private evaluator input.
 type ExecutionRecipe struct {
 	TargetID     string          `json:"target_id"`
 	Config       Config          `json:"config"`
@@ -127,7 +129,7 @@ func ExecuteQualifiedBundle(
 	router WorkloadRouter,
 ) (Report, ExecutionBundle, error) {
 	return executeQualifiedBundle(
-		ctx, config, qualification, newAdapter, mapper, projector, router, "",
+		ctx, config, qualification, newAdapter, mapper, projector, router, "", nil,
 	)
 }
 
@@ -148,7 +150,48 @@ func ExecuteQualifiedBundleV3(
 		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_METHOD_SPEC_INVALID")
 	}
 	return executeQualifiedBundle(
-		ctx, config, qualification, newAdapter, mapper, projector, router, methodSpecDigest,
+		ctx, config, qualification, newAdapter, mapper, projector, router, methodSpecDigest, nil,
+	)
+}
+
+// ExecuteQualifiedRecordedBundle is the legacy-envelope counterpart used by
+// local scripted regressions that intentionally have no Agent MethodSpec.
+func ExecuteQualifiedRecordedBundle(
+	ctx context.Context,
+	config Config,
+	recorded controlruntime.Trace,
+	qualification conformance.QualificationBundle,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	projector semantic.DecisionProjector,
+	router WorkloadRouter,
+) (Report, ExecutionBundle, error) {
+	return executeQualifiedBundle(
+		ctx, config, qualification, newAdapter, mapper, projector, router, "", &recorded,
+	)
+}
+
+// ExecuteQualifiedRecordedBundleV3 executes the complete recorded Trace as the
+// schedule. It is the Agentic bundle path: no per-decision Policy rules are
+// compiled from the Trace, while qualification, sampling, fresh Replay and
+// Bundle construction remain identical to the ordinary qualified executor.
+func ExecuteQualifiedRecordedBundleV3(
+	ctx context.Context,
+	config Config,
+	recorded controlruntime.Trace,
+	qualification conformance.QualificationBundle,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	projector semantic.DecisionProjector,
+	router WorkloadRouter,
+	methodSpecDigest string,
+) (Report, ExecutionBundle, error) {
+	if !validSHA256(methodSpecDigest) {
+		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_METHOD_SPEC_INVALID")
+	}
+	return executeQualifiedBundle(
+		ctx, config, qualification, newAdapter, mapper, projector, router,
+		methodSpecDigest, &recorded,
 	)
 }
 
@@ -161,6 +204,7 @@ func executeQualifiedBundle(
 	projector semantic.DecisionProjector,
 	router WorkloadRouter,
 	methodSpecDigest string,
+	recorded *controlruntime.Trace,
 ) (Report, ExecutionBundle, error) {
 	if len(config.Runs) != 1 {
 		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_SINGLE_RUN_REQUIRED")
@@ -175,7 +219,15 @@ func executeQualifiedBundle(
 		return Report{}, ExecutionBundle{}, errors.New("EXECUTION_BUNDLE_DECISION_PROJECTOR_REQUIRED")
 	}
 	var captures []runCapture
-	report, err := execute(ctx, config, newAdapter, mapper, router, &captures)
+	var report Report
+	var err error
+	if recorded == nil {
+		report, err = execute(ctx, config, newAdapter, mapper, router, &captures)
+	} else {
+		report, err = executeRecordedSchedule(
+			ctx, config, newAdapter, mapper, router, &captures, *recorded,
+		)
+	}
 	if err != nil {
 		return Report{}, ExecutionBundle{}, err
 	}

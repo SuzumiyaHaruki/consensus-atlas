@@ -112,8 +112,43 @@ func execute(
 	router WorkloadRouter,
 	captures *[]runCapture,
 ) (Report, error) {
+	return executeWithRecordedSchedule(
+		ctx, config, newAdapter, mapper, router, captures, nil,
+	)
+}
+
+// executeRecordedSchedule re-executes an already validated complete Trace as
+// the schedule. Policy remains available for hand-written experiments, but it
+// is not consulted for Action selection on this path.
+func executeRecordedSchedule(
+	ctx context.Context,
+	config Config,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	router WorkloadRouter,
+	captures *[]runCapture,
+	recorded controlruntime.Trace,
+) (Report, error) {
+	return executeWithRecordedSchedule(
+		ctx, config, newAdapter, mapper, router, captures, &recorded,
+	)
+}
+
+func executeWithRecordedSchedule(
+	ctx context.Context,
+	config Config,
+	newAdapter AdapterFactory,
+	mapper psscore.SemanticMapper,
+	router WorkloadRouter,
+	captures *[]runCapture,
+	recorded *controlruntime.Trace,
+) (Report, error) {
 	if err := config.Validate(); err != nil {
 		return Report{}, err
+	}
+	if recorded != nil && (len(config.Runs) != 1 || recorded.Validate() != nil ||
+		len(recorded.Records) != config.DecisionsPerRun) {
+		return Report{}, errors.New("EXPERIMENT_RECORDED_SCHEDULE_INVALID")
 	}
 	if newAdapter == nil || mapper == nil || mapper.ID() != config.PSSID {
 		return Report{}, errors.New("EXPERIMENT_COMPOSITION_INVALID")
@@ -137,6 +172,7 @@ func execute(
 		run, samples, err := executeRun(
 			ctx, config.SchemaVersion, config.DecisionsPerRun, runtimeConfig, plan,
 			config.Admission, config.FaultEnvelope, newAdapter, mapper, router, &report.Work, &capture,
+			recorded,
 		)
 		if err != nil {
 			return Report{}, err
@@ -197,6 +233,7 @@ func executeRun(
 	router WorkloadRouter,
 	work *WorkLedger,
 	capture *runCapture,
+	recorded *controlruntime.Trace,
 ) (RunReport, []protocolstate.Sample, error) {
 	chargeSetup(&work.Primary)
 	adapter, err := newAdapter()
@@ -225,6 +262,12 @@ func executeRun(
 			"admission", "EXPERIMENT_ADMISSION_MANIFEST_MISMATCH", plan.Run, 0, *work, cause,
 		)
 	}
+	if recorded != nil && !recordedScheduleInitialMatches(*recorded, initialTrace) {
+		cause := errors.New("EXPERIMENT_RECORDED_SCHEDULE_INITIAL_MISMATCH")
+		return RunReport{}, nil, executionFailure(
+			"primary-observe", "EXPERIMENT_RECORDED_SCHEDULE_INITIAL_MISMATCH", plan.Run, 0, *work, cause,
+		)
+	}
 	sampler, err := psscore.NewOnlineSampler(mapper, runtime.Snapshot(), initialTrace.InitialEvidence)
 	if err != nil {
 		return RunReport{}, nil, executionFailure(
@@ -234,6 +277,9 @@ func executeRun(
 	currentEvidence := initialTrace.InitialEvidence
 	offeredWorkload := 0
 	preparedWorkload := policyPreparedWorkloadCount(plan.Policy)
+	if recorded != nil {
+		preparedWorkload = recordedWorkloadCount(*recorded)
+	}
 	if preparedWorkload > 0 &&
 		(plan.Workload == nil || preparedWorkload != len(plan.Workload.Invocations)) {
 		return RunReport{}, nil, executionFailure(
@@ -247,15 +293,27 @@ func executeRun(
 	var selections []SelectionAudit
 	for decision := 1; decision <= decisionBudget; decision++ {
 		prepareBefore := runtime.Snapshot()
-		offeredAction, offered, workloadOffered, err := offerPolicyPreparation(
-			ctx, plan.Policy, decision, runtime,
-		)
+		var expected *controlruntime.ActionRecord
+		if recorded != nil {
+			expected = &recorded.Records[decision-1]
+		}
+		var offeredAction control.ActionID
+		var offered, workloadOffered bool
+		if expected != nil {
+			offered, err = runtime.PrepareRecordedAction(ctx, expected.Action)
+			offeredAction = expected.Action.ID
+			workloadOffered = offered && expected.Action.Kind == control.ActionInvoke
+		} else {
+			offeredAction, offered, workloadOffered, err = offerPolicyPreparation(
+				ctx, plan.Policy, decision, runtime,
+			)
+		}
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-prepare", "EXPERIMENT_POLICY_PREPARE_FAILED", plan.Run, decision, *work, err,
 			)
 		}
-		if !offered && preparedWorkload == 0 {
+		if expected == nil && !offered && preparedWorkload == 0 {
 			offeredAction, workloadOffered, err = offerNextWorkloadInvocation(
 				ctx, plan.Workload, offeredWorkload, runtime, router, currentEvidence, strictWorkload,
 			)
@@ -291,21 +349,29 @@ func executeRun(
 			)
 		}
 		faultAdmissible := admissibleActions(faultEnvelope, faultUsage, enabled, runtime.Snapshot())
-		selectable := plan.Policy.constrainSelectableActions(faultAdmissible)
+		selectable := faultAdmissible
+		if expected == nil {
+			selectable = plan.Policy.constrainSelectableActions(faultAdmissible)
+		}
 		admissibleDigest, err := control.CanonicalDigest(selectable)
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-admission", "EXPERIMENT_ADMISSIBLE_DIGEST_FAILED", plan.Run, decision, *work, err,
 			)
 		}
-		if schemaVersion == SchemaVersionV2 && len(selectable) == 0 {
+		if expected == nil && schemaVersion == SchemaVersionV2 && len(selectable) == 0 {
 			termination = RunTerminationQuiescent
 			if len(faultAdmissible) != 0 {
 				termination = RunTerminationPolicySurface
 			}
 			break
 		}
-		action, err := plan.Policy.selectAction(decision, selectable)
+		var action control.Action
+		if expected != nil {
+			action, err = selectRecordedAction(expected.Action, selectable)
+		} else {
+			action, err = plan.Policy.selectAction(decision, selectable)
+		}
 		if err != nil {
 			return RunReport{}, nil, executionFailure(
 				"primary-policy", "EXPERIMENT_POLICY_SELECTION_FAILED", plan.Run, decision, *work, err,
@@ -341,6 +407,13 @@ func executeRun(
 				"primary-select", "EXPERIMENT_RUNTIME_ENABLED_DIGEST_MISMATCH", plan.Run, decision, *work, cause,
 			)
 		}
+		if expected != nil {
+			if err := controlruntime.ValidateRecordedActionRecord(*expected, record); err != nil {
+				return RunReport{}, nil, executionFailure(
+					"primary-select", "EXPERIMENT_RECORDED_SCHEDULE_DIVERGED", plan.Run, decision, *work, err,
+				)
+			}
+		}
 		if workloadOffered {
 			offeredWorkload++
 		}
@@ -365,7 +438,7 @@ func executeRun(
 					"primary-workload", "EXPERIMENT_WORKLOAD_RESULT_INVALID", plan.Run, decision, *work, err,
 				)
 			}
-			if plan.StopAfterWorkload && completed && decision < decisionBudget {
+			if expected == nil && plan.StopAfterWorkload && completed && decision < decisionBudget {
 				termination = RunTerminationConfigured
 				break
 			}
@@ -377,11 +450,19 @@ func executeRun(
 			"primary-observe", "EXPERIMENT_PRIMARY_TRACE_FAILED", plan.Run, decisionBudget, *work, err,
 		)
 	}
-	if err := plan.Policy.validateTraceSurface(trace); err != nil {
+	if recorded != nil && trace.Digest != recorded.Digest {
 		return RunReport{}, nil, executionFailure(
-			"primary-observe", "EXPERIMENT_PRIMARY_TRACE_OUTSIDE_POLICY_SURFACE",
-			plan.Run, len(trace.Records), *work, err,
+			"primary-observe", "EXPERIMENT_RECORDED_SCHEDULE_TRACE_MISMATCH",
+			plan.Run, len(trace.Records), *work, errors.New("EXPERIMENT_RECORDED_SCHEDULE_TRACE_MISMATCH"),
 		)
+	}
+	if recorded == nil {
+		if err := plan.Policy.validateTraceSurface(trace); err != nil {
+			return RunReport{}, nil, executionFailure(
+				"primary-observe", "EXPERIMENT_PRIMARY_TRACE_OUTSIDE_POLICY_SURFACE",
+				plan.Run, len(trace.Records), *work, err,
+			)
+		}
 	}
 	workloadReport, err := finishWorkload(
 		plan.Workload, offeredWorkload, runtime.Snapshot(), router, currentEvidence, strictWorkload,
@@ -416,11 +497,13 @@ func executeRun(
 			"replay", "EXPERIMENT_REPLAY_TRACE_FAILED", plan.Run, progress.Decisions, *work, err,
 		)
 	}
-	if err := plan.Policy.validateTraceSurface(replayTrace); err != nil {
-		return RunReport{}, nil, executionFailure(
-			"replay", "EXPERIMENT_REPLAY_TRACE_OUTSIDE_POLICY_SURFACE",
-			plan.Run, len(replayTrace.Records), *work, err,
-		)
+	if recorded == nil {
+		if err := plan.Policy.validateTraceSurface(replayTrace); err != nil {
+			return RunReport{}, nil, executionFailure(
+				"replay", "EXPERIMENT_REPLAY_TRACE_OUTSIDE_POLICY_SURFACE",
+				plan.Run, len(replayTrace.Records), *work, err,
+			)
+		}
 	}
 	if err := validateReplayedWorkloadRoutes(
 		plan.Workload, progress.WorkloadOffers, router, replayTrace,
@@ -519,6 +602,52 @@ func policyPreparedWorkloadCount(policy Policy) int {
 		}
 	}
 	return count
+}
+
+func recordedWorkloadCount(trace controlruntime.Trace) int {
+	count := 0
+	for _, record := range trace.Records {
+		if record.Action.Kind == control.ActionInvoke {
+			count++
+		}
+	}
+	return count
+}
+
+func recordedScheduleInitialMatches(
+	recorded controlruntime.Trace,
+	actual controlruntime.Trace,
+) bool {
+	initial := recorded
+	initial.Records = nil
+	initial.FinalStateDigest = recorded.InitialStateDigest
+	initial.Digest = ""
+	sealed, err := initial.Seal()
+	return err == nil && sealed.Digest == actual.Digest
+}
+
+func selectRecordedAction(expected control.Action, enabled []control.Action) (control.Action, error) {
+	wantDigest, err := control.CanonicalDigest(expected)
+	if err != nil {
+		return control.Action{}, err
+	}
+	for _, candidate := range enabled {
+		if candidate.ID != expected.ID {
+			continue
+		}
+		gotDigest, err := control.CanonicalDigest(candidate)
+		if err != nil {
+			return control.Action{}, err
+		}
+		if gotDigest != wantDigest {
+			return control.Action{}, errors.New("EXPERIMENT_RECORDED_SCHEDULE_ACTION_MISMATCH")
+		}
+		return candidate, nil
+	}
+	return control.Action{}, &policySelectionError{
+		code:   "EXPERIMENT_RECORDED_SCHEDULE_ACTION_NOT_ENABLED",
+		detail: fmt.Sprintf("action=%s kind=%s", expected.ID, expected.Kind),
+	}
 }
 
 // offerPolicyPreparation reconstructs an exact author-supplied Action before

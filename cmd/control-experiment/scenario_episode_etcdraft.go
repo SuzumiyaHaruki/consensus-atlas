@@ -107,12 +107,8 @@ func executeEtcdraftScenarioQualifiedRisk(
 		methodSpecDigest != "" && !validAgenticSHA256(methodSpecDigest) {
 		return scenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_INPUT_INVALID")
 	}
-	policy, err := controlexperiment.CompileScenarioPolicy(
-		"etcdraft-scenario-qualified-policy", root, execution,
-		[]control.ActionKind{
-			control.ActionInvoke, control.ActionCompleteEffect,
-			control.ActionDeliverMessage, control.ActionFireTemporal,
-		},
+	policy, err := controlexperiment.RecordedScenarioSchedulePolicy(
+		"etcdraft-scenario-recorded-schedule", root, execution,
 	)
 	if err != nil {
 		return scenarioTestingResult{}, err
@@ -136,13 +132,13 @@ func executeEtcdraftScenarioQualifiedRisk(
 	}
 	var bundle controlexperiment.ExecutionBundle
 	if methodSpecDigest == "" {
-		_, bundle, err = controlexperiment.ExecuteQualifiedBundle(
-			ctx, config, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
+		_, bundle, err = controlexperiment.ExecuteQualifiedRecordedBundle(
+			ctx, config, execution.FinalTrace, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
 			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
 		)
 	} else {
-		_, bundle, err = controlexperiment.ExecuteQualifiedBundleV3(
-			ctx, config, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
+		_, bundle, err = controlexperiment.ExecuteQualifiedRecordedBundleV3(
+			ctx, config, execution.FinalTrace, executionInputs.qualification, factory, etcdraftv2.CorePSSMapper{},
 			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, methodSpecDigest,
 		)
 	}

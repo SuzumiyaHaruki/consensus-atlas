@@ -276,9 +276,14 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
   无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
+- Agentic qualified execution 不再把 Scenario Trace 翻译成逐 decision Policy。完整 Trace
+  直接作为 recorded schedule；主执行、Bundle fresh Replay 和 evaluator-owned Replay
+  共用“必要时按原参数重建 Invoke/Partition → 查询 enabled/admissible → 精确 ActionID
+  选择 → 完整 ActionRecord 比较”的解释语义。现有 Config 只保留 Action-kind surface
+  以复用 admission/recipe，手写 Policy fixture 继续走历史执行入口；不新增调度 contract；
 - closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n15-single-path-artifact-v1`；旧 M4n14 及更早版本只读兼容；
+  `m4n16-recorded-schedule-execution-v1`；旧 M4n15 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
@@ -287,7 +292,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   `m4m1-closure-ownership-v1`/`m4l7-risk-input-closure-handoff-v1`/
   `m4l5-closure-v1`/`m4d-v1` 只用于读取
   历史工件，不能恢复为当前运行；
-- M4n11 及后续版本已执行的主路径和候选分支必须封存 root/post-root Oracle attribution；
+- M4n11 及后续版本已执行的主路径必须封存 root/post-root Oracle attribution；
   campaign resume 按已有 MethodSpec implementation ID 机械区分。只有 M4n10 及更早版本
   可以缺省 attribution，方法版本前移不会将 M4n11 缺失字段默认恢复为 root=0；
 - M4n10 的新工件只使用“机械可执行”（兼容 wire value `executable`）→

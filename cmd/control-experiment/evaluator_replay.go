@@ -18,7 +18,8 @@ const evaluatorReplayStrategy = "evaluator-replay-v1"
 
 // runEvaluatorReplayCLI is the evaluator-owned entry into the existing
 // qualified executor. It performs no search and accepts no Agent input: the
-// exact policy, seed, workload and limits come from the sealed Bundle recipe.
+// full source Trace is the schedule for current Agentic artifacts; historical
+// hand-written Policy recipes retain their original read-only replay path.
 func runEvaluatorReplayCLI(ctx context.Context, options controlExperimentOptions, stdout io.Writer) error {
 	if options.BundleIn == "" || options.BundleOut == "" || options.Out == "" || options.Target == "" ||
 		options.CampaignDirectory != "" || options.CampaignResume || options.AgentKeyFile != "" ||
@@ -42,10 +43,17 @@ func runEvaluatorReplayCLI(ctx context.Context, options controlExperimentOptions
 			return errors.New("EVALUATOR_REPLAY_TARGET_CONFIG_INVALID")
 		}
 		factory := func() (control.Adapter, error) { return etcdraftv2.NewWithConfig(adapterConfig) }
-		report, fresh, err = controlexperiment.ExecuteQualifiedBundleV3(
-			ctx, source.Recipe.Config, source.Qualification, factory, etcdraftv2.CorePSSMapper{},
-			etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, source.Identity.MethodSpecDigest,
-		)
+		if controlexperiment.UsesRecordedScenarioSchedule(source.Recipe.Config) {
+			report, fresh, err = controlexperiment.ExecuteQualifiedRecordedBundleV3(
+				ctx, source.Recipe.Config, source.Trace, source.Qualification, factory, etcdraftv2.CorePSSMapper{},
+				etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, source.Identity.MethodSpecDigest,
+			)
+		} else {
+			report, fresh, err = controlexperiment.ExecuteQualifiedBundleV3(
+				ctx, source.Recipe.Config, source.Qualification, factory, etcdraftv2.CorePSSMapper{},
+				etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, source.Identity.MethodSpecDigest,
+			)
+		}
 	case "omnipaxos-v2":
 		var adapterConfig omnipaxosv2.Config
 		if options.WorkerPath == "" ||
@@ -57,10 +65,17 @@ func runEvaluatorReplayCLI(ctx context.Context, options controlExperimentOptions
 		factory := func() (control.Adapter, error) {
 			return omnipaxosv2.New(adapterConfig)
 		}
-		report, fresh, err = controlexperiment.ExecuteQualifiedBundleV3(
-			ctx, source.Recipe.Config, source.Qualification, factory, omnipaxosv2.CorePSSMapper{},
-			omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{}, source.Identity.MethodSpecDigest,
-		)
+		if controlexperiment.UsesRecordedScenarioSchedule(source.Recipe.Config) {
+			report, fresh, err = controlexperiment.ExecuteQualifiedRecordedBundleV3(
+				ctx, source.Recipe.Config, source.Trace, source.Qualification, factory, omnipaxosv2.CorePSSMapper{},
+				omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{}, source.Identity.MethodSpecDigest,
+			)
+		} else {
+			report, fresh, err = controlexperiment.ExecuteQualifiedBundleV3(
+				ctx, source.Recipe.Config, source.Qualification, factory, omnipaxosv2.CorePSSMapper{},
+				omnipaxosv2.DecisionProjector{}, omnipaxosv2.WorkloadRouter{}, source.Identity.MethodSpecDigest,
+			)
+		}
 	default:
 		return errors.New("EVALUATOR_REPLAY_TARGET_UNSUPPORTED")
 	}

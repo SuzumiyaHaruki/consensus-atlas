@@ -48,6 +48,11 @@ Scenario 调查只保留 `continue/revise/abandon` 单路径协议；对照和�
 Episode 内维护分支状态。跨 Episode portfolio 仍会在统一总预算内逐候选调查，Memory 不包含 Oracle finding
 或 Oracle 派生 outcome。
 
+Scenario 完成后的完整 Trace 直接作为 recorded schedule 进入 qualified execution；系统不再把它复制成
+逐 decision Policy。执行器只在记录的位置用原参数重建 Invoke/Partition，再从当前 enabled/admissible
+frontier 精确选择原 ActionID 并比较完整 ActionRecord。Bundle fresh Replay 和 evaluator-owned Replay 使用
+同一记录调度语义；手写 `workload` fixture 的 Policy 入口保留，但不参与 Agentic Action 选择。
+
 ## 本地 SUT 源码
 
 三个共识实现不再从语言包缓存直接参与构建，而是以固定提交的 Git

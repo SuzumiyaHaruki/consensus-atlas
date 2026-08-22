@@ -21,9 +21,23 @@ import (
 
 func TestEvaluatorOwnedReplayExecutesSealedRecipe(t *testing.T) {
 	methodDigest := strings.Repeat("a", 64)
-	report, source, err := etcdraftBundleV3(context.Background(), "workload-evaluation-v3", 96, 1, methodDigest)
+	report, reference, err := etcdraftBundleV3(context.Background(), "workload-evaluation-v3", 96, 1, methodDigest)
 	if err != nil {
 		t.Fatal(err)
+	}
+	config := report.Config
+	config.Runs[0].Policy.ID = "etcdraft-evaluator-recorded-schedule"
+	config.Runs[0].Policy.Rules = nil
+	factory := func() (control.Adapter, error) {
+		return etcdraftv2.NewWithConfig(etcdraftv2.ThreeNodeConfig())
+	}
+	report, source, err := controlexperiment.ExecuteQualifiedRecordedBundleV3(
+		context.Background(), config, reference.Trace, reference.Qualification, factory,
+		etcdraftv2.CorePSSMapper{}, etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{}, methodDigest,
+	)
+	if err != nil || source.Trace.Digest != reference.Trace.Digest {
+		t.Fatalf("recorded source execution drifted: %s/%s/%v",
+			source.Trace.Digest, reference.Trace.Digest, err)
 	}
 	targetConfig, err := json.Marshal(etcdraftv2.ThreeNodeConfig())
 	if err != nil {

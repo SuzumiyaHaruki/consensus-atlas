@@ -2,7 +2,7 @@
 
 更新时间：2026-08-22
 分支：`feature/agentic-consensus-testing`
-阶段：M4n15 单路径 Scenario 与单 Bundle 工件收口
+阶段：M4n16 recorded schedule 统一执行
 
 ## 一句话状态
 
@@ -40,11 +40,13 @@ term/ballot 状态或 milestone 发生可信变化时返回 `ProgressDelta`；�
 Drop/Duplicate 控制不会立即打断 bootstrap 切片。Target closure 仍可持续拥有已接管的因果闭合，且
 只能消费公共 Runtime 已 enabled 的 Effect/Deliver/Temporal。
 
-Agent 在 bootstrap 之后延迟选择 `Invoke` 的 Trace 现已能编译为真正的精确执行策略：策略保留
-原 ActionID、节点和 opaque input，并只在 Trace 记录的 decision 调用 `OfferInvoke`；执行器不再
-把 workload 在 decision 1 提前投放。篡改 input 会因重新生成的 ActionID 不匹配而拒绝。三/五节点
-etcd/raft 与三节点 OmniPaxos 的零模型主路径均覆盖“先建立协调者、再一次 Invoke、qualified Bundle、
-fresh Replay、Oracle”闭环。
+Agent 主路径不再把完整 Trace 复制成逐 decision `Policy.Rules`。成功的 Scenario Trace 本身就是
+recorded schedule：可信执行器在记录的位置重建 Invoke/Partition，重新查询 enabled/admissible
+frontier，按原 ActionID 选择并比较完整 ActionRecord；qualified execution、Bundle fresh Replay 与
+evaluator-owned Replay 共用这一解释语义。Config 中仅保留无逐步规则的 Action-kind surface，供现有
+admission/recipe 身份和历史 Policy 实验兼容使用，不能参与 Agentic Action 选择。延迟 Invoke 不会被
+提前投放，参数篡改会因 ActionID/完整 Action 不一致被拒绝。三/五节点 etcd/raft、三/五节点
+OmniPaxos 和 evaluator-owned Replay 均覆盖该闭环；手写 Policy fixture 仍按原路径只读执行。
 
 `RiskWitnessProgress` v2 将实际 milestone participant、related participant 和跨 milestone
 binding 的可信解析结果反馈给 Scenario Agent，避免模型从摘要猜测“同一请求/参与者”。
@@ -82,7 +84,7 @@ Risk Prompt 要求按 property → invariant → 合法 fault condition → 实�
 search→read→portfolio 后最多一次机械资格修复。
 
 新运行的 MethodSpec implementation identity 为
-`m4n15-single-path-artifact-v1`，M4n14 及更早工件仅作只读兼容；源码暴露模式为
+`m4n16-recorded-schedule-execution-v1`，M4n15 及更早工件仅作只读兼容；源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
 `risk-agent-navigation-v10`：search 前只暴露 search schema，成功 search 后只暴露其真实
 match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
@@ -154,7 +156,7 @@ boundary 表述为 evaluator-owned，也不声称能识别 artifact producer 对
 private/formal evaluator 在 evaluator-owned SUT Replay 后
 重新执行完整 registry，并只以 post-root violation 决定 killed/false-positive；
 root violation 以 `root_prefix_oracle_findings` 单列，不能给 Agent 记功。
-M4n11 以及当前 M4n12/M4n13/M4n14/M4n15 MethodSpec 的已执行主路径在 resume 时必须携带 attribution；
+M4n11 以及当前 M4n12/M4n13/M4n14/M4n15/M4n16 MethodSpec 的已执行主路径在 resume 时必须携带 attribution；
 只有 M4n10 及更早 implementation ID 允许缺省，避免方法版本前移后把 M4n11 工件错误解释为 root=0。
 
 Evidence 结论优先级已统一为 `post-root Oracle finding → witness-instantiated → provider-response-failed
@@ -557,8 +559,8 @@ etcd application prefix 与 OmniPaxos decided prefix 已改为增量缓存，避
 - public saved-Bundle audit 可按 Target registry 重算完整 checked/violation 证据；
 - 所有 Replay 稳定候选均可离线运行 Oracle，Agent 自报不能产生 finding。
 
-分支实验能力仍存在，但当前主实验优先使用 `continue`、`revise`、`abandon`。
-未对 Agent 开放且没有真实用途的 `minimize` 已移除。PSS 保留并冻结为离线
+Episode 内分支实验状态已经删除；当前 Scenario 只使用 `continue`、`revise`、`abandon`。
+对照与消融由外层 Episode 编排。PSS 保留并冻结为离线
 探索指标，不再扩 vocabulary，也不作为当前优化目标。
 
 ## 本轮瘦身
@@ -618,8 +620,8 @@ election incarnation 聚焦 race。canary v4 已调用外部模型，使用 11 c
 1. M4n14 已作为独立提交 `90a3243` 收口；dirty `suts/etcdraft` 未进入提交。
 2. M4n15 完成后作为第二个独立提交收口，保留 continue/revise/abandon、单路径反馈、qualified execution
    和 Oracle 主线，不恢复已删除的 Episode 分支兼容层。
-3. 下一阶段把公共固定推进与 Target 因果选择统一到一个可选 selector 接口，再运行一次短 canary；不在结构
-   收敛期间启动六 Episode 长实验。
+3. M4n16 使用完整 Trace 直接驱动 Agentic qualified execution、Bundle fresh Replay 和 evaluator-owned Replay；
+   下一步进入假设到单步 Action 的转换质量改进，不再建设第二套调度 contract。
 4. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
    attribution capability，不作为 Agent discovery benchmark。正式报告披露 Oracle-backed portfolio 偏置，
    仅将 witness 已实例化且对应 property 出现 post-root finding 的结果称为 Agent discovery。

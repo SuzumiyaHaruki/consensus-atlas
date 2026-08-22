@@ -34,7 +34,6 @@ type longTargetBundleComposition struct {
 	factory       controlexperiment.AdapterFactory
 	mapper        psscore.SemanticMapper
 	projector     semantic.DecisionProjector
-	fallback      []control.ActionKind
 }
 
 type longTargetObservationProjector interface {
@@ -92,9 +91,6 @@ func TestEtcdraftLongNaturalElectionInvestigationProducesTrustedEvidence(t *test
 			envelope: inputs.experiment.faultEnvelope(), qualification: inputs.execution.qualification,
 			factory: factory, mapper: etcdraftv2.CorePSSMapper{},
 			projector: etcdraftv2.DecisionProjector{},
-			fallback: []control.ActionKind{
-				control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal,
-			},
 		})
 	assertLongTargetEvidence(
 		t, "etcdraft", scenario, bundle, spec, projector,
@@ -154,9 +150,6 @@ func TestOmnipaxosLongNaturalBallotInvestigationProducesTrustedEvidence(t *testi
 			envelope: inputs.Experiment.faultEnvelope(), qualification: inputs.Qualification.Bundle,
 			factory: factory, mapper: omnipaxosv2.CorePSSMapper{},
 			projector: omnipaxosv2.DecisionProjector{},
-			fallback: []control.ActionKind{
-				control.ActionDeliverMessage, control.ActionFireTemporal,
-			},
 		})
 	assertLongTargetEvidence(
 		t, "omnipaxos", scenario, bundle, spec, projector,
@@ -292,8 +285,8 @@ func executeLongTargetBundle(
 	composition longTargetBundleComposition,
 ) controlexperiment.ExecutionBundle {
 	t.Helper()
-	policy, err := controlexperiment.CompileScenarioPolicy(
-		composition.id+"-policy", root, execution, composition.fallback,
+	policy, err := controlexperiment.RecordedScenarioSchedulePolicy(
+		composition.id+"-recorded-schedule", root, execution,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -305,8 +298,8 @@ func executeLongTargetBundle(
 		DecisionsPerRun: len(execution.FinalTrace.Records), RequireReplay: true,
 		Runs: []controlexperiment.RunPlan{{Run: 1, Policy: policy}},
 	}
-	_, bundle, err := controlexperiment.ExecuteQualifiedBundle(
-		ctx, config, composition.qualification, composition.factory,
+	_, bundle, err := controlexperiment.ExecuteQualifiedRecordedBundle(
+		ctx, config, execution.FinalTrace, composition.qualification, composition.factory,
 		composition.mapper, composition.projector, nil,
 	)
 	if err != nil || bundle.Trace.Digest != execution.FinalTrace.Digest || !bundle.Run.Replay.Stable {
