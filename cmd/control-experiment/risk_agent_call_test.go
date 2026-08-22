@@ -299,6 +299,87 @@ func TestRiskAgentCompactsPortfolioAfterLengthWithoutRepeatingGrounding(t *testi
 	}
 }
 
+func TestRiskAgentRetriesOneKnownEmptyDeepSeekResponse(t *testing.T) {
+	knowledge, _, _, err := loadEtcdraftAgenticAuthoringSource(etcdraftAgenticTestInputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := etcdraftAlternateQuorumRiskCandidate()
+	for _, predicate := range candidate.Predicates {
+		candidate.MechanismSteps = append(candidate.MechanismSteps, controlexperiment.RiskMechanismStep{
+			MilestoneID: predicate.MilestoneID, Kind: predicate.Kind,
+			Rationale:   "Exercise the ordered etcd/raft replication-loss milestone.",
+			SupportRefs: []string{"primer/epoch-and-replication"},
+		})
+	}
+	candidate.SuspectedMechanism = ""
+	content, err := json.Marshal(controlexperiment.RiskCandidatePortfolio{
+		Candidates: []controlexperiment.RiskCandidate{candidate},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCalls := 0
+	client := newDeepSeekIntentClient(deepSeekDefaultModel)
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		providerCalls++
+		responseContent := string(content)
+		promptTokens, completionTokens := 5, 3
+		if providerCalls == 1 {
+			responseContent = ""
+			completionTokens = 1
+		}
+		response, marshalErr := json.Marshal(map[string]any{
+			"id": "deepseek-empty-retry", "model": deepSeekDefaultModel,
+			"choices": []any{map[string]any{
+				"index": 0, "message": map[string]any{
+					"role": "assistant", "content": responseContent,
+				}, "finish_reason": "stop",
+			}},
+			"usage": map[string]int{
+				"prompt_tokens": promptTokens, "completion_tokens": completionTokens,
+				"total_tokens": promptTokens + completionTokens,
+			},
+		})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
+	})
+	directory := filepath.Join(t.TempDir(), "risk-empty-retry")
+	journal, err := newStatelessAgentCallJournal(directory, client, "")
+	if err != nil || journal.SetRoot("risk-empty-root") != nil {
+		t.Fatalf("journal setup failed: %#v/%v", journal, err)
+	}
+	planner := func(ctx context.Context, view controlexperiment.RiskAgentView) (
+		[]byte, controlexperiment.ModelWork, error,
+	) {
+		response, work, callErr := planRiskCandidate(ctx, journal, view)
+		if !errors.Is(callErr, errStatelessAgentCallKeyRequired) {
+			return response, work, callErr
+		}
+		if err := journal.ActivateKey("fixture-key"); err != nil {
+			return nil, work, err
+		}
+		return planRiskCandidate(ctx, journal, view)
+	}
+	result, err := controlexperiment.DiscoverRiskWithPlanner(
+		context.Background(), controlexperiment.RiskAgentBudget{MaxCalls: 2, MaxTokens: 100},
+		knowledge, (etcdraftv2.ObservationProjector{}).Capabilities(),
+		[]control.ActionKind{
+			control.ActionInvoke, control.ActionCompleteEffect, control.ActionDeliverMessage,
+			control.ActionDropMessage, control.ActionFireTemporal,
+		}, nil, nil, nil, planner,
+	)
+	if err != nil || result.Status != controlexperiment.RiskAgentAccepted || result.Accepted == nil ||
+		len(result.Attempts) != 2 ||
+		result.Attempts[0].Feedback.ReasonCode != controlexperiment.RiskAgentReasonResponseEmptyContent ||
+		result.ModelWork.Calls != 2 || result.ModelWork.TotalTokens != 14 || providerCalls != 2 {
+		t.Fatalf("known empty response did not receive one bounded retry: %#v/%v calls=%d",
+			result, err, providerCalls)
+	}
+}
+
 func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 	knowledge, _, _, err := loadEtcdraftAgenticAuthoringSource(etcdraftAgenticTestInputPath)
 	if err != nil {

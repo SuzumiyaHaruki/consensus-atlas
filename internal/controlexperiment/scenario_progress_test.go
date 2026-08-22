@@ -34,6 +34,78 @@ func TestScenarioNaturalProgressPrefersSelectedParticipantCausalDirection(t *tes
 	}
 }
 
+func TestScenarioAgentDistinguishesSliceExhaustionFromEpisodeBudgetAndStall(t *testing.T) {
+	if got := scenarioAgentNaturalProgressStop(ScenarioProgressBudget, 9, 4, 64); got != ScenarioProgressSlice {
+		t.Fatalf("bounded progress slice was reported as an episode limit: %q", got)
+	}
+	if got := scenarioAgentNaturalProgressStop(ScenarioProgressBudget, 60, 4, 64); got != ScenarioProgressBudget {
+		t.Fatalf("episode decision limit was reported as a slice: %q", got)
+	}
+	if got := scenarioAgentNaturalProgressStop(ScenarioProgressQuiescent, 9, 4, 64); got != ScenarioProgressQuiescent {
+		t.Fatalf("true quiescence was rewritten as a slice limit: %q", got)
+	}
+}
+
+func TestScenarioAutomaticSetupReservesOneStrategicDecision(t *testing.T) {
+	strategic := semantic.ObservationPredicate{Kind: semantic.ObservationMessageDropped}
+	goal := scenarioAutomaticProgressGoal{autoInvoke: true, strategicPredicate: &strategic}
+	if got := scenarioAutomaticSetupAllowance(64, goal); got != 63 {
+		t.Fatalf("setup did not reserve one strategic decision: %d", got)
+	}
+	if got := scenarioAutomaticSetupAllowance(1, goal); got != 0 {
+		t.Fatalf("setup consumed the only strategic decision: %d", got)
+	}
+	if got := scenarioAutomaticSetupAllowance(64, scenarioAutomaticProgressGoal{autoInvoke: true}); got != 64 {
+		t.Fatalf("terminal Invoke-only witness unnecessarily reserved a decision: %d", got)
+	}
+}
+
+func TestScenarioAutomaticGoalSkipsOnlyPublicPrerequisitesBeforeStrategicAction(t *testing.T) {
+	accepted := &AcceptedHypothesisContext{Candidate: RiskCandidate{Predicates: []semantic.ObservationPredicate{
+		{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+		{MilestoneID: "append", Kind: semantic.ObservationMessageDelivered},
+		{MilestoneID: "ack", Kind: semantic.ObservationMessageDelivered},
+		{MilestoneID: "crash", Kind: semantic.ObservationNodeCrashed},
+	}}}
+	goal := scenarioAutomaticGoalFor(accepted, semantic.RiskWitnessResult{
+		MissingMilestones: []string{"invoke", "append", "ack", "crash"},
+	})
+	if !goal.autoInvoke || !goal.yieldForStrategic || goal.strategicPredicate == nil ||
+		goal.strategicPredicate.MilestoneID != "crash" {
+		t.Fatalf("public prerequisites hid the first strategic predicate: %#v", goal)
+	}
+	accepted.Candidate.Predicates[2] = semantic.ObservationPredicate{
+		MilestoneID: "second-invoke", Kind: semantic.ObservationWorkloadInvoked,
+	}
+	goal = scenarioAutomaticGoalFor(accepted, semantic.RiskWitnessResult{
+		MissingMilestones: []string{"invoke", "append", "second-invoke", "crash"},
+	})
+	if !goal.autoInvoke || goal.strategicPredicate != nil || goal.yieldForStrategic {
+		t.Fatalf("automatic setup crossed a non-public prerequisite: %#v", goal)
+	}
+}
+
+func TestScenarioStrategicSelectorDoesNotEnumerateTargetMessageRoles(t *testing.T) {
+	predicate := semantic.ObservationPredicate{
+		Kind: semantic.ObservationMessageDropped,
+		Constraints: []semantic.ObservationConstraint{
+			{Field: semantic.ObservationFieldMessageRole, Equals: "target-local-operation-role"},
+			{Field: semantic.ObservationFieldOperationStage, Equals: ConsensusOperationInflight},
+		},
+	}
+	selector, ok := scenarioStrategicPredicateSelector(predicate, semantic.RiskWitnessResult{})
+	if !ok || selector.Kind != control.ActionDropMessage ||
+		selector.OperationState != ConsensusOperationInflight ||
+		selector.MessageClass != "" || selector.MessageTypeHint != "" {
+		t.Fatalf("target role leaked into the protocol-neutral selector: %#v", selector)
+	}
+	predicate.Constraints = predicate.Constraints[:1]
+	selector, ok = scenarioStrategicPredicateSelector(predicate, semantic.RiskWitnessResult{})
+	if !ok || selector.MessageTypeHint != "target-local-operation-role" {
+		t.Fatalf("unqualified concrete message hint was discarded: %#v", selector)
+	}
+}
+
 func TestScenarioNaturalProgressPrefersExactItemDependencyBeforeParticipantFallback(t *testing.T) {
 	dependency := control.ItemID("timer-cause")
 	participantOnly := FrontierActionRef{

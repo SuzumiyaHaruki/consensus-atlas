@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v23"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v24"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
@@ -583,7 +583,9 @@ func scenarioAgentPrompt(
 		"milestone, newly observed milestone evidence, transition novelty, Action counts, temporal callbacks versus actual logical-clock " +
 		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available interventions, and recent " +
 		"Action kinds. milestone_progress=milestone-stalled means selectors executed but no new milestone appeared; " +
-		"natural_progress_stop distinguishes a returned client operation from a quiescent or budget-limited public frontier. Use these mechanical " +
+		"natural_progress_stop distinguishes a returned client operation, a truly quiescent frontier, an episode-wide decision limit, and " +
+		"natural-progress-slice-exhausted: the last value means only that one bounded public-progress slice ended while the remaining_decisions " +
+		"budget is still available, not that the hypothesis stalled. Use these mechanical " +
 		"facts to continue, revise, change the intervention, or abandon. " +
 		"Repetition and a missing milestone are not protocol verdicts. " +
 		"Before selecting the single strategic Action, start with planning_focus and action_frontier.coordination. Check the Action source/target against " +

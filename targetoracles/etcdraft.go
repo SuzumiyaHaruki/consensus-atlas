@@ -155,6 +155,14 @@ func (LogProgressMonitor) CheckBundle(
 			return logProgressViolation(point.step, "evidence projection failed")
 		}
 		for _, node := range evidence.Nodes {
+			// Crash evidence deliberately retains the durable application image
+			// while the volatile RawNode view is unavailable. Do not compare that
+			// offline placeholder with the last running frontier; the next running
+			// incarnation must still recover monotonically from the last observed
+			// online state.
+			if !node.Running {
+				continue
+			}
 			if node.Applied > node.Commit {
 				return logProgressViolation(point.step, fmt.Sprintf(
 					"node %s/%d applied frontier %d exceeds commit frontier %d",
@@ -162,10 +170,14 @@ func (LogProgressMonitor) CheckBundle(
 				))
 			}
 			if before, ok := previous[node.Node]; ok {
-				if node.Commit < before.commit {
+				// Commit is partly volatile until the host persists the latest
+				// HardState. A power loss may therefore restart from an older
+				// durable commit frontier. Within one running incarnation it must
+				// remain monotonic; applied state remains durable across restarts.
+				if node.Incarnation == before.incarnation && node.Commit < before.commit {
 					return logProgressViolation(point.step, fmt.Sprintf(
-						"node %s commit frontier regressed across incarnation %d -> %d from %d to %d",
-						node.Node, before.incarnation, node.Incarnation, before.commit, node.Commit,
+						"node %s commit frontier regressed within incarnation %d from %d to %d",
+						node.Node, before.incarnation, before.commit, node.Commit,
 					))
 				}
 				if node.Applied < before.applied {

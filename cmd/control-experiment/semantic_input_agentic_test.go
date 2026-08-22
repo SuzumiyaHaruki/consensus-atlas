@@ -19,6 +19,7 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlruntime"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
@@ -273,6 +274,39 @@ func TestEtcdraftBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testing
 	}
 }
 
+func TestEtcdraftBootstrapSkipsPublicPrerequisitesBeforeFirstPlanner(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), controlExperimentTestTimeout(120*time.Second),
+	)
+	defer cancel()
+	inputs, err := prepareEtcdraftAgenticEpisodeWithOverrides(
+		ctx, "", etcdraftAgenticTestInputPath, fixtureOpenRouterIntentClient(),
+		agenticInputOverrides{NodeCount: 3},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := newEtcdraftAgenticEpisodeTarget(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := etcdraftAlternateQuorumRiskCandidate()
+	publicDelivery := semantic.ObservationPredicate{
+		MilestoneID: "append-delivered-before-drop",
+		Kind:        semantic.ObservationMessageDelivered,
+		Constraints: []semantic.ObservationConstraint{{
+			Field: semantic.ObservationFieldMessageRole, Equals: "MsgApp",
+		}},
+	}
+	candidate.Predicates = append(
+		append([]semantic.ObservationPredicate(nil), candidate.Predicates[:1]...),
+		append([]semantic.ObservationPredicate{publicDelivery}, candidate.Predicates[1:]...)...,
+	)
+	assertBootstrapScenarioEstablishesCoordination(
+		t, ctx, target, candidate, "etcdraft", 3,
+	)
+}
+
 func TestOmnipaxosBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testing.T) {
 	workerPath := buildOmnipaxosScenarioWorker(t)
 	for _, nodeCount := range []int{3, 5} {
@@ -342,17 +376,33 @@ func assertBootstrapScenarioEstablishesCoordination(
 	core.TargetSurface = &target.Surface
 	coordinationSeen := false
 	invokePlanned := false
+	strategicFrontierSeen := false
+	plannerCalls := 0
 	preferredNode := control.NodeID("n1")
 	var planningLog []string
 	decisionBudget := 64
 	if idPrefix == "omnipaxos" {
 		decisionBudget = 128
 	}
+	reserved, reserveErr := runScenarioEpisodeCore(
+		ctx, core, 8, 1, 1,
+		func(context.Context, controlexperiment.ScenarioAgentView) (
+			[]byte, controlexperiment.ModelWork, error,
+		) {
+			t.Fatal("Scenario Agent was called after setup consumed its reserved strategic decision")
+			return nil, controlexperiment.ModelWork{}, nil
+		},
+	)
+	if reserveErr != nil || reserved.Agent.StopReason != controlexperiment.ScenarioAgentStopSetupBudget ||
+		reserved.Agent.DecisionsUsed != 0 || len(reserved.Agent.Attempts) != 0 {
+		t.Fatalf("setup reserve boundary drifted: %#v/%v", reserved.Agent, reserveErr)
+	}
 	result, err := runScenarioEpisodeCore(
 		ctx, core, 8, 1, decisionBudget,
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
+			plannerCalls++
 			invokeAlreadyObserved := view.Frontier.Progress.FirstMissingMilestone != risk.Spec.Milestones[0].ID
 			if view.Prior != nil && view.Prior.ProgressDelta != nil {
 				for _, milestone := range view.Prior.ProgressDelta.NewMilestones {
@@ -363,6 +413,27 @@ func assertBootstrapScenarioEstablishesCoordination(
 				coordinationSeen = view.Semantics.Coordination != nil &&
 					view.Semantics.Coordination.Status == controlexperiment.ConsensusCoordinatorPresent
 				invokePlanned = true
+				if plannerCalls == 1 {
+					dropAction, available := bootstrapStrategicDropAction(view, idPrefix)
+					strategicFrontierSeen = available
+					if !available {
+						t.Fatalf("first Scenario call did not receive the post-Invoke strategic frontier: missing=%s actions=%#v semantics=%#v",
+							view.Frontier.Progress.FirstMissingMilestone, view.Frontier.Actions, view.Semantics)
+					}
+					encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+						Intent: view.AvailableIntents[0],
+						Plan: controlexperiment.ScenarioPlan{
+							ID: fmt.Sprintf("%s-strategic-drop", idPrefix),
+							Steps: []controlexperiment.ScenarioStep{{
+								ID:       "drop-target-message",
+								Selector: controlexperiment.FrontierActionSelector{ActionID: dropAction},
+							}},
+						},
+					})
+					return encoded, controlexperiment.ModelWork{
+						Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5,
+					}, marshalErr
+				}
 				encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 					Intent: controlexperiment.ScenarioIntentAbandon,
 				})
@@ -442,7 +513,10 @@ func assertBootstrapScenarioEstablishesCoordination(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !coordinationSeen || !invokePlanned || result.Agent.Execution == nil {
+	if !coordinationSeen || !invokePlanned || !strategicFrontierSeen || plannerCalls > 2 ||
+		result.Agent.Execution == nil || len(result.Agent.Execution.Steps) != 1 ||
+		result.Agent.Execution.Steps[0].Choice == nil ||
+		result.Agent.Execution.Steps[0].Choice.Action.Kind != control.ActionDropMessage {
 		t.Fatalf("bootstrap path did not establish coordination and Invoke: calls=%d decisions=%d log=%v",
 			len(result.Agent.Attempts), result.Agent.DecisionsUsed, planningLog)
 	}
@@ -470,19 +544,41 @@ func assertBootstrapScenarioEstablishesCoordination(
 		t.Fatalf("bootstrap Scenario did not seal as a qualified Bundle: %v", err)
 	}
 	if !qualified.Replay.Stable ||
-		qualified.Bundle.Trace.Digest != result.Agent.Execution.FinalTrace.Digest ||
-		len(qualified.Oracle.Violations) != 0 {
+		qualified.Bundle.Trace.Digest != result.Agent.Execution.FinalTrace.Digest {
 		t.Fatalf("bootstrap qualified evidence drifted: trace=%s scenario=%s replay=%#v oracle=%#v",
 			qualified.Bundle.Trace.Digest, result.Agent.Execution.FinalTrace.Digest,
 			qualified.Replay, qualified.Oracle)
 	}
-	if result.Agent.SelectedPathDecisions != 0 ||
+	if result.Agent.SelectedPathDecisions <= 0 ||
 		qualified.OracleAttribution == nil ||
-		qualified.OracleAttribution.RootDecisions != len(qualified.Bundle.Trace.Records) ||
+		qualified.OracleAttribution.RootDecisions >= len(qualified.Bundle.Trace.Records) ||
 		len(qualified.agentPathOracleViolations()) != 0 {
-		t.Fatalf("automatic bootstrap received Agent finding attribution: selected=%d attribution=%#v",
+		t.Fatalf("strategic drop attribution drifted: selected=%d attribution=%#v",
 			result.Agent.SelectedPathDecisions, qualified.OracleAttribution)
 	}
+}
+
+func bootstrapStrategicDropAction(
+	view controlexperiment.ScenarioAgentView,
+	target string,
+) (control.ActionID, bool) {
+	for index, action := range view.Frontier.Actions {
+		if action.Kind != control.ActionDropMessage {
+			continue
+		}
+		switch target {
+		case "etcdraft":
+			if action.MessageTypeHint == "MsgAppResp" {
+				return action.ActionID, true
+			}
+		case "omnipaxos":
+			if index < len(view.Semantics.ActionHints) &&
+				view.Semantics.ActionHints[index].OperationState == controlexperiment.ConsensusOperationInflight {
+				return action.ActionID, true
+			}
+		}
+	}
+	return "", false
 }
 
 func bootstrapActionSummary(

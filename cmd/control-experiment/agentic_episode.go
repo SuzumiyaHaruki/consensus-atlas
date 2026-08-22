@@ -342,6 +342,9 @@ func runAgenticEpisode(
 		case controlexperiment.ScenarioAgentStopDecisionBudget:
 			result.Assessment.Status = agenticEvidenceBudgetExhausted
 			result.Assessment.ReasonCode = "runtime-decision-budget-exhausted"
+		case controlexperiment.ScenarioAgentStopSetupBudget:
+			result.Assessment.Status = agenticEvidenceBudgetExhausted
+			result.Assessment.ReasonCode = controlexperiment.ScenarioAgentStopSetupBudget
 		case controlexperiment.ScenarioAgentStopHypothesisAbandoned:
 			result.Assessment.Status = agenticEvidenceInconclusive
 			result.Assessment.ReasonCode = agenticEvidenceHypothesisAbandoned
@@ -351,6 +354,9 @@ func runAgenticEpisode(
 		case controlexperiment.ScenarioAgentStopProviderResponse:
 			result.Assessment.Status = agenticEvidenceInconclusive
 			result.Assessment.ReasonCode = controlexperiment.ScenarioAgentStopProviderResponse
+		case controlexperiment.ScenarioAgentStopSetupQuiescent:
+			result.Assessment.Status = agenticEvidenceInconclusive
+			result.Assessment.ReasonCode = controlexperiment.ScenarioAgentStopSetupQuiescent
 		default:
 			result.Assessment.Status = agenticEvidencePlanningFailed
 			result.Assessment.ReasonCode = "scenario-planning-failed"
@@ -517,9 +523,14 @@ func assessTestingEvidence(
 	case controlexperiment.ScenarioAgentStopDecisionBudget:
 		assessment.Status = agenticEvidenceBudgetExhausted
 		assessment.ReasonCode = "runtime-decision-budget-exhausted"
+	case controlexperiment.ScenarioAgentStopSetupBudget:
+		assessment.Status = agenticEvidenceBudgetExhausted
+		assessment.ReasonCode = controlexperiment.ScenarioAgentStopSetupBudget
 	case controlexperiment.ScenarioAgentStopCallBudget:
 		assessment.Status = agenticEvidenceBudgetExhausted
 		assessment.ReasonCode = "scenario-call-budget-exhausted"
+	case controlexperiment.ScenarioAgentStopSetupQuiescent:
+		assessment.ReasonCode = controlexperiment.ScenarioAgentStopSetupQuiescent
 	}
 	if assessment.RootPrefixFindings > 0 && assessment.ReasonCode == agenticEvidenceHypothesisNotReached {
 		assessment.ReasonCode = agenticEvidenceRootPrefixFinding

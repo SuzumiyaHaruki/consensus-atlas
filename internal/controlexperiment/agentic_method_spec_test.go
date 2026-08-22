@@ -54,6 +54,54 @@ func TestAgenticMethodSpecBindsActualMethodConfiguration(t *testing.T) {
 		spec.ImplementationID != AgenticMethodImplementationID {
 		t.Fatalf("Agentic MethodSpec invalid: %#v/%v", spec, err)
 	}
+	m4n24Legacy := spec
+	m4n24Legacy.ImplementationID = agenticMethodImplementationM4n24
+	m4n24Legacy.Digest = ""
+	m4n24LegacyDigest, err := control.CanonicalDigest(m4n24Legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m4n24Legacy.Digest = m4n24LegacyDigest
+	if m4n24Legacy.Validate() != nil || m4n24Legacy.Digest == spec.Digest ||
+		!AgenticMethodRequiresOracleAttribution(m4n24Legacy.ImplementationID) {
+		t.Fatalf("M4n24 legacy MethodSpec lost read-only validation: %#v", m4n24Legacy)
+	}
+	m4n23Legacy := spec
+	m4n23Legacy.ImplementationID = agenticMethodImplementationM4n23
+	m4n23Legacy.Digest = ""
+	m4n23LegacyDigest, err := control.CanonicalDigest(m4n23Legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m4n23Legacy.Digest = m4n23LegacyDigest
+	if m4n23Legacy.Validate() != nil || m4n23Legacy.Digest == spec.Digest ||
+		!AgenticMethodRequiresOracleAttribution(m4n23Legacy.ImplementationID) {
+		t.Fatalf("M4n23 legacy MethodSpec lost read-only validation: %#v", m4n23Legacy)
+	}
+	m4n22Legacy := spec
+	m4n22Legacy.ImplementationID = agenticMethodImplementationM4n22
+	m4n22Legacy.Digest = ""
+	m4n22LegacyDigest, err := control.CanonicalDigest(m4n22Legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m4n22Legacy.Digest = m4n22LegacyDigest
+	if m4n22Legacy.Validate() != nil || m4n22Legacy.Digest == spec.Digest ||
+		!AgenticMethodRequiresOracleAttribution(m4n22Legacy.ImplementationID) {
+		t.Fatalf("M4n22 legacy MethodSpec lost read-only validation: %#v", m4n22Legacy)
+	}
+	m4n20Legacy := spec
+	m4n20Legacy.ImplementationID = agenticMethodImplementationM4n20
+	m4n20Legacy.Digest = ""
+	m4n20LegacyDigest, err := control.CanonicalDigest(m4n20Legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m4n20Legacy.Digest = m4n20LegacyDigest
+	if m4n20Legacy.Validate() != nil || m4n20Legacy.Digest == spec.Digest ||
+		!AgenticMethodRequiresOracleAttribution(m4n20Legacy.ImplementationID) {
+		t.Fatalf("M4n20 legacy MethodSpec lost read-only validation: %#v", m4n20Legacy)
+	}
 	m4n2Legacy := spec
 	m4n2Legacy.ImplementationID = agenticMethodM4n2LegacyID
 	m4n2Legacy.Digest = ""

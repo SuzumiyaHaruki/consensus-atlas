@@ -36,3 +36,12 @@ func validStatelessPlannerWork(work ModelWork) bool {
 		(work.Calls == 1 && work.InputTokens >= 0 && work.OutputTokens >= 0 &&
 			work.TotalTokens > 0 && work.TotalTokens == work.InputTokens+work.OutputTokens)
 }
+
+// validStatelessPlannerFailureWork admits the one additional shape that only a
+// failed provider call may have: dispatch is known to have happened, while the
+// provider supplied no trustworthy usage. The durable call audit keeps that
+// call explicitly unreconciled; successful responses still require positive,
+// internally consistent token accounting through validStatelessPlannerWork.
+func validStatelessPlannerFailureWork(work ModelWork) bool {
+	return validStatelessPlannerWork(work) || work == (ModelWork{Calls: 1})
+}

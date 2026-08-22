@@ -581,7 +581,8 @@ func RecordedScenarioSchedulePolicy(
 	execution ScenarioExecution,
 ) (Policy, error) {
 	if !validMethodToken(id) || root.Validate() != nil || execution.Status != ScenarioStatusCompleted ||
-		execution.FinalTrace.Validate() != nil || len(execution.Steps) == 0 ||
+		execution.FinalTrace.Validate() != nil ||
+		len(execution.Steps)+len(execution.AutomaticProgress) == 0 ||
 		len(execution.FinalTrace.Records) != len(root.Records)+len(execution.Steps)+
 			len(execution.AutomaticProgress) ||
 		execution.FinalTrace.ManifestDigest != root.ManifestDigest ||

@@ -165,7 +165,8 @@ func executeOmnipaxosScenarioQualifiedRiskWithWorkload(
 		spec.Validate() != nil || projector == nil || root.Validate() != nil || execution.FinalTrace.Validate() != nil ||
 		execution.FinalRisk.Validate(spec) != nil ||
 		methodSpecDigest != "" && !validAgenticSHA256(methodSpecDigest) ||
-		len(execution.Steps) == 0 || len(execution.Steps) > len(execution.FinalTrace.Records) {
+		len(execution.Steps)+len(execution.AutomaticProgress) == 0 ||
+		len(execution.Steps)+len(execution.AutomaticProgress) > len(execution.FinalTrace.Records) {
 		return scenarioTestingResult{}, errors.New("OMNIPAXOS_SCENARIO_QUALIFIED_INPUT_INVALID")
 	}
 	policy, err := controlexperiment.RecordedScenarioSchedulePolicy(

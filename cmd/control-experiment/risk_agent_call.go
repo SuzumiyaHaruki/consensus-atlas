@@ -74,10 +74,28 @@ func planRiskCandidate(
 		return nil, work, callErr
 	}
 	failureCode := statelessAgentFailureCode(callErr)
-	if failureCode == statelessAgentFailureFinishLength {
+	switch failureCode {
+	case statelessAgentFailureFinishLength:
 		return nil, work, &controlexperiment.RiskPlannerResponseFailure{
 			Code:       controlexperiment.RiskAgentReasonResponseFinishLength,
 			Repairable: !repair && view.MaxKnowledgeRequests == 0,
+		}
+	case statelessAgentFailureEmptyContent:
+		// DeepSeek documents occasional empty JSON-output content. Retry at
+		// most once, only when provider usage is known, so the existing Risk
+		// call/token budget still owns the complete cost.
+		return nil, work, &controlexperiment.RiskPlannerResponseFailure{
+			Code: controlexperiment.RiskAgentReasonResponseEmptyContent,
+			Repairable: work.TotalTokens > 0 &&
+				(view.Prior == nil || view.Prior.ReasonCode != controlexperiment.RiskAgentReasonResponseEmptyContent),
+		}
+	case statelessAgentFailureMalformed:
+		return nil, work, &controlexperiment.RiskPlannerResponseFailure{
+			Code: controlexperiment.RiskAgentReasonResponseMalformed,
+		}
+	case statelessAgentFailureResponseTooBig:
+		return nil, work, &controlexperiment.RiskPlannerResponseFailure{
+			Code: controlexperiment.RiskAgentReasonResponseTooLarge,
 		}
 	}
 	return content, work, callErr

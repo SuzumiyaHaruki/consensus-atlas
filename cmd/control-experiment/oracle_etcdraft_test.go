@@ -174,9 +174,15 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 		InitialEvidence: etcdraftLogProgressFixtureEvidence(t, 0, 0, 0, 1),
 		Records: []controlruntime.ActionRecord{
 			{Step: 1, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 1, 2, 1, 1)},
-			{Step: 2, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 2, 3, 3, 1)},
+			{Step: 2, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 2, 5, 3, 1)},
+			// A stopped node has no volatile RawNode commit view. Its placeholder
+			// must not be treated as an online regression.
+			{Step: 3, Evidence: etcdraftLogProgressFixtureEvidenceRunningPointer(t, 3, 0, 3, 1, false)},
 			// Restart restores the target's durable application image.
-			{Step: 3, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 3, 3, 3, 2)},
+			{Step: 4, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 4, 5, 3, 2)},
+			// A later restart may recover an older durable commit while retaining
+			// the durable applied image.
+			{Step: 5, Evidence: etcdraftLogProgressFixtureEvidencePointer(t, 5, 3, 3, 3)},
 		},
 	}}
 	result := oracle.CheckBundle(monotonic, targetoracles.LogProgressMonitor{})
@@ -195,7 +201,7 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 	}{
 		{name: "commit-regression", commit: 1, applied: 1, incarnation: 1, step: 2, want: "commit frontier regressed"},
 		{name: "applied-exceeds-commit", commit: 2, applied: 3, incarnation: 1, step: 2, want: "exceeds commit frontier"},
-		{name: "restart-loses-durable-application", commit: 0, applied: 0, incarnation: 2, step: 3, want: "across incarnation"},
+		{name: "restart-loses-durable-application", commit: 0, applied: 0, incarnation: 2, step: 4, want: "applied frontier regressed"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -243,6 +249,19 @@ func etcdraftLogProgressFixtureEvidence(
 	applied uint64,
 	incarnation uint64,
 ) control.EvidenceEnvelope {
+	return etcdraftLogProgressFixtureEvidenceRunning(
+		t, logicalTime, commit, applied, incarnation, true,
+	)
+}
+
+func etcdraftLogProgressFixtureEvidenceRunning(
+	t *testing.T,
+	logicalTime uint64,
+	commit uint64,
+	applied uint64,
+	incarnation uint64,
+	running bool,
+) control.EvidenceEnvelope {
 	t.Helper()
 	prefixes := make([]etcdraftLogProgressFixturePrefix, 0, applied)
 	for position := uint64(1); position <= applied; position++ {
@@ -267,7 +286,7 @@ func etcdraftLogProgressFixtureEvidence(
 		"consensus-atlas/etcdraft-v2-evidence/v2", etcdraftLogProgressFixture{
 			LogicalTime: logicalTime,
 			Nodes: []etcdraftLogProgressFixtureNode{{
-				Node: "n1", Incarnation: incarnation, Running: true, Role: "StateFollower",
+				Node: "n1", Incarnation: incarnation, Running: running, Role: "StateFollower",
 				Term: 2, Commit: commit, Applied: applied,
 				ApplicationDigest: applicationDigest, ApplicationCommands: int(applied),
 				ApplicationPrefixes: prefixes,
@@ -277,6 +296,20 @@ func etcdraftLogProgressFixtureEvidence(
 		t.Fatal(err)
 	}
 	return control.EvidenceEnvelope{Yield: "fixture-yield", Payload: payload}
+}
+
+func etcdraftLogProgressFixtureEvidenceRunningPointer(
+	t *testing.T,
+	logicalTime uint64,
+	commit uint64,
+	applied uint64,
+	incarnation uint64,
+	running bool,
+) *control.EvidenceEnvelope {
+	evidence := etcdraftLogProgressFixtureEvidenceRunning(
+		t, logicalTime, commit, applied, incarnation, running,
+	)
+	return &evidence
 }
 
 func etcdraftLogProgressFixtureEvidencePointer(

@@ -14,6 +14,7 @@ const (
 	ScenarioProgressClientTerminal      = "client-terminal"
 	ScenarioProgressQuiescent           = "natural-progress-quiescent"
 	ScenarioProgressBudget              = "natural-progress-budget-exhausted"
+	ScenarioProgressSlice               = "natural-progress-slice-exhausted"
 	ScenarioProgressSemanticYield       = "natural-progress-semantic-yield"
 	ScenarioProgressWitnessInstantiated = "witness-instantiated"
 )
@@ -36,9 +37,10 @@ type scenarioCausalProgressFocus struct {
 // next missing milestone. It is in-memory execution guidance, not a persisted
 // Agent assertion or a new scheduling contract.
 type scenarioAutomaticProgressGoal struct {
-	autoInvoke        bool
-	yieldForStrategic bool
-	invokeMilestone   string
+	autoInvoke         bool
+	yieldForStrategic  bool
+	invokeMilestone    string
+	strategicPredicate *semantic.ObservationPredicate
 }
 
 func newScenarioCausalProgressFocus(action FrontierActionRef) *scenarioCausalProgressFocus {
@@ -411,7 +413,15 @@ func scenarioPublicProgressShouldYield(
 	currentSemantics *ScenarioSemanticExposure,
 	goal scenarioAutomaticProgressGoal,
 ) bool {
+	if goal.autoInvoke && scenarioRiskHasMilestone(currentRisk, goal.invokeMilestone) &&
+		goal.strategicPredicate != nil &&
+		scenarioStrategicFrontierAvailable(*goal.strategicPredicate, currentRisk, actions, currentSemantics) {
+		return true
+	}
 	if len(currentRisk.SatisfiedMilestones) > len(rootRisk.SatisfiedMilestones) {
+		if goal.autoInvoke && goal.strategicPredicate != nil {
+			return false
+		}
 		return true
 	}
 	if rootSemantics != nil && currentSemantics != nil &&
@@ -419,6 +429,9 @@ func scenarioPublicProgressShouldYield(
 		rootCoordination := *rootSemantics.Coordination
 		currentCoordination := *currentSemantics.Coordination
 		if scenarioCoordinationMeaningfullyChanged(rootCoordination, currentCoordination) {
+			if goal.autoInvoke && !scenarioRiskHasMilestone(currentRisk, goal.invokeMilestone) {
+				return false
+			}
 			if goal.autoInvoke && rootCoordination.Status != ConsensusCoordinatorPresent &&
 				scenarioCoordinationInvokeReady(currentSemantics) {
 				return false
@@ -442,6 +455,9 @@ func scenarioPublicProgressShouldYield(
 		// for another investigation, not a reason to interrupt this one.
 		return false
 	}
+	if goal.autoInvoke && goal.strategicPredicate != nil {
+		return false
+	}
 	current, err := scenarioStrategicActionKeys(actions)
 	if err != nil {
 		return true
@@ -452,6 +468,89 @@ func scenarioPublicProgressShouldYield(
 		}
 	}
 	return false
+}
+
+func scenarioStrategicFrontierAvailable(
+	predicate semantic.ObservationPredicate,
+	risk semantic.RiskWitnessResult,
+	actions []FrontierActionRef,
+	semantics *ScenarioSemanticExposure,
+) bool {
+	if semantics == nil {
+		return false
+	}
+	selector, ok := scenarioStrategicPredicateSelector(predicate, risk)
+	return ok && len(scenarioMatches(actions, *semantics, selector)) > 0
+}
+
+func scenarioStrategicPredicateSelector(
+	predicate semantic.ObservationPredicate,
+	risk semantic.RiskWitnessResult,
+) (FrontierActionSelector, bool) {
+	selector := FrontierActionSelector{}
+	hasOperationStage := false
+	for _, constraint := range predicate.Constraints {
+		if constraint.Field == semantic.ObservationFieldOperationStage {
+			hasOperationStage = true
+			break
+		}
+	}
+	switch predicate.Kind {
+	case semantic.ObservationMessageDropped:
+		selector.Kind = control.ActionDropMessage
+	case semantic.ObservationNodeCrashed:
+		selector.Kind = control.ActionCrash
+	case semantic.ObservationNodeRestarted:
+		selector.Kind = control.ActionRestart
+	default:
+		return FrontierActionSelector{}, false
+	}
+	for _, constraint := range predicate.Constraints {
+		value := constraint.Equals
+		if value == "" && constraint.BindAs != "" {
+			value = scenarioResolvedRiskBinding(risk, constraint.BindAs)
+		}
+		if value == "" {
+			continue
+		}
+		switch constraint.Field {
+		case semantic.ObservationFieldParticipantNode:
+			selector.Node = control.NodeID(value)
+		case semantic.ObservationFieldMessageSourceNode:
+			selector.MessageSource = control.NodeID(value)
+		case semantic.ObservationFieldMessageTargetNode:
+			selector.MessageTarget = control.NodeID(value)
+		case semantic.ObservationFieldMessageRole:
+			switch value {
+			case ConsensusMessageVote, ConsensusMessageProposal,
+				ConsensusMessageReplication, ConsensusMessageHeartbeat,
+				ConsensusMessageRecovery:
+				selector.MessageClass = value
+			default:
+				// A target-local role accompanied by operation-stage is matched
+				// through the closed, protocol-neutral OperationState projection.
+				// Core does not enumerate target vocabulary values.
+				if hasOperationStage {
+					continue
+				}
+				selector.MessageTypeHint = value
+			}
+		case semantic.ObservationFieldOperationStage:
+			selector.OperationState = value
+		}
+	}
+	return selector, selector.validate() == nil
+}
+
+func scenarioResolvedRiskBinding(risk semantic.RiskWitnessResult, name string) string {
+	for _, milestone := range risk.Milestones {
+		for _, binding := range milestone.Bindings {
+			if binding.Name == name {
+				return binding.Value
+			}
+		}
+	}
+	return ""
 }
 
 func scenarioCoordinationMeaningfullyChanged(

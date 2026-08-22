@@ -107,23 +107,30 @@ func TestOmnipaxosComposableActionsAreReachableAndReplayable(t *testing.T) {
 		t.Fatal(err)
 	}
 	projector := omnipaxosScenarioProjector{}
-	rootRisk, err := projector.Project("omnipaxos-action-reachability-root", spec, inputs.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	factory := func() (control.Adapter, error) {
 		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	}
+	root, err := buildWorkloadReadyRootForTest(
+		ctx, inputs.Root, inputs.Experiment.Runtime, factory,
+		omnipaxosv2.WorkloadRouter{}, inputs.Workload, firstOmnipaxosScenarioProgress,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootRisk, err := projector.Project("omnipaxos-action-reachability-root", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	frontier, _, _, err := controlexperiment.ReconstructRiskFrontierState(
-		ctx, "omnipaxos-action-reachability-frontier", spec, rootRisk, inputs.Root,
-		len(inputs.Root.Records), inputs.Experiment.Runtime, inputs.Experiment.faultEnvelope(), factory,
+		ctx, "omnipaxos-action-reachability-frontier", spec, rootRisk, root,
+		len(root.Records), inputs.Experiment.Runtime, inputs.Experiment.faultEnvelope(), factory,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	traces := appendMissingRootActions(
-		t, ctx, []controlruntime.Trace{inputs.Root}, target.Surface.Capabilities.ComposableActions,
-		frontier, spec, rootRisk, inputs.Root, inputs.Experiment.Runtime,
+		t, ctx, []controlruntime.Trace{root}, target.Surface.Capabilities.ComposableActions,
+		frontier, spec, rootRisk, root, inputs.Experiment.Runtime,
 		inputs.Experiment.faultEnvelope(), factory, projector,
 	)
 	assertComposableActionsCovered(t, target.Surface, traces)

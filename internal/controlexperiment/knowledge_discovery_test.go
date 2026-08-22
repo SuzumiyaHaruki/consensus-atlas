@@ -216,6 +216,41 @@ func TestKnowledgeDiscoveryDeduplicatesPhysicalFilesAcrossMountAliases(t *testin
 	}
 }
 
+func TestKnowledgeDiscoveryScopesBoundTargetSearchToSUTAndAdapter(t *testing.T) {
+	core := t.TempDir()
+	adapter := t.TempDir()
+	sut := t.TempDir()
+	for directory, content := range map[string]string{
+		core:    "package core\n// campaign quorum transition\n",
+		adapter: "package adapter\n// adapter quorum transition\n",
+		sut:     "package protocol\n// protocol quorum transition\n",
+	} {
+		if err := os.WriteFile(filepath.Join(directory, "source.go"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounts := []KnowledgeSourceMount{
+		{Directory: core, SearchRole: KnowledgeSourceSearchCore},
+		{ReferencePrefix: "adapter/", Directory: adapter, SearchRole: KnowledgeSourceSearchAdapter},
+		{ReferencePrefix: "sut/", Directory: sut, SearchRole: KnowledgeSourceSearchSUT},
+	}
+	search, err := SearchMountedKnowledgeSources(mounts, KnowledgeReadRequest{
+		Query: "quorum transition", MaxResults: 10,
+	})
+	if err != nil || search.Validate() != nil || len(search.Matches) != 2 ||
+		search.Matches[0].Reference != "sut/source.go" ||
+		search.Matches[1].Reference != "adapter/source.go" {
+		t.Fatalf("target-scoped search did not prefer SUT then Adapter: %#v/%v", search, err)
+	}
+	coreOnly, err := SearchMountedKnowledgeSources(mounts, KnowledgeReadRequest{
+		Query: "campaign", MaxResults: 10,
+	})
+	if err != nil || coreOnly.Validate() != nil || coreOnly.Status != KnowledgeDiscoveryStopped ||
+		coreOnly.ReasonCode != KnowledgeDiscoverySearchNoMatch || len(coreOnly.Matches) != 0 {
+		t.Fatalf("framework-only match satisfied target grounding: %#v/%v", coreOnly, err)
+	}
+}
+
 func knowledgeDiscoveryFixture(t *testing.T, references []string) ProtocolKnowledgePack {
 	t.Helper()
 	pack, err := NewProtocolKnowledgePack(ProtocolKnowledgePack{

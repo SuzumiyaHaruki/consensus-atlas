@@ -212,6 +212,13 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 活动方法固定使用公共 causal progress，CLI 不再暴露 closure mode。Agent 选择与公共
   自然推进的 decisions 在 Episode 和 formal trial 中分开报告；Risk 重复按结构语义判断，
   不按 Agent 自报 CandidateID 判断。历史 `closure_mode` 只用于读取旧工件。
+- `decision_provenance` 以最终合并的 `ScenarioExecution` 为唯一事实源：已应用的 Agent steps
+  与自动公共推进分别计数。attempt 只作为调用过程审计，不能重建最终 schedule，因为 typed
+  automatic Invoke 等可信 Action 可能发生在两次 planner 调用之间。
+- 对首个 milestone 为 workload Invoke、且此前没有选举 milestone 的候选，唯一 coordinator
+  的建立、typed Invoke 和到达下一战略 predicate 的普通因果路径属于可信 setup。公共层在总
+  decision 预算内连续推进，不因内部 slice 用尽调用模型；只在目标战略 frontier、真实
+  quiescence 或总预算停止时交还/结束。候选显式调查 election/coordinator 时仍由 Agent 控制。
 
 长轨迹证据先通过 etcd/OmniPaxos prefix 增量缓存减少重复计算。Trace 仍保存完整 Evidence，
 存储 delta 化必须在有真实长时瓶颈并能保持 Replay/Oracle 兼容时再做，不为压缩体积引入第二套轨迹语义。
@@ -275,9 +282,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   typed Action preparer 在唯一 coordinator 就绪后投放一次普通 Invoke。自动动作继续写入同一
   Trace、成本和 Replay，但 finding attribution 从首个 Agent 选择的战略 Action 才开始；若没有
   战略 Action，整条 Trace 都属于 setup；
-- 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进和
-  token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n20-bootstrap-root-only-v1`；旧 M4n19 及更早版本只读兼容；
+- 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进、
+  token-stop 证据封存和 Provider 失败恢复属于方法实现变化，当前 MethodSpec implementation identity 为
+  `m4n25-public-prerequisite-progress-v1`；M4n24 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
@@ -326,7 +333,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   response identity 与 finish reason。首次 `finish_reason=length` 只允许在现有预算内做一次绑定同一
   frontier 的最小 JSON repair；repair 不执行或重放 Runtime Action，二次失败以 in-band stop 保存
   已验证前缀并继续 Bundle、fresh Replay 与 Oracle。journal 恢复只允许精确相邻、同 root、同冻结 view、
-  绑定原调用序号的 length→repair；dispatch 后缺少 result 的调用保持显式 unreconciled，绝不静默重发。
+  绑定原调用序号的 length→repair；Risk 的首次空 content 仅在 usage 可核算时允许一次普通有界重试。
+  intent 恢复读取上限必须覆盖其类型本身允许的 prompt/request 大小，不能因 JSON/base64 封装超过旧
+  128 KiB 而拒绝合法 journal。dispatch 后缺少 result 或失败响应 usage 未知的调用保持显式
+  unreconciled，绝不按零成本封存或静默重发。
   失败响应跨过 token 阈值时保留原 failure classification，只停止后续模型调用；已有 committed
   Scenario 前缀跨过阈值时仍封存 Bundle、fresh Replay 和 Oracle，Episode 结论保持 budget exhausted，
   并显式报告 `oracle_evaluated`；
@@ -371,6 +381,20 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   target-local closure。后续效果实验只评价当前公共主线，不把已删除的方法混入新结果；
 - 先运行 etcd/raft、再运行 OmniPaxos 单 Episode canary，必须观察完整
   `search → read → portfolio → Scenario → strategic Action → Bundle → evaluator Replay → Oracle`；
+- M4n23 首次五节点 etcd/raft canary 在 `search → read` 后连续得到两次可信记录的
+  `response-empty-content`，以 `risk_calls=4, scenario_calls=0, executable=false` 停止。该结果只说明
+  本次 Provider/Risk 输出未形成 executable portfolio，不能用来评价 Scenario frontier；三/五节点
+  自动 coordinator setup 的成立依据仍是零模型确定性回归，后续真模型重试必须使用新目录并独立报告；
+- M4n24 将已绑定 Target 的中立源码搜索收窄到 `SUT → Adapter`，不因已知修改改变关键词或
+  文件列表；automatic setup 保留至少一个战略 decision，并将 setup budget 与 quiescent/
+  Episode decision limit 分开报告。Core 不再枚举 Target-local message-role 值；
+- M4n24 的 Oracle-clean 五节点 canary 完成 `SUT search/read → executable Risk → Scenario →
+  Bundle → Replay → Oracle`，但 64 decisions/8 Scenario calls 内未实例化最后 coordinator-change milestone。
+  前四次模型调用仍用于普通消息 milestone，因此不视为“首次 Scenario 直达战略 frontier”验收成功；
+- M4n25 允许公共进度跨过 Invoke 后的 delivered/temporal/epoch/decision/coordinator 前置 milestone，
+  直到首个 Drop/Crash/Restart frontier，但仍不代替 Agent 选择战略 Action。同时修正 log-progress
+  Oracle 对 crash/restart 期间 volatile commit 的误报；saved M4n24 Bundle 用修正后 registry 重算为
+  5 monitors / 0 violation，不改写原始在线 summary；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。

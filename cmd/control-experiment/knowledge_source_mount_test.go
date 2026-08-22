@@ -56,14 +56,17 @@ func TestEtcdraftLocalSourceIsReadableAndBoundThroughExplicitMount(t *testing.T)
 		AgentKeyFile: "fixture-key.txt", AgentModel: openRouterFixtureModel,
 		KnowledgeSourceMounts: mountValues,
 	})
-	if err != nil || len(composition.KnowledgeSourceMounts) != 2 ||
+	if err != nil || len(composition.KnowledgeSourceMounts) != 3 ||
 		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureRepositorySearchV3 ||
-		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 2 ||
+		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 3 ||
 		len(composition.MethodSpec.SourceExposure.SUTBindings) != 1 ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ModulePath != etcdraftLocalModulePath ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ContentDigest == "" ||
 		composition.KnowledgeSourceMounts[1].SUTSource == nil ||
-		composition.KnowledgeSourceMounts[1].Directory != moduleDirectory {
+		composition.KnowledgeSourceMounts[1].Directory != moduleDirectory ||
+		composition.KnowledgeSourceMounts[1].SearchRole != controlexperiment.KnowledgeSourceSearchSUT ||
+		composition.KnowledgeSourceMounts[2].ReferencePrefix != etcdraftAdapterReferencePrefix ||
+		composition.KnowledgeSourceMounts[2].SearchRole != controlexperiment.KnowledgeSourceSearchAdapter {
 		t.Fatalf("Agentic composition lost explicit source mounts: %#v/%v",
 			composition.KnowledgeSourceMounts, err)
 	}
@@ -123,15 +126,18 @@ func TestOmnipaxosLocalSourceIsReadableAndBoundThroughExplicitMount(t *testing.T
 		AgentKeyFile: "fixture-key.txt", AgentModel: openRouterFixtureModel,
 		KnowledgeSourceMounts: mountValues,
 	})
-	if err != nil || len(composition.KnowledgeSourceMounts) != 2 ||
+	if err != nil || len(composition.KnowledgeSourceMounts) != 3 ||
 		composition.MethodSpec.SourceExposure.Mode != controlexperiment.AgenticSourceExposureRepositorySearchV3 ||
-		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 2 ||
+		len(composition.MethodSpec.SourceExposure.ReferencePrefixes) != 3 ||
 		len(composition.MethodSpec.SourceExposure.SUTBindings) != 1 ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ModulePath != omnipaxosLocalModulePath ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ModuleVersion != omnipaxosLocalModuleVersion ||
 		composition.MethodSpec.SourceExposure.SUTBindings[0].ContentDigest == "" ||
 		composition.KnowledgeSourceMounts[1].SUTSource == nil ||
-		composition.KnowledgeSourceMounts[1].Directory != sourceDirectory {
+		composition.KnowledgeSourceMounts[1].Directory != sourceDirectory ||
+		composition.KnowledgeSourceMounts[1].SearchRole != controlexperiment.KnowledgeSourceSearchSUT ||
+		composition.KnowledgeSourceMounts[2].ReferencePrefix != omnipaxosAdapterReferencePrefix ||
+		composition.KnowledgeSourceMounts[2].SearchRole != controlexperiment.KnowledgeSourceSearchAdapter {
 		t.Fatalf("Agentic composition lost the local OmniPaxos source binding: %#v/%v",
 			composition.KnowledgeSourceMounts, err)
 	}

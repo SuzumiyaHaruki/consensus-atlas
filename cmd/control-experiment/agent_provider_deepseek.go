@@ -214,6 +214,12 @@ func (client deepSeekIntentClient) invokePrepared(
 	if call.FailureCode != "" {
 		return call, nil
 	}
+	if len(bytes.TrimSpace(responseBody)) == 0 {
+		// A HTTP 200 response without a JSON envelope has no trustworthy usage
+		// to reconcile. Keep it distinct from a syntactically malformed body.
+		call.FailureCode = agentFailureResponseEmptyContent
+		return call, nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	var parsed deepSeekChatResponse
 	if decoder.Decode(&parsed) != nil {

@@ -58,6 +58,28 @@ func TestRiskCandidateSemanticIdentityIgnoresAgentDisplayID(t *testing.T) {
 	}
 }
 
+func TestRiskAgentStopsInBandWhenProviderUsageIsUnreconciled(t *testing.T) {
+	result, err := DiscoverRiskWithPlanner(
+		context.Background(), RiskAgentBudget{MaxCalls: 1, MaxTokens: 10},
+		riskAgentFixtureKnowledge(t),
+		[]semantic.ObservationCapability{
+			{Kind: semantic.ObservationWorkloadInvoked},
+			{Kind: semantic.ObservationMessageDropped},
+		},
+		[]control.ActionKind{control.ActionInvoke, control.ActionDropMessage}, nil, nil, nil,
+		func(context.Context, RiskAgentView) ([]byte, ModelWork, error) {
+			return nil, ModelWork{Calls: 1}, &RiskPlannerResponseFailure{
+				Code: RiskAgentReasonResponseMalformed,
+			}
+		},
+	)
+	if err != nil || result.Status != RiskAgentStopped || len(result.Attempts) != 1 ||
+		result.Attempts[0].Feedback.ReasonCode != RiskAgentReasonResponseMalformed ||
+		result.ModelWork != (ModelWork{Calls: 1}) {
+		t.Fatalf("unreconciled provider failure escaped the typed stop path: %#v/%v", result, err)
+	}
+}
+
 func TestRiskAgentRepairsUnsupportedCandidateFromMechanicalFeedback(t *testing.T) {
 	knowledge := riskAgentFixtureKnowledge(t)
 	capabilities := []semantic.ObservationCapability{

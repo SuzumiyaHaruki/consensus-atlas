@@ -15,6 +15,10 @@ import (
 
 const (
 	statelessAgentMaxCalls = controlexperiment.ScenarioAgentMaxCalls
+	// An intent contains base64-encoded prompt and request bytes. Each decoded
+	// field is independently bounded by the trusted intent type at 1 MiB, so
+	// the JSON envelope can legitimately exceed the old 128 KiB read limit.
+	statelessAgentIntentFileMaxBytes = 3 << 20
 )
 
 var errStatelessAgentCallKeyRequired = errors.New("STATELESS_AGENT_CALL_KEY_REQUIRED")
@@ -338,7 +342,7 @@ func recoverStatelessAgentCall(
 	}
 	var call statelessAgentRecoveredCall
 	if err := readStrictJSONFile(
-		filepath.Join(directory, "intent.json"), 128<<10, &call.intent,
+		filepath.Join(directory, "intent.json"), statelessAgentIntentFileMaxBytes, &call.intent,
 	); err != nil || call.intent.Validate() != nil || call.intent.Ordinal != ordinal || call.intent.RootID != rootID {
 		return statelessAgentRecoveredCall{}, errors.New("STATELESS_AGENT_CALL_RECOVERY_INTENT_INVALID")
 	}
@@ -503,10 +507,13 @@ func (journal *statelessAgentCallJournal) dispatch(
 	if transportErr != nil || call.FailureCode != "" {
 		result.Status = controlexperiment.StatelessAgentCallFailed
 		result.FailureCode = statelessAgentFailureTransport
-		if transportErr == nil && call.FailureCode == agentFailureHTTP {
-			result.FailureCode = statelessAgentFailureHTTP
-		} else if transportErr == nil {
+		if transportErr == nil {
 			switch call.FailureCode {
+			case agentFailureTransport:
+				// The provider client returns an audited call record, not a Go
+				// error, for an ambiguous POST. Keep the transport classification.
+			case agentFailureHTTP:
+				result.FailureCode = statelessAgentFailureHTTP
 			case agentFailureResponseFinishLength:
 				result.FailureCode = statelessAgentFailureFinishLength
 			case agentFailureResponseEmptyContent:

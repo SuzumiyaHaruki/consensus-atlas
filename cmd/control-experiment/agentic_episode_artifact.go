@@ -53,6 +53,7 @@ type agenticEpisodeArtifact struct {
 	ScenarioStopReason      string                                      `json:"scenario_stop_reason,omitempty"`
 	ScenarioAttempts        int                                         `json:"scenario_attempts"`
 	ScenarioAttemptFeedback []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
+	ScenarioSetupWork       controlexperiment.ScenarioExecutionWork     `json:"scenario_setup_work"`
 	ScenarioDecisionsUsed   int                                         `json:"scenario_decisions_used"`
 	DecisionProvenance      agenticDecisionProvenance                   `json:"decision_provenance"`
 	SelectedPathDecisions   int                                         `json:"selected_path_decisions"`
@@ -120,8 +121,12 @@ func newAgenticEpisodeArtifact(
 		artifact.ScenarioStatus = result.Scenario.Agent.Status
 		artifact.ScenarioStopReason = result.Scenario.Agent.StopReason
 		artifact.ScenarioAttempts = len(result.Scenario.Agent.Attempts)
+		artifact.ScenarioSetupWork = result.Scenario.Agent.SetupWork
 		artifact.ScenarioDecisionsUsed = result.Scenario.Agent.DecisionsUsed
 		artifact.SelectedPathDecisions = result.Scenario.Agent.SelectedPathDecisions
+		artifact.DecisionProvenance = scenarioDecisionProvenance(
+			result.Scenario.Agent.Execution,
+		)
 		for _, attempt := range result.Scenario.Agent.Attempts {
 			compact := agenticScenarioAttemptArtifact{
 				Ordinal: attempt.Ordinal, Intent: attempt.Feedback.Intent,
@@ -141,12 +146,6 @@ func newAgenticEpisodeArtifact(
 			if attempt.Execution != nil {
 				work := attempt.Execution.Work
 				compact.ExecutionWork = &work
-				for _, step := range attempt.Execution.Steps {
-					if step.Choice != nil {
-						artifact.DecisionProvenance.AgentSelected++
-					}
-				}
-				artifact.DecisionProvenance.PublicProgress += len(attempt.Execution.AutomaticProgress)
 			}
 			if attempt.Feedback.FailedStep != nil {
 				compact.FailedStepID = attempt.Feedback.FailedStep.ID
@@ -193,6 +192,27 @@ func newAgenticEpisodeArtifact(
 		return agenticEpisodeArtifact{}, errors.New("AGENTIC_EPISODE_ARTIFACT_UNEXPECTED_TESTING")
 	}
 	return artifact, nil
+}
+
+// scenarioDecisionProvenance derives the committed schedule accounting from
+// the final merged execution. Attempts are process evidence and can omit
+// trusted actions performed between planner calls, such as an automatic
+// workload Invoke; they must not be used to reconstruct the final path.
+func scenarioDecisionProvenance(
+	execution *controlexperiment.ScenarioExecution,
+) agenticDecisionProvenance {
+	if execution == nil {
+		return agenticDecisionProvenance{}
+	}
+	provenance := agenticDecisionProvenance{
+		PublicProgress: len(execution.AutomaticProgress),
+	}
+	for _, step := range execution.Steps {
+		if step.Outcome == controlexperiment.ScenarioStepApplied && step.Choice != nil {
+			provenance.AgentSelected++
+		}
+	}
+	return provenance
 }
 
 func persistAgenticEpisodeArtifacts(
@@ -377,6 +397,7 @@ func agenticEvidenceMethodMatches(
 func (artifact agenticEpisodeArtifact) validateCompact() error {
 	if artifact.TargetID == "" || artifact.Budget.validate() != nil ||
 		artifact.Work.Preparation.Validate() != nil ||
+		artifact.ScenarioSetupWork.Validate() != nil ||
 		artifact.MethodSpecDigest != "" && !validAgenticSHA256(artifact.MethodSpecDigest) ||
 		artifact.RiskAttempts < 0 || artifact.ScenarioAttempts < 0 ||
 		artifact.RiskAttempts > artifact.Budget.MaxRiskCalls ||
@@ -386,10 +407,6 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.ScenarioDecisionsUsed > artifact.Budget.MaxRuntimeDecisions ||
 		artifact.SelectedPathDecisions < 0 ||
 		artifact.SelectedPathDecisions > artifact.ScenarioDecisionsUsed ||
-		artifact.DecisionProvenance.AgentSelected < 0 ||
-		artifact.DecisionProvenance.AgentSelected > artifact.ScenarioDecisionsUsed ||
-		artifact.DecisionProvenance.PublicProgress < 0 ||
-		artifact.DecisionProvenance.PublicProgress > artifact.ScenarioDecisionsUsed ||
 		!agenticProviderAttemptAccountingValid(artifact) ||
 		!agenticProviderUsageReconciled(append(
 			append([]controlexperiment.StatelessAgentCallAudit(nil), artifact.RiskProviderCalls...),
@@ -402,9 +419,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		artifact.OracleAttribution != nil && artifact.OracleAttribution.RootDecisions < 0 {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_ACCOUNTING_INVALID")
 	}
-	provenanceDecisions := artifact.DecisionProvenance.AgentSelected +
-		artifact.DecisionProvenance.PublicProgress
-	if provenanceDecisions != 0 && provenanceDecisions != artifact.ScenarioDecisionsUsed {
+	if artifact.DecisionProvenance.Validate(artifact.ScenarioDecisionsUsed) != nil {
 		return errors.New("AGENTIC_EPISODE_ARTIFACT_DECISION_PROVENANCE_INVALID")
 	}
 	expectedCandidates := boolInt(artifact.PlanID != "")
@@ -453,7 +468,11 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 		}
 	}
 	if len(artifact.ScenarioAttemptFeedback) > 0 {
-		works := make([]controlexperiment.ScenarioExecutionWork, 0, len(artifact.ScenarioAttemptFeedback))
+		works := make(
+			[]controlexperiment.ScenarioExecutionWork, 0,
+			len(artifact.ScenarioAttemptFeedback)+1,
+		)
+		works = append(works, artifact.ScenarioSetupWork)
 		completeLedger := true
 		for _, attempt := range artifact.ScenarioAttemptFeedback {
 			if attempt.EnteredExecution && attempt.ExecutionWork == nil {

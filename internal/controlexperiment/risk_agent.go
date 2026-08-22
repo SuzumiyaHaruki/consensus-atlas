@@ -59,6 +59,9 @@ const (
 	RiskAgentReasonKnowledgeBudget      = "risk-knowledge-request-budget-exceeded"
 	RiskAgentReasonKnowledgeGrounding   = "risk-knowledge-grounding-required"
 	RiskAgentReasonResponseFinishLength = "response-finish-length"
+	RiskAgentReasonResponseEmptyContent = "response-empty-content"
+	RiskAgentReasonResponseMalformed    = "response-malformed"
+	RiskAgentReasonResponseTooLarge     = "response-too-large"
 	RiskAgentReasonFidelity             = AgentCapabilityGapTargetFidelity
 
 	RiskCandidateExecutable = "executable"
@@ -473,7 +476,8 @@ func DiscoverRiskWithPlanner(
 			view.MaxKnowledgeRequests = min(RiskKnowledgeRequestsPerCall, remainingKnowledgeRequests)
 		}
 		response, work, err := planner(ctx, view)
-		if !validStatelessPlannerWork(work) {
+		if (err == nil && !validStatelessPlannerWork(work)) ||
+			(err != nil && !validStatelessPlannerFailureWork(work)) {
 			return result, errors.New("EXPERIMENT_RISK_AGENT_MODEL_WORK_INVALID")
 		}
 		addModelWork(&result.ModelWork, work)

@@ -39,10 +39,11 @@ func runAgenticEpisodeCLI(
 	})
 	if result.Summary.TargetID != "" {
 		fmt.Fprintf(stdout,
-			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d executable=%t witness_instantiated=%t oracle_evaluated=%t agent_oracle_findings=%d root_prefix_oracle_findings=%d\n",
+			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d unreconciled_model_calls=%d executable=%t witness_instantiated=%t oracle_evaluated=%t agent_oracle_findings=%d root_prefix_oracle_findings=%d\n",
 			options.CampaignDirectory, result.Summary.TargetID, result.Summary.Status,
 			result.Summary.RiskAttempts, result.Summary.ScenarioAttempts,
 			result.Summary.Work.Model.Calls, result.Summary.Work.Model.TotalTokens,
+			result.UnreconciledModelCalls,
 			result.Summary.Metrics.CandidateAccepted, result.Summary.Metrics.WitnessInstantiated,
 			result.Summary.Metrics.OracleEvaluated,
 			result.Summary.Metrics.OracleFindings,

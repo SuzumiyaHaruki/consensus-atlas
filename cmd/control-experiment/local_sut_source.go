@@ -20,14 +20,16 @@ import (
 )
 
 const (
-	etcdraftLocalModulePath      = "go.etcd.io/raft/v3"
-	etcdraftLocalModuleVersion   = "v3.6.0"
-	etcdraftLocalReferencePrefix = "go.etcd.io/raft/v3@v3.6.0/"
-	etcdraftLocalReplacePath     = "./suts/etcdraft"
+	etcdraftLocalModulePath        = "go.etcd.io/raft/v3"
+	etcdraftLocalModuleVersion     = "v3.6.0"
+	etcdraftLocalReferencePrefix   = "go.etcd.io/raft/v3@v3.6.0/"
+	etcdraftLocalReplacePath       = "./suts/etcdraft"
+	etcdraftAdapterReferencePrefix = "repo/adapters/etcdraftv2/"
 
-	omnipaxosLocalModulePath      = "crates.io/omnipaxos"
-	omnipaxosLocalModuleVersion   = "0.2.2"
-	omnipaxosLocalReferencePrefix = "crates.io/omnipaxos@0.2.2/"
+	omnipaxosLocalModulePath        = "crates.io/omnipaxos"
+	omnipaxosLocalModuleVersion     = "0.2.2"
+	omnipaxosLocalReferencePrefix   = "crates.io/omnipaxos@0.2.2/"
+	omnipaxosAdapterReferencePrefix = "repo/adapters/omnipaxosv2/"
 )
 
 type listedGoModule struct {
@@ -110,6 +112,13 @@ func bindEtcdraftLocalSUTSource(
 		}
 		copyBinding := binding
 		result[index].SUTSource = &copyBinding
+		result[index].SearchRole = controlexperiment.KnowledgeSourceSearchSUT
+	}
+	result, err = appendTargetAdapterKnowledgeMount(
+		result, repositoryRoot, "adapters/etcdraftv2", etcdraftAdapterReferencePrefix,
+	)
+	if err != nil {
+		return nil, err
 	}
 	if len(result) > 0 && controlexperiment.ValidateKnowledgeSourceMounts(result) != nil {
 		return nil, errors.New("AGENTIC_ETCDRAFT_SOURCE_BINDING_INVALID")
@@ -249,10 +258,66 @@ func bindOmnipaxosLocalSUTSource(
 		}
 		copyBinding := binding
 		result[index].SUTSource = &copyBinding
+		result[index].SearchRole = controlexperiment.KnowledgeSourceSearchSUT
+	}
+	result, err = appendTargetAdapterKnowledgeMount(
+		result, repositoryRoot, "adapters/omnipaxosv2", omnipaxosAdapterReferencePrefix,
+	)
+	if err != nil {
+		return nil, err
 	}
 	if len(result) > 0 && controlexperiment.ValidateKnowledgeSourceMounts(result) != nil {
 		return nil, errors.New("AGENTIC_OMNIPAXOS_SOURCE_BINDING_INVALID")
 	}
+	return result, nil
+}
+
+func appendTargetAdapterKnowledgeMount(
+	mounts []controlexperiment.KnowledgeSourceMount,
+	repositoryRoot string,
+	relativeDirectory string,
+	referencePrefix string,
+) ([]controlexperiment.KnowledgeSourceMount, error) {
+	root, err := canonicalDirectory(repositoryRoot)
+	if err != nil {
+		return nil, errors.New("AGENTIC_TARGET_ADAPTER_SOURCE_INVALID")
+	}
+	authorized := false
+	for _, mount := range mounts {
+		if mount.ReferencePrefix != "" {
+			continue
+		}
+		directory, directoryErr := canonicalDirectory(mount.Directory)
+		if directoryErr == nil && directory == root {
+			authorized = true
+			break
+		}
+	}
+	if !authorized {
+		return append([]controlexperiment.KnowledgeSourceMount(nil), mounts...), nil
+	}
+	adapterDirectory, err := canonicalDirectory(filepath.Join(root, relativeDirectory))
+	if err != nil {
+		return nil, errors.New("AGENTIC_TARGET_ADAPTER_SOURCE_INVALID")
+	}
+	for index := range mounts {
+		if mounts[index].ReferencePrefix != referencePrefix {
+			continue
+		}
+		directory, directoryErr := canonicalDirectory(mounts[index].Directory)
+		if directoryErr != nil || directory != adapterDirectory {
+			return nil, errors.New("AGENTIC_TARGET_ADAPTER_SOURCE_MISMATCH")
+		}
+		result := append([]controlexperiment.KnowledgeSourceMount(nil), mounts...)
+		result[index].SearchRole = controlexperiment.KnowledgeSourceSearchAdapter
+		return result, nil
+	}
+	result := append([]controlexperiment.KnowledgeSourceMount(nil), mounts...)
+	result = append(result, controlexperiment.KnowledgeSourceMount{
+		ReferencePrefix: referencePrefix,
+		Directory:       adapterDirectory,
+		SearchRole:      controlexperiment.KnowledgeSourceSearchAdapter,
+	})
 	return result, nil
 }
 

@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,6 +113,39 @@ func TestScenarioResponseFailureKeepsClassificationAtTokenBoundary(t *testing.T)
 	}
 	if _, _, err := agenticScenarioTokenBoundary(101, 100, []byte(`{}`), work, nil); !errors.Is(err, errAgenticEpisodeTokenThreshold) {
 		t.Fatalf("successful over-budget response did not retain the ordinary threshold stop: %v", err)
+	}
+}
+
+func TestAgenticEpisodeKeepsUnknownProviderUsageOutsideSealedSummary(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(180*time.Second))
+	defer cancel()
+	composition, err := prepareAgenticEpisodeComposition(ctx, controlExperimentOptions{
+		Target: "etcdraft-v2", InvestigationEpisodes: 1,
+		SemanticInput: "../../plans/agent/etcdraft-agentic-calibration-v1.json",
+		AgentKeyFile:  "fixture-key.txt", AgentProvider: deepSeekProvider,
+		AgentModel: deepSeekDefaultModel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := newDeepSeekIntentClient(deepSeekDefaultModel)
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+	composition.Client = client
+	directory := filepath.Join(t.TempDir(), "unknown-provider-usage")
+	recovered, err := runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
+		Directory: directory, AgentKeyFile: "fixture-key.txt",
+		ReadKey:  func(string) (string, error) { return "fixture-key", nil },
+		Recovery: etcdraftAgenticEpisodeRecoveryBinding(),
+		Prepare:  func(context.Context) (agenticEpisodeComposition, error) { return composition, nil },
+	})
+	if err == nil || err.Error() != "AGENTIC_EPISODE_PROVIDER_USAGE_UNRECONCILED" ||
+		recovered.UnreconciledModelCalls != 1 || recovered.Summary.TargetID != "" {
+		t.Fatalf("unknown provider usage entered a sealed Episode: %#v/%v", recovered, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(directory, agenticEpisodeSummaryFile)); !os.IsNotExist(statErr) {
+		t.Fatalf("unreconciled call produced a trusted summary: %v", statErr)
 	}
 }
 

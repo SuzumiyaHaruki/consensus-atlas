@@ -66,9 +66,28 @@ type KnowledgeSearchMatch struct {
 type KnowledgeSourceMount struct {
 	ReferencePrefix string `json:"reference_prefix"`
 	Directory       string `json:"directory"`
+	// SearchRole is trusted composition metadata. It narrows neutral Risk
+	// grounding to the current SUT and Adapter without exposing a defect hint.
+	// Empty retains the historical repository/core role.
+	SearchRole KnowledgeSourceSearchRole `json:"-"`
 	// SUTSource is trusted runtime metadata. Directory remains machine-local,
 	// while this content identity is projected into MethodSpec.
 	SUTSource *AgenticSUTSourceBinding `json:"sut_source,omitempty"`
+}
+
+type KnowledgeSourceSearchRole string
+
+const (
+	KnowledgeSourceSearchCore    KnowledgeSourceSearchRole = "core"
+	KnowledgeSourceSearchAdapter KnowledgeSourceSearchRole = "adapter"
+	KnowledgeSourceSearchSUT     KnowledgeSourceSearchRole = "sut"
+)
+
+func (mount KnowledgeSourceMount) resolvedSearchRole() KnowledgeSourceSearchRole {
+	if mount.SearchRole == "" {
+		return KnowledgeSourceSearchCore
+	}
+	return mount.SearchRole
 }
 
 type KnowledgeReadResult struct {
@@ -300,8 +319,25 @@ func SearchMountedKnowledgeSources(
 	}
 	result := KnowledgeReadResult{Status: KnowledgeDiscoveryCompleted, Query: request.Query}
 	query := strings.ToLower(request.Query)
-	ordered := append([]KnowledgeSourceMount(nil), mounts...)
+	targetScoped := false
+	for _, mount := range mounts {
+		if mount.resolvedSearchRole() != KnowledgeSourceSearchCore {
+			targetScoped = true
+			break
+		}
+	}
+	ordered := make([]KnowledgeSourceMount, 0, len(mounts))
+	for _, mount := range mounts {
+		if targetScoped && mount.resolvedSearchRole() == KnowledgeSourceSearchCore {
+			continue
+		}
+		ordered = append(ordered, mount)
+	}
 	sort.Slice(ordered, func(i, j int) bool {
+		left, right := knowledgeSourceSearchRoleRank(ordered[i]), knowledgeSourceSearchRoleRank(ordered[j])
+		if left != right {
+			return left < right
+		}
 		return ordered[i].ReferencePrefix < ordered[j].ReferencePrefix
 	})
 	// Multiple Agent-visible prefixes may intentionally bind the same physical
@@ -402,6 +438,17 @@ func SearchMountedKnowledgeSources(
 	return result, nil
 }
 
+func knowledgeSourceSearchRoleRank(mount KnowledgeSourceMount) int {
+	switch mount.resolvedSearchRole() {
+	case KnowledgeSourceSearchSUT:
+		return 0
+	case KnowledgeSourceSearchAdapter:
+		return 1
+	default:
+		return 2
+	}
+}
+
 func ignoredKnowledgeSearchDirectory(name string) bool {
 	switch name {
 	case ".git", "target", "vendor", "node_modules", "artifacts", "benchmarks":
@@ -431,6 +478,9 @@ func ValidateKnowledgeSourceMounts(mounts []KnowledgeSourceMount) error {
 	for _, mount := range mounts {
 		prefix := mount.ReferencePrefix
 		if strings.TrimSpace(mount.Directory) == "" || seen[prefix] ||
+			(mount.SearchRole != "" && mount.SearchRole != KnowledgeSourceSearchCore &&
+				mount.SearchRole != KnowledgeSourceSearchAdapter &&
+				mount.SearchRole != KnowledgeSourceSearchSUT) ||
 			mount.SUTSource != nil && (mount.SUTSource.Validate() != nil ||
 				mount.SUTSource.ReferencePrefix != prefix) ||
 			prefix != "" && (!strings.HasSuffix(prefix, "/") || strings.HasPrefix(prefix, "/") ||

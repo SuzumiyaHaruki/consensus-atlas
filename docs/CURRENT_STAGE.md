@@ -1,6 +1,6 @@
 # 当前阶段
 
-阶段：M4n21 第三 Adapter composition 试接入
+阶段：M4n25 public prerequisite progress 与 Oracle lifecycle 收口
 
 ## 当前结论
 
@@ -35,11 +35,11 @@ Runtime、决定 Replay 或产生 finding；finding 只来自独立 Oracle。
 当前 MethodSpec implementation ID 为：
 
 ```text
-consensus-atlas/agentic-method/m4n20-bootstrap-root-only-v1
+consensus-atlas/agentic-method/m4n25-public-prerequisite-progress-v1
 ```
 
 Risk/Scenario prompt 分别为 `risk-agent-navigation-v11` 与
-`scenario-agent-investigation-v23`。历史 MethodSpec 的
+`scenario-agent-investigation-v24`。M4n24 及历史 MethodSpec 的
 `closure_mode` 仍可读取，但当前 CLI 不再暴露 `-closure-mode`，活动组合固定使用公共推进。
 
 ## 当前执行语义
@@ -136,9 +136,115 @@ Target-local 组件”。详见 `docs/hashicorp-composition-trial.md`。
 下一步只准备两个活动 Target 的单 Episode canary；外部模型调用必须另行获得本轮明确授权。HashiCorp
 在提供可测试性端口和本地源码 checkout 前不进入付费 Agent 实验。
 
+## M4n22 Provider/recovery 修复
+
+- 失败的 Provider 调用允许 `calls=1,tokens=0` 这一种明确的未知 usage 形状，但成功响应仍必须有
+  正数且自洽的 token 账本；未知 usage 不进入可信 Episode summary，并报告
+  `AGENTIC_EPISODE_PROVIDER_USAGE_UNRECONCILED`。
+- DeepSeek JSON Output 的首次空 content 仅在 usage 已知时由 Risk Agent 在原 calls/tokens 预算内重试
+  一次；未知 usage、畸形或过大响应保持终止证据，不猜测费用。Provider client 已识别的 HTTP
+  传输失败保持 `agent-transport-ambiguous`，不再被 journal 默认改写成 malformed response。
+- journal 恢复的 intent 文件读取上限与类型允许的两个 1 MiB 原始字段相容。此前真实 canary 的
+  144,010-byte intent 不再被旧 128 KiB 文件上限错误拒绝。
+- 新回归覆盖未知 usage 的 in-band Risk 停止、可信 summary 拒绝、DeepSeek 空 body 分类、一次空响应
+  重试和大 intent 精确恢复；没有放宽 Runtime、Replay、Oracle 或 SUT 绑定。
+
+## M4n22R provenance 修复
+
+- Episode 的 `decision_provenance` 改为只从最终合并后的 `ScenarioExecution` 推导：已应用且有
+  trusted choice 的 `Steps` 计入 `agent_selected`，全部 `AutomaticProgress` 计入
+  `public_progress`。Scenario attempts 只保留模型调用过程、反馈和 work，不再重建最终 schedule。
+- 这覆盖了 planner 调用之间由可信执行器自动完成的 Invoke。该 Action 已经进入最终 Trace、
+  `DecisionsUsed` 和 `Execution.AutomaticProgress`，即使它不属于任何 attempt，也不会再造成工件
+  封存时少计一个 decision。
+- compact artifact 直接复用 `AgenticDecisionProvenance.Validate(total)`，新工件不再允许
+  `decisions > 0` 但 provenance 全零的历史逃生路径。
+- 无模型回归覆盖最终 Execution 推导、零 provenance 拒绝，以及“attempt 省略自动 Invoke”后的
+  完整 Episode 写入、Bundle 恢复、Replay/Oracle 结果和 provenance 一致性。
+
+## M4n23 coordinator setup 修复
+
+- 当首个缺失 milestone 是 `workload-invoked` 且候选没有把选举本身列为此前 milestone 时，
+  Scenario Agent 不再承担普通启动调度。可信公共推进持续消费 Episode decision budget，直到唯一
+  coordinator 可接受 Invoke，自动执行 typed Invoke，并到达下一个可机械识别的战略 Action frontier。
+- 下一 milestone 为 Drop/Crash/Restart 时，公共层只根据候选已有 predicate、可信 resolved binding
+  和当前 Action/semantic hint 判断何时交还控制权；它不创建 Action、不选择故障，也不写入协议规则。
+- `natural-progress-slice-exhausted` 与真正的 Episode decision limit、quiescent 分开。前者明确表示一次
+  有界公共推进切片结束但总预算仍可用，Scenario prompt 不再把它描述成一般的 budget failure。
+- OmniPaxos Target 的 `operation_state` 现在只标记实际携带 request 且 entry_count 大于零的
+  `accept-sync/accept-decide` Action，避免 heartbeat/普通 recovery traffic 冒充 operation frontier。
+- 三/五节点 etcd/raft 与 OmniPaxos 零模型回归均要求：第一次 planner 调用已经观察到 Invoke 之后的
+  目标 Drop frontier，并能用一个真实 enabled Action 进入 recorded schedule、Replay 和 Oracle。
+- 自动 setup 的执行工作单独记录为 `scenario_setup_work`；它计入 Scenario 总搜索成本，但不伪装成
+  任一模型 attempt 的工作。工件恢复继续机械检查 `setup + attempts == scenario_search`。
+
+### M4n23 etcd/raft 单 Episode canary
+
+五节点 canary `artifacts/agentic/m4n23-etcdraft-single-canary-v1` 使用当前 MethodSpec、显式本地
+SUT binding 和中立只读源码搜索运行。Risk Agent 完成一次 search 和一次 bounded read，但读取的是
+仓库内通用 CLI 文件，未使用修改说明或定向缺陷提示。随后的 portfolio 响应连续两次被 Provider 记录为
+`response-empty-content`，因此本轮结果为：
+
+```text
+risk_calls=4
+scenario_calls=0
+model_tokens=61831
+executable=false
+```
+
+所以这次 canary 没有进入 Scenario，无法用真模型工件验收“第一次 Scenario 调用直接看到战略 frontier”。
+它不否定三/五节点零模型回归已经证明的执行语义，也不能视为 Agent 调查成功；按单次 canary 边界不自动
+重跑。后续若再次实验，应使用新目录并把目标明确限定为 Provider 能产出 executable portfolio 后的端到端
+验收，不能把这次结果补写成成功。
+
+## M4n24 最小收口
+
+- automatic setup 在后续存在战略谓词时至少保留 1 个 Runtime decision；仅剩该额度时不调用
+  Provider，而是返回 `setup-budget-exhausted`。三/五节点两个 Target 的普通回归同时覆盖该边界。
+- Core 不再枚举 `operation-replication` 这一 Target 语义值；带 `operation-stage` 的 Target-local role
+  只通过封闭的 `OperationState` 投影匹配。
+- 已绑定 SUT 的 Risk 搜索仅访问当前 SUT 和当前 Adapter，优先级为 `SUT → Adapter`。公共 Core
+  中的 `campaign` 等同名词不再冒充协议源码 grounding；无匹配时返回中立 no-match，不向 Agent
+  提供修改或缺陷提示。
+- 本地验证已通过全量 Go test/vet、两项审计、新边界聚焦 race 以及三/五节点跨协议 race。
+
+### M4n24 Oracle-clean canary
+
+隔离 checkout 的 ConsensusAtlas 提交为 `4ca5ea3`，SUT 为未修改的官方 etcd/raft
+`f35a022`，两个工作树均 clean。五节点单 Episode 结果：
+
+```text
+risk_calls=4, scenario_calls=8, model_calls=12, model_tokens=220172
+executable=true, scenario_decisions=64, witness_instantiated=false
+grounding=completed-used: source/go.etcd.io/raft/v3@v3.6.0/raft.go
+replay_stable=true, root_prefix_oracle_findings=0
+```
+
+这证明 scoped grounding 和整条 Scenario/Bundle/Replay/Oracle 链已恢复，但还暴露两个问题：
+
+- Accepted Risk 为 `Invoke → 三个 message-delivered → Crash → coordinator-changed`。M4n24 只跨过
+  紧邻 Invoke 的战略谓词，因此前四次 Scenario 调用仍用于普通消息调度，“第一次调用直达战略
+  frontier”在该方法版本下没有验收通过；
+- 在线 Oracle 将 Crash/Restart 期间的 volatile commit 丢失误报为 `etcdraft-log-progress`。
+  saved Bundle 证明 finding 位于 step 57/73 的生命周期边界，而不是 agreement/client-binding 问题。
+
+完整 canary 证据保存在本地被忽略目录
+`artifacts/agentic/m4n24-etcdraft-clean-single-canary-v1`，没有重跑或追加外部调用。
+
+## M4n25 canary 后收口
+
+- Invoke 后的 `message-delivered / temporal-fired / epoch-advanced / decision-advanced /
+  coordinator-changed` 被视为公共前置条件；自动进度可跨过它们直到第一个 Drop/Crash/Restart
+  frontier，但不选择战略 Action，也不跨过第二个 Invoke 或未知 Target-local 谓词。
+- 新的三节点 etcd/raft 回归在 Invoke 与 Drop 之间插入真实 `MsgApp delivered` milestone，
+  并仍要求第一次 Planner 调用直接看到 Drop frontier。
+- `etcdraft-log-progress` 忽略宕机期的 volatile placeholder；commit 只在同一 running incarnation
+  内要求单调，applied/application prefix 仍跨重启严格单调。M4n24 saved Bundle 用修正后的五个
+  monitor 离线重算为 0 violation，未重跑模型。
+
 ## 验证
 
-M4n21 完成前必须通过：
+M4n25 完成前必须通过：
 
 ```text
 go test ./...

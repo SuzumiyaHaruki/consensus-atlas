@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/adapters/omnipaxosv2"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
@@ -66,6 +67,10 @@ func projectOmnipaxosScenarioSemantics(
 		}
 		if item, ok := items[action.ItemID]; ok && item.Value.Message != nil {
 			hint.MessageClass = omnipaxosScenarioMessageClass(item.Value.Message.TypeHint)
+			if operation == controlexperiment.ConsensusOperationInflight &&
+				!omnipaxosScenarioCarriesOperation(item.Value.Message) {
+				hint.OperationState = controlexperiment.ConsensusOperationNone
+			}
 		}
 		hints = append(hints, hint)
 	}
@@ -94,6 +99,17 @@ func projectOmnipaxosScenarioSemantics(
 		return controlexperiment.MaskScenarioSemanticExposure(exposure, frontier)
 	}
 	return exposure, nil
+}
+
+func omnipaxosScenarioCarriesOperation(message *control.MessageEnvelope) bool {
+	if message == nil ||
+		(message.TypeHint != "sequence-paxos/accept-sync" &&
+			message.TypeHint != "sequence-paxos/accept-decide") ||
+		message.Metadata["request_id"] == "" {
+		return false
+	}
+	count, err := strconv.ParseUint(message.Metadata["entry_count"], 10, 64)
+	return err == nil && count > 0
 }
 
 func omnipaxosScenarioCoordination(evidence omnipaxosv2.Evidence) controlexperiment.ConsensusCoordinationStatus {

@@ -523,6 +523,14 @@ func runAgenticEpisodeDirectory(
 			riskJournal, scenarioJournal,
 		)}, err
 	}
+	unreconciledModelCalls := countUnreconciledProviderCalls(riskJournal, scenarioJournal)
+	if unreconciledModelCalls > 0 {
+		// A dispatch with unknown provider usage cannot be sealed into an
+		// Episode budget or silently retried. The durable journal is the
+		// terminal evidence; a fresh Campaign is required for another call.
+		return recoveredAgenticEpisode{UnreconciledModelCalls: unreconciledModelCalls},
+			errors.New("AGENTIC_EPISODE_PROVIDER_USAGE_UNRECONCILED")
+	}
 	result.Work.Preparation = composition.Preparation
 	if err := verifyKnowledgeSourceMountIdentities(composition.KnowledgeSourceMounts); err != nil {
 		return recoveredAgenticEpisode{}, err

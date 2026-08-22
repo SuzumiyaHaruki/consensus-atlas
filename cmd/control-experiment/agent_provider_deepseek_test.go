@@ -79,6 +79,96 @@ func TestDeepSeekProviderKeepsAmbiguousUsageExplicit(t *testing.T) {
 	}
 }
 
+func TestDurableJournalKeepsTransportFailureDistinctFromMalformedResponse(t *testing.T) {
+	client := newDeepSeekIntentClient(deepSeekDefaultModel)
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("fixture transport unavailable")
+	})
+	prepared, err := client.prepare("return JSON", "public-user", fixtureOpenRouterStructuredOutput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(t.TempDir(), "transport-failure-journal")
+	journal, err := newStatelessAgentCallJournal(directory, client, "fixture-key")
+	if err != nil || journal.SetRoot("transport-failure-root") != nil {
+		t.Fatalf("journal setup failed: %#v/%v", journal, err)
+	}
+	_, work, callErr := journal.planningCall(context.Background(), planningAgentCallPlan{
+		intentID: "risk-agent-call-1", requestDigest: strings.Repeat("5", 64),
+		prepared: prepared, contentReady: true,
+	})
+	if statelessAgentFailureCode(callErr) != statelessAgentFailureTransport ||
+		work != (controlexperiment.ModelWork{Calls: 1}) {
+		t.Fatalf("transport failure was rewritten: work=%#v err=%v", work, callErr)
+	}
+	var persisted controlexperiment.StatelessAgentCallResult
+	if err := readStrictJSONFile(
+		filepath.Join(directory, "model-calls", "001-transport-failure-root", "result.json"),
+		2<<20, &persisted,
+	); err != nil || persisted.FailureCode != statelessAgentFailureTransport ||
+		persisted.ProviderUsageStatus != agentProviderUsageUnknown {
+		t.Fatalf("durable transport classification drifted: %#v/%v", persisted, err)
+	}
+}
+
+func TestDeepSeekProviderClassifiesEmptyHTTP200BodyWithoutInventingUsage(t *testing.T) {
+	client := newDeepSeekIntentClient(deepSeekDefaultModel)
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("\n\n"))}, nil
+	})
+	prepared, err := client.prepare("return JSON", "public-user", fixtureOpenRouterStructuredOutput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, err := client.invokePrepared(context.Background(), "fixture-key", prepared)
+	if err != nil || call.FailureCode != agentFailureResponseEmptyContent ||
+		call.UsageStatus != agentProviderUsageUnknown || call.Work != (controlexperiment.ModelWork{Calls: 1}) {
+		t.Fatalf("empty HTTP 200 body was misclassified: %#v/%v", call, err)
+	}
+}
+
+func TestDurableJournalRecoversIntentLargerThanLegacyReadLimit(t *testing.T) {
+	response := []byte(`{
+  "id":"large-intent-response","model":"deepseek-v4-flash",
+  "choices":[{"index":0,"message":{"role":"assistant","content":"{\"action_ids\":[\"a\"]}"},"finish_reason":"stop"}],
+  "usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}
+}`)
+	client := newDeepSeekIntentClient(deepSeekDefaultModel)
+	client.HTTP = agentHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(response))}, nil
+	})
+	largePublicPrompt := "return JSON " + strings.Repeat("x", 96<<10)
+	prepared, err := client.prepare(largePublicPrompt, "public-user", fixtureOpenRouterStructuredOutput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(t.TempDir(), "large-intent-journal")
+	journal, err := newStatelessAgentCallJournal(directory, client, "fixture-key")
+	if err != nil || journal.SetRoot("large-intent-root") != nil {
+		t.Fatalf("journal setup failed: %#v/%v", journal, err)
+	}
+	plan := planningAgentCallPlan{
+		intentID: "risk-agent-call-1", requestDigest: strings.Repeat("4", 64),
+		prepared: prepared, contentReady: true,
+	}
+	if _, _, err := journal.planningCall(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	intentPath := filepath.Join(directory, "model-calls", "001-large-intent-root", "intent.json")
+	info, err := os.Stat(intentPath)
+	if err != nil || info.Size() <= 128<<10 {
+		t.Fatalf("fixture did not cross the legacy recovery limit: size=%d err=%v", info.Size(), err)
+	}
+	recovered, err := recoverStatelessAgentCallJournal(directory, client)
+	if err != nil || recovered.SetRoot("large-intent-root") != nil {
+		t.Fatalf("valid large intent did not recover: %#v/%v", recovered, err)
+	}
+	content, work, err := recovered.planningCall(context.Background(), plan)
+	if err != nil || string(content) != `{"action_ids":["a"]}` || work.TotalTokens != 28 {
+		t.Fatalf("large recovered intent changed evidence: %q/%#v/%v", content, work, err)
+	}
+}
+
 func TestDeepSeekProviderClassifiesLengthAndKeepsResponseIdentity(t *testing.T) {
 	response := []byte(`{
   "id":"deepseek-truncated","model":"deepseek-v4-flash-0731",

@@ -233,6 +233,10 @@ grounding 是一次成功的中立 search，再读取一个该 search 实际返�
 不再继续翻页。query 是在单行源码上匹配的一个大小写不敏感字面子串，不进行分词或多关键词 OR；Agent
 应选择一个短标识符或原样短语。重复请求、未搜索得到的任意路径和越过挂载根目录的引用由可信代码拒绝。最多 4 次 Risk
 模型调用不等于可以读取 4 个源码片段。
+
+当运行已经绑定本地 SUT 时，中立 search 只扫描该 SUT 和当前 Target Adapter，顺序固定为
+`SUT → Adapter`；仓库根 mount 仍用于授权和身份解析，但公共控制框架中的同名词不会满足协议 grounding。
+查询词仍完全由 Agent 选择，SUT/Adapter 均无匹配时返回普通 `search-no-match`，不提供修改文件或缺陷提示。
 Episode summary 会把该 bounded read 标记为 `completed-used` 或 `completed-unused`：只有候选的
 mechanism step 真正引用相应 `source/...` 时才算 used。该字段只是 grounding 口径，不是候选准入条件，
 也不能把源码引用解释为已经定位缺陷或提升为 finding。同一物理文件若由多个 mount/reference prefix
@@ -240,7 +244,10 @@ mechanism step 真正引用相应 `source/...` 时才算 used。该字段只是 
 
 Provider 返回 HTTP 200 但结构化输出不可用时，journal 区分 `response-finish-length`、
 `response-empty-content`、`response-malformed` 与 `response-too-large`，并在已解析出 usage/response
-identity 时保留其计费和 `finish_reason`。Scenario 的首次 `response-finish-length` 允许在原有 calls/tokens
+identity 时保留其计费和 `finish_reason`。Risk 的首次 `response-empty-content` 只有在 usage 已知时才会在
+原有 calls/tokens 预算内重试一次；usage 未知的失败保持 `unreconciled_model_calls`，不会被当成零成本、
+不会生成可信 Episode summary，也不会在 resume 时静默重发。HTTP 传输失败保持
+`agent-transport-ambiguous`，不能降级成 `response-malformed`。Scenario 的首次 `response-finish-length` 允许在原有 calls/tokens
 预算内发起一次同 frontier 的最小 JSON 修复；修复仍失败时以 in-band stop 保存已执行前缀，不能重复 Runtime Action。
 durable recovery 只承认紧邻且绑定同一 root、冻结 view digest 和原调用序号的 length→repair 序列；其他
 Failed 后续调用一律拒绝。repair 已 dispatch 但 result 尚未落盘时会明确报告远端结果不确定且不会自动重发。

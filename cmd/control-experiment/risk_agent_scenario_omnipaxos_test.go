@@ -58,11 +58,18 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 	factory := func() (control.Adapter, error) {
 		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	}
+	root, err := buildWorkloadReadyRootForTest(
+		ctx, inputs.Root, inputs.Experiment.Runtime, factory,
+		omnipaxosv2.WorkloadRouter{}, inputs.Workload, firstOmnipaxosScenarioProgress,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	plannerCalls := 0
 	scenario, err := runScenarioEpisodeCore(ctx, scenarioEpisodeCoreInputs{
 		RootID: "omnipaxos-discovered-risk", Knowledge: scenarioRisk.Knowledge,
 		Hypothesis: scenarioRisk.Hypothesis, AcceptedHypothesis: &scenarioRisk.AcceptedHypothesis,
-		RiskSpec: scenarioRisk.Spec, Root: inputs.Root,
+		RiskSpec: scenarioRisk.Spec, Root: root,
 		Runtime: inputs.Experiment.Runtime, FaultEnvelope: inputs.Experiment.faultEnvelope(),
 		SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
 		NewAdapter:       factory, RiskProjector: projector,
@@ -137,7 +144,7 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 	methodSpecDigest := formalTestStringDigest("agentic-omnipaxos-method")
 	testingResult, err := executeOmnipaxosScenarioQualifiedRisk(
 		ctx, workerPath, inputs.Experiment, inputs.Workload, inputs.Qualification,
-		inputs.Root, *scenario.Agent.Execution, scenarioRisk.Spec, projector, methodSpecDigest,
+		root, *scenario.Agent.Execution, scenarioRisk.Spec, projector, methodSpecDigest,
 	)
 	if err != nil || !testingResult.Replay.Stable || len(testingResult.Oracle.Violations) != 0 ||
 		testingResult.Risk.RiskID != candidate.ID ||
