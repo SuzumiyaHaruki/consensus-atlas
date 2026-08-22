@@ -403,6 +403,12 @@ func assertBootstrapScenarioEstablishesCoordination(
 			[]byte, controlexperiment.ModelWork, error,
 		) {
 			plannerCalls++
+			for _, action := range view.Frontier.Actions {
+				if action.Kind == control.ActionCompleteEffect || action.Kind == control.ActionDeliverMessage ||
+					action.Kind == control.ActionFireTemporal {
+					t.Fatalf("%s Agent frontier exposed trusted natural Action: %#v", idPrefix, action)
+				}
+			}
 			invokeAlreadyObserved := view.Frontier.Progress.FirstMissingMilestone != risk.Spec.Milestones[0].ID
 			if view.Prior != nil && view.Prior.ProgressDelta != nil {
 				for _, milestone := range view.Prior.ProgressDelta.NewMilestones {

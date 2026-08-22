@@ -284,7 +284,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   战略 Action，整条 Trace 都属于 setup；
 - 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进、
   token-stop 证据封存和 Provider 失败恢复属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n25-public-prerequisite-progress-v1`；M4n24 及更早版本只读兼容；
+  `m4n26-strategic-frontier-and-oracle-scope-v1`；M4n25 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
@@ -296,8 +296,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - M4n11 及后续版本已执行的主路径必须封存 root/post-root Oracle attribution；
   campaign resume 按已有 MethodSpec implementation ID 机械区分。只有 M4n10 及更早版本
   可以缺省 attribution，方法版本前移不会将 M4n11 缺失字段默认恢复为 root=0；
-- M4n10 的新工件只使用“机械可执行”（兼容 wire value `executable`）→
-  `witness-instantiated → oracle-finding` 三层结论；
+- 当前新工件使用“机械可执行”（兼容 wire value `executable`）→
+  `witness-instantiated → independent-oracle-finding / hypothesis-oracle-finding` 分层结论；
+  hypothesis finding 还必须由当前 property 注册的 monitor 支持且 fidelity 已评估，独立 finding
+  仍进入总体缺陷报告但不能替当前 Risk 背书；
   `scenarioTestingResult.outcome` 为 `oracle-clean|oracle-finding`，不能再用 `passed`
   暗示实现或性质正确。底层历史 Bundle 的枚举只作兼容读取；
 - Investigation 保留 Risk Agent 返回的全部 executable portfolio 候选，并在统一总预算内
@@ -395,6 +397,11 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   直到首个 Drop/Crash/Restart frontier，但仍不代替 Agent 选择战略 Action。同时修正 log-progress
   Oracle 对 crash/restart 期间 volatile commit 的误报；saved M4n24 Bundle 用修正后 registry 重算为
   5 monitors / 0 violation，不改写原始在线 summary；
+- M4n26 从 authoritative frontier 机械投影 strategic-only Agent view，普通 effect/message/timer 只由
+  可信公共推进消费；返回普通 Action 的模型响应在执行前拒绝。Oracle 结果同时报告独立 finding 与
+  支持已实例化当前假设的 finding。etcd/raft 的 durable commit 检查留在 target-local Oracle，
+  OmniPaxos 继续用自身决定与请求绑定证据；公共 Core 不理解两种协议的持久化或 ballot/term。
+  setup、Agent attempt 与 Agent 后可信推进成本分别记账，并机械聚合为完整 Scenario search work；
 - 再做同预算多 seed、长时 Random/单 Agent/双 Agent/专家对照；
 - 预注册方法与预算后进入 private holdout；
 - 依据 finding、探索增量、false positive 和完整成本判断价值。

@@ -85,6 +85,58 @@ func TestScenarioAutomaticGoalSkipsOnlyPublicPrerequisitesBeforeStrategicAction(
 	}
 }
 
+func TestScenarioAgentStrategicProjectionHidesAndRejectsNaturalActions(t *testing.T) {
+	frontier := RiskFrontierView{
+		PrefixTraceDigest: "trace", SnapshotDigest: "snapshot",
+		Actions: []FrontierActionRef{
+			{ActionID: "complete", ActionDigest: "complete-digest", Kind: control.ActionCompleteEffect},
+			{ActionID: "deliver", ActionDigest: "deliver-digest", Kind: control.ActionDeliverMessage},
+			{ActionID: "timer", ActionDigest: "timer-digest", Kind: control.ActionFireTemporal},
+			{ActionID: "drop", ActionDigest: "drop-digest", Kind: control.ActionDropMessage},
+			{ActionID: "crash", ActionDigest: "crash-digest", Kind: control.ActionCrash},
+		},
+	}
+	hint := func(action FrontierActionRef) ConsensusActionHint {
+		return ConsensusActionHint{
+			ActionID: action.ActionID, ActionDigest: action.ActionDigest,
+			ActorRole: ConsensusSemanticUnknown, MessageClass: ConsensusSemanticUnknown,
+			EpochRelation: ConsensusSemanticUnknown, OperationState: ConsensusSemanticUnknown,
+		}
+	}
+	semantics := ScenarioSemanticExposure{
+		Mode: ScenarioSemanticExposureFull, PrefixTraceDigest: frontier.PrefixTraceDigest,
+		SnapshotDigest: frontier.SnapshotDigest,
+		ActionHints: []ConsensusActionHint{hint(frontier.Actions[0]), hint(frontier.Actions[1]),
+			hint(frontier.Actions[2]), hint(frontier.Actions[3]), hint(frontier.Actions[4])},
+	}
+	projected, projectedSemantics, err := scenarioStrategicAgentView(frontier, semantics)
+	if err != nil || len(projected.Actions) != 2 || len(projectedSemantics.ActionHints) != 2 ||
+		projected.Actions[0].ActionID != "drop" || projected.Actions[1].ActionID != "crash" ||
+		len(frontier.Actions) != 5 || len(semantics.ActionHints) != 5 {
+		t.Fatalf("strategic projection drifted: %#v/%#v/%v", projected, projectedSemantics, err)
+	}
+	natural := ScenarioPlan{ID: "natural", Steps: []ScenarioStep{{
+		ID: "deliver", Selector: FrontierActionSelector{Kind: control.ActionDeliverMessage},
+	}}}
+	if issue := scenarioStrategicPlanIssue(natural, projected, true); issue == nil ||
+		issue.Code != ScenarioProposalIssueActionNotStrategic {
+		t.Fatalf("semantic natural Action escaped the strategic boundary: %#v", issue)
+	}
+	forgedExact := ScenarioPlan{ID: "forged", Steps: []ScenarioStep{{
+		ID: "deliver", Selector: FrontierActionSelector{ActionID: "deliver"},
+	}}}
+	if issue := scenarioStrategicPlanIssue(forgedExact, projected, true); issue == nil ||
+		issue.Code != ScenarioProposalIssueActionNotStrategic {
+		t.Fatalf("hidden natural ActionID escaped the strategic boundary: %#v", issue)
+	}
+	strategic := ScenarioPlan{ID: "strategic", Steps: []ScenarioStep{{
+		ID: "drop", Selector: FrontierActionSelector{ActionID: "drop"},
+	}}}
+	if issue := scenarioStrategicPlanIssue(strategic, projected, true); issue != nil {
+		t.Fatalf("visible strategic Action was rejected: %#v", issue)
+	}
+}
+
 func TestScenarioStrategicSelectorDoesNotEnumerateTargetMessageRoles(t *testing.T) {
 	predicate := semantic.ObservationPredicate{
 		Kind: semantic.ObservationMessageDropped,

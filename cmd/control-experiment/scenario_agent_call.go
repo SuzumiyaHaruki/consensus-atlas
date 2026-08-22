@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v24"
-	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v25"
+	scenarioInvestigationStructuredOutputName = "scenario_investigation_v7"
 )
 
 type scenarioAgentCallJournal struct {
@@ -258,6 +258,18 @@ func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentV
 		return openRouterStructuredOutput{}, errors.New("SCENARIO_AGENT_OUTPUT_SCHEMA_INVALID")
 	}
 	stringField := map[string]any{"type": "string", "minLength": 1}
+	visibleKinds := make([]string, 0, len(view.Frontier.Actions))
+	seenKinds := make(map[control.ActionKind]bool)
+	for _, action := range view.Frontier.Actions {
+		if seenKinds[action.Kind] {
+			continue
+		}
+		seenKinds[action.Kind] = true
+		visibleKinds = append(visibleKinds, string(action.Kind))
+	}
+	if len(visibleKinds) == 0 {
+		return openRouterStructuredOutput{}, errors.New("SCENARIO_AGENT_OUTPUT_SCHEMA_INVALID")
+	}
 	selector := map[string]any{
 		"oneOf": []any{
 			map[string]any{
@@ -268,7 +280,8 @@ func scenarioInvestigationStructuredOutput(view controlexperiment.ScenarioAgentV
 			map[string]any{
 				"type": "object", "additionalProperties": false,
 				"properties": map[string]any{
-					"kind": stringField, "node": stringField, "item_kind": stringField,
+					"kind": map[string]any{"type": "string", "enum": visibleKinds},
+					"node": stringField, "item_kind": stringField,
 					"owner": stringField, "message_source": stringField,
 					"message_target": stringField, "message_type_hint": stringField,
 					"temporal_kind": stringField, "effect_kind": stringField,

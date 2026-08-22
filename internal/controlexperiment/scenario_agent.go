@@ -52,6 +52,7 @@ const (
 	ScenarioAgentStopProviderResponse       = "provider-response-failed"
 	ScenarioAgentStopSetupQuiescent         = "setup-quiescent"
 	ScenarioAgentStopSetupBudget            = "setup-budget-exhausted"
+	ScenarioAgentStopStrategicFrontier      = "strategic-frontier-unavailable"
 	ScenarioAgentReasonResponseFinishLength = "response-finish-length"
 	ScenarioAgentReasonResponseEmptyContent = "response-empty-content"
 	ScenarioAgentReasonResponseMalformed    = "response-malformed"
@@ -141,6 +142,7 @@ type ScenarioAgentResult struct {
 	Attempts              []ScenarioAgentAttempt `json:"attempts"`
 	Execution             *ScenarioExecution     `json:"execution,omitempty"`
 	SetupWork             ScenarioExecutionWork  `json:"setup_work"`
+	TrustedProgressWork   ScenarioExecutionWork  `json:"trusted_progress_work"`
 	ExecutionWork         ScenarioExecutionWork  `json:"execution_work"`
 	ModelWork             ModelWork              `json:"model_work"`
 }
@@ -287,6 +289,66 @@ func exploreScenarioWithPlanner(
 				return finishScenarioAgentResult(result, root, ScenarioAgentStopSetupQuiescent), nil
 			}
 		}
+		agentFrontier := cloneScenarioFrontier(currentFrontier)
+		agentSemantics := cloneScenarioSemantics(currentSemantics)
+		for acceptedHypothesis != nil {
+			var strategicErr error
+			agentFrontier, agentSemantics, strategicErr = scenarioStrategicAgentView(
+				currentFrontier, currentSemantics,
+			)
+			if strategicErr != nil {
+				return result, strategicErr
+			}
+			if len(agentFrontier.Actions) > 0 {
+				break
+			}
+			remaining = maxDecisions - usedDecisions
+			if remaining <= 0 {
+				return finishScenarioAgentResult(result, root, ScenarioAgentStopDecisionBudget), nil
+			}
+			beforeAgentAction := result.Execution == nil || len(result.Execution.Steps) == 0
+			automatic, frontier, semantics, applied, automaticErr := executeScenarioAutomaticGoal(
+				ctx, ordinal, remaining, spec, currentRisk, currentTrace, currentSemantics,
+				runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
+				scenarioAutomaticProgressGoal{yieldForStrategic: true}, nil,
+			)
+			if automaticErr != nil {
+				return result, automaticErr
+			}
+			if !applied {
+				return finishScenarioAgentResult(
+					result, root, ScenarioAgentStopStrategicFrontier,
+				), nil
+			}
+			executed := len(automatic.FinalTrace.Records) - len(currentTrace.Records)
+			usedDecisions += executed
+			result.DecisionsUsed = usedDecisions
+			if beforeAgentAction {
+				addScenarioExecutionWork(&result.SetupWork, automatic.Work)
+			} else {
+				addScenarioExecutionWork(&result.TrustedProgressWork, automatic.Work)
+			}
+			addScenarioExecutionWork(&result.ExecutionWork, automatic.Work)
+			mergeScenarioExecution(&result, automatic)
+			currentTrace, currentRisk = automatic.FinalTrace, automatic.FinalRisk
+			currentFrontier, currentSemantics = frontier, semantics
+			result.SelectedPathDecisions = len(currentTrace.Records) -
+				ScenarioAgentAttributionRootDecisions(*result.Execution)
+			if currentRisk.Status == semantic.RiskWitnessReached {
+				return finishScenarioAgentResult(
+					result, root, ScenarioAgentStopWitnessInstantiated,
+				), nil
+			}
+			if usedDecisions >= maxDecisions {
+				return finishScenarioAgentResult(result, root, ScenarioAgentStopDecisionBudget), nil
+			}
+			switch automatic.NaturalProgressStop {
+			case ScenarioProgressQuiescent, ScenarioProgressClientTerminal:
+				return finishScenarioAgentResult(
+					result, root, ScenarioAgentStopStrategicFrontier,
+				), nil
+			}
+		}
 		remainingCalls := maxCalls - ordinal + 1
 		progressQuantum := (remaining + remainingCalls - 1) / remainingCalls
 		progressLimit := ScenarioNaturalProgressSlice
@@ -312,8 +374,8 @@ func exploreScenarioWithPlanner(
 			Hypothesis:         hypothesis,
 			AcceptedHypothesis: cloneAcceptedHypothesisContext(acceptedHypothesis),
 			OrderedMilestones:  scenarioMilestoneIDs(spec),
-			Frontier:           cloneScenarioFrontier(currentFrontier),
-			Semantics:          cloneScenarioSemantics(currentSemantics),
+			Frontier:           agentFrontier,
+			Semantics:          agentSemantics,
 			MaxSteps:           viewMaxSteps,
 			DecisionAllowance:  attemptAllowance,
 			RemainingDecisions: remaining,
@@ -418,6 +480,23 @@ func exploreScenarioWithPlanner(
 			), nil
 		}
 		plan := proposal.Plan
+		if strategicIssue := scenarioStrategicPlanIssue(
+			plan, view.Frontier, acceptedHypothesis != nil,
+		); strategicIssue != nil {
+			attempt.Feedback = ScenarioAgentFeedback{
+				Attempt: ordinal, Intent: proposal.Intent,
+				Outcome: ScenarioAgentStopped, ReasonCode: ScenarioAgentProposalInvalid,
+				ValidationIssues: []ScenarioProposalValidationIssue{*strategicIssue},
+				AllowedIntents:   append([]string(nil), view.AvailableIntents...),
+				PreviousProposal: cloneScenarioProposal(&proposal),
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			if repairAttempt {
+				return finishScenarioAgentResult(result, root, ScenarioAgentStopProviderResponse), nil
+			}
+			prior = &result.Attempts[len(result.Attempts)-1].Feedback
+			continue
+		}
 		if proposal.Intent == ScenarioIntentRevise && prior == nil {
 			attempt.Feedback = ScenarioAgentFeedback{
 				Attempt: ordinal, Intent: proposal.Intent, Outcome: ScenarioAgentStopped,
@@ -429,7 +508,7 @@ func exploreScenarioWithPlanner(
 			continue
 		}
 		if targetSurface != nil {
-			gaps, gapErr := targetSurface.ScenarioCapabilityGaps(plan, currentFrontier.Actions)
+			gaps, gapErr := targetSurface.ScenarioCapabilityGaps(plan, view.Frontier.Actions)
 			if gapErr != nil {
 				return result, gapErr
 			}
@@ -659,7 +738,7 @@ func executeScenarioAutomaticGoal(
 	goal scenarioAutomaticProgressGoal,
 	preparer ScenarioActionPreparer,
 ) (ScenarioExecution, RiskFrontierView, ScenarioSemanticExposure, bool, error) {
-	if !goal.autoInvoke || maxDecisions <= 0 || preparer == nil {
+	if maxDecisions <= 0 || goal.autoInvoke && preparer == nil {
 		return ScenarioExecution{}, RiskFrontierView{}, ScenarioSemanticExposure{}, false, nil
 	}
 	id := fmt.Sprintf("scenario-automatic-goal-%02d", ordinal)
@@ -820,6 +899,81 @@ func cloneScenarioSemantics(exposure ScenarioSemanticExposure) ScenarioSemanticE
 		exposure.Coordination = &coordination
 	}
 	return exposure
+}
+
+// scenarioStrategicAgentView is the protocol-neutral projection exposed to
+// an untrusted Scenario planner. The authoritative Runtime frontier remains
+// unchanged for public progress and exact execution; only host effects,
+// ordinary delivery, and natural temporal callbacks are removed here.
+func scenarioStrategicAgentView(
+	frontier RiskFrontierView,
+	semantics ScenarioSemanticExposure,
+) (RiskFrontierView, ScenarioSemanticExposure, error) {
+	if semantics.Validate(frontier) != nil {
+		return RiskFrontierView{}, ScenarioSemanticExposure{},
+			errors.New("EXPERIMENT_SCENARIO_STRATEGIC_VIEW_INPUT_INVALID")
+	}
+	projected := cloneScenarioFrontier(frontier)
+	projected.Actions = nil
+	projectedSemantics := cloneScenarioSemantics(semantics)
+	projectedSemantics.ActionHints = nil
+	for index, action := range frontier.Actions {
+		if scenarioNaturalProgressKind(action.Kind) {
+			continue
+		}
+		projected.Actions = append(
+			projected.Actions, cloneFrontierActionRefs([]FrontierActionRef{action})[0],
+		)
+		projectedSemantics.ActionHints = append(
+			projectedSemantics.ActionHints, semantics.ActionHints[index],
+		)
+	}
+	var err error
+	projected, err = projected.seal()
+	if err != nil || projectedSemantics.Validate(projected) != nil {
+		return RiskFrontierView{}, ScenarioSemanticExposure{}, errors.Join(
+			errors.New("EXPERIMENT_SCENARIO_STRATEGIC_VIEW_INVALID"), err,
+		)
+	}
+	return projected, projectedSemantics, nil
+}
+
+// scenarioStrategicPlanIssue enforces the same boundary after the model
+// response is decoded. Exact IDs must come from the projected strategic
+// frontier; semantic selectors may not request a trusted natural-progress
+// kind even if the model learned an authoritative Action ID elsewhere.
+func scenarioStrategicPlanIssue(
+	plan ScenarioPlan,
+	frontier RiskFrontierView,
+	required bool,
+) *ScenarioProposalValidationIssue {
+	if !required {
+		return nil
+	}
+	visible := make(map[control.ActionID]control.ActionKind, len(frontier.Actions))
+	for _, action := range frontier.Actions {
+		visible[action.ActionID] = action.Kind
+	}
+	for _, step := range plan.Steps {
+		kind := step.Selector.Kind
+		if step.Selector.ActionID != "" {
+			var ok bool
+			kind, ok = visible[step.Selector.ActionID]
+			if !ok {
+				return &ScenarioProposalValidationIssue{
+					Code:  ScenarioProposalIssueActionNotStrategic,
+					Field: "plan.steps[].selector",
+				}
+			}
+		}
+		if scenarioNaturalProgressKind(kind) {
+			return &ScenarioProposalValidationIssue{
+				Code:  ScenarioProposalIssueActionNotStrategic,
+				Field: "plan.steps[].selector",
+			}
+		}
+	}
+	return nil
 }
 
 func cloneScenarioFrontier(view RiskFrontierView) RiskFrontierView {

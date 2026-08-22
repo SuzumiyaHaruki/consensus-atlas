@@ -1,6 +1,6 @@
 # 当前阶段
 
-阶段：M4n25 public prerequisite progress 与 Oracle lifecycle 收口
+阶段：M4n26 strategic frontier 与 Oracle finding scope 收口
 
 ## 当前结论
 
@@ -35,11 +35,11 @@ Runtime、决定 Replay 或产生 finding；finding 只来自独立 Oracle。
 当前 MethodSpec implementation ID 为：
 
 ```text
-consensus-atlas/agentic-method/m4n25-public-prerequisite-progress-v1
+consensus-atlas/agentic-method/m4n26-strategic-frontier-and-oracle-scope-v1
 ```
 
 Risk/Scenario prompt 分别为 `risk-agent-navigation-v11` 与
-`scenario-agent-investigation-v24`。M4n24 及历史 MethodSpec 的
+`scenario-agent-investigation-v25`。M4n25 及历史 MethodSpec 的
 `closure_mode` 仍可读取，但当前 CLI 不再暴露 `-closure-mode`，活动组合固定使用公共推进。
 
 ## 当前执行语义
@@ -242,9 +242,32 @@ replay_stable=true, root_prefix_oracle_findings=0
   内要求单调，applied/application prefix 仍跨重启严格单调。M4n24 saved Bundle 用修正后的五个
   monitor 离线重算为 0 violation，未重跑模型。
 
+## M4n26 canary 前收口
+
+- Scenario Agent 不再接收 authoritative frontier 中的 `CompleteEffect`、`DeliverMessage` 或
+  `FireTemporal`。Core 从同一可信 frontier 派生只含非自然 Action 的 strategic view；完整
+  frontier 仍只供公共推进和精确执行使用。模型即使猜到被隐藏的普通 ActionID，或用 semantic
+  selector 请求普通 Action，也会在 Runtime 执行前得到 `action-not-strategic` 反馈。
+- 当前没有 strategic Action 时，可信公共推进继续使用同一通用 natural Action 语义，直到出现
+  strategic frontier、witness、真实 quiescence 或总 decision budget；不会为了普通消息/effect/timer
+  消耗模型调用。该逻辑只区分公共 ActionKind，不包含 Raft/Paxos 消息名称。
+- post-root Oracle violation 分成 `independent-oracle-finding` 与
+  `hypothesis-oracle-finding`。后者必须同时满足 witness 已实例化、monitor 属于候选 property 的
+  registry 映射、fidelity 不是 unassessed；其他真实 violation 仍作为独立 finding 保存，不能冒充
+  当前 Risk 的机制证据。
+- etcd/raft 的 target-local log-progress Oracle 现在读取 Adapter 已有的 `storage_commit`：durable
+  commit、applied 和 application prefix 跨 restart 单调，volatile commit 只在同一 running
+  incarnation 内单调。该语义未进入公共 Core；OmniPaxos 继续使用自己的 agreement/client-decision
+  monitors。
+- 三/五节点 etcd/raft 与 OmniPaxos 的零模型 bootstrap 回归同时要求 Planner view 不含自然
+  Action。M4n26 尚未调用外部模型；完成本节验证只表示代码已具备一次新目录 canary 条件。
+- Scenario 搜索成本现在分别封存 setup、Agent attempt 和 Agent 后可信自然推进。三者可机械聚合为
+  Episode 的完整 Scenario search work，避免 Target-local closure/公共推进成本落在 attempt 之外后使
+  工件无法恢复；该账本不包含任何协议消息语义。
+
 ## 验证
 
-M4n25 完成前必须通过：
+M4n26 完成前必须通过：
 
 ```text
 go test ./...
@@ -254,3 +277,20 @@ git diff --check
 ```
 
 并对公共推进、bootstrap、artifact/recovery 和 evaluator-owned Replay 做聚焦 race。
+
+当前工作区已通过上述全部普通检查，以及战略 frontier、OmniPaxos bootstrap/工件恢复和 etcd/raft
+Oracle 的聚焦 race；随后按以下记录只运行了一次新目录 canary。
+
+### M4n26 五节点 etcd/raft 单 Episode canary
+
+全新目录 `artifacts/agentic/m4n26-etcdraft-single-canary-v1` 已完成一次 DeepSeek 官方调用：3 次 Risk、
+3 次 Scenario，共 6 calls / 108,034 observed tokens，所有 provider usage 已对账。Risk Agent 产生 3 个
+executable candidates，选中 `reapply-after-crash-application-regression`；源码 grounding 完成了 SUT
+search/read，但候选未引用读取片段，因此机械状态为 `completed-unused`。
+
+Scenario 共执行 38 decisions，其中 2 个由 Agent 选择、36 个为公共推进；Agent 依次选择 Duplicate 与
+Crash，随后在首个 `apply` milestone 尚未满足时 abandon，所以结果为 executable、witness 未实例化，
+不是 finding。Bundle 共 48 decisions，fresh Replay stable；独立 evaluator 重算 5 个 Oracle。唯一
+violation 是 step 37 的 election-safety，发生在 root boundary step 40 之前，因而只记为 1 个
+root-prefix finding，没有归因给 Agent。该结果验证了 strategic-only frontier、成本账本、Replay 和
+finding attribution 的真实主链，不证明 Agent 已能完成所选恢复假设，也不触发第二次 canary。

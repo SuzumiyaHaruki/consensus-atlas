@@ -20,6 +20,7 @@ const (
 	ScenarioProposalIssueZeroActionInvalid  = "zero-action-fields-invalid"
 	ScenarioProposalIssueLaterExactActionID = "later-step-action-id-forbidden"
 	ScenarioProposalIssueIntentUnavailable  = "intent-not-currently-available"
+	ScenarioProposalIssueActionNotStrategic = "action-not-strategic"
 )
 
 // ScenarioProposalValidationIssue is bounded mechanical repair feedback. It
@@ -37,7 +38,8 @@ func (issue ScenarioProposalValidationIssue) Validate() error {
 		ScenarioProposalIssuePlanInvalid,
 		ScenarioProposalIssueZeroActionInvalid,
 		ScenarioProposalIssueLaterExactActionID,
-		ScenarioProposalIssueIntentUnavailable:
+		ScenarioProposalIssueIntentUnavailable,
+		ScenarioProposalIssueActionNotStrategic:
 		if issue.Field == "" || !validScenarioProposalField(issue.Field) {
 			return errors.New("EXPERIMENT_SCENARIO_PROPOSAL_ISSUE_INVALID")
 		}
@@ -49,7 +51,8 @@ func (issue ScenarioProposalValidationIssue) Validate() error {
 
 func validScenarioProposalField(field string) bool {
 	switch field {
-	case "proposal", "intent", "plan", "plan.steps[].selector.action_id":
+	case "proposal", "intent", "plan", "plan.steps[].selector.action_id",
+		"plan.steps[].selector":
 		return true
 	default:
 		return false

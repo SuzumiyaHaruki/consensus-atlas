@@ -422,12 +422,12 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		result.Metrics.OracleFindings != 0 || !result.Testing.Replay.Stable ||
 		result.Scenario.Agent.SetupWork.TotalWorkUnits == 0 ||
 		result.Work.Model != (controlexperiment.ModelWork{
-			Calls: 3, InputTokens: 12, OutputTokens: 9, TotalTokens: 21,
+			Calls: 2, InputTokens: 8, OutputTokens: 6, TotalTokens: 14,
 		}) || result.Work.ScenarioSearch.TotalWorkUnits == 0 ||
 		result.Work.QualifiedExecution.Primary.WorkUnits == 0 ||
 		result.Work.QualifiedExecution.Replay.WorkUnits == 0 ||
-		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 2 ||
-		providerCalls != 3 || keyActivations != 3 || scenarioFeedbackViews == 0 ||
+		len(result.RiskProviderCalls) != 1 || len(result.ScenarioProviderCalls) != 1 ||
+		providerCalls != 2 || keyActivations != 2 || scenarioFeedbackViews != 0 ||
 		result.Assessment.Status != agenticEvidenceWitnessInstantiated ||
 		result.Assessment.ReasonCode != "property-oracle-clean" ||
 		result.Assessment.PropertyID != "client-operation-continuity" ||
@@ -473,6 +473,12 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	artifact, err := persistAgenticEpisodeArtifacts(
 		artifactDirectory, "omnipaxos-v2", budget, result,
 	)
+	var recordedAttemptWork []controlexperiment.ScenarioExecutionWork
+	for _, attempt := range result.Scenario.Agent.Attempts {
+		if attempt.Execution != nil {
+			recordedAttemptWork = append(recordedAttemptWork, attempt.Execution.Work)
+		}
+	}
 	wantProvenance := scenarioDecisionProvenance(result.Scenario.Agent.Execution)
 	attemptPublicProgress := 0
 	for _, attempt := range result.Scenario.Agent.Attempts {
@@ -481,15 +487,18 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		}
 	}
 	if err != nil || len(artifact.ScenarioAttemptFeedback) != artifact.ScenarioAttempts ||
-		len(artifact.ScenarioAttemptFeedback) != 2 ||
+		len(artifact.ScenarioAttemptFeedback) != 1 ||
 		artifact.DecisionProvenance != wantProvenance ||
 		artifact.ScenarioSetupWork != result.Scenario.Agent.SetupWork ||
+		artifact.ScenarioTrustedProgressWork != result.Scenario.Agent.TrustedProgressWork ||
 		artifact.DecisionProvenance.Validate(artifact.ScenarioDecisionsUsed) != nil ||
 		wantProvenance.PublicProgress <= attemptPublicProgress ||
 		!artifact.ScenarioAttemptFeedback[0].EnteredExecution ||
-		!artifact.ScenarioAttemptFeedback[1].EnteredExecution ||
-		artifact.ScenarioAttemptFeedback[1].Outcome != controlexperiment.ScenarioStatusCompleted {
-		t.Fatalf("compact Scenario attempt evidence missing: %#v err=%v", artifact.ScenarioAttemptFeedback, err)
+		artifact.ScenarioAttemptFeedback[0].Outcome != controlexperiment.ScenarioStatusCompleted {
+		t.Fatalf("compact Scenario attempt evidence missing: %#v setup=%#v trusted=%#v search=%#v attempt_work=%#v err=%v",
+			artifact.ScenarioAttemptFeedback, result.Scenario.Agent.SetupWork,
+			result.Scenario.Agent.TrustedProgressWork, result.Scenario.Agent.ExecutionWork,
+			recordedAttemptWork, err)
 	}
 	recoveredArtifact, terminal, err := recoverAgenticEpisodeArtifacts(
 		artifactDirectory, omnipaxosAgenticEpisodeRecoveryBinding(),
@@ -598,7 +607,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	if err != nil || recovered.Status != result.Status || recovered.Metrics != result.Metrics ||
 		recovered.Work.Model != result.Work.Model || recovered.Testing == nil ||
 		recovered.Testing.Bundle.Trace.Digest != result.Testing.Bundle.Trace.Digest ||
-		providerCalls != 3 || keyActivations != 3 {
+		providerCalls != 2 || keyActivations != 2 {
 		t.Fatalf("dual-Agent recovery repeated a model call or drifted: %#v calls=%d keys=%d err=%v",
 			recovered, providerCalls, keyActivations, err)
 	}
@@ -626,7 +635,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	if err != nil || limited.Status != agenticEpisodeTokenStopped || limited.Testing == nil ||
 		!limited.Testing.Replay.Stable ||
 		!limited.Metrics.CandidateAccepted || limited.Metrics.WitnessInstantiated ||
-		limited.Work.Model.TotalTokens != 14 || providerCalls != 5 || keyActivations != 5 ||
+		limited.Work.Model.TotalTokens != 14 || providerCalls != 4 || keyActivations != 4 ||
 		limited.Assessment.Status != agenticEvidenceBudgetExhausted || !limited.Metrics.OracleEvaluated {
 		t.Fatalf("token threshold did not preserve automatic setup evidence: %#v calls=%d keys=%d err=%v",
 			limited, providerCalls, keyActivations, err)
@@ -652,12 +661,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			return sealedScenario.ActivateKey("fixture-key")
 		},
 	)
-	if err != nil || sealed.Status != agenticEpisodeTokenStopped || sealed.Testing == nil ||
+	if err != nil || sealed.Status != agenticEpisodeCompleted || sealed.Testing == nil ||
 		!sealed.Testing.Replay.Stable || !sealed.Metrics.OracleEvaluated ||
-		sealed.Work.Model.TotalTokens != 21 || sealed.Assessment.Status != agenticEvidenceBudgetExhausted ||
-		sealed.Assessment.ReasonCode != "model-token-threshold-reached" ||
-		len(sealed.ScenarioProviderCalls) != 2 {
-		t.Fatalf("token stop discarded the latest committed execution evidence: %#v err=%v", sealed, err)
+		sealed.Work.Model.TotalTokens != 14 || sealed.Assessment.Status != agenticEvidenceWitnessInstantiated ||
+		len(sealed.ScenarioProviderCalls) != 1 {
+		t.Fatalf("one strategic call did not seal the completed execution evidence: %#v err=%v", sealed, err)
 	}
 	sealedDirectory := t.TempDir()
 	if _, err := persistAgenticEpisodeArtifacts(
@@ -670,7 +678,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	)
 	if err != nil || !terminal || recoveredSealed.Testing == nil ||
 		!recoveredSealed.Summary.Metrics.OracleEvaluated ||
-		recoveredSealed.Summary.Status != agenticEpisodeTokenStopped {
+		recoveredSealed.Summary.Status != agenticEpisodeCompleted {
 		t.Fatalf("sealed token-stop evidence was not durably recoverable: %#v terminal=%t err=%v",
 			recoveredSealed, terminal, err)
 	}
@@ -747,7 +755,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		},
 	})
 	if err != nil || runner.Summary.Status != agenticEpisodeCompleted || runner.Testing == nil ||
-		providerCalls != providerCallsBeforeRunner+3 || keyReads != 3 || prepareCalls != 1 {
+		providerCalls != providerCallsBeforeRunner+2 || keyReads != 2 || prepareCalls != 1 {
 		t.Fatalf("directory runner incomplete: %#v calls=%d keys=%d prepare=%d err=%v",
 			runner, providerCalls, keyReads, prepareCalls, err)
 	}
@@ -756,7 +764,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		Recovery: omnipaxosAgenticEpisodeRecoveryBinding(),
 	})
 	if err != nil || terminalRunner.Testing == nil || terminalRunner.Summary.Status != agenticEpisodeCompleted ||
-		providerCalls != providerCallsBeforeRunner+3 || keyReads != 3 || prepareCalls != 1 {
+		providerCalls != providerCallsBeforeRunner+2 || keyReads != 2 || prepareCalls != 1 {
 		t.Fatalf("terminal runner accessed active inputs: %#v calls=%d keys=%d prepare=%d err=%v",
 			terminalRunner, providerCalls, keyReads, prepareCalls, err)
 	}
@@ -768,7 +776,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		"-campaign-resume",
 	}, &terminalOutput); err != nil ||
 		!bytes.Contains(terminalOutput.Bytes(), []byte("target=omnipaxos-v2 status=completed")) ||
-		providerCalls != providerCallsBeforeRunner+3 || keyReads != 3 || prepareCalls != 1 {
+		providerCalls != providerCallsBeforeRunner+2 || keyReads != 2 || prepareCalls != 1 {
 		t.Fatalf("terminal CLI recovery failed or accessed active inputs: %q err=%v",
 			terminalOutput.String(), err)
 	}
@@ -796,11 +804,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	})
 	if err != nil || investigation.StopReason != agenticInvestigationEpisodeLimit ||
 		len(investigation.Episodes) != 2 || len(investigation.ExplorationMemory) != 2 ||
-		investigation.ModelWork.Calls != 6 || investigation.ModelWork.TotalTokens != 42 ||
+		investigation.ModelWork.Calls != 4 || investigation.ModelWork.TotalTokens != 28 ||
 		investigation.ReservedDecisionAllowance != 2*budget.MaxRuntimeDecisions ||
 		investigation.ConsumedScenarioDecisions != investigationScenarioDecisions(investigation.Episodes) ||
 		!investigation.ExplorationMemory[1].RepeatedCandidate ||
-		memoryRiskRequests != 1 || providerCalls != providerCallsBeforeRunner+9 || keyReads != 9 || investigationPrepareCalls != 1 {
+		memoryRiskRequests != 1 || providerCalls != providerCallsBeforeRunner+6 || keyReads != 6 || investigationPrepareCalls != 1 {
 		t.Fatalf("two-round Investigation did not pass recovered Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
 			investigation, providerCalls, keyReads, memoryRiskRequests, investigationPrepareCalls, err)
 	}
@@ -827,11 +835,11 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 	})
 	if err != nil || resumedInvestigation.StopReason != agenticInvestigationEpisodeLimit ||
 		len(resumedInvestigation.Episodes) != 3 || len(resumedInvestigation.ExplorationMemory) != 3 ||
-		resumedInvestigation.ModelWork.Calls != 9 || resumedInvestigation.ModelWork.TotalTokens != 63 ||
+		resumedInvestigation.ModelWork.Calls != 6 || resumedInvestigation.ModelWork.TotalTokens != 42 ||
 		resumedInvestigation.ReservedDecisionAllowance != 3*budget.MaxRuntimeDecisions ||
 		resumedInvestigation.ConsumedScenarioDecisions != investigationScenarioDecisions(resumedInvestigation.Episodes) ||
 		!resumedInvestigation.ExplorationMemory[2].RepeatedCandidate ||
-		memoryRiskRequests != 2 || providerCalls != providerCallsBeforeRunner+12 || keyReads != 12 || resumePrepareCalls != 1 {
+		memoryRiskRequests != 2 || providerCalls != providerCallsBeforeRunner+8 || keyReads != 8 || resumePrepareCalls != 1 {
 		t.Fatalf("Investigation resume repeated old episodes or lost Memory: %#v calls=%d keys=%d memory=%d prepare=%d err=%v",
 			resumedInvestigation, providerCalls, keyReads, memoryRiskRequests, resumePrepareCalls, err)
 	}
@@ -854,7 +862,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		},
 	})
 	if err != nil || budgetStopped.StopReason != agenticInvestigationCallLimit ||
-		len(budgetStopped.Episodes) != 0 || providerCalls != providerCallsBeforeRunner+12 || keyReads != 12 {
+		len(budgetStopped.Episodes) != 0 || providerCalls != providerCallsBeforeRunner+8 || keyReads != 8 {
 		t.Fatalf("Investigation started an episode without its declared call allowance: %#v err=%v",
 			budgetStopped, err)
 	}

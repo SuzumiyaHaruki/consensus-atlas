@@ -164,6 +164,9 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	}
 	abandonOutput, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
 		MaxSteps: 2, DecisionAllowance: 4, RemainingDecisions: 8,
+		Frontier: controlexperiment.RiskFrontierView{Actions: []controlexperiment.FrontierActionRef{{
+			Kind: control.ActionCrash,
+		}}},
 		AvailableIntents: []string{
 			controlexperiment.ScenarioIntentContinue, controlexperiment.ScenarioIntentAbandon,
 		},
@@ -177,12 +180,16 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 	} {
 		minimal, err := scenarioInvestigationStructuredOutput(controlexperiment.ScenarioAgentView{
 			MaxSteps: 2, DecisionAllowance: 4, RemainingDecisions: 8,
+			Frontier: controlexperiment.RiskFrontierView{Actions: []controlexperiment.FrontierActionRef{{
+				Kind: control.ActionCrash,
+			}}},
 			AvailableIntents: []string{intent},
 		})
 		if err != nil || !bytes.Contains(minimal.Schema, []byte(`"required":["intent","plan"]`)) ||
 			!bytes.Contains(minimal.Schema, []byte(`"message_type_hint"`)) ||
 			!bytes.Contains(minimal.Schema, []byte(`"effect_phase"`)) ||
 			!bytes.Contains(minimal.Schema, []byte(`"effect_outcome"`)) ||
+			!bytes.Contains(minimal.Schema, []byte(`"enum":["crash"]`)) ||
 			bytes.Contains(minimal.Schema, []byte(`"branch_id"`)) ||
 			bytes.Contains(minimal.Schema, []byte(`"from_branch_id"`)) ||
 			bytes.Contains(minimal.Schema, []byte(`"reference_branch_id"`)) {

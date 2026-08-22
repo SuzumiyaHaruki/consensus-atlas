@@ -9,6 +9,7 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
+	"github.com/SuzumiyaHaruki/consensus-atlas/internal/oracle"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
@@ -27,7 +28,9 @@ const (
 	agenticEvidenceInconclusive         = "inconclusive"
 	agenticEvidenceWitnessInstantiated  = "witness-instantiated"
 	agenticEvidenceWitnessUnverified    = "witness-instantiated-unverified"
-	agenticEvidenceOracleFinding        = "oracle-finding"
+	agenticEvidenceOracleFinding        = "oracle-finding" // historical summary compatibility
+	agenticEvidenceIndependentFinding   = "independent-oracle-finding"
+	agenticEvidenceHypothesisFinding    = "hypothesis-oracle-finding"
 	agenticEvidenceHypothesisNotReached = "hypothesis-not-reached"
 	agenticEvidenceHypothesisAbandoned  = "hypothesis-abandoned"
 	agenticEvidenceRootPrefixFinding    = "root-prefix-oracle-finding"
@@ -109,6 +112,8 @@ type agenticEvidenceAssessment struct {
 	FidelityBoundaryIDs   []string `json:"fidelity_boundary_ids,omitempty"`
 	FirstMissingMilestone string   `json:"first_missing_milestone,omitempty"`
 	RootPrefixFindings    int      `json:"root_prefix_findings,omitempty"`
+	IndependentFindings   int      `json:"independent_oracle_findings,omitempty"`
+	HypothesisFindings    int      `json:"hypothesis_oracle_findings,omitempty"`
 }
 
 type agenticEpisodeResult struct {
@@ -357,6 +362,9 @@ func runAgenticEpisode(
 		case controlexperiment.ScenarioAgentStopSetupQuiescent:
 			result.Assessment.Status = agenticEvidenceInconclusive
 			result.Assessment.ReasonCode = controlexperiment.ScenarioAgentStopSetupQuiescent
+		case controlexperiment.ScenarioAgentStopStrategicFrontier:
+			result.Assessment.Status = agenticEvidenceInconclusive
+			result.Assessment.ReasonCode = controlexperiment.ScenarioAgentStopStrategicFrontier
 		default:
 			result.Assessment.Status = agenticEvidencePlanningFailed
 			result.Assessment.ReasonCode = "scenario-planning-failed"
@@ -490,9 +498,20 @@ func assessTestingEvidence(
 	scenario controlexperiment.ScenarioAgentResult,
 ) agenticEvidenceAssessment {
 	assessment.RootPrefixFindings += len(testing.rootPrefixOracleViolations())
-	if violations := testing.agentPathOracleViolations(); len(violations) > 0 {
-		assessment.Status = agenticEvidenceOracleFinding
-		assessment.ReasonCode = violations[0].Monitor
+	independent, hypothesis := classifyAgentPathOracleViolations(
+		testing, assessment.OracleIDs,
+		assessment.FidelityAssessment != controlexperiment.AgentFidelityUnassessed,
+	)
+	assessment.IndependentFindings += len(independent)
+	assessment.HypothesisFindings += len(hypothesis)
+	if len(hypothesis) > 0 {
+		assessment.Status = agenticEvidenceHypothesisFinding
+		assessment.ReasonCode = hypothesis[0].Monitor
+		return assessment
+	}
+	if len(independent) > 0 {
+		assessment.Status = agenticEvidenceIndependentFinding
+		assessment.ReasonCode = independent[0].Monitor
 		return assessment
 	}
 	if testing.Risk.Status == semantic.RiskWitnessReached {
@@ -531,11 +550,36 @@ func assessTestingEvidence(
 		assessment.ReasonCode = "scenario-call-budget-exhausted"
 	case controlexperiment.ScenarioAgentStopSetupQuiescent:
 		assessment.ReasonCode = controlexperiment.ScenarioAgentStopSetupQuiescent
+	case controlexperiment.ScenarioAgentStopStrategicFrontier:
+		assessment.ReasonCode = controlexperiment.ScenarioAgentStopStrategicFrontier
 	}
 	if assessment.RootPrefixFindings > 0 && assessment.ReasonCode == agenticEvidenceHypothesisNotReached {
 		assessment.ReasonCode = agenticEvidenceRootPrefixFinding
 	}
 	return assessment
+}
+
+func classifyAgentPathOracleViolations(
+	testing scenarioTestingResult,
+	propertyOracleIDs []string,
+	fidelityAssessed bool,
+) ([]oracle.Violation, []oracle.Violation) {
+	violations := testing.agentPathOracleViolations()
+	propertyMonitors := make(map[string]bool, len(propertyOracleIDs))
+	for _, id := range propertyOracleIDs {
+		propertyMonitors[id] = true
+	}
+	independent := make([]oracle.Violation, 0, len(violations))
+	hypothesis := make([]oracle.Violation, 0, len(violations))
+	for _, violation := range violations {
+		if fidelityAssessed && testing.Risk.Status == semantic.RiskWitnessReached &&
+			propertyMonitors[violation.Monitor] {
+			hypothesis = append(hypothesis, violation)
+			continue
+		}
+		independent = append(independent, violation)
+	}
+	return independent, hypothesis
 }
 
 func containsAllStrings(values []string, required []string) bool {

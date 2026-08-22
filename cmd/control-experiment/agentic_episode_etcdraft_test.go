@@ -64,6 +64,8 @@ func TestAgenticAssessmentSeparatesRootAndAgentOracleFindings(t *testing.T) {
 	}
 	rootAssessment := assessTestingEvidence(base, rootOnly, controlexperiment.ScenarioAgentResult{})
 	if rootAssessment.Status == agenticEvidenceOracleFinding ||
+		rootAssessment.Status == agenticEvidenceIndependentFinding ||
+		rootAssessment.Status == agenticEvidenceHypothesisFinding ||
 		rootAssessment.RootPrefixFindings != 1 ||
 		rootAssessment.ReasonCode != agenticEvidenceRootPrefixFinding {
 		t.Fatalf("root finding was attributed to the Agent: %#v", rootAssessment)
@@ -92,10 +94,40 @@ func TestAgenticAssessmentSeparatesRootAndAgentOracleFindings(t *testing.T) {
 	agentAssessment := assessTestingEvidence(base, agentPath, controlexperiment.ScenarioAgentResult{
 		StopReason: controlexperiment.ScenarioAgentStopProviderResponse,
 	})
-	if agentAssessment.Status != agenticEvidenceOracleFinding ||
+	if agentAssessment.Status != agenticEvidenceIndependentFinding ||
 		agentAssessment.ReasonCode != targetoracles.ElectionSafetyMonitorID ||
-		agentAssessment.RootPrefixFindings != 1 {
+		agentAssessment.RootPrefixFindings != 1 || agentAssessment.IndependentFindings != 1 ||
+		agentAssessment.HypothesisFindings != 0 {
 		t.Fatalf("post-root finding did not outrank provider failure: %#v", agentAssessment)
+	}
+	supporting := agentPath
+	supporting.Risk.Status = semantic.RiskWitnessReached
+	supporting.Risk.MissingMilestones = nil
+	supporting.Oracle.Violations = []oracle.Violation{{
+		Monitor: targetoracles.ClientApplicationBindingMonitorID, Step: 14,
+		Message: "the instantiated client binding was violated",
+	}}
+	supportingAssessment := base
+	supportingAssessment.OracleIDs = []string{targetoracles.ClientApplicationBindingMonitorID}
+	supportingAssessment = assessTestingEvidence(
+		supportingAssessment, supporting, controlexperiment.ScenarioAgentResult{},
+	)
+	if supportingAssessment.Status != agenticEvidenceHypothesisFinding ||
+		supportingAssessment.HypothesisFindings != 1 || supportingAssessment.IndependentFindings != 0 {
+		t.Fatalf("property monitor did not support the instantiated hypothesis: %#v", supportingAssessment)
+	}
+	unassessed := supportingAssessment
+	unassessed.Status = agenticEvidencePlanningFailed
+	unassessed.ReasonCode = "scenario-not-executed"
+	unassessed.FidelityAssessment = controlexperiment.AgentFidelityUnassessed
+	unassessed.IndependentFindings = 0
+	unassessed.HypothesisFindings = 0
+	unassessed = assessTestingEvidence(
+		unassessed, supporting, controlexperiment.ScenarioAgentResult{},
+	)
+	if unassessed.Status != agenticEvidenceIndependentFinding ||
+		unassessed.IndependentFindings != 1 || unassessed.HypothesisFindings != 0 {
+		t.Fatalf("unassessed fidelity was presented as hypothesis support: %#v", unassessed)
 	}
 }
 

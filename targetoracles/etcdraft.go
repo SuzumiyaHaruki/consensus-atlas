@@ -132,7 +132,9 @@ func (LogProgressMonitor) CheckBundle(
 ) []oracle.Violation {
 	type frontier struct {
 		incarnation uint64
+		running     bool
 		commit      uint64
+		storage     uint64
 		applied     uint64
 		prefixes    []etcdraftv2.ApplicationPrefixEvidence
 	}
@@ -155,35 +157,41 @@ func (LogProgressMonitor) CheckBundle(
 			return logProgressViolation(point.step, "evidence projection failed")
 		}
 		for _, node := range evidence.Nodes {
-			// Crash evidence deliberately retains the durable application image
-			// while the volatile RawNode view is unavailable. Do not compare that
-			// offline placeholder with the last running frontier; the next running
-			// incarnation must still recover monotonically from the last observed
-			// online state.
-			if !node.Running {
-				continue
+			before, seen := previous[node.Node]
+			if seen && node.Applied < before.applied {
+				return logProgressViolation(point.step, fmt.Sprintf(
+					"node %s applied frontier regressed across incarnation %d -> %d from %d to %d",
+					node.Node, before.incarnation, node.Incarnation, before.applied, node.Applied,
+				))
 			}
-			if node.Applied > node.Commit {
+			if seen && node.StorageCommit < before.storage {
+				return logProgressViolation(point.step, fmt.Sprintf(
+					"node %s durable commit frontier regressed across incarnation %d -> %d from %d to %d",
+					node.Node, before.incarnation, node.Incarnation, before.storage, node.StorageCommit,
+				))
+			}
+			if node.Applied > node.StorageCommit {
+				return logProgressViolation(point.step, fmt.Sprintf(
+					"node %s/%d applied frontier %d exceeds durable commit frontier %d",
+					node.Node, node.Incarnation, node.Applied, node.StorageCommit,
+				))
+			}
+			if node.Running && node.Applied > node.Commit {
 				return logProgressViolation(point.step, fmt.Sprintf(
 					"node %s/%d applied frontier %d exceeds commit frontier %d",
 					node.Node, node.Incarnation, node.Applied, node.Commit,
 				))
 			}
-			if before, ok := previous[node.Node]; ok {
+			if seen {
 				// Commit is partly volatile until the host persists the latest
 				// HardState. A power loss may therefore restart from an older
 				// durable commit frontier. Within one running incarnation it must
 				// remain monotonic; applied state remains durable across restarts.
-				if node.Incarnation == before.incarnation && node.Commit < before.commit {
+				if node.Running && before.running && node.Incarnation == before.incarnation &&
+					node.Commit < before.commit {
 					return logProgressViolation(point.step, fmt.Sprintf(
 						"node %s commit frontier regressed within incarnation %d from %d to %d",
 						node.Node, before.incarnation, before.commit, node.Commit,
-					))
-				}
-				if node.Applied < before.applied {
-					return logProgressViolation(point.step, fmt.Sprintf(
-						"node %s applied frontier regressed across incarnation %d -> %d from %d to %d",
-						node.Node, before.incarnation, node.Incarnation, before.applied, node.Applied,
 					))
 				}
 				for index, prefix := range before.prefixes {
@@ -199,7 +207,8 @@ func (LogProgressMonitor) CheckBundle(
 				}
 			}
 			previous[node.Node] = frontier{
-				incarnation: node.Incarnation, commit: node.Commit, applied: node.Applied,
+				incarnation: node.Incarnation, running: node.Running,
+				commit: node.Commit, storage: node.StorageCommit, applied: node.Applied,
 				prefixes: append([]etcdraftv2.ApplicationPrefixEvidence(nil), node.ApplicationPrefixes...),
 			}
 		}

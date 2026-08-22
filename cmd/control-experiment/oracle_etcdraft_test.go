@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -217,6 +218,18 @@ func TestEtcdraftLogProgressAcceptsMonotonicEvidenceAndRejectsMutations(t *testi
 			}
 		})
 	}
+	t.Run("durable-commit-regression", func(t *testing.T) {
+		mutated := monotonic
+		mutated.Trace.Records = append([]controlruntime.ActionRecord(nil), monotonic.Trace.Records[:4]...)
+		mutated.Trace.Records[3].Evidence = etcdraftLogProgressFixtureEvidenceWithStoragePointer(
+			t, 4, 5, 2, 3, 2, true,
+		)
+		violations := oracle.CheckBundle(mutated, targetoracles.LogProgressMonitor{}).Violations
+		if len(violations) != 1 || violations[0].Monitor != targetoracles.LogProgressMonitorID ||
+			violations[0].Step != 4 || !strings.Contains(violations[0].Message, "durable commit frontier regressed") {
+			t.Fatalf("durable commit mutation was not detected: %#v", violations)
+		}
+	})
 }
 
 type etcdraftLogProgressFixtureNode struct {
@@ -226,6 +239,7 @@ type etcdraftLogProgressFixtureNode struct {
 	Role                string                             `json:"role"`
 	Term                uint64                             `json:"term"`
 	Commit              uint64                             `json:"commit"`
+	StorageCommit       uint64                             `json:"storage_commit"`
 	Applied             uint64                             `json:"applied"`
 	ApplicationDigest   string                             `json:"application_digest"`
 	ApplicationCommands int                                `json:"application_commands"`
@@ -287,7 +301,7 @@ func etcdraftLogProgressFixtureEvidenceRunning(
 			LogicalTime: logicalTime,
 			Nodes: []etcdraftLogProgressFixtureNode{{
 				Node: "n1", Incarnation: incarnation, Running: running, Role: "StateFollower",
-				Term: 2, Commit: commit, Applied: applied,
+				Term: 2, Commit: commit, StorageCommit: applied, Applied: applied,
 				ApplicationDigest: applicationDigest, ApplicationCommands: int(applied),
 				ApplicationPrefixes: prefixes,
 			}},
@@ -296,6 +310,32 @@ func etcdraftLogProgressFixtureEvidenceRunning(
 		t.Fatal(err)
 	}
 	return control.EvidenceEnvelope{Yield: "fixture-yield", Payload: payload}
+}
+
+func etcdraftLogProgressFixtureEvidenceWithStoragePointer(
+	t *testing.T,
+	logicalTime uint64,
+	commit uint64,
+	storageCommit uint64,
+	applied uint64,
+	incarnation uint64,
+	running bool,
+) *control.EvidenceEnvelope {
+	t.Helper()
+	evidence := etcdraftLogProgressFixtureEvidenceRunning(
+		t, logicalTime, commit, applied, incarnation, running,
+	)
+	var fixture etcdraftLogProgressFixture
+	if err := json.Unmarshal(evidence.Payload.Bytes, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Nodes[0].StorageCommit = storageCommit
+	payload, err := control.NewJSONPayload(evidence.Payload.SchemaVersion, fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence.Payload = payload
+	return &evidence
 }
 
 func etcdraftLogProgressFixtureEvidenceRunningPointer(

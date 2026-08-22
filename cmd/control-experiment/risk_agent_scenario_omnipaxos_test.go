@@ -58,13 +58,7 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 	factory := func() (control.Adapter, error) {
 		return omnipaxosv2.New(omnipaxosv2.Config{WorkerPath: workerPath})
 	}
-	root, err := buildWorkloadReadyRootForTest(
-		ctx, inputs.Root, inputs.Experiment.Runtime, factory,
-		omnipaxosv2.WorkloadRouter{}, inputs.Workload, firstOmnipaxosScenarioProgress,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := inputs.Root
 	plannerCalls := 0
 	scenario, err := runScenarioEpisodeCore(ctx, scenarioEpisodeCoreInputs{
 		RootID: "omnipaxos-discovered-risk", Knowledge: scenarioRisk.Knowledge,
@@ -73,6 +67,7 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 		Runtime: inputs.Experiment.Runtime, FaultEnvelope: inputs.Experiment.faultEnvelope(),
 		SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
 		NewAdapter:       factory, RiskProjector: projector,
+		ActionPreparer: newOmnipaxosScenarioActionPreparer(inputs.Workload),
 		SemanticProjector: func(trace controlruntime.Trace, frontier controlexperiment.RiskFrontierView,
 			snapshot controlruntime.Snapshot) (controlexperiment.ScenarioSemanticExposure, error) {
 			return projectOmnipaxosScenarioSemantics(
@@ -89,47 +84,30 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 				)) {
 				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
-			hasPrepare := false
+			var drop control.ActionID
 			for _, action := range view.Frontier.Actions {
-				hasPrepare = hasPrepare || action.Kind == control.ActionDeliverMessage &&
-					action.MessageTypeHint == "sequence-paxos/prepare"
-			}
-			steps := []controlexperiment.ScenarioStep(nil)
-			if hasPrepare {
-				steps = []controlexperiment.ScenarioStep{
-					{ID: "deliver-prepare", Selector: controlexperiment.FrontierActionSelector{
-						Kind: control.ActionDeliverMessage, MessageSource: "n1", MessageTarget: "n2",
-						MessageTypeHint: "sequence-paxos/prepare",
-					}},
-					{ID: "deliver-promise", Selector: controlexperiment.FrontierActionSelector{
-						Kind: control.ActionDeliverMessage, MessageSource: "n2", MessageTarget: "n1",
-						MessageTypeHint: "sequence-paxos/promise",
-					}},
-					{ID: "drop-operation-replication", Selector: controlexperiment.FrontierActionSelector{
-						Kind: control.ActionDropMessage, MessageSource: "n1", MessageTarget: "n2",
-						MessageTypeHint: "sequence-paxos/accept-sync",
-					}},
+				if action.Kind == control.ActionDeliverMessage || action.Kind == control.ActionFireTemporal ||
+					action.Kind == control.ActionCompleteEffect {
+					t.Fatalf("Scenario Agent received trusted natural Action: %#v", action)
 				}
-			} else {
-				for _, action := range view.Frontier.Actions {
-					if action.Kind == control.ActionDeliverMessage ||
-						action.Kind == control.ActionFireTemporal ||
-						action.Kind == control.ActionCompleteEffect {
-						steps = []controlexperiment.ScenarioStep{{
-							ID:       "continue-after-semantic-yield",
-							Selector: controlexperiment.FrontierActionSelector{ActionID: action.ActionID},
-						}}
-						break
-					}
+				if action.Kind == control.ActionDropMessage &&
+					(action.MessageTypeHint == "sequence-paxos/accept-sync" ||
+						action.MessageTypeHint == "sequence-paxos/accept-decide") {
+					drop = action.ActionID
+					break
 				}
 			}
-			if len(steps) == 0 {
-				t.Fatalf("Scenario Agent did not receive an executable consensus Action: %#v", view.Frontier.Actions)
+			if drop == "" {
+				t.Fatalf("Scenario Agent did not receive an executable consensus Action: actions=%#v semantics=%#v risk=%#v",
+					view.Frontier.Actions, view.Semantics, view.Frontier.Progress)
 			}
 			plan, err := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 				Intent: controlexperiment.ScenarioIntentContinue,
 				Plan: controlexperiment.ScenarioPlan{
-					ID: "discovered-risk-scenario", Steps: steps,
+					ID: "discovered-risk-scenario", Steps: []controlexperiment.ScenarioStep{{
+						ID:       "drop-operation-replication",
+						Selector: controlexperiment.FrontierActionSelector{ActionID: drop},
+					}},
 				},
 			})
 			return plan, controlexperiment.ModelWork{

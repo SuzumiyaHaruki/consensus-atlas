@@ -59,6 +59,7 @@ type NodeEvidence struct {
 	Role                string                      `json:"role"`
 	Term                uint64                      `json:"term"`
 	Commit              uint64                      `json:"commit"`
+	StorageCommit       uint64                      `json:"storage_commit"`
 	Applied             uint64                      `json:"applied"`
 	ApplicationDigest   string                      `json:"application_digest"`
 	ApplicationCommands int                         `json:"application_commands"`
@@ -188,7 +189,8 @@ func ProjectEvidence(envelope control.EvidenceEnvelope) (Evidence, error) {
 		}
 		result.Nodes = append(result.Nodes, NodeEvidence{
 			Node: node.Node, Incarnation: node.Incarnation, Running: node.Running,
-			Role: node.Role, Term: node.Term, Commit: node.Commit, Applied: node.Applied,
+			Role: node.Role, Term: node.Term, Commit: node.Commit,
+			StorageCommit: node.StorageCommit, Applied: node.Applied,
 			ApplicationDigest: node.ApplicationDigest, ApplicationCommands: node.ApplicationCommands,
 			ApplicationPrefixes: append([]ApplicationPrefixEvidence(nil), node.ApplicationPrefixes...),
 		})

@@ -40,33 +40,34 @@ type agenticDecisionProvenance = controlexperiment.AgenticDecisionProvenance
 // responses remain in the two journals; the full Trace remains in the single
 // selected Bundle. This summary keeps only navigation and accounting facts.
 type agenticEpisodeArtifact struct {
-	TargetID                string                                      `json:"target_id"`
-	MethodSpecDigest        string                                      `json:"method_spec_digest,omitempty"`
-	Status                  string                                      `json:"status"`
-	Budget                  agenticEpisodeBudget                        `json:"budget"`
-	Accepted                *controlexperiment.RiskCandidateAssessment  `json:"accepted_risk,omitempty"`
-	ExecutableRisks         []controlexperiment.RiskCandidateAssessment `json:"executable_risks,omitempty"`
-	RiskAttempts            int                                         `json:"risk_attempts"`
-	RiskFeedback            *controlexperiment.RiskAgentFeedback        `json:"risk_feedback,omitempty"`
-	RiskSourceGrounding     controlexperiment.RiskSourceGroundingUsage  `json:"risk_source_grounding,omitempty"`
-	ScenarioStatus          string                                      `json:"scenario_status,omitempty"`
-	ScenarioStopReason      string                                      `json:"scenario_stop_reason,omitempty"`
-	ScenarioAttempts        int                                         `json:"scenario_attempts"`
-	ScenarioAttemptFeedback []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
-	ScenarioSetupWork       controlexperiment.ScenarioExecutionWork     `json:"scenario_setup_work"`
-	ScenarioDecisionsUsed   int                                         `json:"scenario_decisions_used"`
-	DecisionProvenance      agenticDecisionProvenance                   `json:"decision_provenance"`
-	SelectedPathDecisions   int                                         `json:"selected_path_decisions"`
-	RiskProviderCalls       []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
-	ScenarioProviderCalls   []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
-	Failure                 *controlexperiment.MethodFailure            `json:"failure,omitempty"`
-	PlanID                  string                                      `json:"plan_id,omitempty"`
-	RiskResultID            string                                      `json:"risk_result_id,omitempty"`
-	TraceDigest             string                                      `json:"trace_digest,omitempty"`
-	OracleAttribution       *scenarioOracleAttribution                  `json:"oracle_attribution,omitempty"`
-	Metrics                 agenticEpisodeMetrics                       `json:"metrics"`
-	Work                    agenticEpisodeWork                          `json:"work"`
-	Assessment              agenticEvidenceAssessment                   `json:"evidence_assessment,omitempty"`
+	TargetID                    string                                      `json:"target_id"`
+	MethodSpecDigest            string                                      `json:"method_spec_digest,omitempty"`
+	Status                      string                                      `json:"status"`
+	Budget                      agenticEpisodeBudget                        `json:"budget"`
+	Accepted                    *controlexperiment.RiskCandidateAssessment  `json:"accepted_risk,omitempty"`
+	ExecutableRisks             []controlexperiment.RiskCandidateAssessment `json:"executable_risks,omitempty"`
+	RiskAttempts                int                                         `json:"risk_attempts"`
+	RiskFeedback                *controlexperiment.RiskAgentFeedback        `json:"risk_feedback,omitempty"`
+	RiskSourceGrounding         controlexperiment.RiskSourceGroundingUsage  `json:"risk_source_grounding,omitempty"`
+	ScenarioStatus              string                                      `json:"scenario_status,omitempty"`
+	ScenarioStopReason          string                                      `json:"scenario_stop_reason,omitempty"`
+	ScenarioAttempts            int                                         `json:"scenario_attempts"`
+	ScenarioAttemptFeedback     []agenticScenarioAttemptArtifact            `json:"scenario_attempt_feedback,omitempty"`
+	ScenarioSetupWork           controlexperiment.ScenarioExecutionWork     `json:"scenario_setup_work"`
+	ScenarioTrustedProgressWork controlexperiment.ScenarioExecutionWork     `json:"scenario_trusted_progress_work"`
+	ScenarioDecisionsUsed       int                                         `json:"scenario_decisions_used"`
+	DecisionProvenance          agenticDecisionProvenance                   `json:"decision_provenance"`
+	SelectedPathDecisions       int                                         `json:"selected_path_decisions"`
+	RiskProviderCalls           []controlexperiment.StatelessAgentCallAudit `json:"risk_provider_calls"`
+	ScenarioProviderCalls       []controlexperiment.StatelessAgentCallAudit `json:"scenario_provider_calls,omitempty"`
+	Failure                     *controlexperiment.MethodFailure            `json:"failure,omitempty"`
+	PlanID                      string                                      `json:"plan_id,omitempty"`
+	RiskResultID                string                                      `json:"risk_result_id,omitempty"`
+	TraceDigest                 string                                      `json:"trace_digest,omitempty"`
+	OracleAttribution           *scenarioOracleAttribution                  `json:"oracle_attribution,omitempty"`
+	Metrics                     agenticEpisodeMetrics                       `json:"metrics"`
+	Work                        agenticEpisodeWork                          `json:"work"`
+	Assessment                  agenticEvidenceAssessment                   `json:"evidence_assessment,omitempty"`
 }
 
 type agenticEpisodeRecoveryBinding struct {
@@ -122,6 +123,7 @@ func newAgenticEpisodeArtifact(
 		artifact.ScenarioStopReason = result.Scenario.Agent.StopReason
 		artifact.ScenarioAttempts = len(result.Scenario.Agent.Attempts)
 		artifact.ScenarioSetupWork = result.Scenario.Agent.SetupWork
+		artifact.ScenarioTrustedProgressWork = result.Scenario.Agent.TrustedProgressWork
 		artifact.ScenarioDecisionsUsed = result.Scenario.Agent.DecisionsUsed
 		artifact.SelectedPathDecisions = result.Scenario.Agent.SelectedPathDecisions
 		artifact.DecisionProvenance = scenarioDecisionProvenance(
@@ -398,6 +400,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 	if artifact.TargetID == "" || artifact.Budget.validate() != nil ||
 		artifact.Work.Preparation.Validate() != nil ||
 		artifact.ScenarioSetupWork.Validate() != nil ||
+		artifact.ScenarioTrustedProgressWork.Validate() != nil ||
 		artifact.MethodSpecDigest != "" && !validAgenticSHA256(artifact.MethodSpecDigest) ||
 		artifact.RiskAttempts < 0 || artifact.ScenarioAttempts < 0 ||
 		artifact.RiskAttempts > artifact.Budget.MaxRiskCalls ||
@@ -472,7 +475,7 @@ func (artifact agenticEpisodeArtifact) validateCompact() error {
 			[]controlexperiment.ScenarioExecutionWork, 0,
 			len(artifact.ScenarioAttemptFeedback)+1,
 		)
-		works = append(works, artifact.ScenarioSetupWork)
+		works = append(works, artifact.ScenarioSetupWork, artifact.ScenarioTrustedProgressWork)
 		completeLedger := true
 		for _, attempt := range artifact.ScenarioAttemptFeedback {
 			if attempt.EnteredExecution && attempt.ExecutionWork == nil {
@@ -692,6 +695,7 @@ func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
 		return true
 	}
 	if assessment.ReasonCode == "" || assessment.RootPrefixFindings < 0 ||
+		assessment.IndependentFindings < 0 || assessment.HypothesisFindings < 0 ||
 		(assessment.EvidenceLevel != "" &&
 			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceHypothesis &&
 			assessment.EvidenceLevel != controlexperiment.PropertyEvidenceObservable &&
@@ -713,9 +717,14 @@ func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
 			return false
 		}
 	}
+	if artifact.Metrics.OracleFindings == 0 &&
+		(assessment.IndependentFindings != 0 || assessment.HypothesisFindings != 0) {
+		return false
+	}
 	if artifact.Accepted == nil {
 		if assessment.PropertyID != "" || assessment.EvidenceLevel != "" || len(assessment.OracleIDs) != 0 ||
-			assessment.FidelityAssessment != "" || len(assessment.FidelityBoundaryIDs) != 0 {
+			assessment.FidelityAssessment != "" || len(assessment.FidelityBoundaryIDs) != 0 ||
+			assessment.IndependentFindings != 0 || assessment.HypothesisFindings != 0 {
 			return false
 		}
 	} else if assessment.PropertyID != artifact.Accepted.Candidate.PropertyRef ||
@@ -751,7 +760,15 @@ func agenticAssessmentMatchesSummary(artifact agenticEpisodeArtifact) bool {
 		return assessment.Status == agenticEvidenceExecutionFailed
 	case agenticEpisodeCompleted:
 		if artifact.Metrics.OracleFindings > 0 {
-			return assessment.Status == agenticEvidenceOracleFinding
+			switch assessment.Status {
+			case agenticEvidenceOracleFinding:
+				return assessment.IndependentFindings == 0 && assessment.HypothesisFindings == 0
+			case agenticEvidenceIndependentFinding, agenticEvidenceHypothesisFinding:
+				return assessment.IndependentFindings+assessment.HypothesisFindings ==
+					artifact.Metrics.OracleFindings
+			default:
+				return false
+			}
 		}
 		if artifact.Metrics.WitnessInstantiated {
 			return assessment.Status == agenticEvidenceWitnessInstantiated ||

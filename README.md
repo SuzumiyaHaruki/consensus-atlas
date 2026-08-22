@@ -140,7 +140,9 @@ Replay，不理解 term、ballot 或具体消息语义。
 - capability gap、fidelity notice、planning/execution failure 的分离状态。
 
 PSS、Risk reached 和 candidate accepted 都不是缺陷 verdict。缺陷结论必须来自 replay-stable 的独立 Oracle，或由
-后续 evaluator 对保存证据重新判断。
+后续 evaluator 对保存证据重新判断。post-root violation 进一步分为独立 finding 与支持当前 hypothesis 的 finding；
+后者必须属于该 property 注册的 monitor、witness 已实例化且 fidelity 已评估，不能把无关 monitor 的异常写成当前
+Risk 的证明。
 完整 Oracle 会保留 root prefix 和 Agent path 上的全部 violation，但二者分别归因：确定性 root 中已存在的
 violation 只计为 Oracle sensitivity，只有 root 之后首次出现的 violation 才能计为 Agent finding。formal loader
 从 `Trace decisions - selected_path_decisions` 推导首个 Agent 战略 Action 之前的 root boundary，并与保存的
@@ -207,6 +209,10 @@ fresh 单 Episode 校准使用新的空 `-campaign-dir`。最低闭环条件不�
 Agentic Episode 只有 bootstrap root：Target 只清空 Reset 产生的初始 Ready/effect，
 不预先完成选举、coordinator 形成或 Invoke。历史 workload-ready 校准使用其 Git 提交复核，
 不再作为当前 semantic input 或 CLI 选项。
+
+Scenario Agent 的 `action_frontier` 只包含非自然 strategic Action。普通 effect completion、message delivery
+和 temporal callback 留在 authoritative frontier，由可信公共推进执行；模型返回这些普通 Action 或被隐藏的
+ActionID 会在 Runtime 执行前被机械拒绝。该分类只依赖公共 ActionKind，对 etcd/raft 与 OmniPaxos 使用同一实现。
 
 节点规模可作为运行参数覆盖稳定协议材料，无需复制整份 semantic input：
 
