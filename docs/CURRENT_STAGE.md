@@ -1,6 +1,6 @@
 # 当前阶段
 
-阶段：M4n19 公共因果推进唯一主线
+阶段：M4n20 bootstrap-only 与 PSS 离线化
 
 ## 当前结论
 
@@ -35,10 +35,11 @@ Runtime、决定 Replay 或产生 finding；finding 只来自独立 Oracle。
 当前 MethodSpec implementation ID 为：
 
 ```text
-consensus-atlas/agentic-method/m4n19-public-progress-only-v1
+consensus-atlas/agentic-method/m4n20-bootstrap-root-only-v1
 ```
 
-Scenario prompt 为 `scenario-agent-investigation-v23`。历史 MethodSpec 的
+Risk/Scenario prompt 分别为 `risk-agent-navigation-v11` 与
+`scenario-agent-investigation-v23`。历史 MethodSpec 的
 `closure_mode` 仍可读取，但当前 CLI 不再暴露 `-closure-mode`，活动组合固定使用公共推进。
 
 ## 当前执行语义
@@ -105,21 +106,22 @@ Decision provenance 只分：
 
 没有新增 hash、baseline、冻结 contract 或 gate。
 
-## 下一阶段
+## M4n20 决定
 
-M4n20 只做次要非主线清理：
+- 活动 Target 无条件构造 bootstrap root；`root_mode` JSON/CLI 覆盖和两个生产
+  workload-ready builder 已删除。窄 public-progress 校准只在 `_test.go` 内按 recorded
+  Action 构造 workload-ready prefix。
+- PSS 仍保留在 Bundle，供保存 Trace 的离线探索分析和历史 evaluator 使用；它已从
+  Agent-facing Memory、Episode metrics 与 CLI 摘要删除，不再影响 Risk Agent 的下一轮选择。
+- 没有直接删除 PSS schema：当前 CorePSS 仍绑定 Bundle validation 和历史正式工件；直接移除会
+  同时改写 Bundle、Report、evaluator 与两个 Adapter mapper，不属于安全的次要瘦身。
 
-1. 删除活动 `workload-ready` root builder，bootstrap 成为唯一正式 root；
-2. 评估 PSS 是否可以从活动执行/Bundle 中移到离线指标；
-3. 精简当前 loader 的历史兼容，但不削弱当前工件的身份、恢复与防篡改检查；
-4. 用 HashiCorp Raft 做一次无模型 composition 试接入，检验公共边界是否仍需修改。
-
-PSS 删除涉及 Bundle 和 evaluator schema，必须先用明确的调用关系和实验用途审计决定；
-不能仅为减少行数盲删。
+下一步用 HashiCorp Raft 做一次无模型 composition 试接入，检查新 Target 是否只需 Adapter、
+workload/router、semantic projector、Oracle registry、protocol knowledge 和可选源码 mount。
 
 ## 验证
 
-M4n19 完成前必须通过：
+M4n20 完成前必须通过：
 
 ```text
 go test ./...

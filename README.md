@@ -135,7 +135,7 @@ Replay，不理解 term、ballot 或具体消息语义。
 主要输出：
 
 - Risk/Scenario provider journal，支持精确恢复且不重复已完成调用；
-- `summary.json`：停止原因、预算、Risk、PSS 和 Oracle 摘要；
+- `summary.json`：停止原因、预算、Risk 和 Oracle 摘要；
 - `bundle.json`：完整 Trace、决策投影、Replay 和执行证据；
 - capability gap、fidelity notice、planning/execution failure 的分离状态。
 
@@ -204,14 +204,14 @@ fresh 单 Episode 校准使用新的空 `-campaign-dir`。最低闭环条件不�
 生成 `bundle.json` 并通过 fresh Replay。`planning-failed` 必须结合字段级 feedback 分析，不能单独视为
 模型或协议结论。
 
-Agentic semantic input 必须显式给出 `experiment.root_mode`：正式调查使用 `bootstrap`，只完成启动
-Ready/effect；历史闭合校准可使用 `workload-ready`。该选择进入 semantic input digest，不能在同一
-MethodSpec 下把已完成选举/Invoke 的 root 与 pre-election root 混用。
+Agentic Episode 只有 bootstrap root：Target 只清空 Reset 产生的初始 Ready/effect，
+不预先完成选举、coordinator 形成或 Invoke。历史 workload-ready 校准使用其 Git 提交复核，
+不再作为当前 semantic input 或 CLI 选项。
 
-节点规模和 root 也可作为运行参数覆盖稳定协议材料，无需复制整份 semantic input：
+节点规模可作为运行参数覆盖稳定协议材料，无需复制整份 semantic input：
 
 ```bash
--node-count 5 -root-mode bootstrap
+-node-count 5
 ```
 
 CLI 先应用 override，再对解析后的有效输入计算现有 `SemanticInputDigest`；因此节点数、root、预算和

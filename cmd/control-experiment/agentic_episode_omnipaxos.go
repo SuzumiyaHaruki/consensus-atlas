@@ -43,12 +43,7 @@ func prepareOmnipaxosAgenticEpisodeWithOverrides(
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
-	var root controlruntime.Trace
-	if experiment.RootMode == agenticRootBootstrap {
-		root, err = buildOmnipaxosAgenticBootstrapRoot(ctx, workerPath, experiment, workload)
-	} else {
-		root, err = buildOmnipaxosScenarioRoot(ctx, workerPath, experiment, workload)
-	}
+	root, err := buildOmnipaxosAgenticBootstrapRoot(ctx, workerPath, experiment, workload)
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
@@ -60,10 +55,6 @@ func prepareOmnipaxosAgenticEpisodeWithOverrides(
 	if err != nil {
 		return omnipaxosAgenticEpisodeInputs{}, err
 	}
-	rootPrepareActions := 0
-	if experiment.RootMode == agenticRootWorkloadReady {
-		rootPrepareActions = 1
-	}
 	return omnipaxosAgenticEpisodeInputs{
 		WorkerPath: workerPath, Knowledge: knowledge, Experiment: experiment,
 		Workload: workload, Root: root, Qualification: qualification,
@@ -74,8 +65,8 @@ func prepareOmnipaxosAgenticEpisodeWithOverrides(
 			Qualification:        qualificationWork,
 			Root: controlexperiment.WorkLedger{Primary: controlexperiment.PhaseWork{
 				SetupAttempts: 1, RuntimeInitializations: 1,
-				PrepareActions: rootPrepareActions, SchedulerDecisions: len(root.Records),
-				WorkUnits: 1 + rootPrepareActions + len(root.Records),
+				SchedulerDecisions: len(root.Records),
+				WorkUnits:          1 + len(root.Records),
 			}},
 		},
 	}, nil

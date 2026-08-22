@@ -30,6 +30,14 @@ func TestEtcdraftPublicProgressClosesDroppedAppendResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	root, err = buildWorkloadReadyRootForTest(
+		ctx, root, experiment.Runtime,
+		func() (control.Adapter, error) { return etcdraftv2.NewWithConfig(experiment.AdapterConfig) },
+		etcdraftv2.WorkloadRouter{}, workload, firstPublicWorkloadProgress,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	spec, predicates, err := publicEtcdraftDropRisk()
 	if err != nil {
 		t.Fatal(err)
@@ -122,8 +130,15 @@ func TestOmnipaxosPublicProgressClosesDroppedReplication(t *testing.T) {
 			inputs.Experiment.ScenarioSemanticExposure, trace, frontier, snapshot,
 		)
 	}
+	workloadRoot, err := buildWorkloadReadyRootForTest(
+		ctx, inputs.Root, inputs.Experiment.Runtime, factory,
+		omnipaxosv2.WorkloadRouter{}, inputs.Workload, firstOmnipaxosScenarioProgress,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	intervention, err := advanceOmnipaxosToPublicReplicationDrop(
-		ctx, inputs.Root, spec, inputs.Experiment.Runtime, inputs.Experiment.faultEnvelope(),
+		ctx, workloadRoot, spec, inputs.Experiment.Runtime, inputs.Experiment.faultEnvelope(),
 		factory, projector, semanticProjector,
 	)
 	if err != nil || len(intervention.Steps) != 1 || intervention.Steps[0].Choice == nil ||
@@ -143,7 +158,7 @@ func TestOmnipaxosPublicProgressClosesDroppedReplication(t *testing.T) {
 	combined := intervention
 	combined.PlanID = "omnipaxos-public-after-drop-qualified"
 	prefixProgress, err := publicRecordedProgress(
-		inputs.Root, intervention.FinalTrace, len(intervention.Steps),
+		workloadRoot, intervention.FinalTrace, len(intervention.Steps),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -156,13 +171,89 @@ func TestOmnipaxosPublicProgressClosesDroppedReplication(t *testing.T) {
 	combined.FinalTrace, combined.FinalRisk = progress.Execution.FinalTrace, progress.Execution.FinalRisk
 	qualified, err := executeOmnipaxosScenarioQualifiedRisk(
 		ctx, workerPath, inputs.Experiment, inputs.Workload, inputs.Qualification,
-		inputs.Root, combined, spec, projector, "",
+		workloadRoot, combined, spec, projector, "",
 	)
 	if err != nil || !qualified.Replay.Stable || len(qualified.Oracle.Violations) != 0 ||
 		len(qualified.Bundle.ClientHistory) != 1 ||
 		qualified.Bundle.ClientHistory[0].State != control.ItemCompleted {
 		t.Fatalf("public OmniPaxos evidence did not close: %#v/%v", qualified, err)
 	}
+}
+
+func buildWorkloadReadyRootForTest(
+	ctx context.Context,
+	bootstrap controlruntime.Trace,
+	config controlexperiment.RuntimeConfig,
+	adapterFactory controlexperiment.AdapterFactory,
+	router controlexperiment.WorkloadRouter,
+	workload controlexperiment.WorkloadPlan,
+	next func([]control.Action) (control.Action, bool),
+) (controlruntime.Trace, error) {
+	seed, err := hex.DecodeString(config.SeedHex)
+	if err != nil || len(seed) == 0 || adapterFactory == nil || router == nil || next == nil ||
+		bootstrap.Validate() != nil || workload.Validate() != nil || len(workload.Invocations) != 1 {
+		return controlruntime.Trace{}, errors.New("PUBLIC_WORKLOAD_ROOT_INPUT_INVALID")
+	}
+	adapter, err := adapterFactory()
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	runtime, err := controlruntime.Replay(ctx, adapter, controlruntime.Config{
+		Seed: seed, ClockError: config.ClockError, MaxClones: config.MaxClones,
+	}, bootstrap)
+	if err != nil {
+		return controlruntime.Trace{}, err
+	}
+	defer runtime.Close()
+	for decision := 0; decision < 256; decision++ {
+		trace, traceErr := runtime.Trace()
+		if traceErr != nil {
+			return controlruntime.Trace{}, traceErr
+		}
+		route, routeErr := router.Route(workload.TargetSelector, latestScenarioEvidence(trace))
+		if routeErr != nil {
+			return controlruntime.Trace{}, routeErr
+		}
+		if len(route.Candidates) == 1 {
+			invoke, offerErr := runtime.OfferInvoke(
+				ctx, route.Candidates[0], workload.Invocations[0].Input,
+			)
+			if offerErr != nil && !errors.Is(offerErr, controlruntime.ErrInvokeNotEligible) {
+				return controlruntime.Trace{}, offerErr
+			}
+			if offerErr == nil {
+				if _, selectErr := runtime.Select(ctx, invoke); selectErr != nil {
+					return controlruntime.Trace{}, selectErr
+				}
+				return runtime.Trace()
+			}
+		}
+		actions, enabledErr := runtime.EnabledActions(ctx)
+		if enabledErr != nil {
+			return controlruntime.Trace{}, enabledErr
+		}
+		selected, ok := next(actions)
+		if !ok {
+			return controlruntime.Trace{}, errors.New("PUBLIC_WORKLOAD_ROOT_QUIESCENT")
+		}
+		if _, selectErr := runtime.Select(ctx, selected.ID); selectErr != nil {
+			return controlruntime.Trace{}, selectErr
+		}
+	}
+	return controlruntime.Trace{}, errors.New("PUBLIC_WORKLOAD_ROOT_BUDGET_EXHAUSTED")
+}
+
+func firstPublicWorkloadProgress(actions []control.Action) (control.Action, bool) {
+	for _, kind := range []control.ActionKind{
+		control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal,
+	} {
+		for _, action := range actions {
+			if action.Kind == kind {
+				return action, true
+			}
+		}
+	}
+	return control.Action{}, false
 }
 
 func publicRecordedProgress(

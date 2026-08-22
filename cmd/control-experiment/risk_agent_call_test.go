@@ -62,7 +62,6 @@ func TestRiskAgentUsesSharedDurableJournalAndStructuredOutput(t *testing.T) {
 		SuspectedMechanism: "An earlier ordering was already investigated.",
 		EpisodeOutcome:     controlexperiment.RiskMemoryOutcomeWitnessNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
-		ProtocolPSSStates: 2, NewProtocolPSSStates: 1,
 		CapabilityGaps: []controlexperiment.AgentCapabilityGap{{
 			Code: controlexperiment.AgentCapabilityGapMissingControl, Reference: "persist-step",
 			Summary: "the requested persist failure is unavailable",

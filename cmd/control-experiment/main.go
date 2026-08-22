@@ -45,7 +45,6 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags.StringVar(&options.Target, "target", "", "target composition for an Agentic Episode")
 	flags.StringVar(&options.SemanticInput, "semantic-input", "", "editable protocol and Agent-planning JSON")
 	flags.IntVar(&options.NodeCount, "node-count", 0, "optional Agent target node-count override")
-	flags.StringVar(&options.RootMode, "root-mode", "", "optional Agent root override: bootstrap or workload-ready")
 	flags.StringVar(&options.RepositoryRoot, "repository-root", "", "explicit ConsensusAtlas repository root for local SUT binding")
 	flags.StringVar(&options.RiskInput, "risk-input", "", "optional existing Risk candidate, assessment, or Agentic Episode summary")
 	var knowledgeSourceMounts repeatableStringFlag

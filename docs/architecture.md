@@ -260,7 +260,7 @@ closure-disabled 回归证明公共 causal progress 在扩大但有界的预算�
 Adapter、namespaced Observation、语义投影和 Oracle，不再通过隐藏调度器扩散到公共 Core。
 
 真实 Target 的长轨迹回归从同一 Adapter 的确定性初态开始，以 exact policy 将最终 Scenario Trace 再执行为
-qualified Bundle。测试同时要求 target-local epoch/ballot Observation、protocol/control/joint PSS、stable Replay
+qualified Bundle。测试同时要求 target-local epoch/ballot Observation、离线 protocol/control/joint PSS、stable Replay
 和完整 Oracle registry。没有 workload 的校准 Risk 保持 `not-reached`；它验证执行容量，不伪装为缺陷发现。
 
 Scenario Agent 只使用 `continue/revise/abandon`：可信 coordinator 持有唯一当前 Trace，成功的
@@ -269,7 +269,7 @@ Episode 完成，不在一个 Episode 内复制 checkpoint 或维护 branch 状�
 `bundle.json`，终态恢复和 holdout evaluator 重新验证该 Bundle；多 Episode Investigation 的成本与 Bundle
 仍在一个 formal trial 内聚合。在线 Agent 不获取私有 Oracle 反馈。
 
-跨 Episode Memory 不属于 Oracle 边界。它只暴露枚举的机械 outcome、Risk milestone、PSS 和成本；
+跨 Episode Memory 不属于 Oracle 边界。它只暴露枚举的机械 outcome、Risk milestone 和成本；
 Oracle violation 数量和 Oracle 派生 assessment 都禁止进入 Risk Agent prompt。
 
 ### 6.2 终止状态
@@ -293,7 +293,7 @@ Action 和稳定 failure class。它们可以作为执行诊断，但不能自�
 公共 Observation 有通用 kind；Target 还可声明 namespaced kind 和类型字段。Core 负责 declaration、校验、记录、匹配
 与 Replay，不解释协议含义。
 
-PSS 同时报告：
+PSS 只作为 Bundle 上的离线探索指标，同时报告：
 
 - protocol state：协议进展抽象；
 - control state：Runtime/消息/节点控制状态；
@@ -379,7 +379,7 @@ root 构造的 primary/replay work 进入 formal 总预算。Agent-selected 与 
 评价面保持分离：
 
 1. 发现结果：独立 Oracle finding、可复现 root cause；
-2. 探索结果：PSS、Risk、Action/Observation novelty；
+2. 探索结果：离线 PSS、Risk、Action/Observation novelty；
 3. 成本：model calls/tokens、Runtime decisions、primary/replay work；
 4. 能力边界：capability/fidelity/execution outcome。
 

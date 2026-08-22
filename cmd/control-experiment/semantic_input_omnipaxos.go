@@ -60,7 +60,6 @@ func (source omnipaxosWorkloadAuthoringSource) build() (controlexperiment.Worklo
 // budget inputs. Worker location remains a runtime input.
 type omnipaxosScenarioExperimentConfig struct {
 	AdapterConfig            omnipaxosv2.Config                             `json:"adapter_config"`
-	RootMode                 string                                         `json:"root_mode"`
 	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
 	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
 	ScenarioMaxCalls         int                                            `json:"scenario_max_calls"`
@@ -74,7 +73,6 @@ type omnipaxosScenarioExperimentConfig struct {
 func (config omnipaxosScenarioExperimentConfig) validate() error {
 	seed, seedErr := hex.DecodeString(config.Runtime.SeedHex)
 	if seedErr != nil || len(seed) == 0 || config.AdapterConfig.ValidateNodeConfiguration() != nil ||
-		!validAgenticRootMode(config.RootMode) ||
 		config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.FaultEnvelope.MaxMessageDrops <= 0 ||
 		config.FaultEnvelope.MaxCrashes != 0 || config.FaultEnvelope.MaxConcurrentCrashes != 0 ||
@@ -135,9 +133,6 @@ func loadOmnipaxosAgenticAuthoringSourceResolved(
 	}
 	if overrides.NodeCount > 0 {
 		source.Experiment.AdapterConfig.NodeCount = overrides.NodeCount
-	}
-	if overrides.RootMode != "" {
-		source.Experiment.RootMode = overrides.RootMode
 	}
 	if source.Experiment.validate() != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, omnipaxosScenarioExperimentConfig{},

@@ -39,13 +39,11 @@ func runAgenticEpisodeCLI(
 	})
 	if result.Summary.TargetID != "" {
 		fmt.Fprintf(stdout,
-			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d executable=%t witness_instantiated=%t pss_protocol=%d pss_control=%d pss_joint=%d pss_samples=%d oracle_evaluated=%t agent_oracle_findings=%d root_prefix_oracle_findings=%d\n",
+			"episode=%s target=%s status=%s risk_calls=%d scenario_calls=%d model_calls=%d model_tokens=%d executable=%t witness_instantiated=%t oracle_evaluated=%t agent_oracle_findings=%d root_prefix_oracle_findings=%d\n",
 			options.CampaignDirectory, result.Summary.TargetID, result.Summary.Status,
 			result.Summary.RiskAttempts, result.Summary.ScenarioAttempts,
 			result.Summary.Work.Model.Calls, result.Summary.Work.Model.TotalTokens,
 			result.Summary.Metrics.CandidateAccepted, result.Summary.Metrics.WitnessInstantiated,
-			result.Summary.Metrics.ProtocolPSSStates, result.Summary.Metrics.ControlPSSStates,
-			result.Summary.Metrics.UniquePSSStates, result.Summary.Metrics.CorePSSSamples,
 			result.Summary.Metrics.OracleEvaluated,
 			result.Summary.Metrics.OracleFindings,
 			result.Summary.Metrics.RootPrefixOracleFindings,
@@ -65,7 +63,6 @@ func agenticEpisodeNonSessionProjection(options controlExperimentOptions) contro
 	options.RiskInput = ""
 	options.RepositoryRoot = ""
 	options.NodeCount = 0
-	options.RootMode = ""
 	return options
 }
 
@@ -216,7 +213,7 @@ func prepareAgenticEpisodeCompositionBounded(
 		}
 		inputs, err := prepareEtcdraftAgenticEpisodeWithOverrides(
 			ctx, "", options.SemanticInput, client, agenticInputOverrides{
-				NodeCount: options.NodeCount, RootMode: options.RootMode,
+				NodeCount: options.NodeCount,
 			},
 		)
 		if err != nil {
@@ -251,7 +248,7 @@ func prepareAgenticEpisodeCompositionBounded(
 		}
 		inputs, err := prepareOmnipaxosAgenticEpisodeWithOverrides(
 			ctx, options.WorkerPath, options.SemanticInput, agenticInputOverrides{
-				NodeCount: options.NodeCount, RootMode: options.RootMode,
+				NodeCount: options.NodeCount,
 			},
 		)
 		if err != nil {

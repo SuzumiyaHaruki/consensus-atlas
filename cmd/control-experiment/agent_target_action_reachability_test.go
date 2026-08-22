@@ -33,21 +33,28 @@ func TestEtcdraftComposableActionsAreReachableAndReplayable(t *testing.T) {
 		t.Fatal(err)
 	}
 	projector := etcdraftSemanticPrefixProjector{}
-	rootRisk, err := projector.Project("etcdraft-action-reachability-root", spec, inputs.root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	factory := func() (control.Adapter, error) {
 		return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 	}
-	frontier, _, _, err := controlexperiment.ReconstructRiskFrontierState(
-		ctx, "etcdraft-action-reachability-frontier", spec, rootRisk, inputs.root,
-		len(inputs.root.Records), inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory,
+	root, err := buildWorkloadReadyRootForTest(
+		ctx, inputs.root, inputs.experiment.Runtime, factory,
+		etcdraftv2.WorkloadRouter{}, inputs.execution.workload, firstPublicWorkloadProgress,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	traces := []controlruntime.Trace{inputs.root}
+	rootRisk, err := projector.Project("etcdraft-action-reachability-root", spec, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, _, _, err := controlexperiment.ReconstructRiskFrontierState(
+		ctx, "etcdraft-action-reachability-frontier", spec, rootRisk, root,
+		len(root.Records), inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traces := []controlruntime.Trace{root}
 	for _, pair := range [][]control.ActionKind{
 		{control.ActionCrash, control.ActionRestart},
 		{control.ActionPartition, control.ActionHeal},
@@ -65,7 +72,7 @@ func TestEtcdraftComposableActionsAreReachableAndReplayable(t *testing.T) {
 			{ID: "then-" + string(pair[1]), Selector: second},
 		}}
 		execution, runErr := controlexperiment.ExecuteBoundedScenarioPlan(
-			ctx, plan.ID, plan, 2, 2, spec, rootRisk, inputs.root,
+			ctx, plan.ID, plan, 2, 2, spec, rootRisk, root,
 			inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector, 0,
 			prepareEtcdraftScenarioAction,
 		)
@@ -76,7 +83,7 @@ func TestEtcdraftComposableActionsAreReachableAndReplayable(t *testing.T) {
 	}
 	traces = appendMissingRootActions(
 		t, ctx, traces, target.Surface.Capabilities.ComposableActions, frontier, spec, rootRisk,
-		inputs.root, inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector,
+		root, inputs.experiment.Runtime, inputs.experiment.faultEnvelope(), factory, projector,
 	)
 	assertComposableActionsCovered(t, target.Surface, traces)
 }

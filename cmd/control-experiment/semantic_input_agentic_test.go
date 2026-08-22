@@ -70,7 +70,6 @@ func TestEtcdraftAgenticNodeCountFlowsIntoQualificationAndRoot(t *testing.T) {
 			source.Experiment.AdapterConfig = etcdraftv2.Config{
 				NodeCount: nodeCount, ElectionTick: 7, HeartbeatTick: 2,
 			}
-			source.Experiment.RootMode = agenticRootBootstrap
 			path := writeAgenticInputFixture(t, source)
 			_, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(path)
 			if err != nil {
@@ -131,7 +130,7 @@ func TestEtcdraftAgenticOverridesBindResolvedEffectiveInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overrides := agenticInputOverrides{NodeCount: 5, RootMode: agenticRootBootstrap}
+	overrides := agenticInputOverrides{NodeCount: 5}
 	_, resolved, _, resolvedDigest, err := loadEtcdraftAgenticAuthoringSourceResolved(
 		etcdraftAgenticTestInputPath, overrides,
 	)
@@ -142,9 +141,9 @@ func TestEtcdraftAgenticOverridesBindResolvedEffectiveInput(t *testing.T) {
 		etcdraftAgenticTestInputPath, overrides,
 	)
 	if err != nil || resolved.AdapterConfig.NodeCount != 5 || len(resolved.AdapterConfig.Nodes) != 0 ||
-		resolved.RootMode != agenticRootBootstrap || baseDigest == resolvedDigest ||
+		baseDigest == resolvedDigest ||
 		resolvedDigest != repeatedDigest || !reflect.DeepEqual(resolved, repeated) ||
-		base.AdapterConfig.NodeCount != 3 || base.RootMode != agenticRootWorkloadReady {
+		base.AdapterConfig.NodeCount != 3 {
 		t.Fatalf("etcd/raft effective override identity drifted: base=%#v/%s resolved=%#v/%s repeated=%#v/%s err=%v",
 			base, baseDigest, resolved, resolvedDigest, repeated, repeatedDigest, err)
 	}
@@ -192,7 +191,6 @@ func TestOmnipaxosAgenticNodeCountFlowsIntoQualificationAndRoot(t *testing.T) {
 				t.Fatal(err)
 			}
 			source.Experiment.AdapterConfig = omnipaxosv2.Config{NodeCount: nodeCount}
-			source.Experiment.RootMode = agenticRootBootstrap
 			path := writeAgenticInputFixture(t, source)
 			ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(90*time.Second))
 			defer cancel()
@@ -231,7 +229,7 @@ func TestOmnipaxosAgenticOverridesBindResolvedEffectiveInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overrides := agenticInputOverrides{NodeCount: 5, RootMode: agenticRootBootstrap}
+	overrides := agenticInputOverrides{NodeCount: 5}
 	_, resolved, _, resolvedDigest, err := loadOmnipaxosAgenticAuthoringSourceResolved(
 		omnipaxosAgenticTestInputPath, overrides,
 	)
@@ -242,9 +240,9 @@ func TestOmnipaxosAgenticOverridesBindResolvedEffectiveInput(t *testing.T) {
 		omnipaxosAgenticTestInputPath, overrides,
 	)
 	if err != nil || resolved.AdapterConfig.NodeCount != 5 ||
-		resolved.RootMode != agenticRootBootstrap || baseDigest == resolvedDigest ||
+		baseDigest == resolvedDigest ||
 		resolvedDigest != repeatedDigest || !reflect.DeepEqual(resolved, repeated) ||
-		base.AdapterConfig.ResolvedNodeCount() != 3 || base.RootMode != agenticRootWorkloadReady {
+		base.AdapterConfig.ResolvedNodeCount() != 3 {
 		t.Fatalf("OmniPaxos effective override identity drifted: base=%#v/%s resolved=%#v/%s repeated=%#v/%s err=%v",
 			base, baseDigest, resolved, resolvedDigest, repeated, repeatedDigest, err)
 	}
@@ -259,7 +257,7 @@ func TestEtcdraftBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testing
 			defer cancel()
 			inputs, err := prepareEtcdraftAgenticEpisodeWithOverrides(
 				ctx, "", etcdraftAgenticTestInputPath, fixtureOpenRouterIntentClient(),
-				agenticInputOverrides{NodeCount: nodeCount, RootMode: agenticRootBootstrap},
+				agenticInputOverrides{NodeCount: nodeCount},
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -285,7 +283,7 @@ func TestOmnipaxosBootstrapScenarioEstablishesCoordinationBeforeInvoke(t *testin
 			defer cancel()
 			inputs, err := prepareOmnipaxosAgenticEpisodeWithOverrides(
 				ctx, workerPath, omnipaxosAgenticTestInputPath,
-				agenticInputOverrides{NodeCount: nodeCount, RootMode: agenticRootBootstrap},
+				agenticInputOverrides{NodeCount: nodeCount},
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -583,93 +581,6 @@ func bootstrapActionTouchesNode(
 ) bool {
 	return action.Node.Node == node || action.Owner.Node == node ||
 		action.MessageSource.Node == node || action.MessageTarget == node
-}
-
-func TestEtcdraftScenarioPreparerMaterializesInvokeAfterElection(t *testing.T) {
-	_, experiment, workload, err := loadEtcdraftAgenticAuthoringSource(etcdraftAgenticTestInputPath)
-	if err != nil || experiment.RootMode != agenticRootWorkloadReady {
-		t.Fatalf("load workload-ready etcd/raft input: mode=%s err=%v", experiment.RootMode, err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(30*time.Second))
-	defer cancel()
-	_, root, err := prepareEtcdraftAgenticExecutionInputs(ctx, workload, experiment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertScenarioPreparerRecreatesInvoke(t, ctx, root, experiment.Runtime,
-		func() (control.Adapter, error) {
-			return etcdraftv2.NewWithConfig(experiment.AdapterConfig)
-		}, newEtcdraftScenarioActionPreparer(workload))
-}
-
-func TestOmnipaxosScenarioPreparerMaterializesInvokeAfterCoordinator(t *testing.T) {
-	workerPath := buildOmnipaxosScenarioWorker(t)
-	knowledge, experiment, workload, err := loadOmnipaxosAgenticAuthoringSource(
-		omnipaxosAgenticTestInputPath,
-	)
-	if err != nil || knowledge.ValidateAgentMaterials() != nil ||
-		experiment.RootMode != agenticRootWorkloadReady {
-		t.Fatalf("load workload-ready OmniPaxos input: mode=%s err=%v", experiment.RootMode, err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), controlExperimentTestTimeout(90*time.Second))
-	defer cancel()
-	root, err := buildOmnipaxosScenarioRoot(ctx, workerPath, experiment, workload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertScenarioPreparerRecreatesInvoke(t, ctx, root, experiment.Runtime,
-		func() (control.Adapter, error) {
-			return omnipaxosv2.New(experiment.adapterConfig(workerPath))
-		}, newOmnipaxosScenarioActionPreparer(workload))
-}
-
-func assertScenarioPreparerRecreatesInvoke(
-	t *testing.T,
-	ctx context.Context,
-	root controlruntime.Trace,
-	config controlexperiment.RuntimeConfig,
-	adapterFactory func() (control.Adapter, error),
-	preparer controlexperiment.ScenarioActionPreparer,
-) {
-	t.Helper()
-	if len(root.Records) == 0 || root.Records[len(root.Records)-1].Action.Kind != control.ActionInvoke {
-		t.Fatalf("workload-ready root does not end at Invoke: %d records", len(root.Records))
-	}
-	prefix, err := controlexperiment.ExecutionTracePrefix(root, len(root.Records)-1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seed, err := hex.DecodeString(config.SeedHex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter, err := adapterFactory()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtime, err := controlruntime.Replay(ctx, adapter, controlruntime.Config{
-		Seed: seed, ClockError: config.ClockError, MaxClones: config.MaxClones,
-	}, prefix)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer runtime.Close()
-	actionID, prepared, err := preparer(
-		ctx, controlexperiment.FrontierActionSelector{Kind: control.ActionInvoke}, prefix, runtime,
-	)
-	if err != nil || !prepared {
-		t.Fatalf("trusted Invoke preparation failed: id=%s prepared=%t err=%v", actionID, prepared, err)
-	}
-	if _, err := runtime.Select(ctx, actionID); err != nil {
-		t.Fatal(err)
-	}
-	actual, err := runtime.Trace()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if actual.Digest != root.Digest {
-		t.Fatalf("prepared Invoke did not recreate root: got %s want %s", actual.Digest, root.Digest)
-	}
 }
 
 func agenticTestNodeIDs(nodeCount int) []control.NodeID {

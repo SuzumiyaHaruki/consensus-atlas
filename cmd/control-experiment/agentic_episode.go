@@ -79,10 +79,6 @@ type agenticEpisodeMetrics struct {
 	CandidateAccepted             bool `json:"candidate_accepted"`
 	ExecutedCandidates            int  `json:"executed_candidates"`
 	WitnessInstantiated           bool `json:"witness_instantiated"`
-	CorePSSSamples                int  `json:"core_pss_samples"`
-	UniquePSSStates               int  `json:"unique_pss_states"`
-	ProtocolPSSStates             int  `json:"protocol_pss_states,omitempty"`
-	ControlPSSStates              int  `json:"control_pss_states,omitempty"`
 	OracleFindings                int  `json:"oracle_findings"`
 	OracleEvaluated               bool `json:"oracle_evaluated"`
 	RootPrefixOracleFindings      int  `json:"root_prefix_oracle_findings,omitempty"`

@@ -718,7 +718,6 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 		SuspectedMechanism: "A message-loss ordering was investigated previously.",
 		EpisodeOutcome:     RiskMemoryOutcomeWitnessNearMiss, RiskStatus: semantic.RiskWitnessNotReached,
 		SatisfiedMilestones: []string{"invoke"}, FirstMissingMilestone: "decision",
-		ProtocolPSSStates: 3, NewProtocolPSSStates: 2,
 		MechanicalReasonCodes: []string{RiskAgentReasonNotExecutable},
 		CapabilityGaps: []AgentCapabilityGap{{
 			Code: AgentCapabilityGapMissingControl, Reference: "storage-step",
@@ -732,7 +731,6 @@ func TestRiskAgentSelectsFirstMechanicallyQualifiedPortfolioCandidate(t *testing
 		func(_ context.Context, view RiskAgentView) ([]byte, ModelWork, error) {
 			if len(view.ExplorationMemory) != 1 ||
 				view.ExplorationMemory[0].FirstMissingMilestone != "decision" ||
-				view.ExplorationMemory[0].NewProtocolPSSStates != 2 ||
 				len(view.ExplorationMemory[0].CapabilityGaps) != 1 ||
 				view.ExplorationMemory[0].CapabilityGaps[0].Reference != "storage-step" {
 				t.Fatalf("trusted exploration memory was not supplied: %#v", view.ExplorationMemory)

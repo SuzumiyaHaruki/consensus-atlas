@@ -232,7 +232,6 @@
     ]
   },
   "experiment": {
-    "root_mode": "workload-ready",
     "adapter_config": {
       "node_count": 3,
       "election_tick": 5,

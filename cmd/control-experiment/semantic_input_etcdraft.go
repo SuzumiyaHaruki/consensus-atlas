@@ -60,7 +60,6 @@ func (source etcdraftWorkloadAuthoringSource) build() (controlexperiment.Workloa
 
 type etcdraftAgentExperimentConfig struct {
 	AdapterConfig            etcdraftv2.Config                              `json:"adapter_config"`
-	RootMode                 string                                         `json:"root_mode"`
 	Runtime                  controlexperiment.RuntimeConfig                `json:"runtime"`
 	FaultEnvelope            controlexperiment.FaultEnvelope                `json:"fault_envelope"`
 	ScenarioMaxCalls         int                                            `json:"scenario_max_calls"`
@@ -78,7 +77,7 @@ type etcdraftAgentExperimentConfig struct {
 func (config etcdraftAgentExperimentConfig) validateAgentic() error {
 	seed, seedErr := hex.DecodeString(config.Runtime.SeedHex)
 	_, adapterErr := etcdraftv2.NewWithConfig(config.AdapterConfig)
-	if adapterErr != nil || seedErr != nil || len(seed) == 0 || !validAgenticRootMode(config.RootMode) ||
+	if adapterErr != nil || seedErr != nil || len(seed) == 0 ||
 		config.Runtime.ClockError != 0 ||
 		config.FaultEnvelope.Validate() != nil || config.ScenarioMaxCalls <= 0 ||
 		config.ScenarioMaxCalls > controlexperiment.ScenarioAgentMaxCalls ||
@@ -146,9 +145,6 @@ func loadEtcdraftAgenticAuthoringSourceResolved(
 	if overrides.NodeCount > 0 {
 		source.Experiment.AdapterConfig.NodeCount = overrides.NodeCount
 		source.Experiment.AdapterConfig.Nodes = nil
-	}
-	if overrides.RootMode != "" {
-		source.Experiment.RootMode = overrides.RootMode
 	}
 	if source.Experiment.validateAgentic() != nil {
 		return controlexperiment.ProtocolKnowledgePack{}, etcdraftAgentExperimentConfig{},

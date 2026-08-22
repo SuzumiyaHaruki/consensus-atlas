@@ -12,7 +12,8 @@ const (
 	AgenticMethodSpecSchemaVersion                                         = "consensus-atlas/agentic-method-spec/v1"
 	AgenticMethodExecutorID                                                = "consensus-atlas/agentic-episode-cli/v1"
 	AgenticMethodStrategyID                                                = "agentic-episode-v1"
-	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n19-public-progress-only-v1"
+	AgenticMethodImplementationID                                          = "consensus-atlas/agentic-method/m4n20-bootstrap-root-only-v1"
+	agenticMethodImplementationM4n19                                       = "consensus-atlas/agentic-method/m4n19-public-progress-only-v1"
 	agenticMethodImplementationM4n18                                       = "consensus-atlas/agentic-method/m4n18-closure-disabled-progress-v1"
 	agenticMethodImplementationM4n17                                       = "consensus-atlas/agentic-method/m4n17-strategic-bootstrap-v1"
 	agenticMethodImplementationM4n16                                       = "consensus-atlas/agentic-method/m4n16-recorded-schedule-execution-v1"
@@ -265,6 +266,7 @@ func (spec AgenticMethodSpec) Validate() error {
 
 func validAgenticMethodImplementationID(id string) bool {
 	return id == AgenticMethodImplementationID ||
+		id == agenticMethodImplementationM4n19 ||
 		id == agenticMethodImplementationM4n18 ||
 		id == agenticMethodImplementationM4n17 ||
 		id == agenticMethodImplementationM4n16 ||
@@ -293,6 +295,7 @@ func validAgenticMethodImplementationID(id string) bool {
 // not accidentally weaken it when the current implementation ID advances.
 func AgenticMethodRequiresOracleAttribution(implementationID string) bool {
 	return implementationID == AgenticMethodImplementationID ||
+		implementationID == agenticMethodImplementationM4n19 ||
 		implementationID == agenticMethodImplementationM4n18 ||
 		implementationID == agenticMethodImplementationM4n17 ||
 		implementationID == agenticMethodImplementationM4n16 ||

@@ -10,7 +10,6 @@ import (
 
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/control"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/controlexperiment"
-	"github.com/SuzumiyaHaruki/consensus-atlas/internal/psscore"
 	"github.com/SuzumiyaHaruki/consensus-atlas/internal/semantic"
 )
 
@@ -845,9 +844,6 @@ func agenticEpisodeMetricsFromEvidence(
 	selected *scenarioTestingResult,
 ) (agenticEpisodeMetrics, error) {
 	metrics := agenticEpisodeMetrics{CandidateAccepted: true}
-	protocolStates := make(map[string]bool)
-	controlStates := make(map[string]bool)
-	jointStates := make(map[string]bool)
 	var results []scenarioTestingResult
 	if selected != nil {
 		results = append(results, *selected)
@@ -863,23 +859,10 @@ func agenticEpisodeMetricsFromEvidence(
 		}
 		metrics.WitnessInstantiated = metrics.WitnessInstantiated ||
 			testing.Risk.Status == semantic.RiskWitnessReached
-		metrics.CorePSSSamples += testing.CorePSSSamples
 		metrics.OracleFindings += len(testing.Oracle.Violations)
 		metrics.OracleFindings -= len(testing.rootPrefixOracleViolations())
 		metrics.RootPrefixOracleFindings += len(testing.rootPrefixOracleViolations())
-		for _, sample := range testing.Bundle.CorePSS {
-			keys, err := psscore.Keys(sample.State)
-			if err != nil {
-				return agenticEpisodeMetrics{}, errors.New("AGENTIC_EPISODE_PSS_VIEWS_INVALID")
-			}
-			protocolStates[keys.Protocol] = true
-			controlStates[keys.Control] = true
-			jointStates[keys.Joint] = true
-		}
 	}
-	metrics.ProtocolPSSStates = len(protocolStates)
-	metrics.ControlPSSStates = len(controlStates)
-	metrics.UniquePSSStates = len(jointStates)
 	return metrics, nil
 }
 
@@ -891,7 +874,6 @@ func deriveAgenticExplorationMemory(
 ) ([]controlexperiment.RiskExplorationMemoryEntry, error) {
 	memory := make([]controlexperiment.RiskExplorationMemoryEntry, 0, len(episodes))
 	seenCandidates := make(map[string]bool)
-	seenProtocolStates := make(map[string]bool)
 	for index, episode := range episodes {
 		hasEvidence := episode.Testing != nil
 		statusAllowsEvidence := episode.Summary.Status == agenticEpisodeCompleted ||
@@ -955,21 +937,6 @@ func deriveAgenticExplorationMemory(
 			)
 			if len(representative.Risk.MissingMilestones) > 0 {
 				entry.FirstMissingMilestone = representative.Risk.MissingMilestones[0]
-			}
-			localProtocolStates := make(map[string]bool)
-			for _, sample := range episode.Testing.Bundle.CorePSS {
-				keys, err := psscore.Keys(sample.State)
-				if err != nil {
-					return nil, errors.New("AGENTIC_EXPLORATION_MEMORY_PSS_INVALID")
-				}
-				localProtocolStates[keys.Protocol] = true
-			}
-			entry.ProtocolPSSStates = len(localProtocolStates)
-			for key := range localProtocolStates {
-				if !seenProtocolStates[key] {
-					entry.NewProtocolPSSStates++
-					seenProtocolStates[key] = true
-				}
 			}
 		}
 		entry.EpisodeOutcome = agenticMemoryEpisodeOutcome(episode.Summary, entry.RiskStatus)

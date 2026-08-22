@@ -210,7 +210,7 @@ type RiskCandidateReview struct {
 // RiskExplorationMemoryEntry is a compact, trusted summary of one earlier
 // episode. Exact execution and all Oracle-derived evidence stay in the
 // original artifacts; this view only helps the Agent avoid repeating an
-// investigation through mechanical execution, Risk, PSS and cost feedback.
+// investigation through mechanical execution, Risk and cost feedback.
 type RiskExplorationMemoryEntry struct {
 	Episode               int                  `json:"episode"`
 	CandidateID           string               `json:"candidate_id,omitempty"`
@@ -223,8 +223,6 @@ type RiskExplorationMemoryEntry struct {
 	RiskStatus            string               `json:"risk_status,omitempty"`
 	SatisfiedMilestones   []string             `json:"satisfied_milestones,omitempty"`
 	FirstMissingMilestone string               `json:"first_missing_milestone,omitempty"`
-	ProtocolPSSStates     int                  `json:"protocol_pss_states,omitempty"`
-	NewProtocolPSSStates  int                  `json:"new_protocol_pss_states,omitempty"`
 	MechanicalReasonCodes []string             `json:"mechanical_reason_codes,omitempty"`
 	CapabilityGaps        []AgentCapabilityGap `json:"capability_gaps,omitempty"`
 	ModelCalls            int                  `json:"model_calls"`
@@ -1137,8 +1135,6 @@ func validRiskExplorationMemory(values []RiskExplorationMemoryEntry) bool {
 		if value.Episode <= previousEpisode || !validRiskMemoryOutcome(value.EpisodeOutcome) ||
 			value.ModelCalls < 0 || value.ModelTokens < 0 ||
 			value.SearchWorkUnits < 0 || value.ExecutionWorkUnits < 0 ||
-			value.ProtocolPSSStates < 0 || value.NewProtocolPSSStates < 0 ||
-			value.NewProtocolPSSStates > value.ProtocolPSSStates ||
 			(value.RepeatedCandidate && value.CandidateID == "") {
 			return false
 		}

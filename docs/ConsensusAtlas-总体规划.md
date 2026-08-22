@@ -194,9 +194,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   这两项事实。完整 Oracle
   结果不删除 root violation，但正式 finding 只由 evaluator-owned Replay 中 root 之后的 violation 产生。
   root 中已有的异常单独报告为 Oracle sensitivity，不能归因于 Agent；
-- Agentic semantic input 显式声明 `root_mode`。正式盲测使用 `bootstrap`：只清空启动
-  Ready/effect，不预先完成选举、coordinator 形成或 Invoke；历史窄校准曾使用
-  `workload-ready`，但活动主线将在 M4n20 删除该第二 root builder。不能靠移动 root
+- Agentic Target 只构造 `bootstrap` root：只清空启动 Ready/effect，不预先完成选举、
+  coordinator 形成或 Invoke。活动 semantic input 和 CLI 不再提供 `root_mode`；历史窄校准
+  在其 Git 提交中复核，当前测试若需要该前缀只在 `_test.go` 内按 recorded Action 构造。不能靠移动 root
   把自然启动已出现的问题改记为 Agent finding；
 - 每个活动 Target 的 bootstrap root 必须以普通零模型测试证明三/五节点均可精确 Replay、
   现有 Oracle registry 为 clean 且仍存在 timer/message 调查空间。这一检查复用现有 Trace、Replay
@@ -220,7 +220,8 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 删除 M4l2/M4l3 一次性 runner，保留语义实现、精简报告和小回归；
 - 历史 benchmark 不作为普通单元测试依赖；
 - 不恢复旧 Explorer/Campaign 执行路径；
-- PSS 暂不删除，但冻结；
+- PSS 冻结并降为 Bundle 的离线探索指标；Agent-facing Memory、Episode metrics 和 CLI
+  不再使用 PSS。当前不删除其 Bundle schema，以免为瘦身同时改写正式工件和 evaluator；
 - `minimize` 在有真实 Oracle finding 和明确需求前不开放；
 - 不为第三个同类配对实验搭建大型 calibration framework。
 
@@ -274,7 +275,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   战略 Action，整条 Trace 都属于 setup；
 - 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n19-public-progress-only-v1`；旧 M4n18 及更早版本只读兼容；
+  `m4n20-bootstrap-root-only-v1`；旧 M4n19 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/

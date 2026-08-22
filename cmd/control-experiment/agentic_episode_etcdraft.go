@@ -47,15 +47,7 @@ func prepareEtcdraftAgenticExecutionInputs(
 	if err != nil {
 		return empty, controlruntime.Trace{}, err
 	}
-	var root controlruntime.Trace
-	var rootWork controlexperiment.WorkLedger
-	if experiment.RootMode == agenticRootBootstrap {
-		root, rootWork, err = buildEtcdraftAgenticBootstrapRoot(ctx, experiment)
-	} else {
-		root, rootWork, err = buildEtcdraftAgenticWorkloadRoot(
-			ctx, workload, experiment, qualification, admission,
-		)
-	}
+	root, rootWork, err := buildEtcdraftAgenticBootstrapRoot(ctx, experiment)
 	if err != nil {
 		return empty, controlruntime.Trace{}, err
 	}
@@ -78,64 +70,6 @@ func prepareEtcdraftAgenticExecutionInputs(
 	}, root, nil
 }
 
-func buildEtcdraftAgenticWorkloadRoot(
-	ctx context.Context,
-	workload controlexperiment.WorkloadPlan,
-	experiment etcdraftAgentExperimentConfig,
-	qualification etcdqualification.Bundle,
-	admission controlexperiment.ExecutionAdmission,
-) (controlruntime.Trace, controlexperiment.WorkLedger, error) {
-	policy := controlexperiment.Policy{
-		Version: controlexperiment.PolicyVersion,
-		ID:      "etcdraft-agentic-workload-root-source-v1",
-		Priority: []control.ActionKind{
-			control.ActionInvoke, control.ActionCompleteEffect,
-			control.ActionDeliverMessage, control.ActionFireTemporal,
-		},
-	}
-	config := controlexperiment.Config{
-		SchemaVersion:    controlexperiment.SchemaVersionV2,
-		ID:               "etcdraft-agentic-workload-root-source",
-		PSSID:            etcdraftv2.CorePSSMappingID,
-		Runtime:          experiment.Runtime,
-		Admission:        &admission,
-		FaultEnvelope:    experiment.faultEnvelope(),
-		WorkloadRouterID: etcdraftv2.WorkloadRouterID,
-		DecisionsPerRun:  64,
-		RequireReplay:    true,
-		Runs: []controlexperiment.RunPlan{{
-			Run: 1, Policy: policy, Workload: &workload,
-		}},
-	}
-	factory := func() (control.Adapter, error) {
-		return etcdraftv2.NewWithConfig(experiment.AdapterConfig)
-	}
-	_, source, err := controlexperiment.ExecuteQualifiedBundle(
-		ctx, config, qualification, factory, etcdraftv2.CorePSSMapper{},
-		etcdraftv2.DecisionProjector{}, etcdraftv2.WorkloadRouter{},
-	)
-	if err != nil {
-		return controlruntime.Trace{}, controlexperiment.WorkLedger{}, err
-	}
-	rootDecisions := 0
-	for index, record := range source.Trace.Records {
-		if record.Action.Kind == control.ActionInvoke {
-			rootDecisions = index + 1
-			break
-		}
-	}
-	root, err := controlexperiment.ExecutionTracePrefix(source.Trace, rootDecisions)
-	if err != nil || rootDecisions == 0 {
-		return controlruntime.Trace{}, controlexperiment.WorkLedger{},
-			errors.New("ETCDRAFT_AGENTIC_ROOT_MILESTONE_MISSING")
-	}
-	return root, source.Work, nil
-}
-
-// buildEtcdraftAgenticBootstrapRoot clears only the host Ready effects emitted
-// by Reset. It deliberately stops before the first message delivery or timer
-// callback, so elections and workload routing remain part of the Agent-owned
-// investigation rather than hidden preparation.
 func buildEtcdraftAgenticBootstrapRoot(
 	ctx context.Context,
 	experiment etcdraftAgentExperimentConfig,
