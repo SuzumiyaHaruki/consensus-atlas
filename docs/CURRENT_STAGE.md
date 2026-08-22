@@ -379,3 +379,60 @@ Agent。后续应在 Core 按 accepted predicate 区分“需要可信继续完�
 - `go test ./... -count=1 -timeout=360s`、`go vet ./...`、`make audit-no-v1 audit-race-shards`
   与 `git diff --check` 已通过；新增 feasibility/goal projection 的聚焦 race 和完整 OmniPaxos
   Risk→Scenario→Replay→Oracle race 回归通过。
+
+### M4n28 两个真实单 Episode canary
+
+两个 Target 均在全新目录中各运行一次 DeepSeek 官方 canary，未恢复旧 Campaign，也未追加重跑。
+Provider 的每次调用均为单次 transport attempt，usage 全部为 `observed`，没有未对账调用。
+
+五节点 etcd/raft 的结果为：
+
+```text
+risk_calls=3, scenario_calls=5, model_calls=8, model_tokens=109191
+candidate=stale-msgapp-across-term, scenario_decisions=64
+stop=decision-budget-exhausted, first_missing=term-advance
+witness_instantiated=false, agent_oracle_findings=0, root_prefix_oracle_findings=1
+```
+
+Risk Agent 生成并通过资格检查的 trigger 是 `Invoke → MsgApp delivered → raft/term-advanced →
+MsgApp delivered`，但候选摘要声称需要先 Duplicate，再 Partition coordinator。两项战略动作均未进入
+predicates；资格结果因而只声明 `invoke` 与 `deliver-message`，无法把 prose 中的关键因果动作交给
+Scenario 层。与此同时，`raft/term-advanced` 是 Target-local observation，不在当前公共自然 prerequisite
+枚举内。Scenario Agent 在 `term-advance` 前连续 5 次收到控制权，实际使用 Crash、Restart、两个 Drop
+和一个 Duplicate，却没有使用 Partition，也没有满足该 milestone。最终 Bundle 共 74 decisions，fresh
+Replay stable；独立 evaluator-owned replay 再次执行相同 74 decisions 并得到相同 Trace。Agent 后 Oracle
+finding 为 0；唯一 finding 位于 root prefix，未归因给候选。
+
+三节点 OmniPaxos 的结果为：
+
+```text
+risk_calls=4, scenario_calls=0, model_calls=4, model_tokens=63984
+candidate=request-drop-decide-c1, scenario_decisions=29
+stop=setup-quiescent, first_missing=m2-drop
+witness_instantiated=false, agent_oracle_findings=0
+```
+
+候选要求 `workload-invoked(request-id=req) → message-dropped(operation-replication,
+inflight, request-id=req) → decision-advanced(request-id=req)`，该前缀本身与 Target surface 和 fault
+allowance 一致。真实执行在 step 23 完成 Invoke，并在 step 28 暴露携带同一 request id 的
+`sequence-paxos/accept-sync`。但 OmniPaxos semantic projector 仍用固定的历史 milestone ID 判断
+operation 是否 inflight；Agent 自由命名的 `m1-append` 未命中该 ID，所以对应 Drop action 被标为
+`operation_state=none`。公共推进因此交付该消息并在 step 29 完成 decision，Scenario Agent 从未得到
+一次调用。29-decision Bundle fresh Replay stable；独立 evaluator-owned replay 也得到同一 Trace，三个
+Oracle 均无 violation。
+
+因此两个 canary 都是 `completed` 且证据可重放，但都未达到 M4n28 的
+`witness-instantiated` 验收条件，仍不能进入 baseline 或对比实验。下一轮实现应先解决这三个由真实失败
+证明的问题：
+
+- Target semantic exposure 从可信 Trace/Observation 与 request binding 推导 inflight 状态，不依赖
+  Agent 可自由命名的 milestone ID；
+- 公共层按“能否编译为战略 control”区分 strategic 与 natural observation，使已声明的
+  Target-local 自然 milestone 能由可信执行推进，而不是维护公共 kind 白名单；
+- Risk candidate 必须把摘要中声称的 Duplicate、Partition 等因果 control 变成可执行的类型化 trigger
+  要求，或因 prose-only trigger 被拒绝；不能再由 prompt 自律替代机械完整性。
+
+本节证据保存在本地被忽略目录
+`artifacts/agentic/m4n28-etcdraft-single-canary-v1` 与
+`artifacts/agentic/m4n28-omnipaxos-single-canary-v1`。本轮不修改两个协议实现，也不因失败自动追加付费
+canary。
