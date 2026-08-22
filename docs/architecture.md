@@ -386,6 +386,11 @@ root 构造的 primary/replay work 进入 formal 总预算。Agent-selected 与 
 保留独立 provenance，不把自动推进成本归给 Agent。
 旧 A8 paired launcher/session 不参与此路径。
 
+`cmd/evaluation-report` 位于可信 evaluator 之后。它重新验证保存的 formal/Agentic evaluation，
+只投影 aggregate paper table、Wilson 区间和 root-level paired comparison；它不读取在线 Agent
+verdict、不执行 Oracle，也不把统计显著性变成 finding。private pair、trial 和 root ID 不进入
+Markdown 输出。
+
 评价面保持分离：
 
 1. 发现结果：独立 Oracle finding、可复现 root cause；

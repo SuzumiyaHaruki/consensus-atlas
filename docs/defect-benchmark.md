@@ -76,3 +76,13 @@ Episode。未选择但已真实执行且 Replay 稳定的候选也运行离线 O
 5. 先用公开 calibration 验证评测 plumbing，但不据此宣称方法有效。
 
 不因为缺少 holdout 数据而新增第二套 ledger、预算 DSL 或历史 Campaign runner。
+
+## 论文统计出口
+
+`cmd/evaluation-report` 是 evaluator 下游的只读统计工具。它只接受通过自身 `Validate`
+的 formal fresh evaluation 或 Agentic holdout evaluation，输出 root-cause kill、control
+false-positive、invalid、完整 work/model cost 的聚合表，以及相同 private roots 上的
+exact McNemar 配对结果。它不运行 Oracle、不改变 verdict，也不输出 private pair/trial/root ID。
+
+完整实验组、数据隔离、置信区间适用范围和投稿前缺口见
+[`paper-evaluation.md`](paper-evaluation.md)。

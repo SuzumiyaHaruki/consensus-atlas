@@ -281,6 +281,20 @@ git diff --check
 当前工作区已通过上述全部普通检查，以及战略 frontier、OmniPaxos bootstrap/工件恢复和 etcd/raft
 Oracle 的聚焦 race；随后按以下记录只运行了一次新目录 canary。
 
+## paper/evidence-grounded-evaluation 分支
+
+- 新增只读 `cmd/evaluation-report`：严格读取并重新验证 formal fresh/Agentic holdout evaluator JSON，
+  生成 aggregate-only Markdown，不输出 private pair、trial 或 root-cause ID；
+- root-cause kill 和 control false-positive 同时报告 raw `k/n` 与 Wilson 95% 区间；方法间按相同
+  private roots 给出配对四格表、kill-rate difference 和 exact McNemar p；invalid 保留在分母；
+- primary/replay work 和 Agentic model calls/tokens/Scenario decisions 从可信结果聚合。该工具不执行
+  Oracle、不接受 Agent 自报 finding，也不改变任何 verdict；
+- `docs/paper-evaluation.md` 明确 RQ、同预算 baseline、数据隔离、统计单位、消融、有效性威胁以及
+  投稿前尚缺的 private benchmark、多 seed、完整资源测量和跨机制证据；
+- 本分支不修改 `suts/etcdraft` 中已有的本地实验改动，不新增 Ledger、执行引擎、通用统计 DSL 或 gate。
+- `go test ./... -count=1 -timeout=360s`、`go vet ./...`、`make audit-no-v1 audit-race-shards`
+  和 `git diff --check` 已通过。
+
 ### M4n26 五节点 etcd/raft 单 Episode canary
 
 全新目录 `artifacts/agentic/m4n26-etcdraft-single-canary-v1` 已完成一次 DeepSeek 官方调用：3 次 Risk、

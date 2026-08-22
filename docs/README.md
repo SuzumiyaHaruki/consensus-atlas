@@ -8,5 +8,6 @@
 4. [Control Runtime](control-runtime-v2.md)：统一 Action、虚拟时间、消息与生命周期语义；
 5. [指标](metrics.md)：PSS、义务、成本和外部 effectiveness；
 6. [Defect Benchmark](defect-benchmark.md)：candidate/control 与独立评测边界。
+7. [论文评测协议](paper-evaluation.md)：研究问题、同预算对照、private holdout、统计与投稿缺口。
 
 已完成阶段的流水账不再保留在 HEAD；需要复核时使用 Git 历史。

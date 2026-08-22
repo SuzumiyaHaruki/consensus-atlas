@@ -188,7 +188,10 @@ the 32,000 output-token limit; total cost was 78,182 tokens. M4k5c raises only t
 - State coverage cannot distinguish two paths reaching the same state. Transition and temporal-depth reporting are required;
   causal-graph coverage should be added only when a concrete evaluation miss requires it.
 - A growing discovery curve does not establish completeness in an open or unbounded state space.
-- The active harness does not yet report complete wall-clock/CPU/RSS cost or repeated-seed confidence intervals.
+- The active harness does not yet report complete wall-clock/CPU/RSS cost. The downstream
+  `cmd/evaluation-report` now reports Wilson intervals and exact root-level McNemar comparisons
+  for one complete evaluator report, but repeated-seed clustered intervals/hierarchical analysis
+  remain unavailable until real repeated data define the correct sampling structure.
 - PSS changes require a new ID. Results from different PSS IDs must not be combined on the same curve.
 
 The current `self_normalized_area` uses each method's own final state count. It describes discovery timing only and must be shown beside final unique states and raw prefix area; it is not a shared completeness-normalized score.

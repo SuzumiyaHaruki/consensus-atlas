@@ -163,14 +163,27 @@ internal/semantic/             通用/target-local Observation 和 RiskWitness
 internal/psscore/              protocol/control/joint PSS 投影
 internal/oracle/               独立 monitor
 internal/defectbench/          candidate/control Bundle 评测
+internal/evalreport/           evaluator 下游的论文统计投影
 suts/                          固定提交、可本地修改的共识实现源码
 adapters/                      Target 薄适配
 qualifications/                Target 资格组合
 cmd/control-experiment/        活动 CLI、Agent coordinator 与 Target composition
 cmd/defect-eval/               Bundle/MethodSpec evaluator
+cmd/evaluation-report/         aggregate 论文表格与 root-level 配对统计
 plans/agent/                   人工可编辑的 Agent 输入
 docs/                          当前设计、边界和路线
 ```
+
+可信 evaluator 结果可以在 private curator 环境中转成不泄露 pair/trial/root ID 的论文表格：
+
+```bash
+go run ./cmd/evaluation-report \
+  -input bounded-random=/private/results/random.json \
+  -input agentic=/private/results/agentic.json \
+  -out /private/results/paper-table.md
+```
+
+该命令只做下游描述统计和配对检验，不运行 Oracle，也不能改变 `defect-eval` verdict。
 
 ## 运行
 
