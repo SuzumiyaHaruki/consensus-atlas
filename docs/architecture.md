@@ -249,18 +249,15 @@ Coordinator 每轮以 `ceil(remainingDecisions/remainingCalls)` 重新计算自�
 `decision_allowance` 约束“计划 + 本轮自然推进”，`remaining_decisions` 表示 episode 尚可使用的成功 Action。
 这两个值属于资源边界，不授权 Agent 创建 Action 或改变终止/verdict 语义。
 
-若 Target-local closure factory 从可信 Trace 中识别出已执行干预，Target 从该点持续拥有
-Episode 剩余的全局 decision allowance；per-call 自然推进 quantum 不再提前把控制权交回
-Agent。只有歧义、无合格 enabled Action 或全局预算真正耗尽才结束接管。etcd/raft 与
-OmniPaxos 都通过同一接口提供窄 selector；公共层仍复核权威 frontier membership 与
-ActionKind，selector 只能选择当前 enabled 的 Effect/Deliver/Temporal，fresh Replay 不调用 selector。
+公共因果推进只从 Runtime 当前 enabled frontier 中选择 effect、消息投递和自然到期 timer；
+它以最近一次真实 Action 的 item dependency 与参与者方向作为优先级，无法判断协议性质，
+也不能创建 Drop、Crash、Partition 等战略干预。每个自动选择仍写入普通 ActionRecord，
+qualified execution 和 fresh Replay 只解释已经记录的完整 Schedule。
 
-多节点 Target 不把“选哪个多数派子集”隐藏在 selector 的节点 ID 排序中。Target 先按实际
-membership 计算 quorum，再把能够绑定未选参与者的 exact enabled Action 作为
-`closure_candidates` 返回 Agent。Agent 执行其中一项后，下一轮 factory 只从已物化的
-`FrontierChoice` 恢复已选参与者。候选列表仍由公共层对 authoritative frontier、Action digest
-和允许类型做普通校验；它不是新 Action、新 Runtime 或新 admission gate。已选 quorum 内的
-并发因果步骤才使用 Runtime 的稳定 Action 顺序，该顺序不再改变 quorum 成员身份。
+历史 target-local closure 曾为 etcd/raft 与 OmniPaxos 的两个 Drop 场景提供协议专用选择器。
+closure-disabled 回归证明公共 causal progress 在扩大但有界的预算内同样闭合，因此活动代码
+已删除 closure factory、handoff、candidate、Agent prompt 和 artifact 状态。协议差异继续局限在
+Adapter、namespaced Observation、语义投影和 Oracle，不再通过隐藏调度器扩散到公共 Core。
 
 真实 Target 的长轨迹回归从同一 Adapter 的确定性初态开始，以 exact policy 将最终 Scenario Trace 再执行为
 qualified Bundle。测试同时要求 target-local epoch/ballot Observation、protocol/control/joint PSS、stable Replay
@@ -369,15 +366,14 @@ Plan/Risk ID、Trace digest、work 与 `MethodSpecDigest` 都要与文件和 for
 qualified executor，fresh Trace 必须与提交 Trace 逐 Action 一致，之后 Oracle 才可产生正式结果。
 这条路径的 Replay authority 是 `evaluator-owned-sut-replay`；saved-Bundle Oracle audit 仍只是轻量
 离线检查，不获得该 authority。
-活动 CLI 根据真实 transport/model、prompt 版本、semantic input、源码暴露、Episode 数、预算和
-Target composition 实际启用的 `public-fixed|target-local` closure mode 派生
-typed `AgenticMethodSpec`；调用者提供的 digest 只能作为预期值。多 Episode formal trial 必须包含连续
+活动 CLI 根据真实 transport/model、prompt 版本、semantic input、源码暴露、Episode 数和预算派生
+typed `AgenticMethodSpec`；调用者提供的 digest 只能作为预期值。历史 `closure_mode` 字段仅用于读取
+旧工件，当前执行固定为公共推进。多 Episode formal trial 必须包含连续
 `episode-0001..N` 并聚合每轮成本；单 Episode 入口只兼容明确声明一轮的方法。搜索中的
 child verification 是 fresh replay，和最终 Bundle replay 一起受 Replay 预算约束。
 模型调用前的 Target preparation 也有独立 deadline 和 ledger：qualification 检查数单独报告，
-root 构造的 primary/replay work 进入 formal 总预算。`public-fixed` 是默认 closure mode；
-`target-local` 是显式复合方法。Agent-selected、Target-closure 和 public-progress decisions 均保留
-独立 provenance，不使用 closure 成本夸大 Agent 自主调度能力。
+root 构造的 primary/replay work 进入 formal 总预算。Agent-selected 与 public-progress decisions
+保留独立 provenance，不把自动推进成本归给 Agent。
 旧 A8 paired launcher/session 不参与此路径。
 
 评价面保持分离：

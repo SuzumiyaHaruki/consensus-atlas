@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v22"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v23"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v6"
 )
 
@@ -359,12 +359,9 @@ func scenarioAgentRepairPrompt(
 		FaultAllowance controlexperiment.FaultEnvelope `json:"fault_allowance"`
 	}
 	type priorView struct {
-		PreviousProposal     *controlexperiment.ScenarioInvestigationProposal `json:"previous_proposal,omitempty"`
-		NaturalProgressStop  string                                           `json:"natural_progress_stop,omitempty"`
-		ClosureCandidates    []controlexperiment.FrontierActionRef            `json:"closure_candidates,omitempty"`
-		ClosureHandoff       bool                                             `json:"closure_handoff,omitempty"`
-		ClosureHandoffStepID string                                           `json:"closure_handoff_step_id,omitempty"`
-		ProgressDelta        *controlexperiment.ScenarioProgressDelta         `json:"progress_delta,omitempty"`
+		PreviousProposal    *controlexperiment.ScenarioInvestigationProposal `json:"previous_proposal,omitempty"`
+		NaturalProgressStop string                                           `json:"natural_progress_stop,omitempty"`
+		ProgressDelta       *controlexperiment.ScenarioProgressDelta         `json:"progress_delta,omitempty"`
 	}
 	var surface *targetSurfaceView
 	if view.TargetSurface != nil {
@@ -379,27 +376,21 @@ func scenarioAgentRepairPrompt(
 		prior = &priorView{
 			PreviousProposal:    view.Prior.PreviousProposal,
 			NaturalProgressStop: view.Prior.NaturalProgressStop,
-			ClosureCandidates: append(
-				[]controlexperiment.FrontierActionRef(nil), view.Prior.ClosureCandidates...,
-			),
-			ClosureHandoff:       view.Prior.ClosureHandoff,
-			ClosureHandoffStepID: view.Prior.ClosureHandoffStepID,
-			ProgressDelta:        view.Prior.ProgressDelta,
+			ProgressDelta:       view.Prior.ProgressDelta,
 		}
 	}
 	input := struct {
-		PromptVersion         string                                       `json:"prompt_version"`
-		RepairReason          string                                       `json:"repair_reason"`
-		AcceptedHypothesis    *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
-		TargetSurface         *targetSurfaceView                           `json:"target_surface,omitempty"`
-		OrderedMilestones     []string                                     `json:"ordered_milestones"`
-		Frontier              scenarioPromptFrontier                       `json:"action_frontier"`
-		MaxSteps              int                                          `json:"max_steps"`
-		DecisionAllowance     int                                          `json:"decision_allowance"`
-		RemainingDecisions    int                                          `json:"remaining_decisions"`
-		AvailableIntents      []string                                     `json:"available_intents"`
-		PostInterventionClose bool                                         `json:"post_intervention_closure"`
-		Prior                 *priorView                                   `json:"prior_feedback,omitempty"`
+		PromptVersion      string                                       `json:"prompt_version"`
+		RepairReason       string                                       `json:"repair_reason"`
+		AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
+		TargetSurface      *targetSurfaceView                           `json:"target_surface,omitempty"`
+		OrderedMilestones  []string                                     `json:"ordered_milestones"`
+		Frontier           scenarioPromptFrontier                       `json:"action_frontier"`
+		MaxSteps           int                                          `json:"max_steps"`
+		DecisionAllowance  int                                          `json:"decision_allowance"`
+		RemainingDecisions int                                          `json:"remaining_decisions"`
+		AvailableIntents   []string                                     `json:"available_intents"`
+		Prior              *priorView                                   `json:"prior_feedback,omitempty"`
 	}{
 		PromptVersion:      scenarioAgentPromptVersion,
 		RepairReason:       controlexperiment.ScenarioAgentReasonResponseFinishLength,
@@ -408,10 +399,9 @@ func scenarioAgentRepairPrompt(
 		OrderedMilestones:  append([]string(nil), view.OrderedMilestones...),
 		Frontier:           frontier,
 		MaxSteps:           view.MaxSteps, DecisionAllowance: view.DecisionAllowance,
-		RemainingDecisions:    view.RemainingDecisions,
-		AvailableIntents:      append([]string(nil), view.AvailableIntents...),
-		PostInterventionClose: view.PostInterventionClosure,
-		Prior:                 prior,
+		RemainingDecisions: view.RemainingDecisions,
+		AvailableIntents:   append([]string(nil), view.AvailableIntents...),
+		Prior:              prior,
 	}
 	encoded, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
@@ -451,20 +441,17 @@ func scenarioAgentPrompt(
 			ComposableActions []control.ActionKind                   `json:"composable_actions"`
 		}
 		type feedbackView struct {
-			Outcome              string                                              `json:"outcome"`
-			ReasonCode           string                                              `json:"reason_code,omitempty"`
-			PreviousProposal     *controlexperiment.ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
-			ValidationIssues     []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
-			CapabilityGaps       []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
-			AllowedIntents       []string                                            `json:"allowed_intents,omitempty"`
-			FailedStep           *controlexperiment.ScenarioStep                     `json:"failed_step,omitempty"`
-			Steps                []scenarioPromptStepFeedback                        `json:"steps,omitempty"`
-			NaturalProgress      []scenarioPromptStepFeedback                        `json:"natural_progress,omitempty"`
-			NaturalProgressStop  string                                              `json:"natural_progress_stop,omitempty"`
-			ClosureCandidates    []controlexperiment.FrontierActionRef               `json:"closure_candidates,omitempty"`
-			ClosureHandoff       bool                                                `json:"closure_handoff,omitempty"`
-			ClosureHandoffStepID string                                              `json:"closure_handoff_step_id,omitempty"`
-			ProgressDelta        *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+			Outcome             string                                              `json:"outcome"`
+			ReasonCode          string                                              `json:"reason_code,omitempty"`
+			PreviousProposal    *controlexperiment.ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
+			ValidationIssues    []controlexperiment.ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+			CapabilityGaps      []controlexperiment.AgentCapabilityGap              `json:"capability_gaps,omitempty"`
+			AllowedIntents      []string                                            `json:"allowed_intents,omitempty"`
+			FailedStep          *controlexperiment.ScenarioStep                     `json:"failed_step,omitempty"`
+			Steps               []scenarioPromptStepFeedback                        `json:"steps,omitempty"`
+			NaturalProgress     []scenarioPromptStepFeedback                        `json:"natural_progress,omitempty"`
+			NaturalProgressStop string                                              `json:"natural_progress_stop,omitempty"`
+			ProgressDelta       *controlexperiment.ScenarioProgressDelta            `json:"progress_delta,omitempty"`
 		}
 		var surface *targetSurfaceView
 		if promptView.TargetSurface != nil {
@@ -490,11 +477,7 @@ func scenarioAgentPrompt(
 				Steps:               compactScenarioPromptSteps(promptView.Prior.Steps),
 				NaturalProgress:     compactScenarioPromptSteps(promptView.Prior.NaturalProgress),
 				NaturalProgressStop: promptView.Prior.NaturalProgressStop,
-				ClosureCandidates: append([]controlexperiment.FrontierActionRef(nil),
-					promptView.Prior.ClosureCandidates...),
-				ClosureHandoff:       promptView.Prior.ClosureHandoff,
-				ClosureHandoffStepID: promptView.Prior.ClosureHandoffStepID,
-				ProgressDelta:        promptView.Prior.ProgressDelta,
+				ProgressDelta:       promptView.Prior.ProgressDelta,
 			}
 		}
 		type planningFocusView struct {
@@ -516,27 +499,25 @@ func scenarioAgentPrompt(
 			focus.LastAgentActionEffect = &last
 		}
 		agentView = struct {
-			PlanningFocus           planningFocusView                            `json:"planning_focus"`
-			AcceptedHypothesis      *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis"`
-			TargetSurface           *targetSurfaceView                           `json:"target_surface,omitempty"`
-			OrderedMilestones       []string                                     `json:"ordered_milestones"`
-			Frontier                scenarioPromptFrontier                       `json:"action_frontier"`
-			MaxSteps                int                                          `json:"max_steps"`
-			DecisionAllowance       int                                          `json:"decision_allowance"`
-			RemainingDecisions      int                                          `json:"remaining_decisions"`
-			AvailableIntents        []string                                     `json:"available_intents"`
-			PostInterventionClosure bool                                         `json:"post_intervention_closure"`
-			Prior                   *feedbackView                                `json:"prior_feedback,omitempty"`
+			PlanningFocus      planningFocusView                            `json:"planning_focus"`
+			AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext `json:"accepted_hypothesis"`
+			TargetSurface      *targetSurfaceView                           `json:"target_surface,omitempty"`
+			OrderedMilestones  []string                                     `json:"ordered_milestones"`
+			Frontier           scenarioPromptFrontier                       `json:"action_frontier"`
+			MaxSteps           int                                          `json:"max_steps"`
+			DecisionAllowance  int                                          `json:"decision_allowance"`
+			RemainingDecisions int                                          `json:"remaining_decisions"`
+			AvailableIntents   []string                                     `json:"available_intents"`
+			Prior              *feedbackView                                `json:"prior_feedback,omitempty"`
 		}{
 			PlanningFocus:      focus,
 			AcceptedHypothesis: promptView.AcceptedHypothesis,
 			TargetSurface:      surface, OrderedMilestones: promptView.OrderedMilestones,
 			Frontier: frontier,
 			MaxSteps: promptView.MaxSteps, DecisionAllowance: promptView.DecisionAllowance,
-			RemainingDecisions:      promptView.RemainingDecisions,
-			AvailableIntents:        promptView.AvailableIntents,
-			PostInterventionClosure: promptView.PostInterventionClosure,
-			Prior:                   prior,
+			RemainingDecisions: promptView.RemainingDecisions,
+			AvailableIntents:   promptView.AvailableIntents,
+			Prior:              prior,
 		}
 		implementationContext = "Use accepted_hypothesis as the investigated mechanism and executable witness. It is an " +
 			"Agent proposal accepted for execution, not a protocol fact or verdict. "
@@ -600,12 +581,10 @@ func scenarioAgentPrompt(
 		investigationGuidance +
 		"When present, prior_feedback.progress_delta is the compact trusted account of decisions, new milestones, the first missing " +
 		"milestone, newly observed milestone evidence, transition novelty, Action counts, temporal callbacks versus actual logical-clock " +
-		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available non-closure interventions, and recent " +
+		"advances, repeated scheduling-pattern depth, fault allowance/usage/remaining, available interventions, and recent " +
 		"Action kinds. milestone_progress=milestone-stalled means selectors executed but no new milestone appeared; " +
-		"natural_progress_stop distinguishes a returned client operation from a frontier with no closure Action. Use these mechanical " +
-		"facts to continue, revise, change the intervention, or abandon. When natural_progress_stop=closure-underdetermined, " +
-		"prior_feedback.closure_candidates is the complete trusted subset that can resolve the current Target-local ambiguity; " +
-		"use revise and select one of those exact enabled Action IDs. Do not substitute another frontier Action. " +
+		"natural_progress_stop distinguishes a returned client operation from a quiescent or budget-limited public frontier. Use these mechanical " +
+		"facts to continue, revise, change the intervention, or abandon. " +
 		"Repetition and a missing milestone are not protocol verdicts. " +
 		"Before selecting the single strategic Action, start with planning_focus and action_frontier.coordination. Check the Action source/target against " +
 		"resolved_bindings; whether it can advance next_missing_milestone; whether it resets or contradicts the current protocol state; " +
@@ -621,11 +600,6 @@ func scenarioAgentPrompt(
 		"A semantic kind=invoke selector may be prepared by the trusted Target when the configured workload has one invocation and current " +
 		"evidence identifies exactly one coordinator; preparation still creates an ordinary enabled Runtime Action and otherwise returns no-match. " +
 		"Frozen input JSON:\n" + string(encoded)
-	if view.PostInterventionClosure {
-		user = "The trusted Target exposes post_intervention_closure. End the plan at the intended fault intervention; " +
-			"do not predict subsequent effect or message Actions. Once the Target recognizes the executed intervention, " +
-			"trusted closure takes over only already enabled non-intervention Actions and reports its mechanical stop. " + user
-	}
 	if view.MaxSteps == 1 {
 		system += " For every intent other than abandon, the nested plan must contain exactly one step."
 	} else {

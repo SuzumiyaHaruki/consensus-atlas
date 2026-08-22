@@ -405,7 +405,7 @@ func runAgenticEpisodeDirectory(
 			sourceExposureErr != nil ||
 			!reflect.DeepEqual(composition.MethodSpec.SourceExposure, sourceExposure) ||
 			composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
-			composition.MethodSpec.ClosureMode != agenticClosureModeForTarget(composition.Target) ||
+			composition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModePublicFixed ||
 			composition.MethodSpec.EpisodeLimits.PreparationWallClockMS <= 0 ||
 			composition.Preparation.Validate() != nil ||
 			composition.Preparation.WallClockMS > composition.MethodSpec.EpisodeLimits.PreparationWallClockMS ||

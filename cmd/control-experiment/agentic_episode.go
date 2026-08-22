@@ -147,14 +147,7 @@ type agenticEpisodeTarget struct {
 	Surface              controlexperiment.AgentTargetSurface
 	ObservationProjector agenticEpisodeObservationProjector
 	OracleRegistry       targetoracles.Registry
-	ClosureFactory       controlexperiment.ScenarioClosureFactory
-	ClosureSupport       controlexperiment.ScenarioClosureSupport
-	// ClosureMinimumScenarioCalls is a target-owned structural lower bound:
-	// one call selects the intervention and any remaining calls select an
-	// otherwise ambiguous quorum path. It does not promise success within that
-	// budget; it only prevents configurations that cannot possibly complete.
-	ClosureMinimumScenarioCalls int
-	ScenarioInputs              func(
+	ScenarioInputs       func(
 		controlexperiment.ScenarioRiskHypothesis,
 		controlexperiment.SemanticPrefixProjector,
 	) (scenarioEpisodeCoreInputs, error)
@@ -181,7 +174,6 @@ func (target agenticEpisodeTarget) validate() error {
 			reflect.ValueOf(target.ObservationProjector).IsNil() ||
 		semantic.ValidateObservationCapabilities(target.ObservationProjector.Capabilities()) != nil ||
 		!target.Surface.MatchesPlanningInputs(actions, target.ObservationProjector.Capabilities()) ||
-		target.ClosureMinimumScenarioCalls < 0 ||
 		len(actions) == 0 || target.ScenarioInputs == nil || target.Execute == nil {
 		return errors.New("AGENTIC_EPISODE_TARGET_INVALID")
 	}
@@ -286,12 +278,9 @@ func runAgenticEpisode(
 		coreInputs.AcceptedHypothesis == nil ||
 		!reflect.DeepEqual(*coreInputs.AcceptedHypothesis, scenarioRisk.AcceptedHypothesis) ||
 		!reflect.DeepEqual(coreInputs.RiskSpec, scenarioRisk.Spec) || coreInputs.RiskProjector == nil ||
-		coreInputs.RiskProjector.ID() != projector.ID() || coreInputs.ClosureFactory != nil ||
-		coreInputs.ClosureSupport != nil {
+		coreInputs.RiskProjector.ID() != projector.ID() {
 		return result, errors.New("AGENTIC_EPISODE_TARGET_SCENARIO_INVALID")
 	}
-	coreInputs.ClosureFactory = target.ClosureFactory
-	coreInputs.ClosureSupport = target.ClosureSupport
 	coreInputs.TargetSurface = &target.Surface
 	rootID := target.ID + "-agentic-" + risk.Accepted.Candidate.ID
 	coreInputs.RootID = rootID

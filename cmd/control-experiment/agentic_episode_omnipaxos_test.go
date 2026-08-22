@@ -275,9 +275,6 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				if view.Prior.PreviousProposal == nil || len(view.Prior.Steps) == 0 {
 					t.Fatalf("stateless Scenario feedback lost the preceding strategic action: %#v", view.Prior)
 				}
-				if view.Prior.ClosureHandoff && view.Prior.ClosureHandoffStepID == "" {
-					t.Fatalf("closure feedback lost its handoff action identity: %#v", view.Prior)
-				}
 			}
 			var step *controlexperiment.ScenarioStep
 			for _, action := range view.Frontier.Actions {

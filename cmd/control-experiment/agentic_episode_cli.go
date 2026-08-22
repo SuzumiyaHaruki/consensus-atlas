@@ -62,7 +62,6 @@ func agenticEpisodeNonSessionProjection(options controlExperimentOptions) contro
 	options.MethodSpecDigest = ""
 	options.InvestigationEpisodes = 1
 	options.KnowledgeSourceMounts = nil
-	options.ClosureMode = ""
 	options.RiskInput = ""
 	options.RepositoryRoot = ""
 	options.NodeCount = 0
@@ -295,14 +294,6 @@ func finalizeAgenticEpisodeComposition(
 	feedbackProbe *controlexperiment.AgenticCapabilityFeedbackProbe,
 	preparation controlexperiment.AgenticPreparationWork,
 ) (agenticEpisodeComposition, error) {
-	var err error
-	target, err = bindRequestedClosureMode(target, options.ClosureMode)
-	if err != nil {
-		return agenticEpisodeComposition{}, err
-	}
-	if err := validateClosureCallBudget(target, budget); err != nil {
-		return agenticEpisodeComposition{}, err
-	}
 	existingRisk, riskInputDigest, err := loadExistingRiskInput(options.RiskInput, target)
 	if err != nil {
 		return agenticEpisodeComposition{}, err
@@ -338,38 +329,4 @@ func finalizeAgenticEpisodeComposition(
 		Memory:                  memory,
 		Preparation:             preparation,
 	}, nil
-}
-
-func validateClosureCallBudget(target agenticEpisodeTarget, budget agenticEpisodeBudget) error {
-	if target.ClosureFactory != nil &&
-		target.ClosureMinimumScenarioCalls > budget.MaxScenarioCalls {
-		return errors.New("AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_CALL_BUDGET_INSUFFICIENT")
-	}
-	return nil
-}
-
-// bindRequestedClosureMode resolves the experiment arm against the actual
-// Target composition. MethodSpec is derived from the resulting factory field,
-// so a caller cannot label a public-fixed execution as target-local.
-func bindRequestedClosureMode(
-	target agenticEpisodeTarget,
-	requested string,
-) (agenticEpisodeTarget, error) {
-	switch controlexperiment.AgenticClosureMode(requested) {
-	case "":
-		target.ClosureFactory = nil
-		target.ClosureSupport = nil
-		return target, nil
-	case controlexperiment.AgenticClosureModePublicFixed:
-		target.ClosureFactory = nil
-		target.ClosureSupport = nil
-		return target, nil
-	case controlexperiment.AgenticClosureModeTargetLocal:
-		if target.ClosureFactory == nil || target.ClosureSupport == nil {
-			return agenticEpisodeTarget{}, errors.New("AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_UNAVAILABLE")
-		}
-		return target, nil
-	default:
-		return agenticEpisodeTarget{}, errors.New("AGENTIC_EPISODE_CLOSURE_MODE_INVALID")
-	}
 }

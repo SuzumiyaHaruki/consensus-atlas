@@ -63,7 +63,7 @@ func buildOmnipaxosAgenticBootstrapRoot(
 }
 
 // buildOmnipaxosScenarioRoot retains the workload-ready root used by the
-// narrow closure calibration regressions. Active blind experiments select the
+// narrow public-progress calibration regressions. Active blind experiments select the
 // bootstrap mode explicitly and therefore keep coordinator election and Invoke
 // inside the Agent-owned path.
 func buildOmnipaxosScenarioRoot(

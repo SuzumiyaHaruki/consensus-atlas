@@ -89,41 +89,37 @@ func validScenarioPlannerResponseFailure(failure *ScenarioPlannerResponseFailure
 }
 
 type ScenarioAgentFeedback struct {
-	Attempt              int                               `json:"attempt"`
-	Intent               string                            `json:"intent,omitempty"`
-	Outcome              string                            `json:"outcome"`
-	ReasonCode           string                            `json:"reason_code,omitempty"`
-	ValidationIssues     []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
-	CapabilityGaps       []AgentCapabilityGap              `json:"capability_gaps,omitempty"`
-	AllowedIntents       []string                          `json:"allowed_intents,omitempty"`
-	PreviousProposal     *ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
-	FailedStep           *ScenarioStep                     `json:"failed_step,omitempty"`
-	Steps                []ScenarioStepFeedback            `json:"steps,omitempty"`
-	NaturalProgress      []ScenarioStepFeedback            `json:"natural_progress,omitempty"`
-	NaturalProgressStop  string                            `json:"natural_progress_stop,omitempty"`
-	ClosureCandidates    []FrontierActionRef               `json:"closure_candidates,omitempty"`
-	ClosureHandoff       bool                              `json:"closure_handoff,omitempty"`
-	ClosureHandoffStepID string                            `json:"closure_handoff_step_id,omitempty"`
-	ProgressDelta        *ScenarioProgressDelta            `json:"progress_delta,omitempty"`
+	Attempt             int                               `json:"attempt"`
+	Intent              string                            `json:"intent,omitempty"`
+	Outcome             string                            `json:"outcome"`
+	ReasonCode          string                            `json:"reason_code,omitempty"`
+	ValidationIssues    []ScenarioProposalValidationIssue `json:"validation_issues,omitempty"`
+	CapabilityGaps      []AgentCapabilityGap              `json:"capability_gaps,omitempty"`
+	AllowedIntents      []string                          `json:"allowed_intents,omitempty"`
+	PreviousProposal    *ScenarioInvestigationProposal    `json:"previous_proposal,omitempty"`
+	FailedStep          *ScenarioStep                     `json:"failed_step,omitempty"`
+	Steps               []ScenarioStepFeedback            `json:"steps,omitempty"`
+	NaturalProgress     []ScenarioStepFeedback            `json:"natural_progress,omitempty"`
+	NaturalProgressStop string                            `json:"natural_progress_stop,omitempty"`
+	ProgressDelta       *ScenarioProgressDelta            `json:"progress_delta,omitempty"`
 }
 
 type ScenarioAgentView struct {
 	// Provider prompts use AcceptedHypothesis when present and omit the two
 	// overlapping construction contracts below. They remain available to
 	// trusted validation and direct composition tests.
-	Knowledge               ProtocolKnowledgePack      `json:"knowledge"`
-	Hypothesis              TestHypothesis             `json:"hypothesis"`
-	AcceptedHypothesis      *AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
-	TargetSurface           *AgentTargetSurface        `json:"target_surface,omitempty"`
-	OrderedMilestones       []string                   `json:"ordered_milestones"`
-	Frontier                RiskFrontierView           `json:"root_frontier"`
-	Semantics               ScenarioSemanticExposure   `json:"action_semantics"`
-	MaxSteps                int                        `json:"max_steps"`
-	DecisionAllowance       int                        `json:"decision_allowance"`
-	RemainingDecisions      int                        `json:"remaining_decisions"`
-	AvailableIntents        []string                   `json:"available_intents"`
-	PostInterventionClosure bool                       `json:"post_intervention_closure"`
-	Prior                   *ScenarioAgentFeedback     `json:"prior_feedback,omitempty"`
+	Knowledge          ProtocolKnowledgePack      `json:"knowledge"`
+	Hypothesis         TestHypothesis             `json:"hypothesis"`
+	AcceptedHypothesis *AcceptedHypothesisContext `json:"accepted_hypothesis,omitempty"`
+	TargetSurface      *AgentTargetSurface        `json:"target_surface,omitempty"`
+	OrderedMilestones  []string                   `json:"ordered_milestones"`
+	Frontier           RiskFrontierView           `json:"root_frontier"`
+	Semantics          ScenarioSemanticExposure   `json:"action_semantics"`
+	MaxSteps           int                        `json:"max_steps"`
+	DecisionAllowance  int                        `json:"decision_allowance"`
+	RemainingDecisions int                        `json:"remaining_decisions"`
+	AvailableIntents   []string                   `json:"available_intents"`
+	Prior              *ScenarioAgentFeedback     `json:"prior_feedback,omitempty"`
 }
 
 type ScenarioAgentAttempt struct {
@@ -183,77 +179,7 @@ func ExploreScenarioWithPlanner(
 		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
 		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
 		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		nil, false, planner, preparers...,
-	)
-}
-
-// ExploreScenarioWithPlannerAndClosure is the Target-composed Agent path.
-// The factory is consulted only after a strategic plan has executed a real
-// intervention; nil retains the exact behavior of ExploreScenarioWithPlanner.
-func ExploreScenarioWithPlannerAndClosure(
-	ctx context.Context,
-	maxCalls int,
-	maxPlanSteps int,
-	maxDecisions int,
-	knowledge ProtocolKnowledgePack,
-	hypothesis TestHypothesis,
-	spec semantic.RiskWitnessSpec,
-	rootFrontier RiskFrontierView,
-	rootSemantics ScenarioSemanticExposure,
-	rootRisk semantic.RiskWitnessResult,
-	root controlruntime.Trace,
-	runtimeConfig RuntimeConfig,
-	faultEnvelope *FaultEnvelope,
-	targetSurface *AgentTargetSurface,
-	acceptedHypothesis *AcceptedHypothesisContext,
-	newAdapter AdapterFactory,
-	projector SemanticPrefixProjector,
-	semanticProjector ScenarioSemanticProjector,
-	closureFactory ScenarioClosureFactory,
-	planner ScenarioPlanner,
-	preparers ...ScenarioActionPreparer,
-) (ScenarioAgentResult, error) {
-	return exploreScenarioWithPlanner(
-		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
-		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
-		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		closureFactory, closureFactory != nil, planner, preparers...,
-	)
-}
-
-// ExploreScenarioWithPlannerAndScopedClosure exposes closure to the planner
-// only when trusted Target composition declares support for this exact spec.
-// The factory remains authoritative after a real intervention is executed.
-func ExploreScenarioWithPlannerAndScopedClosure(
-	ctx context.Context,
-	maxCalls int,
-	maxPlanSteps int,
-	maxDecisions int,
-	knowledge ProtocolKnowledgePack,
-	hypothesis TestHypothesis,
-	spec semantic.RiskWitnessSpec,
-	rootFrontier RiskFrontierView,
-	rootSemantics ScenarioSemanticExposure,
-	rootRisk semantic.RiskWitnessResult,
-	root controlruntime.Trace,
-	runtimeConfig RuntimeConfig,
-	faultEnvelope *FaultEnvelope,
-	targetSurface *AgentTargetSurface,
-	acceptedHypothesis *AcceptedHypothesisContext,
-	newAdapter AdapterFactory,
-	projector SemanticPrefixProjector,
-	semanticProjector ScenarioSemanticProjector,
-	closureFactory ScenarioClosureFactory,
-	closureSupport ScenarioClosureSupport,
-	planner ScenarioPlanner,
-	preparers ...ScenarioActionPreparer,
-) (ScenarioAgentResult, error) {
-	advertiseClosure := closureFactory != nil && closureSupport != nil && closureSupport(spec)
-	return exploreScenarioWithPlanner(
-		ctx, maxCalls, maxPlanSteps, maxDecisions, knowledge, hypothesis, spec,
-		rootFrontier, rootSemantics, rootRisk, root, runtimeConfig, faultEnvelope,
-		targetSurface, acceptedHypothesis, newAdapter, projector, semanticProjector,
-		closureFactory, advertiseClosure, planner, preparers...,
+		planner, preparers...,
 	)
 }
 
@@ -276,8 +202,6 @@ func exploreScenarioWithPlanner(
 	newAdapter AdapterFactory,
 	projector SemanticPrefixProjector,
 	semanticProjector ScenarioSemanticProjector,
-	closureFactory ScenarioClosureFactory,
-	advertiseClosure bool,
 	planner ScenarioPlanner,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioAgentResult, error) {
@@ -365,19 +289,18 @@ func exploreScenarioWithPlanner(
 		}
 		availableIntents := scenarioSinglePathIntents(prior)
 		view := ScenarioAgentView{
-			Knowledge:               cloneProtocolKnowledge(knowledge),
-			TargetSurface:           cloneAgentTargetSurface(targetSurface),
-			Hypothesis:              hypothesis,
-			AcceptedHypothesis:      cloneAcceptedHypothesisContext(acceptedHypothesis),
-			OrderedMilestones:       scenarioMilestoneIDs(spec),
-			Frontier:                cloneScenarioFrontier(currentFrontier),
-			Semantics:               cloneScenarioSemantics(currentSemantics),
-			MaxSteps:                viewMaxSteps,
-			DecisionAllowance:       attemptAllowance,
-			RemainingDecisions:      remaining,
-			AvailableIntents:        availableIntents,
-			PostInterventionClosure: advertiseClosure,
-			Prior:                   cloneScenarioFeedback(prior),
+			Knowledge:          cloneProtocolKnowledge(knowledge),
+			TargetSurface:      cloneAgentTargetSurface(targetSurface),
+			Hypothesis:         hypothesis,
+			AcceptedHypothesis: cloneAcceptedHypothesisContext(acceptedHypothesis),
+			OrderedMilestones:  scenarioMilestoneIDs(spec),
+			Frontier:           cloneScenarioFrontier(currentFrontier),
+			Semantics:          cloneScenarioSemantics(currentSemantics),
+			MaxSteps:           viewMaxSteps,
+			DecisionAllowance:  attemptAllowance,
+			RemainingDecisions: remaining,
+			AvailableIntents:   availableIntents,
+			Prior:              cloneScenarioFeedback(prior),
 		}
 		repairAttempt := pendingRepairView != nil
 		if repairAttempt {
@@ -510,14 +433,11 @@ func exploreScenarioWithPlanner(
 		if attemptAllowance < naturalProgressAllowance {
 			naturalProgressAllowance = attemptAllowance
 		}
-		inheritedIntervention := latestScenarioExecutionClosureIntervention(result.Execution)
-		inheritedClosureChoices := scenarioExecutionClosureChoices(result.Execution)
 		automaticGoal = scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
-		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
-			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, remaining,
+		execution, err := executeSemanticBoundedScenarioPlan(
+			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance,
 			spec, currentRisk, currentTrace,
 			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
-			closureFactory, inheritedIntervention, inheritedClosureChoices,
 			automaticGoal, naturalProgressAllowance, preparer...,
 		)
 		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
@@ -534,19 +454,10 @@ func exploreScenarioWithPlanner(
 		attempt.Execution = &execution
 		attempt.Feedback = ScenarioAgentFeedback{
 			Attempt: ordinal, Intent: proposal.Intent, Outcome: execution.Status,
-			PreviousProposal:     cloneScenarioProposal(&proposal),
-			Steps:                cloneScenarioStepFeedback(execution.Steps),
-			NaturalProgress:      cloneScenarioStepFeedback(execution.AutomaticProgress),
-			NaturalProgressStop:  execution.NaturalProgressStop,
-			ClosureCandidates:    cloneFrontierActionRefs(execution.ClosureCandidates),
-			ClosureHandoff:       execution.ClosureHandoff,
-			ClosureHandoffStepID: execution.ClosureHandoffStepID,
-		}
-		if execution.NaturalProgressStop == ScenarioProgressClosureUnderdetermined ||
-			execution.NaturalProgressStop == ScenarioProgressClosureQuiescent ||
-			execution.NaturalProgressStop == ScenarioProgressClosureBudget {
-			attempt.Feedback.Outcome = ScenarioAgentStopped
-			attempt.Feedback.ReasonCode = execution.NaturalProgressStop
+			PreviousProposal:    cloneScenarioProposal(&proposal),
+			Steps:               cloneScenarioStepFeedback(execution.Steps),
+			NaturalProgress:     cloneScenarioStepFeedback(execution.AutomaticProgress),
+			NaturalProgressStop: execution.NaturalProgressStop,
 		}
 		if execution.Status == ScenarioStatusStopped && len(execution.Steps) > 0 {
 			failed := execution.Steps[len(execution.Steps)-1]
@@ -666,7 +577,7 @@ func executeScenarioAutomaticGoal(
 	id := fmt.Sprintf("scenario-automatic-goal-%02d", ordinal)
 	progress, err := executeScenarioNaturalProgress(
 		ctx, id, 1, spec, currentRisk, currentTrace, runtimeConfig,
-		faultEnvelope, newAdapter, projector, nil, goal, preparer,
+		faultEnvelope, newAdapter, projector, goal, preparer,
 		semanticProjector, &currentSemantics,
 	)
 	if err != nil {
@@ -807,12 +718,7 @@ func mergeScenarioExecution(result *ScenarioAgentResult, execution ScenarioExecu
 		result.Execution.AutomaticProgress,
 		cloneScenarioStepFeedback(execution.AutomaticProgress)...,
 	)
-	if execution.ClosureHandoff {
-		result.Execution.ClosureHandoff = true
-		result.Execution.ClosureHandoffStepID = execution.ClosureHandoffStepID
-	}
 	result.Execution.NaturalProgressStop = execution.NaturalProgressStop
-	result.Execution.ClosureCandidates = cloneFrontierActionRefs(execution.ClosureCandidates)
 	result.Execution.FinalTrace = execution.FinalTrace
 	result.Execution.FinalRisk = execution.FinalRisk
 	addScenarioExecutionWork(&result.Execution.Work, execution.Work)
@@ -851,7 +757,6 @@ func cloneScenarioFeedback(feedback *ScenarioAgentFeedback) *ScenarioAgentFeedba
 	}
 	value.Steps = cloneScenarioStepFeedback(feedback.Steps)
 	value.NaturalProgress = cloneScenarioStepFeedback(feedback.NaturalProgress)
-	value.ClosureCandidates = cloneFrontierActionRefs(feedback.ClosureCandidates)
 	value.ProgressDelta = cloneScenarioProgressDelta(feedback.ProgressDelta)
 	return &value
 }
@@ -872,7 +777,6 @@ func cloneScenarioExecution(execution *ScenarioExecution) *ScenarioExecution {
 	value := *execution
 	value.Steps = cloneScenarioStepFeedback(execution.Steps)
 	value.AutomaticProgress = cloneScenarioStepFeedback(execution.AutomaticProgress)
-	value.ClosureCandidates = cloneFrontierActionRefs(execution.ClosureCandidates)
 	if execution.continuationFrontier != nil {
 		frontier := cloneScenarioFrontier(*execution.continuationFrontier)
 		value.continuationFrontier = &frontier

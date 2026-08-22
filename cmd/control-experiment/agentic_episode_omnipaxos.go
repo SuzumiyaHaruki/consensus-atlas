@@ -137,11 +137,8 @@ func newOmnipaxosAgenticEpisodeTarget(
 	}
 	target := agenticEpisodeTarget{
 		ID: "omnipaxos-v2", Knowledge: inputs.Knowledge, Surface: surface,
-		OracleRegistry:              oracleRegistry,
-		ObservationProjector:        observationProjector,
-		ClosureFactory:              newOmnipaxosScenarioClosureFactory(),
-		ClosureSupport:              omnipaxosScenarioClosureSupports,
-		ClosureMinimumScenarioCalls: omnipaxosClosureMinimumScenarioCalls(len(surface.Nodes)),
+		OracleRegistry:       oracleRegistry,
+		ObservationProjector: observationProjector,
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
@@ -153,12 +150,11 @@ func newOmnipaxosAgenticEpisodeTarget(
 				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis,
 				AcceptedHypothesis: &risk.AcceptedHypothesis, RiskSpec: risk.Spec,
 				Root: inputs.Root, Runtime: inputs.Experiment.Runtime,
-				FaultEnvelope:         inputs.Experiment.faultEnvelope(),
-				SemanticExposure:      inputs.Experiment.ScenarioSemanticExposure,
-				SingleStrategicAction: true,
-				NewAdapter:            factory,
-				ActionPreparer:        newOmnipaxosScenarioActionPreparer(inputs.Workload),
-				RiskProjector:         projector,
+				FaultEnvelope:    inputs.Experiment.faultEnvelope(),
+				SemanticExposure: inputs.Experiment.ScenarioSemanticExposure,
+				NewAdapter:       factory,
+				ActionPreparer:   newOmnipaxosScenarioActionPreparer(inputs.Workload),
+				RiskProjector:    projector,
 				SemanticProjector: func(
 					trace controlruntime.Trace,
 					frontier controlexperiment.RiskFrontierView,

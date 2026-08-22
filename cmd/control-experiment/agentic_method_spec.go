@@ -50,7 +50,6 @@ func buildAgenticMethodSpec(
 		return controlexperiment.AgenticMethodSpec{}, err
 	}
 	scenarioTransport := scenarioClient.freeze()
-	closureMode := agenticClosureModeForTarget(target)
 	riskInputMode := controlexperiment.AgenticRiskInputAgentGenerated
 	if riskInputDigest != "" {
 		riskInputMode = controlexperiment.AgenticRiskInputExistingCandidate
@@ -61,7 +60,7 @@ func buildAgenticMethodSpec(
 		SemanticInputSchema:      semanticInputSchema,
 		SemanticInputDigest:      semanticInputDigest,
 		ScenarioSemanticExposure: semanticExposure, SourceExposure: source,
-		ClosureMode:   closureMode,
+		ClosureMode:   controlexperiment.AgenticClosureModePublicFixed,
 		RiskInputMode: riskInputMode, RiskInputDigest: riskInputDigest,
 		CapabilityFeedbackMode: controlexperiment.AgenticCapabilityFeedbackMode(
 			normalizedCapabilityFeedbackMode(options.CapabilityFeedbackMode),
@@ -92,15 +91,6 @@ func normalizedPreparationWallClockMS(value int64) int64 {
 		return 1_200_000
 	}
 	return value
-}
-
-func agenticClosureModeForTarget(
-	target agenticEpisodeTarget,
-) controlexperiment.AgenticClosureMode {
-	if target.ClosureFactory != nil {
-		return controlexperiment.AgenticClosureModeTargetLocal
-	}
-	return controlexperiment.AgenticClosureModePublicFixed
 }
 
 func normalizedCapabilityFeedbackMode(value string) string {

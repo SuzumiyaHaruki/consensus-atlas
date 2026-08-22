@@ -253,12 +253,10 @@ Failed 后续调用一律拒绝。repair 已 dispatch 但 result 尚未落盘时
 MethodSpec。前者用于公开配对消融，不会删除 durable artifact 中的可信 capability-gap 证据。
 公开反馈校准可指定 `-capability-feedback-probe`；探针只由真实 TargetSurface 预检，不执行 Action，并进入
 MethodSpec。
-短 closure capability pilot 可显式使用 `-closure-mode public-fixed` 或
-`-closure-mode target-local`。该值不是自由标签：CLI 先改变实际 Target composition，
-再从 factory 是否存在机械派生到 MethodSpec；没有专属 factory 的 Target 会拒绝
-`target-local`。
-未提供 `-closure-mode` 时默认为 `public-fixed`；专属闭合后端不再默认代替 Agent
-完成后续时序。
+活动方法只有一套公共确定性推进语义。Scenario Agent 选择当前 enabled 的战略干预；
+普通 effect、消息和自然到期 timer 由协议中立的 causal progress 推进，并全部记录进
+同一精确 Trace。历史 target-local closure 仅保留在旧 Git 提交和实验报告中；当前 CLI
+没有 `-closure-mode`，两个真实 Target 也不再注册协议专用闭合器。
 
 Risk 输入有两种正式模式。默认由 Risk Agent 生成；需要让不同方法使用同一个已有
 Risk 时，可增加：
@@ -272,7 +270,7 @@ Episode 的 `summary.json`（使用其中的 `accepted_risk`）。历史 qualifi
 信任：CLI 会按当前 Target 的知识、Observation 和 Action 能力重新审查，只接受
 qualified 且无 capability gap 的 Risk。读取模式下 Risk provider 调用为 0；候选的
 规范化摘要及 `existing-candidate` 模式进入 MethodSpec。该模式同样支持连续
-Investigation，因此不同 closure、搜索方法或模型可以机械证明使用了同一个 Risk。
+Investigation，因此不同搜索方法或模型可以机械证明使用了同一个 Risk。
 
 ## 验证与研究边界
 
@@ -293,10 +291,9 @@ git diff --check
 交还给下一 Episode；这只是搜索选择，不是 verdict。这仍未证明 Agent 优于其他搜索方法，
 也尚未发现新的实现问题。旧 A8 paired evaluator/session 已删除，不参与新 Agentic holdout 路径。
 
-配置 target-local closure 时，Scenario view 会声明 `post_intervention_closure=true`。
-Target factory 只基于真实已执行前缀判断是否接管；一旦认可某个干预，执行器会忽略
-Agent 对后续尚未 enabled Action 的预测并转入受限 closure。未配置 factory、未识别
-干预及 public-fixed 路径不变。
+etcd/raft 与 OmniPaxos 的历史 closure 对照证明专用选择器能够缩短两个 Drop 场景，
+但扩大后的公共推进同样可以到达目标。当前主线因此删除了 handoff、candidate、artifact
+字段和专用 selector，避免每接入一个协议都复制一套隐藏调度知识。
 
 继续阅读：[`docs/architecture.md`](docs/architecture.md)、[`docs/CURRENT_STAGE.md`](docs/CURRENT_STAGE.md) 和
 [`docs/ConsensusAtlas-总体规划.md`](docs/ConsensusAtlas-总体规划.md)。

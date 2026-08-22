@@ -195,8 +195,8 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   结果不删除 root violation，但正式 finding 只由 evaluator-owned Replay 中 root 之后的 violation 产生。
   root 中已有的异常单独报告为 Oracle sensitivity，不能归因于 Agent；
 - Agentic semantic input 显式声明 `root_mode`。正式盲测使用 `bootstrap`：只清空启动
-  Ready/effect，不预先完成选举、coordinator 形成或 Invoke；历史窄 closure 校准保留
-  `workload-ready`。两种模式由 semantic input digest/MethodSpec 区分，不能靠移动 root
+  Ready/effect，不预先完成选举、coordinator 形成或 Invoke；历史窄校准曾使用
+  `workload-ready`，但活动主线将在 M4n20 删除该第二 root builder。不能靠移动 root
   把自然启动已出现的问题改记为 Agent finding；
 - 每个活动 Target 的 bootstrap root 必须以普通零模型测试证明三/五节点均可精确 Replay、
   现有 Oracle registry 为 clean 且仍存在 timer/message 调查空间。这一检查复用现有 Trace、Replay
@@ -207,10 +207,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   Submit 和 ApplyRuntimeAction，并进入 formal primary decisions/work。只读 Adapter 查询不
   冒充 scheduler work，仍由 wall time 表达；report/case 数只作为结构统计。
   多 Episode CLI 只构造一次重准备，并只在实际承担该成本的首个新 Episode 记账；
-- `public-fixed` 是 CLI 默认方法；`target-local` 必须显式选择，且两者的 MethodSpec
-  identity 不同。Agent 选择、Target closure 和公共自然推进的 decisions 在 Episode
-  与 formal trial 中分开报告，不将 closure 动作归功于 Agent；Risk 重复按结构语义判断，
-  不按 Agent 自报 CandidateID 判断。
+- 活动方法固定使用公共 causal progress，CLI 不再暴露 closure mode。Agent 选择与公共
+  自然推进的 decisions 在 Episode 和 formal trial 中分开报告；Risk 重复按结构语义判断，
+  不按 Agent 自报 CandidateID 判断。历史 `closure_mode` 只用于读取旧工件。
 
 长轨迹证据先通过 etcd/OmniPaxos prefix 增量缓存减少重复计算。Trace 仍保存完整 Evidence，
 存储 delta 化必须在有真实长时瓶颈并能保持 Replay/Oracle 兼容时再做，不为压缩体积引入第二套轨迹语义。
@@ -233,18 +232,14 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
 - 保证唯一活动 Episode CLI 不依赖一次性 runner；
 - 形成可阅读、可版本化的精简仓库。
 
-### S2：Agent 能力释放（当前）
+### S2：Agent 能力释放与主线收敛（当前）
 
-- etcd/raft 与 OmniPaxos Target 均支持可配置静态节点数；协议专属 closure
-  按实际多数派计算所需参与者。多个等价 quorum 子集存在时，后端只返回当前
-  enabled/admissible 且能够绑定候选参与者的 `closure_candidates`；Agent 通过
-  `revise` 执行 exact Action 后，可信代码从真实 `FrontierChoice` 恢复选择。不把任意
-  节点排序写进公共 Core，也不允许 closure 候选引入新干预；
+- etcd/raft 与 OmniPaxos Target 均支持可配置静态节点数。多个战略方向存在时，由
+  Scenario Agent 从当前 trusted frontier 选择；普通因果链由公共 causal progress 推进，
+  不把协议专用 quorum 选择器或任意节点排序写进公共 Core；
 
-- 五节点零模型垂直回归已证明两个协议的多参与者路径可进入 Agent 主流程：
-  etcd/raft 由 Agent 选择两个备用 follower；OmniPaxos 在已有 prepare quorum 基础上
-  选择额外闭合参与者。两者均以同一 RequestID 达到 Risk，fresh Replay stable，
-  Target Oracle clean。`public-fixed` 仍是任意配置节点数的默认路径；
+- 三/五节点零模型回归已证明两个协议的公共 bootstrap、typed Invoke、战略 Action、
+  public progress、qualified Bundle 和 Replay 主流程可用；
 
 - OmniPaxos 0.2.2 已固定到 `suts/omnipaxos` 的上游提交 `e3e989b...`；Rust worker
   通过本地 Cargo path dependency、锁定离线构建和规范 worker 路径校验使用该源码。
@@ -258,28 +253,15 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   `--locked --offline`。端到端回归使用该 Audit 构建 worker、生成 OmniPaxos V3 Bundle，
   再从 sealed recipe 运行 evaluator-owned Replay，并同时核对 fresh Trace 与 BuildID；
 
-- target-local closure 的方法资格同时受节点规模和调用预算约束；预算不足以容纳一次
-  干预及必要 quorum 参与者选择时，在 Agent 调用前拒绝。etcd/raft 后续消息绑定原干预
-  term/index，OmniPaxos 绑定 ballot/sequence/RequestID，避免换届、重试或旧消息被误消费；
-
 - semantic input 的文件位置不再决定本地 SUT 身份：CLI 可用 `-repository-root` 显式
   指向 ConsensusAtlas 工作区，原有向上发现只作为兼容默认。OmniPaxos worker 在响应中
   回传实际规范化配置，Adapter 与 Manifest 使用同一配置事实，避免 Go/Rust 常量漂移；
 
-- 已用 target-local closure selector 闭合 Agent 已正确选择的协议因果路径，并将
-  可选 factory 接入 Scenario Agent 的 `after_milestone` 与计划结束推进；公共
-  Runtime 只提供 enabled frontier、执行、Trace 和 fresh Replay，不解释闭合语义；
-  closure selector 只能选择 Effect/Deliver/Temporal，歧义或无可选动作必须返回
-  正常反馈，不能在闭合阶段继续制造新的故障干预；公共层必须保留不可变权威
-  frontier，且预算最后一个 Action 产生的 terminal/Risk 结果必须在预算判定前采集；
-- closure-disabled 同前缀回归进一步证明，两个现存 selector 唯一支持的 etcd/raft 与 OmniPaxos
+- 历史 target-local closure selector 曾闭合 Agent 已正确选择的协议因果路径；
+  closure-disabled 同前缀回归进一步证明，两个 selector 唯一支持的 etcd/raft 与 OmniPaxos
   Drop 路径都能由公共 causal progress 在扩大但仍有界的预算内闭合。selector 只缩短路径，不提供
-  新的可达性，也从未覆盖 Crash/Duplicate/Restart/换主；因此它们作为历史消融证据保留在 Git，
-  活动主线将删除 closure handoff/候选/工件字段与协议专用实现；
-- factory 只在可信 Trace 已记录真实干预后激活；未配置 factory 的 Target 行为不变，
-  已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
-- 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
-  无候选均作为可修订反馈返回，已满足 milestone 时不提前构造 selector；
+  新的可达性，也从未覆盖 Crash/Duplicate/Restart/换主；M4n19 已删除 closure
+  factory/handoff/candidate/prompt/artifact 和协议专用实现，只保留 Git 历史与精简实验报告；
 - Agentic qualified execution 不再把 Scenario Trace 翻译成逐 decision Policy。完整 Trace
   直接作为 recorded schedule；主执行、Bundle fresh Replay 和 evaluator-owned Replay
   共用“必要时按原参数重建 Invoke/Partition → 查询 enabled/admissible → 精确 ActionID
@@ -290,9 +272,9 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   typed Action preparer 在唯一 coordinator 就绪后投放一次普通 Invoke。自动动作继续写入同一
   Trace、成本和 Replay，但 finding attribution 从首个 Agent 选择的战略 Action 才开始；若没有
   战略 Action，整条 Trace 都属于 setup；
-- closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
+- 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n18-closure-disabled-progress-v1`；旧 M4n17 及更早版本只读兼容；
+  `m4n19-public-progress-only-v1`；旧 M4n18 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/

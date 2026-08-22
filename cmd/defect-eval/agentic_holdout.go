@@ -548,7 +548,6 @@ func mergeAgenticDecisionProvenance(
 		return true
 	}
 	return add(&total.AgentSelected, current.AgentSelected) &&
-		add(&total.TargetClosure, current.TargetClosure) &&
 		add(&total.PublicProgress, current.PublicProgress)
 }
 

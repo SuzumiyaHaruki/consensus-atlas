@@ -31,7 +31,6 @@ type controlExperimentOptions struct {
 	CampaignDirectory       string
 	CampaignResume          bool
 	InvestigationEpisodes   int
-	ClosureMode             string
 	PreparationWallClockMS  int64
 	CapabilityFeedbackMode  string
 	CapabilityFeedbackProbe string
@@ -99,7 +98,7 @@ func validateQualifiedCLIOptions(options controlExperimentOptions) error {
 		options.RiskInput != "" || options.RepositoryRoot != "" ||
 		options.AgentProvider != "" && options.AgentProvider != openRouterProvider ||
 		options.WorkerPath != "" || options.Target != "" || len(options.KnowledgeSourceMounts) != 0 ||
-		options.InvestigationEpisodes != 1 || options.ClosureMode != "" ||
+		options.InvestigationEpisodes != 1 ||
 		options.PreparationWallClockMS != 1_200_000 ||
 		options.CapabilityFeedbackMode != "" &&
 			options.CapabilityFeedbackMode != controlexperiment.AgenticCapabilityFeedbackStructuredGaps ||

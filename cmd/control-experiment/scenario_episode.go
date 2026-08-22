@@ -18,23 +18,20 @@ type scenarioAgentEpisodeResult struct {
 }
 
 type scenarioEpisodeCoreInputs struct {
-	RootID                string
-	Knowledge             controlexperiment.ProtocolKnowledgePack
-	Hypothesis            controlexperiment.TestHypothesis
-	AcceptedHypothesis    *controlexperiment.AcceptedHypothesisContext
-	RiskSpec              semantic.RiskWitnessSpec
-	Root                  controlruntime.Trace
-	Runtime               controlexperiment.RuntimeConfig
-	FaultEnvelope         *controlexperiment.FaultEnvelope
-	TargetSurface         *controlexperiment.AgentTargetSurface
-	SemanticExposure      controlexperiment.ScenarioSemanticExposureMode
-	NewAdapter            controlexperiment.AdapterFactory
-	ActionPreparer        controlexperiment.ScenarioActionPreparer
-	ClosureFactory        controlexperiment.ScenarioClosureFactory
-	ClosureSupport        controlexperiment.ScenarioClosureSupport
-	SingleStrategicAction bool
-	RiskProjector         controlexperiment.SemanticPrefixProjector
-	SemanticProjector     controlexperiment.ScenarioSemanticProjector
+	RootID             string
+	Knowledge          controlexperiment.ProtocolKnowledgePack
+	Hypothesis         controlexperiment.TestHypothesis
+	AcceptedHypothesis *controlexperiment.AcceptedHypothesisContext
+	RiskSpec           semantic.RiskWitnessSpec
+	Root               controlruntime.Trace
+	Runtime            controlexperiment.RuntimeConfig
+	FaultEnvelope      *controlexperiment.FaultEnvelope
+	TargetSurface      *controlexperiment.AgentTargetSurface
+	SemanticExposure   controlexperiment.ScenarioSemanticExposureMode
+	NewAdapter         controlexperiment.AdapterFactory
+	ActionPreparer     controlexperiment.ScenarioActionPreparer
+	RiskProjector      controlexperiment.SemanticPrefixProjector
+	SemanticProjector  controlexperiment.ScenarioSemanticProjector
 }
 
 // runScenarioEpisodeCore is the shared trusted execution substrate used by
@@ -86,26 +83,13 @@ func runScenarioEpisodeCore(
 	if inputs.ActionPreparer != nil {
 		preparers = append(preparers, inputs.ActionPreparer)
 	}
-	var agent controlexperiment.ScenarioAgentResult
-	if inputs.SingleStrategicAction {
-		agent, err = controlexperiment.ExploreScenarioWithPlannerAndScopedClosure(
-			ctx, maxCalls, maxPlanSteps, maxDecisions,
-			inputs.Knowledge, inputs.Hypothesis, inputs.RiskSpec, frontier, semantics,
-			rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.TargetSurface,
-			inputs.AcceptedHypothesis, inputs.NewAdapter,
-			inputs.RiskProjector, inputs.SemanticProjector, inputs.ClosureFactory, inputs.ClosureSupport,
-			planner, preparers...,
-		)
-	} else {
-		agent, err = controlexperiment.ExploreScenarioWithPlannerAndClosure(
-			ctx, maxCalls, maxPlanSteps, maxDecisions,
-			inputs.Knowledge, inputs.Hypothesis, inputs.RiskSpec, frontier, semantics,
-			rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.TargetSurface,
-			inputs.AcceptedHypothesis, inputs.NewAdapter,
-			inputs.RiskProjector, inputs.SemanticProjector, inputs.ClosureFactory,
-			planner, preparers...,
-		)
-	}
+	agent, err := controlexperiment.ExploreScenarioWithPlanner(
+		ctx, maxCalls, maxPlanSteps, maxDecisions,
+		inputs.Knowledge, inputs.Hypothesis, inputs.RiskSpec, frontier, semantics,
+		rootRisk, inputs.Root, inputs.Runtime, inputs.FaultEnvelope, inputs.TargetSurface,
+		inputs.AcceptedHypothesis, inputs.NewAdapter,
+		inputs.RiskProjector, inputs.SemanticProjector, planner, preparers...,
+	)
 	result := scenarioAgentEpisodeResult{
 		Agent: agent, FrontierWork: frontierWork,
 	}

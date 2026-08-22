@@ -11,18 +11,11 @@ import (
 )
 
 const (
-	ScenarioProgressClientTerminal         = "client-terminal"
-	ScenarioProgressQuiescent              = "natural-progress-quiescent"
-	ScenarioProgressBudget                 = "natural-progress-budget-exhausted"
-	ScenarioProgressSemanticYield          = "natural-progress-semantic-yield"
-	ScenarioProgressWitnessInstantiated    = "witness-instantiated"
-	ScenarioProgressClosureBudget          = "closure-budget-exhausted"
-	ScenarioProgressClosureQuiescent       = "closure-quiescent"
-	ScenarioProgressClosureUnderdetermined = "closure-underdetermined"
-
-	ScenarioClosureSelected        = "selected"
-	ScenarioClosureUnderdetermined = "underdetermined"
-	ScenarioClosureNoEligible      = "no-eligible-closure-action"
+	ScenarioProgressClientTerminal      = "client-terminal"
+	ScenarioProgressQuiescent           = "natural-progress-quiescent"
+	ScenarioProgressBudget              = "natural-progress-budget-exhausted"
+	ScenarioProgressSemanticYield       = "natural-progress-semantic-yield"
+	ScenarioProgressWitnessInstantiated = "witness-instantiated"
 )
 
 var scenarioNaturalProgressPriority = []control.ActionKind{
@@ -105,62 +98,10 @@ func scenarioCausalProgressFocusFromTrace(trace controlruntime.Trace) *scenarioC
 }
 
 type ScenarioProgressResult struct {
-	StopReason        string              `json:"stop_reason"`
-	Execution         ScenarioExecution   `json:"execution"`
-	Frontier          *ActionFrontierView `json:"frontier,omitempty"`
-	ClosureCandidates []FrontierActionRef `json:"closure_candidates,omitempty"`
+	StopReason string              `json:"stop_reason"`
+	Execution  ScenarioExecution   `json:"execution"`
+	Frontier   *ActionFrontierView `json:"frontier,omitempty"`
 }
-
-// ScenarioClosureSelection distinguishes an exact enabled closure Action from
-// a normal Target-local stop. Underdetermined and no-eligible results preserve
-// the current frontier for deterministic caller feedback.
-type ScenarioClosureSelection struct {
-	Status     string              `json:"status"`
-	Action     FrontierActionRef   `json:"action,omitempty"`
-	Candidates []FrontierActionRef `json:"candidates,omitempty"`
-}
-
-// ScenarioClosureSelector is trusted target composition for one already
-// enabled closure Action. It can only choose an exact member of the current
-// protocol-neutral frontier whose kind is CompleteEffect, DeliverMessage or
-// FireTemporal; it cannot offer Actions, create another intervention, mutate
-// the Runtime or bypass fresh Replay. A nil selector retains the public fixed
-// ordering.
-type ScenarioClosureSelector func(ActionFrontierView) (ScenarioClosureSelection, error)
-
-// ScenarioClosureContext is trusted execution evidence available to an
-// optional Target-local closure factory. Intervention is an Action that the
-// Scenario plan actually executed; the factory cannot manufacture or replace
-// it. Trace and Risk describe the exact post-intervention prefix.
-type ScenarioClosureContext struct {
-	Spec         semantic.RiskWitnessSpec
-	Risk         semantic.RiskWitnessResult
-	Trace        controlruntime.Trace
-	Intervention FrontierChoice
-	// Executed contains trusted, already materialized choices from the current
-	// promoted path. Target composition may use post-intervention choices to
-	// bind one of several causally equivalent closure paths; Agent assertions
-	// and unexecuted plan text never enter this context.
-	Executed []FrontierChoice
-}
-
-// ScenarioClosureFactory may recognize one post-intervention prefix and
-// return a narrow selector for already enabled closure Actions. The executor
-// may query it after each successfully applied prefix; only active=true may
-// replace the remaining untrusted plan suffix. active=false preserves ordinary
-// execution. Once active, a selector stop or error is authoritative and must
-// not fall back to public ordering.
-type ScenarioClosureFactory func(ScenarioClosureContext) (
-	selector ScenarioClosureSelector,
-	active bool,
-	err error,
-)
-
-// ScenarioClosureSupport is a protocol-neutral preflight declaration for one
-// accepted witness spec. It controls only what the planner is promised; the
-// factory must still recognize the exact executed intervention before any
-// closure Action can run.
-type ScenarioClosureSupport func(semantic.RiskWitnessSpec) bool
 
 // ExecuteScenarioNaturalProgress advances only host effects, ordinary message
 // delivery and naturally due temporal events until a mechanical terminal or
@@ -181,32 +122,7 @@ func ExecuteScenarioNaturalProgress(
 ) (ScenarioProgressResult, error) {
 	return executeScenarioNaturalProgress(
 		ctx, id, maxDecisions, spec, rootRisk, root, runtimeConfig,
-		faultEnvelope, newAdapter, projector, nil, scenarioAutomaticProgressGoal{}, nil, nil, nil,
-	)
-}
-
-// ExecuteScenarioNaturalProgressWithClosure is the narrow Target-local
-// extension of natural progress. Runtime ownership, accounting and the final
-// verification Replay remain identical to ExecuteScenarioNaturalProgress.
-func ExecuteScenarioNaturalProgressWithClosure(
-	ctx context.Context,
-	id string,
-	maxDecisions int,
-	spec semantic.RiskWitnessSpec,
-	rootRisk semantic.RiskWitnessResult,
-	root controlruntime.Trace,
-	runtimeConfig RuntimeConfig,
-	faultEnvelope *FaultEnvelope,
-	newAdapter AdapterFactory,
-	projector SemanticPrefixProjector,
-	selector ScenarioClosureSelector,
-) (ScenarioProgressResult, error) {
-	if selector == nil {
-		return ScenarioProgressResult{}, errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTOR_REQUIRED")
-	}
-	return executeScenarioNaturalProgress(
-		ctx, id, maxDecisions, spec, rootRisk, root, runtimeConfig,
-		faultEnvelope, newAdapter, projector, selector, scenarioAutomaticProgressGoal{}, nil, nil, nil,
+		faultEnvelope, newAdapter, projector, scenarioAutomaticProgressGoal{}, nil, nil, nil,
 	)
 }
 
@@ -221,7 +137,6 @@ func executeScenarioNaturalProgress(
 	faultEnvelope *FaultEnvelope,
 	newAdapter AdapterFactory,
 	projector SemanticPrefixProjector,
-	selector ScenarioClosureSelector,
 	goal scenarioAutomaticProgressGoal,
 	preparer ScenarioActionPreparer,
 	semanticProjector ScenarioSemanticProjector,
@@ -249,12 +164,11 @@ func executeScenarioNaturalProgress(
 	}
 	live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
-		faultEnvelope, runtime, projector, selector, nil, semanticProjector, rootSemantics, goal, preparer,
+		faultEnvelope, runtime, projector, nil, semanticProjector, rootSemantics, goal, preparer,
 	)
 	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
 	result.Frontier = live.Frontier
-	result.ClosureCandidates = cloneFrontierActionRefs(live.ClosureCandidates)
 	result.Execution.Steps = live.Steps
 	result.Execution.FinalTrace, result.Execution.FinalRisk = live.FinalTrace, live.FinalRisk
 	if liveErr != nil {
@@ -284,13 +198,12 @@ func executeScenarioNaturalProgress(
 }
 
 type scenarioLiveProgressResult struct {
-	StopReason        string
-	Steps             []ScenarioStepFeedback
-	FinalTrace        controlruntime.Trace
-	FinalRisk         semantic.RiskWitnessResult
-	Frontier          *ActionFrontierView
-	ClosureCandidates []FrontierActionRef
-	Work              ScenarioExecutionWork
+	StopReason string
+	Steps      []ScenarioStepFeedback
+	FinalTrace controlruntime.Trace
+	FinalRisk  semantic.RiskWitnessResult
+	Frontier   *ActionFrontierView
+	Work       ScenarioExecutionWork
 }
 
 func executeScenarioNaturalProgressOnLiveRuntime(
@@ -305,7 +218,6 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 	faultEnvelope *FaultEnvelope,
 	runtime *controlruntime.Runtime,
 	projector SemanticPrefixProjector,
-	selector ScenarioClosureSelector,
 	focus *scenarioCausalProgressFocus,
 	semanticProjector ScenarioSemanticProjector,
 	rootSemantics *ScenarioSemanticExposure,
@@ -326,7 +238,7 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 		}
 		var preparedInvoke control.ActionID
 		preparedAction := false
-		if selector == nil && goal.autoInvoke && !automaticInvokeAttempted && preparer != nil &&
+		if goal.autoInvoke && !automaticInvokeAttempted && preparer != nil &&
 			scenarioCoordinationInvokeReady(currentSemantics) {
 			automaticInvokeAttempted = true
 			preparedID, prepared, prepareErr := preparer(
@@ -377,27 +289,13 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 		}
 		var action FrontierActionRef
 		var ok bool
-		var stopReason string
-		var stopFrontier *ActionFrontierView
-		var closureCandidates []FrontierActionRef
 		if preparedInvoke != "" {
 			action, ok = scenarioActionByID(view.Actions, preparedInvoke)
 			if !ok || action.Kind != control.ActionInvoke {
 				return result, errors.New("EXPERIMENT_SCENARIO_AUTOMATIC_INVOKE_MISMATCH")
 			}
 		} else {
-			action, ok, stopReason, stopFrontier, closureCandidates, err = scenarioProgressAction(
-				view, selector, focus,
-			)
-		}
-		if err != nil {
-			return result, err
-		}
-		if stopReason != "" {
-			result.StopReason = stopReason
-			result.Frontier = stopFrontier
-			result.ClosureCandidates = cloneFrontierActionRefs(closureCandidates)
-			break
+			action, ok = scenarioNaturalProgressActionWithFocus(view.Actions, focus)
 		}
 		if !ok {
 			result.StopReason = ScenarioProgressQuiescent
@@ -468,7 +366,7 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 				projectedSemantics = &projected
 				currentSemantics = &projected
 			}
-			if selector == nil && scenarioPublicProgressShouldYield(
+			if scenarioPublicProgressShouldYield(
 				rootRisk, result.FinalRisk, rootInterventions, view.Actions,
 				rootSemantics, projectedSemantics, goal,
 			) {
@@ -484,9 +382,6 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 	}
 	if result.StopReason == "" {
 		result.StopReason = ScenarioProgressBudget
-		if selector != nil {
-			result.StopReason = ScenarioProgressClosureBudget
-		}
 	}
 	result.Work.TotalWorkUnits = result.Work.ChildMaterialization.WorkUnits
 	return result, nil
@@ -591,122 +486,6 @@ func scenarioStrategicActionKeys(actions []FrontierActionRef) (map[string]struct
 		result[digest] = struct{}{}
 	}
 	return result, nil
-}
-
-func scenarioClosureAction(
-	view RiskFrontierView,
-	selector ScenarioClosureSelector,
-) (FrontierActionRef, bool, string, *ActionFrontierView, []FrontierActionRef, error) {
-	return scenarioProgressAction(view, selector, nil)
-}
-
-func scenarioProgressAction(
-	view RiskFrontierView,
-	selector ScenarioClosureSelector,
-	focus *scenarioCausalProgressFocus,
-) (FrontierActionRef, bool, string, *ActionFrontierView, []FrontierActionRef, error) {
-	if selector == nil {
-		action, ok := scenarioNaturalProgressActionWithFocus(view.Actions, focus)
-		return action, ok, "", nil, nil, nil
-	}
-	authoritative, err := scenarioActionFrontier(view)
-	if err != nil {
-		return FrontierActionRef{}, false, "", nil, nil, err
-	}
-	selectorView := authoritative
-	selectorView.Actions = cloneFrontierActionRefs(authoritative.Actions)
-	selection, err := selector(selectorView)
-	if err != nil {
-		return FrontierActionRef{}, false, "", nil, nil, err
-	}
-	switch selection.Status {
-	case ScenarioClosureUnderdetermined:
-		if selection.Action.ActionID != "" {
-			return FrontierActionRef{}, false, "", nil, nil,
-				errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
-		}
-		if len(selection.Candidates) == 0 {
-			return FrontierActionRef{}, false, ScenarioProgressClosureUnderdetermined,
-				&authoritative, nil, nil
-		}
-		candidates, candidateErr := validatedScenarioClosureCandidates(
-			authoritative.Actions, selection.Candidates,
-		)
-		if candidateErr != nil {
-			return FrontierActionRef{}, false, "", nil, nil, candidateErr
-		}
-		return FrontierActionRef{}, false, ScenarioProgressClosureUnderdetermined,
-			&authoritative, candidates, nil
-	case ScenarioClosureNoEligible:
-		if selection.Action.ActionID != "" || len(selection.Candidates) != 0 {
-			return FrontierActionRef{}, false, "", nil, nil,
-				errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
-		}
-		return FrontierActionRef{}, false, ScenarioProgressClosureQuiescent,
-			&authoritative, nil, nil
-	case ScenarioClosureSelected:
-		if len(selection.Candidates) != 0 {
-			return FrontierActionRef{}, false, "", nil, nil,
-				errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
-		}
-		// Continue with exact frontier and kind validation below.
-	default:
-		return FrontierActionRef{}, false, "", nil, nil,
-			errors.New("EXPERIMENT_SCENARIO_CLOSURE_SELECTION_INVALID")
-	}
-	action := selection.Action
-	for _, candidate := range authoritative.Actions {
-		if candidate.ActionID != action.ActionID || candidate.ActionDigest != action.ActionDigest {
-			continue
-		}
-		if !scenarioClosureActionKind(candidate.Kind) {
-			return FrontierActionRef{}, false, "", nil, nil,
-				errors.New("EXPERIMENT_SCENARIO_CLOSURE_ACTION_KIND_FORBIDDEN")
-		}
-		if candidate.Kind != action.Kind || candidate.Node != action.Node ||
-			candidate.ItemID != action.ItemID {
-			return FrontierActionRef{}, false, "", nil, nil,
-				errors.New("EXPERIMENT_SCENARIO_CLOSURE_ACTION_NOT_ADMISSIBLE")
-		}
-		return candidate, true, "", nil, nil, nil
-	}
-	return FrontierActionRef{}, false, "", nil, nil,
-		errors.New("EXPERIMENT_SCENARIO_CLOSURE_ACTION_NOT_ADMISSIBLE")
-}
-
-func validatedScenarioClosureCandidates(
-	authoritative []FrontierActionRef,
-	requested []FrontierActionRef,
-) ([]FrontierActionRef, error) {
-	byID := make(map[control.ActionID]FrontierActionRef, len(authoritative))
-	for _, candidate := range authoritative {
-		byID[candidate.ActionID] = candidate
-	}
-	result := make([]FrontierActionRef, 0, len(requested))
-	seen := make(map[control.ActionID]struct{}, len(requested))
-	for _, requestedCandidate := range requested {
-		candidate, ok := byID[requestedCandidate.ActionID]
-		if !ok || candidate.ActionDigest != requestedCandidate.ActionDigest ||
-			candidate.Kind != requestedCandidate.Kind || candidate.Node != requestedCandidate.Node ||
-			candidate.ItemID != requestedCandidate.ItemID || !scenarioClosureActionKind(candidate.Kind) {
-			return nil, errors.New("EXPERIMENT_SCENARIO_CLOSURE_CANDIDATE_NOT_ADMISSIBLE")
-		}
-		if _, duplicate := seen[candidate.ActionID]; duplicate {
-			return nil, errors.New("EXPERIMENT_SCENARIO_CLOSURE_CANDIDATE_DUPLICATE")
-		}
-		seen[candidate.ActionID] = struct{}{}
-		result = append(result, candidate)
-	}
-	return result, nil
-}
-
-func scenarioClosureActionKind(kind control.ActionKind) bool {
-	switch kind {
-	case control.ActionCompleteEffect, control.ActionDeliverMessage, control.ActionFireTemporal:
-		return true
-	default:
-		return false
-	}
 }
 
 func scenarioNaturalProgressAction(actions []FrontierActionRef) (FrontierActionRef, bool) {

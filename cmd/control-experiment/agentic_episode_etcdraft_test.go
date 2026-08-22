@@ -17,31 +17,6 @@ import (
 	"github.com/SuzumiyaHaruki/consensus-atlas/targetoracles"
 )
 
-func TestTargetLocalClosureRejectsStructurallyInsufficientCallBudget(t *testing.T) {
-	target := agenticEpisodeTarget{
-		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
-		ClosureSupport:              etcdraftScenarioClosureSupports,
-		ClosureMinimumScenarioCalls: etcdraftClosureMinimumScenarioCalls(7),
-	}
-	if target.ClosureMinimumScenarioCalls != 4 {
-		t.Fatalf("seven-node lower bound = %d, want 4", target.ClosureMinimumScenarioCalls)
-	}
-	if err := validateClosureCallBudget(target, agenticEpisodeBudget{MaxScenarioCalls: 3}); err == nil || err.Error() != "AGENTIC_EPISODE_TARGET_LOCAL_CLOSURE_CALL_BUDGET_INSUFFICIENT" {
-		t.Fatalf("insufficient target-local budget accepted: %v", err)
-	}
-	target.ClosureFactory = nil
-	target.ClosureSupport = nil
-	if err := validateClosureCallBudget(target, agenticEpisodeBudget{MaxScenarioCalls: 3}); err != nil {
-		t.Fatalf("public-fixed inherited closure lower bound: %v", err)
-	}
-	if got := etcdraftClosureMinimumScenarioCalls(3); got != 1 {
-		t.Fatalf("three-node lower bound = %d, want 1", got)
-	}
-	if got := omnipaxosClosureMinimumScenarioCalls(7); got != 4 {
-		t.Fatalf("seven-node OmniPaxos lower bound = %d, want 4", got)
-	}
-}
-
 func TestFixedScenarioCallBudgetDoesNotDependOnRiskUsage(t *testing.T) {
 	logical := controlexperiment.AgenticLogicalBudget{
 		MaxAttempts: 1, MaxPrimarySchedulerDecisions: 16384,
@@ -183,7 +158,6 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	}
 	transport := composition.Client.freeze()
 	if composition.Target.ID != "etcdraft-v2" ||
-		composition.Target.ClosureFactory != nil || composition.Target.ClosureSupport != nil ||
 		composition.MethodSpec.Validate() != nil ||
 		composition.Target.MethodSpecDigest != composition.MethodSpec.Digest ||
 		composition.MethodSpec.InvestigationEpisodes != 1 ||
@@ -207,21 +181,12 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		transport.MaxOutputTokens != 64000 || transport.MaxRetries != inputs.experiment.ModelMaxRetries {
 		t.Fatalf("etcd/raft registry composition drifted: %#v err=%v", composition, err)
 	}
-	publicOptions := controlExperimentOptions{
+	existingOptions := controlExperimentOptions{
 		Target: "etcdraft-v2", InvestigationEpisodes: 1,
 		SemanticInput: "../../plans/agent/etcdraft-agentic-calibration-v1.json",
 		AgentKeyFile:  "fixture-key.txt", AgentModel: openRouterFixtureModel,
-		ClosureMode: controlexperiment.AgenticClosureModePublicFixed,
+		RiskInput: "../../plans/agent/etcdraft-alternate-quorum-risk-v1.json",
 	}
-	publicComposition, err := prepareAgenticEpisodeComposition(ctx, publicOptions)
-	if err != nil || publicComposition.Target.ClosureFactory != nil || publicComposition.Target.ClosureSupport != nil ||
-		publicComposition.MethodSpec.ClosureMode != controlexperiment.AgenticClosureModePublicFixed ||
-		publicComposition.MethodSpec.Digest != composition.MethodSpec.Digest {
-		t.Fatalf("public-fixed arm was not mechanically bound: %#v/%v",
-			publicComposition.MethodSpec, err)
-	}
-	existingOptions := publicOptions
-	existingOptions.RiskInput = "../../plans/agent/etcdraft-alternate-quorum-risk-v1.json"
 	existingPublic, err := prepareAgenticEpisodeComposition(ctx, existingOptions)
 	if err != nil || existingPublic.ExistingRisk == nil ||
 		existingPublic.ExistingRisk.Candidate.ID != "append-response-loss-with-alternate-quorum" ||
@@ -231,25 +196,16 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 		t.Fatalf("existing Risk input was not mechanically bound: %#v/%v",
 			existingPublic.MethodSpec, err)
 	}
-	existingOptions.ClosureMode = controlexperiment.AgenticClosureModeTargetLocal
-	existingTargetLocal, err := prepareAgenticEpisodeComposition(ctx, existingOptions)
-	if err != nil || existingTargetLocal.Target.ClosureFactory == nil ||
-		existingTargetLocal.Target.ClosureSupport == nil ||
-		existingTargetLocal.RiskInputDigest != existingPublic.RiskInputDigest ||
-		existingTargetLocal.MethodSpec.Digest == existingPublic.MethodSpec.Digest {
-		t.Fatalf("existing Risk pair did not share Risk identity and isolate closure mode: %#v/%v",
-			existingTargetLocal.MethodSpec, err)
-	}
 	multiEpisodeOptions := existingOptions
 	multiEpisodeOptions.InvestigationEpisodes = 2
 	multiEpisode, err := prepareAgenticEpisodeComposition(ctx, multiEpisodeOptions)
 	if err != nil || multiEpisode.MethodSpec.InvestigationEpisodes != 2 ||
 		multiEpisode.MethodSpec.RiskInputMode != controlexperiment.AgenticRiskInputExistingCandidate ||
-		multiEpisode.RiskInputDigest != existingTargetLocal.RiskInputDigest {
+		multiEpisode.RiskInputDigest != existingPublic.RiskInputDigest {
 		t.Fatalf("existing Risk input did not support a multi-Episode Investigation: %#v/%v",
 			multiEpisode.MethodSpec, err)
 	}
-	tamperedRiskInput := existingTargetLocal
+	tamperedRiskInput := existingPublic
 	tamperedRiskInput.RiskInputDigest = formalTestStringDigest("different-existing-risk")
 	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
 		Directory:    filepath.Join(t.TempDir(), "fixed-risk-mismatch"),
@@ -263,8 +219,8 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
 		t.Fatalf("composition accepted existing Risk identity mismatch: %v", err)
 	}
-	tamperedRiskContent := existingTargetLocal
-	changedRisk := *existingTargetLocal.ExistingRisk
+	tamperedRiskContent := existingPublic
+	changedRisk := *existingPublic.ExistingRisk
 	changedRisk.Candidate.Summary += " changed after loading"
 	tamperedRiskContent.ExistingRisk = &changedRisk
 	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
@@ -278,20 +234,6 @@ func TestEtcdraftBindingUsesCommonAgenticEpisodeContract(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
 		t.Fatalf("composition accepted substituted existing Risk content: %v", err)
-	}
-	tamperedClosure := composition
-	tamperedClosure.Target.ClosureFactory = newEtcdraftScenarioClosureFactory()
-	_, err = runAgenticEpisodeDirectory(ctx, agenticEpisodeDirectoryOptions{
-		Directory:    filepath.Join(t.TempDir(), "closure-mode-mismatch"),
-		AgentKeyFile: "fixture-key.txt",
-		ReadKey:      func(string) (string, error) { return "fixture-key", nil },
-		Recovery:     etcdraftAgenticEpisodeRecoveryBinding(),
-		Prepare: func(context.Context) (agenticEpisodeComposition, error) {
-			return tamperedClosure, nil
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "COMPOSITION_INVALID") {
-		t.Fatalf("composition accepted MethodSpec/factory mismatch: %v", err)
 	}
 	mismatchOptions := controlExperimentOptions{
 		Target: "etcdraft-v2", InvestigationEpisodes: 1,
@@ -685,7 +627,7 @@ func TestAgenticEpisodeCLIAllowsExplicitRepositoryRootAndSourceMounts(t *testing
 		KnowledgeSourceMounts: []string{
 			"repo=/tmp/consensus-atlas", "go.etcd.io/raft/v3@v3.6.0/=/tmp/raft",
 		},
-		ClosureMode: "public-fixed", RiskInput: "/tmp/risk.json",
+		RiskInput:      "/tmp/risk.json",
 		RepositoryRoot: "/tmp/consensus-atlas",
 		Decisions:      96, PolicySeed: 1,
 	}

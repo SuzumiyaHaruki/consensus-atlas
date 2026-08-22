@@ -319,11 +319,8 @@ func newEtcdraftAgenticEpisodeTarget(
 	}
 	target := agenticEpisodeTarget{
 		ID: "etcdraft-v2", Knowledge: inputs.knowledge, Surface: surface,
-		OracleRegistry:              oracleRegistry,
-		ObservationProjector:        observationProjector,
-		ClosureFactory:              newEtcdraftScenarioClosureFactory(),
-		ClosureSupport:              etcdraftScenarioClosureSupports,
-		ClosureMinimumScenarioCalls: etcdraftClosureMinimumScenarioCalls(len(surface.Nodes)),
+		OracleRegistry:       oracleRegistry,
+		ObservationProjector: observationProjector,
 		ScenarioInputs: func(
 			risk controlexperiment.ScenarioRiskHypothesis,
 			projector controlexperiment.SemanticPrefixProjector,
@@ -332,9 +329,8 @@ func newEtcdraftAgenticEpisodeTarget(
 				Knowledge: risk.Knowledge, Hypothesis: risk.Hypothesis,
 				AcceptedHypothesis: &risk.AcceptedHypothesis, RiskSpec: risk.Spec,
 				Root: inputs.root, Runtime: inputs.experiment.Runtime,
-				FaultEnvelope:         inputs.experiment.faultEnvelope(),
-				SemanticExposure:      inputs.experiment.ScenarioSemanticExposure,
-				SingleStrategicAction: true,
+				FaultEnvelope:    inputs.experiment.faultEnvelope(),
+				SemanticExposure: inputs.experiment.ScenarioSemanticExposure,
 				NewAdapter: func() (control.Adapter, error) {
 					return etcdraftv2.NewWithConfig(inputs.experiment.AdapterConfig)
 				},

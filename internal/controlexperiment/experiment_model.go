@@ -607,19 +607,18 @@ type AgenticPreparationWork struct {
 }
 
 // AgenticDecisionProvenance separates model-selected scheduling work from
-// deterministic Target closure and protocol-neutral natural progress.
+// protocol-neutral deterministic progress.
 type AgenticDecisionProvenance struct {
 	AgentSelected  int `json:"agent_selected"`
-	TargetClosure  int `json:"target_closure"`
 	PublicProgress int `json:"public_progress"`
 }
 
 func (provenance AgenticDecisionProvenance) Validate(total int) error {
 	computed, ok := provenance.Total()
 	if total < 0 || !ok ||
-		provenance.AgentSelected < 0 || provenance.TargetClosure < 0 ||
+		provenance.AgentSelected < 0 ||
 		provenance.PublicProgress < 0 || provenance.AgentSelected > total ||
-		provenance.TargetClosure > total || provenance.PublicProgress > total ||
+		provenance.PublicProgress > total ||
 		computed != total {
 		return errors.New("EXPERIMENT_AGENTIC_DECISION_PROVENANCE_INVALID")
 	}
@@ -628,12 +627,11 @@ func (provenance AgenticDecisionProvenance) Validate(total int) error {
 
 func (provenance AgenticDecisionProvenance) Total() (int, bool) {
 	maxInt := int(^uint(0) >> 1)
-	if provenance.AgentSelected < 0 || provenance.TargetClosure < 0 || provenance.PublicProgress < 0 ||
-		provenance.AgentSelected > maxInt-provenance.TargetClosure ||
-		provenance.AgentSelected+provenance.TargetClosure > maxInt-provenance.PublicProgress {
+	if provenance.AgentSelected < 0 || provenance.PublicProgress < 0 ||
+		provenance.AgentSelected > maxInt-provenance.PublicProgress {
 		return 0, false
 	}
-	return provenance.AgentSelected + provenance.TargetClosure + provenance.PublicProgress, true
+	return provenance.AgentSelected + provenance.PublicProgress, true
 }
 
 func (work AgenticPreparationWork) Validate() error {
