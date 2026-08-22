@@ -533,6 +533,9 @@ func TestRiskAgentPromptUsesKnowledgeQueryThenPortfolioResponse(t *testing.T) {
 	schemaErr := json.Unmarshal(output.Schema, &portfolioSchema)
 	if err != nil || outputErr != nil || !strings.Contains(system, "RiskCandidatePortfolio") ||
 		!strings.Contains(user, "bounded knowledge_results") ||
+		!strings.Contains(user, "executable trigger prefix") ||
+		!strings.Contains(user, "bind_as token expresses equality only") ||
+		!strings.Contains(user, "independent property Oracle") ||
 		!bytes.Contains([]byte(user), []byte("func (adapter *Adapter) Check")) ||
 		output.Name != "risk_candidate_portfolio" ||
 		schemaErr != nil || portfolioSchema.Properties.Candidates.MinItems != 1 ||

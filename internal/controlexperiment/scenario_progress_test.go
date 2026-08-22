@@ -246,6 +246,53 @@ func TestScenarioAgentStrategicProjectionHidesAndRejectsNaturalActions(t *testin
 	}
 }
 
+func TestScenarioStrategicGoalProjectionHidesUnrelatedFaults(t *testing.T) {
+	frontier := RiskFrontierView{
+		PrefixTraceDigest: "trace", SnapshotDigest: "snapshot",
+		Actions: []FrontierActionRef{
+			{ActionID: "drop-n2", ActionDigest: "drop-n2-digest", Kind: control.ActionDropMessage,
+				MessageSource: control.NodeRef{Node: "n1", Incarnation: 1}, MessageTarget: "n2"},
+			{ActionID: "drop-n3", ActionDigest: "drop-n3-digest", Kind: control.ActionDropMessage,
+				MessageSource: control.NodeRef{Node: "n1", Incarnation: 1}, MessageTarget: "n3"},
+			{ActionID: "duplicate-n2", ActionDigest: "duplicate-n2-digest", Kind: control.ActionDuplicateMessage,
+				MessageSource: control.NodeRef{Node: "n1", Incarnation: 1}, MessageTarget: "n2"},
+			{ActionID: "crash-n2", ActionDigest: "crash-n2-digest", Kind: control.ActionCrash,
+				Node: control.NodeRef{Node: "n2", Incarnation: 1}},
+		},
+	}
+	hints := make([]ConsensusActionHint, len(frontier.Actions))
+	for index, action := range frontier.Actions {
+		hints[index] = ConsensusActionHint{
+			ActionID: action.ActionID, ActionDigest: action.ActionDigest,
+			ActorRole: ConsensusSemanticUnknown, MessageClass: ConsensusSemanticUnknown,
+			EpochRelation: ConsensusSemanticUnknown, OperationState: ConsensusSemanticUnknown,
+		}
+	}
+	semantics := ScenarioSemanticExposure{
+		Mode: ScenarioSemanticExposureFull, PrefixTraceDigest: frontier.PrefixTraceDigest,
+		SnapshotDigest: frontier.SnapshotDigest, ActionHints: hints,
+	}
+	predicate := semantic.ObservationPredicate{
+		MilestoneID: "drop-bound-receiver", Kind: semantic.ObservationMessageDropped,
+		Constraints: []semantic.ObservationConstraint{{
+			Field: semantic.ObservationFieldMessageTargetNode, BindAs: "receiver",
+		}},
+	}
+	risk := semantic.RiskWitnessResult{Milestones: []semantic.RiskWitnessMilestoneEvidence{{
+		MilestoneID: "receiver-selected", Bindings: []semantic.RiskWitnessBindingEvidence{{
+			Name: "receiver", Field: semantic.ObservationFieldParticipantNode, Value: "n2",
+		}},
+	}}}
+	projected, projectedSemantics, err := scenarioStrategicGoalAgentView(
+		frontier, semantics, predicate, risk,
+	)
+	if err != nil || len(projected.Actions) != 1 || len(projectedSemantics.ActionHints) != 1 ||
+		projected.Actions[0].ActionID != "drop-n2" {
+		t.Fatalf("immediate strategic goal leaked unrelated faults: %#v/%#v/%v",
+			projected, projectedSemantics, err)
+	}
+}
+
 func TestScenarioStrategicSelectorDoesNotEnumerateTargetMessageRoles(t *testing.T) {
 	predicate := semantic.ObservationPredicate{
 		Kind: semantic.ObservationMessageDropped,

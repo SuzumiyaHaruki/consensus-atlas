@@ -315,9 +315,15 @@ func exploreScenarioWithPlanner(
 		agentSemantics := cloneScenarioSemantics(currentSemantics)
 		for acceptedHypothesis != nil {
 			var strategicErr error
-			agentFrontier, agentSemantics, strategicErr = scenarioStrategicAgentView(
-				currentFrontier, currentSemantics,
-			)
+			if automaticGoal.strategicPredicate != nil {
+				agentFrontier, agentSemantics, strategicErr = scenarioStrategicGoalAgentView(
+					currentFrontier, currentSemantics, *automaticGoal.strategicPredicate, currentRisk,
+				)
+			} else {
+				agentFrontier, agentSemantics, strategicErr = scenarioStrategicAgentView(
+					currentFrontier, currentSemantics,
+				)
+			}
 			if strategicErr != nil {
 				return result, strategicErr
 			}
@@ -843,16 +849,38 @@ func scenarioSinglePathIntents(prior *ScenarioAgentFeedback) []string {
 	}
 	if prior.Outcome != ScenarioAgentStopped {
 		result := []string{ScenarioIntentContinue}
-		if prior.ProgressDelta != nil {
+		if scenarioFeedbackAllowsAbandon(prior) {
 			result = append(result, ScenarioIntentAbandon)
 		}
 		return result
 	}
 	result := []string{ScenarioIntentRevise}
-	if prior.ProgressDelta != nil {
+	if scenarioFeedbackAllowsAbandon(prior) {
 		result = append(result, ScenarioIntentAbandon)
 	}
 	return result
+}
+
+// scenarioFeedbackAllowsAbandon keeps a bounded escape for a mechanically
+// low-yield path, but not while trusted execution has just advanced the
+// witness or merely returned at an internal progress slice. Those outcomes
+// require continuation; treating them as evidence against the hypothesis was
+// the concrete premature-abandon failure in the M4n26 etcd/raft canary.
+func scenarioFeedbackAllowsAbandon(prior *ScenarioAgentFeedback) bool {
+	if prior == nil || prior.ProgressDelta == nil {
+		return false
+	}
+	delta := prior.ProgressDelta
+	if delta.MilestoneProgress == ScenarioMilestoneProgressAdvanced ||
+		delta.MilestoneProgress == ScenarioMilestoneProgressInstantiated {
+		return false
+	}
+	switch delta.NaturalProgressStop {
+	case ScenarioProgressSlice, ScenarioProgressBudget:
+		return false
+	default:
+		return true
+	}
 }
 
 func containsScenarioIntent(values []string, intent string) bool {
@@ -961,6 +989,52 @@ func scenarioStrategicAgentView(
 		)
 	}
 	return projected, projectedSemantics, nil
+}
+
+// scenarioStrategicGoalAgentView exposes only strategic Actions that can
+// instantiate the immediate trusted predicate. The Risk Agent has already
+// selected the Action kind and any equality/binding constraints; the Scenario
+// Agent retains the genuine choice among matching concrete Actions, but cannot
+// spend the single path on an unrelated fault merely because it is enabled.
+func scenarioStrategicGoalAgentView(
+	frontier RiskFrontierView,
+	semantics ScenarioSemanticExposure,
+	predicate semantic.ObservationPredicate,
+	risk semantic.RiskWitnessResult,
+) (RiskFrontierView, ScenarioSemanticExposure, error) {
+	projected, projectedSemantics, err := scenarioStrategicAgentView(frontier, semantics)
+	if err != nil {
+		return RiskFrontierView{}, ScenarioSemanticExposure{}, err
+	}
+	selector, ok := scenarioStrategicPredicateSelector(predicate, risk)
+	if !ok {
+		return RiskFrontierView{}, ScenarioSemanticExposure{},
+			errors.New("EXPERIMENT_SCENARIO_STRATEGIC_GOAL_UNSUPPORTED")
+	}
+	matching := make(map[control.ActionID]bool)
+	for _, action := range scenarioMatches(projected.Actions, projectedSemantics, selector) {
+		matching[action.ActionID] = true
+	}
+	filtered := cloneScenarioFrontier(projected)
+	filtered.Actions = nil
+	filteredSemantics := cloneScenarioSemantics(projectedSemantics)
+	filteredSemantics.ActionHints = nil
+	for index, action := range projected.Actions {
+		if !matching[action.ActionID] {
+			continue
+		}
+		filtered.Actions = append(filtered.Actions, action)
+		filteredSemantics.ActionHints = append(
+			filteredSemantics.ActionHints, projectedSemantics.ActionHints[index],
+		)
+	}
+	filtered, err = filtered.seal()
+	if err != nil || len(filtered.Actions) == 0 || filteredSemantics.Validate(filtered) != nil {
+		return RiskFrontierView{}, ScenarioSemanticExposure{}, errors.Join(
+			errors.New("EXPERIMENT_SCENARIO_STRATEGIC_GOAL_VIEW_INVALID"), err,
+		)
+	}
+	return filtered, filteredSemantics, nil
 }
 
 // scenarioStrategicPlanIssue enforces the same boundary after the model

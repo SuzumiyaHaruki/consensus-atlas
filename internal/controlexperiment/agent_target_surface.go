@@ -73,6 +73,7 @@ const (
 	AgentCapabilityGapTargetFidelity        = "target-fidelity-gap"
 	AgentCapabilityGapMissingAction         = "missing-action"
 	AgentCapabilityGapMissingControl        = "missing-control-capability"
+	AgentCapabilityGapScenarioInfeasible    = "scenario-input-infeasible"
 	AgentCapabilityNoticeFidelityUnassessed = "fidelity-unassessed"
 	AgentFidelityNotApplicable              = "not-applicable"
 	AgentFidelityUnassessed                 = "fidelity-unassessed"
@@ -328,6 +329,95 @@ func (surface AgentTargetSurface) FidelityGaps(required []string) ([]AgentCapabi
 		})
 	}
 	return result, nil
+}
+
+// RiskCandidateFeasibilityGaps rejects only contradictions with the concrete
+// episode inputs: finite workload cardinality, fault allowance, running-root
+// lifecycle order, and literal node membership. Observation capabilities and
+// types cannot detect these cross-predicate constraints on their own. This is
+// not a reachability proof; protocol progress remains an execution question.
+func (surface AgentTargetSurface) RiskCandidateFeasibilityGaps(
+	candidate RiskCandidate,
+) ([]AgentCapabilityGap, error) {
+	if surface.Validate() != nil || candidate.Validate() != nil {
+		return nil, errors.New("EXPERIMENT_AGENT_TARGET_RISK_FEASIBILITY_INPUT_INVALID")
+	}
+	nodes := make(map[string]bool, len(surface.Nodes))
+	for _, node := range surface.Nodes {
+		nodes[string(node)] = true
+	}
+	invokes, drops, crashes, activeCrashes := 0, 0, 0, 0
+	var gaps []AgentCapabilityGap
+	appendGap := func(reference, summary string) {
+		gaps = append(gaps, AgentCapabilityGap{
+			Code: AgentCapabilityGapScenarioInfeasible, Reference: reference, Summary: summary,
+		})
+	}
+	for _, predicate := range candidate.Predicates {
+		for _, constraint := range predicate.Constraints {
+			if constraint.Equals == "" || !agentObservationNodeField(constraint.Field) ||
+				nodes[constraint.Equals] {
+				continue
+			}
+			appendGap(predicate.MilestoneID,
+				"predicate requires a node outside the active Target topology: "+constraint.Equals)
+		}
+		switch predicate.Kind {
+		case semantic.ObservationWorkloadInvoked:
+			invokes++
+			if invokes > len(surface.Workload.Invocations) {
+				appendGap(predicate.MilestoneID, fmt.Sprintf(
+					"predicate requires invocation %d but the active workload contains %d",
+					invokes, len(surface.Workload.Invocations),
+				))
+			}
+		case semantic.ObservationMessageDropped:
+			drops++
+			if drops > surface.FaultAllowance.MaxMessageDrops {
+				appendGap(predicate.MilestoneID, fmt.Sprintf(
+					"predicate requires message drop %d but the fault allowance permits %d",
+					drops, surface.FaultAllowance.MaxMessageDrops,
+				))
+			}
+		case semantic.ObservationNodeCrashed:
+			crashes++
+			activeCrashes++
+			if crashes > surface.FaultAllowance.MaxCrashes {
+				appendGap(predicate.MilestoneID, fmt.Sprintf(
+					"predicate requires crash %d but the fault allowance permits %d",
+					crashes, surface.FaultAllowance.MaxCrashes,
+				))
+			}
+			if activeCrashes > surface.FaultAllowance.MaxConcurrentCrashes {
+				appendGap(predicate.MilestoneID, fmt.Sprintf(
+					"predicate requires %d crashes before restart but the concurrent allowance is %d",
+					activeCrashes, surface.FaultAllowance.MaxConcurrentCrashes,
+				))
+			}
+		case semantic.ObservationNodeRestarted:
+			if activeCrashes == 0 {
+				appendGap(predicate.MilestoneID,
+					"predicate requires restart before any unmatched crash from the running root")
+			} else {
+				activeCrashes--
+			}
+		}
+	}
+	return gaps, nil
+}
+
+func agentObservationNodeField(field semantic.ObservationField) bool {
+	switch field {
+	case semantic.ObservationFieldParticipantNode,
+		semantic.ObservationFieldRelatedNode,
+		semantic.ObservationFieldMessageSourceNode,
+		semantic.ObservationFieldMessageTargetNode,
+		semantic.ObservationFieldNewCoordinatorNode,
+		semantic.ObservationFieldPreviousCoordinatorNode:
+		return true
+	default:
+		return false
+	}
 }
 
 // ScenarioCapabilityGaps rejects only controls that the validated Target

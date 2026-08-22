@@ -284,7 +284,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   战略 Action，整条 Trace 都属于 setup；
 - 正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、公共因果推进、
   token-stop 证据封存和 Provider 失败恢复属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n27-typed-milestone-before-strategy-v1`；M4n26 及更早版本只读兼容；
+  `m4n28-reachable-trigger-concretization-v1`；M4n27 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/
@@ -318,13 +318,19 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   使用 ballot/prepare/promise/accepted/decided/recovery 术语，不把协议语义写入公共 Core；
 - Risk 固定最多 4 次调用：正常路径为一次中立 search、一次 bounded read、一次 portfolio、
   最多一次可信资格反馈修复。一次 search/read 返回 `stopped` 时可重试一次，但会占用原本的
-  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v11`
+  portfolio repair 调用；每次只允许一个知识请求，read 完成后不继续翻页。`risk-agent-navigation-v12`
   按可信 phase 收窄 Schema：search 前只允许 search，成功后只允许读取真实 match，read 后只允许
   portfolio；query 是单行匹配的一个大小写不敏感字面子串，不分词且不执行 OR。oracle-backed 是 prompt
   的可验证性软偏好，不是可信侧准入条件；已完成的 read 按候选 mechanism step 是否引用 `source/...`
   报告为 `completed-used|completed-unused`，该口径只证明候选引用了真实读取片段，不证明源码阅读定位了
   缺陷，也不形成 gate；已通过机械审查的 observable-only/
   hypothesis-only 候选仍必须保留。源码只确认实现机制与 contract，不能作为 defect verdict；
+- Risk predicates 必须是正确 control 也能执行的 trigger prefix，defect-only symptom 留给独立 Oracle；
+  `bind_as` 只表达相等，不能用不同 token 名暗示节点不同。可信 Target surface 仅检查 workload 数量、
+  fault allowance、生命周期顺序和 literal node membership 这类输入矛盾，不预测协议可达性；
+- 当前缺失 milestone 为战略 predicate 时，Agent view 只保留满足该 predicate 与已解析 binding 的真实
+  enabled Actions。Scenario Agent 仍在多个匹配 Action 中决定路径，但不能用无关 fault 消耗单路径。
+  内部 natural-progress slice 结束或 milestone 刚推进时不开放 abandon；
 - 取消共享调用池。每个新候选或队列候选都固定获得 8 次 Scenario 调用和单步计划；当前 etcd/raft
   有效输入给 64 decisions，初始五节点 frontier 更大的 OmniPaxos 给 128 decisions。协调者存在后每轮
   至多 4 个自然推进 decision；bootstrap 使用至多 16 个 decision 的有界因果切片，优先 item dependency、

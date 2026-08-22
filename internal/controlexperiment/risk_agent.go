@@ -647,6 +647,9 @@ func DiscoverRiskWithPlanner(
 			review.FidelityNotices = cloneAgentCapabilityGaps(assessment.FidelityNotices)
 			if len(assessment.CapabilityGaps) > 0 {
 				review.ReasonCode = RiskAgentReasonFidelity
+				if assessment.CapabilityGaps[0].Code == AgentCapabilityGapScenarioInfeasible {
+					review.ReasonCode = RiskAgentReasonNotExecutable
+				}
 				reviews = append(reviews, review)
 				continue
 			}
@@ -1091,6 +1094,11 @@ func assessRiskCandidate(
 		if err != nil {
 			return RiskCandidateAssessment{}, err
 		}
+		feasibilityGaps, feasibilityErr := targetSurface.RiskCandidateFeasibilityGaps(candidate)
+		if feasibilityErr != nil {
+			return RiskCandidateAssessment{}, feasibilityErr
+		}
+		assessment.CapabilityGaps = append(assessment.CapabilityGaps, feasibilityGaps...)
 		assessment.FidelityAssessment, assessment.FidelityNotices, err =
 			targetSurface.FidelityAssessmentForProperty(candidate.PropertyRef, candidate.RequiredFidelity)
 		if err != nil {

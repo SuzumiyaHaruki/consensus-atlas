@@ -274,11 +274,9 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 			promptContent := payload.Messages[1].Content
 			wantIntents := []string{controlexperiment.ScenarioIntentContinue}
 			if view.Prior != nil && view.Prior.Outcome == controlexperiment.ScenarioAgentStopped {
-				wantIntents = []string{
-					controlexperiment.ScenarioIntentRevise,
-					controlexperiment.ScenarioIntentAbandon,
-				}
-			} else if view.Prior != nil && view.Prior.ProgressDelta != nil {
+				wantIntents = []string{controlexperiment.ScenarioIntentRevise}
+			}
+			if scenarioPromptFeedbackAllowsAbandon(view.Prior) {
 				wantIntents = append(wantIntents, controlexperiment.ScenarioIntentAbandon)
 			}
 			planRequired := len(wantIntents) == 1
@@ -296,6 +294,7 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 				!strings.Contains(promptContent, "milestone-stalled") ||
 				!strings.Contains(promptContent, "logical-clock") ||
 				!strings.Contains(promptContent, "fault allowance/usage/remaining") ||
+				!strings.Contains(promptContent, "already restricted to strategic Actions") ||
 				!strings.Contains(promptContent, "kind=invoke") ||
 				!strings.Contains(promptContent, `"action_frontier"`) ||
 				!strings.Contains(promptContent, `"coordination"`) ||
@@ -866,6 +865,16 @@ func TestOmnipaxosAgenticEpisodeBoundsAccountsAndRecoversBothAgents(t *testing.T
 		t.Fatalf("Investigation started an episode without its declared call allowance: %#v err=%v",
 			budgetStopped, err)
 	}
+}
+
+func scenarioPromptFeedbackAllowsAbandon(prior *controlexperiment.ScenarioAgentFeedback) bool {
+	if prior == nil || prior.ProgressDelta == nil ||
+		prior.ProgressDelta.MilestoneProgress == controlexperiment.ScenarioMilestoneProgressAdvanced ||
+		prior.ProgressDelta.MilestoneProgress == controlexperiment.ScenarioMilestoneProgressInstantiated {
+		return false
+	}
+	return prior.ProgressDelta.NaturalProgressStop != controlexperiment.ScenarioProgressSlice &&
+		prior.ProgressDelta.NaturalProgressStop != controlexperiment.ScenarioProgressBudget
 }
 
 func TestA9e3aAgenticEpisodePersistsTerminalExecutionOutcome(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	scenarioAgentPromptVersion                = "scenario-agent-investigation-v25"
+	scenarioAgentPromptVersion                = "scenario-agent-investigation-v26"
 	scenarioInvestigationStructuredOutputName = "scenario_investigation_v7"
 )
 
@@ -575,7 +575,8 @@ func scenarioAgentPrompt(
 			" with plan."
 	}
 	investigationGuidance := "The trusted coordinator has already derived continue versus revise from the previous mechanical result. " +
-		"Choose a current strategic Action; do not create or refer to branches, controls, ablations, or path selection. " +
+		"The current action_frontier is already restricted to strategic Actions that can instantiate planning_focus.next_missing_milestone. " +
+		"Choose one of those current Actions; do not substitute a different enabled fault or create or refer to branches, controls, ablations, or path selection. " +
 		"When abandon is available, use it only when progress_delta shows this hypothesis is no longer worth the remaining budget. "
 	user := "Create one complete but bounded investigation proposal of at most max_steps that advances the supplied hypothesis. " +
 		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. " +

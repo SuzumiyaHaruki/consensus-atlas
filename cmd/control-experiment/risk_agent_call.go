@@ -116,7 +116,9 @@ func riskAgentCompactRepairPrompt(
 		"exactly one complete RiskCandidate. Do not repeat general protocol explanation."
 	user := "The preceding portfolio response reached the provider output limit and was discarded without parsing. " +
 		"Using the same completed source grounding and trusted Target surface, return only the single highest-priority " +
-		"falsifiable candidate. Preserve property_ref, mechanism_steps, ordered predicates, bindings, required_fidelity " +
+		"falsifiable candidate. Its ordered predicates must describe a trigger prefix that the correct implementation can also execute; " +
+		"do not require the suspected violation or regression as the final milestone because the independent Oracle evaluates that outcome. " +
+		"Preserve property_ref, mechanism_steps, ordered predicates, bindings, required_fidelity " +
 		"and visible support references, but keep summary and rationales concise. Do not request another search or source " +
 		"read and do not emit a verdict. Input JSON:\n" + string(encoded)
 	return system, user, nil
@@ -157,6 +159,10 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"allowance to show that the condition is sufficient; distinguish expected recovery from a suspicious deviation; then map the " +
 		"hypothesis to observable milestones and explicit bindings. Keep that reasoning inside summary, mechanism_steps and rationales; " +
 		"never emit an assertion or verdict. " +
+		"The complete ordered predicate list is an executable trigger prefix, not an encoding of the expected bug. Every milestone must be " +
+		"reachable on the correct implementation under the supplied workload and fault allowance. Do not make a suspected violation, state " +
+		"regression, duplicate application, safety failure, or other defect-only symptom a required final milestone; stop at a neutral trigger " +
+		"or completion observation and let the independent property Oracle decide whether the defect occurred. " +
 		"Use target_surface as the authoritative current topology, workload, runtime and fault allowance. Use target_dossier for " +
 		"implementation structure, public host contracts and known blind spots; if qualitative dossier text conflicts with target_surface, " +
 		"follow target_surface. " +
@@ -183,6 +189,9 @@ func riskAgentPrompt(view controlexperiment.RiskAgentView) (string, string, erro
 		"source read may remain uncited; trusted reporting will mark it grounding-completed-but-unused rather than treating it as support. " +
 		"Do not claim a verdict. Reuse a bind_as token in at least two constraints when an entity must remain " +
 		"the same across milestones, but only across fields whose binding_domains entries have the same domain. " +
+		"A bind_as token expresses equality only. Different token names do not require different values and names such as n1-node or n2-node " +
+		"do not select those Target nodes. When distinct concrete participants are essential and target_surface lists their node IDs, use " +
+		"literal equals constraints for the exact nodes at every relevant milestone; otherwise omit a candidate whose distinctness cannot be expressed. " +
 		"If a hypothesis depends on the same concrete message instance, log entry, host effect, or clone lineage, first confirm that the supplied " +
 		"observation fields and binding domains can prove that exact identity. Source/target/type equality alone does not prove that two events " +
 		"refer to the same instance. Revise to an identity the witness can bind, or omit the candidate when identity is essential but unavailable. " +

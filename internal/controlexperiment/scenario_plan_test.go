@@ -1252,8 +1252,22 @@ func TestM4dScenarioIntentPhasesMatchRepairContract(t *testing.T) {
 	) {
 		t.Fatalf("progress repair phase lost bounded abandonment: %#v", got)
 	}
+	stopped.ProgressDelta = &ScenarioProgressDelta{
+		Decisions: 1, MilestoneProgress: ScenarioMilestoneProgressStalled,
+		NaturalProgressStop: ScenarioProgressSlice,
+	}
+	if got := scenarioSinglePathIntents(stopped); !reflect.DeepEqual(got, []string{ScenarioIntentRevise}) {
+		t.Fatalf("internal progress slice exposed premature abandonment: %#v", got)
+	}
 	completed := &ScenarioAgentFeedback{Outcome: ScenarioStatusCompleted}
 	if got := scenarioSinglePathIntents(completed); !reflect.DeepEqual(got, []string{ScenarioIntentContinue}) {
 		t.Fatalf("completed path did not remain single-path: %#v", got)
+	}
+	completed.ProgressDelta = &ScenarioProgressDelta{
+		Decisions: 1, MilestoneProgress: ScenarioMilestoneProgressAdvanced,
+		NaturalProgressStop: ScenarioProgressSemanticYield,
+	}
+	if got := scenarioSinglePathIntents(completed); !reflect.DeepEqual(got, []string{ScenarioIntentContinue}) {
+		t.Fatalf("advanced milestone exposed premature abandonment: %#v", got)
 	}
 }

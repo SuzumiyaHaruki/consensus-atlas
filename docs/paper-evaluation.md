@@ -28,6 +28,10 @@ milestone 和自然语言解释只能说明搜索过程，不能替代 private d
 
 RQ1 是主结论。RQ2–RQ4 用于解释效果和边界，不应合并成一个综合分数。
 
+这些 RQ 的前置条件是：Agent 自己生成的候选能够在未定向提示的真实 Target 上稳定达到
+`witness-instantiated`。当前工程首先验收 trigger-prefix feasibility、typed milestone concretization、
+qualified execution 和 Replay；在全新模型 canary 通过前，不开展方法 baseline 或显著性比较。
+
 ## 3. 方法组与公平性
 
 正式实验至少需要以下同 Runtime、同 Adapter、同 Oracle、同 SUT 输入的组：

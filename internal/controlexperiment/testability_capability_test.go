@@ -123,6 +123,74 @@ func TestDescribedFixtureCapabilitiesReachFrontierTraceAndReplay(t *testing.T) {
 		t.Fatalf("legacy undeclared detail must remain unassessed: %#v/%v", gaps, err)
 	}
 
+	feasibilitySurface := *cloneAgentTargetSurface(&surface)
+	feasibilitySurface.FaultAllowance = FaultEnvelope{
+		MaxCrashes: 2, MaxConcurrentCrashes: 1, MaxMessageDrops: 1,
+	}
+	feasibilitySurface.Capabilities.ComposableActions = append(
+		feasibilitySurface.Capabilities.ComposableActions,
+		control.ActionCrash, control.ActionDropMessage, control.ActionRestart,
+	)
+	sort.Slice(feasibilitySurface.Capabilities.ComposableActions, func(i, j int) bool {
+		return feasibilitySurface.Capabilities.ComposableActions[i] <
+			feasibilitySurface.Capabilities.ComposableActions[j]
+	})
+	if err := feasibilitySurface.Validate(); err != nil {
+		t.Fatalf("feasibility surface invalid: %v", err)
+	}
+	feasible := RiskCandidate{
+		ID: "feasible-trigger", Summary: "Invoke, crash, and restart within the active inputs.",
+		Predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "crash", Kind: semantic.ObservationNodeCrashed},
+			{MilestoneID: "restart", Kind: semantic.ObservationNodeRestarted},
+		},
+	}
+	if gaps, err := feasibilitySurface.RiskCandidateFeasibilityGaps(feasible); err != nil || len(gaps) != 0 {
+		t.Fatalf("feasible trigger was rejected: %#v/%v", gaps, err)
+	}
+	for _, test := range []struct {
+		name       string
+		predicates []semantic.ObservationPredicate
+		milestone  string
+	}{
+		{name: "workload cardinality", milestone: "invoke-2", predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke-1", Kind: semantic.ObservationWorkloadInvoked},
+			{MilestoneID: "invoke-2", Kind: semantic.ObservationWorkloadInvoked},
+		}},
+		{name: "drop allowance", milestone: "drop-2", predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "drop-1", Kind: semantic.ObservationMessageDropped},
+			{MilestoneID: "drop-2", Kind: semantic.ObservationMessageDropped},
+		}},
+		{name: "restart order", milestone: "restart", predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "restart", Kind: semantic.ObservationNodeRestarted},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+		}},
+		{name: "concurrent crash allowance", milestone: "crash-2", predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "crash-1", Kind: semantic.ObservationNodeCrashed},
+			{MilestoneID: "crash-2", Kind: semantic.ObservationNodeCrashed},
+		}},
+		{name: "unknown node", milestone: "invoke", predicates: []semantic.ObservationPredicate{
+			{MilestoneID: "invoke", Kind: semantic.ObservationWorkloadInvoked,
+				Constraints: []semantic.ObservationConstraint{{
+					Field: semantic.ObservationFieldParticipantNode, Equals: "n3",
+				}}},
+			{MilestoneID: "decision", Kind: semantic.ObservationDecisionAdvanced},
+		}},
+	} {
+		t.Run("risk-feasibility-"+test.name, func(t *testing.T) {
+			candidate := RiskCandidate{
+				ID: "infeasible-trigger", Summary: "A mechanically impossible trigger prefix.",
+				Predicates: test.predicates,
+			}
+			gaps, err := feasibilitySurface.RiskCandidateFeasibilityGaps(candidate)
+			if err != nil || len(gaps) == 0 || gaps[0].Code != AgentCapabilityGapScenarioInfeasible ||
+				gaps[0].Reference != test.milestone {
+				t.Fatalf("infeasible trigger was not localized: %#v/%v", gaps, err)
+			}
+		})
+	}
+
 	for _, outcome := range []struct {
 		name string
 		kind control.ActionKind

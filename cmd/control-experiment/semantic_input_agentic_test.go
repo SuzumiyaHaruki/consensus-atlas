@@ -445,6 +445,24 @@ func assertBootstrapScenarioEstablishesCoordination(
 					view.Semantics.Coordination.Status == controlexperiment.ConsensusCoordinatorPresent
 				invokePlanned = true
 				if plannerCalls == 1 {
+					for index, action := range view.Frontier.Actions {
+						if action.Kind != control.ActionDropMessage {
+							t.Fatalf("%s immediate Drop milestone exposed unrelated strategic Action: %#v",
+								idPrefix, action)
+						}
+						switch idPrefix {
+						case "etcdraft":
+							if action.MessageTypeHint != "MsgAppResp" {
+								t.Fatalf("etcdraft Drop milestone exposed unrelated message: %#v", action)
+							}
+						case "omnipaxos":
+							if index >= len(view.Semantics.ActionHints) ||
+								view.Semantics.ActionHints[index].OperationState != controlexperiment.ConsensusOperationInflight {
+								t.Fatalf("OmniPaxos Drop milestone exposed non-operation message: %#v/%#v",
+									action, view.Semantics.ActionHints)
+							}
+						}
+					}
 					dropAction, available := bootstrapStrategicDropAction(view, idPrefix)
 					strategicFrontierSeen = available
 					if !available {

@@ -1,6 +1,6 @@
 # 当前阶段
 
-阶段：M4n27 typed milestone 顺序与战略 frontier 收口
+阶段：M4n28 Agent 场景可达性与触发前缀收口
 
 ## 当前结论
 
@@ -35,11 +35,11 @@ Runtime、决定 Replay 或产生 finding；finding 只来自独立 Oracle。
 当前 MethodSpec implementation ID 为：
 
 ```text
-consensus-atlas/agentic-method/m4n27-typed-milestone-before-strategy-v1
+consensus-atlas/agentic-method/m4n28-reachable-trigger-concretization-v1
 ```
 
-Risk/Scenario prompt 分别为 `risk-agent-navigation-v11` 与
-`scenario-agent-investigation-v25`。M4n26 及历史 MethodSpec 的
+Risk/Scenario prompt 分别为 `risk-agent-navigation-v12` 与
+`scenario-agent-investigation-v26`。M4n27 及历史 MethodSpec 的
 `closure_mode` 仍可读取，但当前 CLI 不再暴露 `-closure-mode`，活动组合固定使用公共推进。
 
 ## 当前执行语义
@@ -295,6 +295,10 @@ Oracle 的聚焦 race；随后按以下记录只运行了一次新目录 canary�
 - `go test ./... -count=1 -timeout=360s`、`go vet ./...`、`make audit-no-v1 audit-race-shards`
   和 `git diff --check` 已通过。
 
+该统计出口只为未来 formal evaluator 结果服务，不代表当前已经进入方法对比阶段。M4n28 的直接目标是
+让 Agent 生成的可执行 trigger 真正实例化为 witness；在新模型 canary 达到该目标前，不启动 baseline、
+显著性检验或 effectiveness 主表。
+
 ### M4n26 五节点 etcd/raft 单 Episode canary
 
 全新目录 `artifacts/agentic/m4n26-etcdraft-single-canary-v1` 已完成一次 DeepSeek 官方调用：3 次 Risk、
@@ -347,3 +351,31 @@ Agent。后续应在 Core 按 accepted predicate 区分“需要可信继续完�
 - `go test ./... -count=1 -timeout=360s`、`go vet ./...`、两项仓库审计与 `git diff --check`
   均通过；公共 milestone 选择的聚焦 race 通过。两个真实 Target 合并运行的聚焦 race 在 360 秒
   总超时处终止，未报告数据竞争；普通跨协议回归已通过，因此记录该超时且不重复消耗时间。
+
+## M4n28 可达 trigger concretization
+
+- M4n26 etcd/raft canary 的 `apply` 尚未满足时，Scenario Agent 先选 Duplicate、再选 Crash，说明
+  “战略 Action 已启用”不等于“该 Action 能推进当前缺失 milestone”。M4n27 虽然等待匹配 frontier，
+  但交给 Agent 的 view 仍包含所有战略 fault。现在可信层从 accepted predicate、已解析 binding 和
+  target semantic hint 派生当前 selector，只向 Scenario Agent 暴露能实例化立即缺失 milestone 的
+  战略 Actions；若有多个真实匹配，具体路径仍由 Agent 选择。该过滤不创建或执行 Action，也不包含
+  Raft/Paxos 专用分支。
+- `natural-progress-slice-exhausted` 只是一次内部公共推进切片结束，`milestone-advanced` 也表示当前路径
+  正在取得机械进展。这两类反馈不再开放 `abandon`；只有存在真实低收益/失败反馈时才保留有界退出，
+  避免模型把尚未完成的推进错误终止为 hypothesis abandoned。
+- Risk v12 prompt 明确要求 predicates 描述正确 control 也可执行的 trigger prefix，不得把预期的状态
+  回退、重复应用、安全违例等 defect-only symptom 写成最后一个必达 milestone；违例继续只由独立
+  Oracle 判断。prompt 同时明确 `bind_as` 只表达相等，不同 token 名不会自动选择不同节点；需要确定
+  不同参与者时必须使用 Target surface 中真实 node ID 的 literal equality，否则放弃该候选。
+- Target surface 新增窄的机械 feasibility 检查，只拒绝与本 Episode 输入必然矛盾的候选：Invoke 数超过
+  workload、Drop/Crash 超过 fault envelope、并发 Crash 超限、全运行 root 上先 Restart 后 Crash，或
+  literal node 不属于 active topology。它不做协议 reachability 预测，也不以打分代替真实执行。
+- 三/五节点 etcd/raft 和 OmniPaxos 回归已覆盖 `Invoke → 可选自然 milestone → typed Drop → 后续
+  decision`。测试不仅要求 witness reached、qualified Bundle、fresh Replay 和 Oracle 通过，还要求第一
+  次 Planner view 不包含任何与当前 Drop predicate 无关的 Crash/Duplicate/其他消息。
+- 本轮没有调用外部模型，也没有修改协议实现。M4n27 工件继续只读兼容；当前执行语义使用
+  `m4n28-reachable-trigger-concretization-v1`。下一项真实证据必须是全新目录 canary 中 Agent 自己生成的
+  candidate 达到 `witness-instantiated`；在此之前不把系统描述为已具备对比实验条件。
+- `go test ./... -count=1 -timeout=360s`、`go vet ./...`、`make audit-no-v1 audit-race-shards`
+  与 `git diff --check` 已通过；新增 feasibility/goal projection 的聚焦 race 和完整 OmniPaxos
+  Risk→Scenario→Replay→Oracle race 回归通过。

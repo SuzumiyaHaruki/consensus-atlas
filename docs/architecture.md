@@ -279,6 +279,12 @@ Episode 完成，不在一个 Episode 内复制 checkpoint 或维护 branch 状�
 `bundle.json`，终态恢复和 holdout evaluator 重新验证该 Bundle；多 Episode Investigation 的成本与 Bundle
 仍在一个 formal trial 内聚合。在线 Agent 不获取私有 Oracle 反馈。
 
+accepted Risk 的 predicates 是可执行 trigger prefix，不是预期违例。可信层按第一个缺失 predicate 推进
+普通前置条件；到达战略 predicate 时，只把满足其 ActionKind、literal constraint、已解析 binding 和现有
+target semantic hint 的真实 enabled Actions 投影给 Scenario Agent。模型仍决定多个匹配 Action 中的路径，
+但无关 fault 不再混入当前选择。Target surface 只机械拒绝 workload/fault 数量、运行态 lifecycle 顺序和
+literal topology 的明确矛盾；协议可达性仍必须由真实 Runtime 证明，property outcome 仍只由 Oracle 判断。
+
 跨 Episode Memory 不属于 Oracle 边界。它只暴露枚举的机械 outcome、Risk milestone 和成本；
 Oracle violation 数量和 Oracle 派生 assessment 都禁止进入 Risk Agent prompt。
 

@@ -85,10 +85,15 @@ func TestM4eRiskCandidateRunsThroughScenarioRuntimeReplayAndOracle(t *testing.T)
 				t.Fatalf("Scenario Agent did not retain validation and accepted contexts: %#v", view)
 			}
 			var drop control.ActionID
-			for _, action := range view.Frontier.Actions {
+			for index, action := range view.Frontier.Actions {
 				if action.Kind == control.ActionDeliverMessage || action.Kind == control.ActionFireTemporal ||
 					action.Kind == control.ActionCompleteEffect {
 					t.Fatalf("Scenario Agent received trusted natural Action: %#v", action)
+				}
+				if action.Kind != control.ActionDropMessage || index >= len(view.Semantics.ActionHints) ||
+					view.Semantics.ActionHints[index].OperationState != controlexperiment.ConsensusOperationInflight {
+					t.Fatalf("immediate operation-loss milestone exposed unrelated strategic Action: %#v/%#v",
+						action, view.Semantics.ActionHints)
 				}
 				if action.Kind == control.ActionDropMessage &&
 					(action.MessageTypeHint == "sequence-paxos/accept-sync" ||
