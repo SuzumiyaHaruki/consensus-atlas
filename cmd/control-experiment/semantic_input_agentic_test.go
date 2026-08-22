@@ -458,16 +458,14 @@ func assertBootstrapScenarioEstablishesCoordination(
 		t.Fatalf("bootstrap execution materialized %d Invokes, want exactly one: %#v",
 			invokeCount, result.Agent.Execution)
 	}
-	if nodeCount == 3 {
-		automaticInvokes := 0
-		for _, progress := range result.Agent.Execution.AutomaticProgress {
-			if progress.Choice != nil && progress.Choice.Action.Kind == control.ActionInvoke {
-				automaticInvokes++
-			}
+	automaticInvokes := 0
+	for _, progress := range result.Agent.Execution.AutomaticProgress {
+		if progress.Choice != nil && progress.Choice.Action.Kind == control.ActionInvoke {
+			automaticInvokes++
 		}
-		if automaticInvokes != 1 {
-			t.Fatalf("three-node bootstrap used %d typed automatic Invokes, want one", automaticInvokes)
-		}
+	}
+	if automaticInvokes != 1 {
+		t.Fatalf("%d-node bootstrap used %d typed automatic Invokes, want one", nodeCount, automaticInvokes)
 	}
 	qualified, err := target.Execute(ctx, risk, projector, *result.Agent.Execution, "")
 	if err != nil {
@@ -480,10 +478,10 @@ func assertBootstrapScenarioEstablishesCoordination(
 			qualified.Bundle.Trace.Digest, result.Agent.Execution.FinalTrace.Digest,
 			qualified.Replay, qualified.Oracle)
 	}
-	if nodeCount == 3 && (result.Agent.SelectedPathDecisions != 0 ||
+	if result.Agent.SelectedPathDecisions != 0 ||
 		qualified.OracleAttribution == nil ||
 		qualified.OracleAttribution.RootDecisions != len(qualified.Bundle.Trace.Records) ||
-		len(qualified.agentPathOracleViolations()) != 0) {
+		len(qualified.agentPathOracleViolations()) != 0 {
 		t.Fatalf("automatic bootstrap received Agent finding attribution: selected=%d attribution=%#v",
 			result.Agent.SelectedPathDecisions, qualified.OracleAttribution)
 	}

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-22
 分支：`feature/agentic-consensus-testing`
-阶段：M4n17 战略 Agent 与可信 bootstrap 收敛
+阶段：M4n18 closure-disabled 公共推进判定
 
 ## 一句话状态
 
@@ -42,6 +42,13 @@ decision 的有界切片，并优先沿所选 Action 的 item dependency、再�
 Drop/Crash/Restart，则新出现的对应战略控制会把所有权交还 Agent。仅因普通选举消息派生出新的
 Drop/Duplicate 控制不会打断其他 bootstrap 切片。Target closure 仍可持续拥有已接管的因果闭合，且
 只能消费公共 Runtime 已 enabled 的 Effect/Deliver/Temporal。
+
+M4n18 暂时保留 closure 代码用于同前缀消融，但活动默认仍为 public-fixed。公共 causal progress
+现在只在下一个可信 milestone 明确需要战略干预时，才因新 fault control 返回 Agent；完成一次
+战略干预后，新派生的 Drop/Duplicate 机会属于另一项调查，不打断当前正常闭合。无模型回归表明：
+etcd/raft 的两个既有前缀分别在 17/19 个 decisions 内闭合，OmniPaxos 也在扩大预算后闭合；两个
+target-local selector 只减少 decisions，不再提供额外可达性。由于它们也不支持 Crash/Duplicate/
+Restart/换主等其他场景，下一提交将删除 closure 状态机与专用实现，而不是继续扩充协议规则。
 
 Oracle attribution 的 root 不再固定为最初 Scenario root，而是到“首个 Agent 选择的战略 Action”
 之前为止。公共 bootstrap、自动 Invoke，以及 Agent 偶然选择的 Effect/Deliver/Temporal 都不获得
@@ -92,7 +99,7 @@ Risk Prompt 要求按 property → invariant → 合法 fault condition → 实�
 search→read→portfolio 后最多一次机械资格修复。
 
 新运行的 MethodSpec implementation identity 为
-`m4n17-strategic-bootstrap-v1`，M4n16 及更早工件仅作只读兼容；源码暴露模式为
+`m4n18-closure-disabled-progress-v1`，M4n17 及更早工件仅作只读兼容；源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
 `risk-agent-navigation-v10`：search 前只暴露 search schema，成功 search 后只暴露其真实
 match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
@@ -164,7 +171,7 @@ formal loader 从 `Trace decisions - selected_path_decisions` 推导首个 Agent
 private/formal evaluator 在 evaluator-owned SUT Replay 后
 重新执行完整 registry，并只以 post-root violation 决定 killed/false-positive；
 root violation 以 `root_prefix_oracle_findings` 单列，不能给 Agent 记功。
-M4n11 以及当前 M4n12/M4n13/M4n14/M4n15/M4n16/M4n17 MethodSpec 的已执行主路径在 resume 时必须携带 attribution；
+M4n11 以及当前 M4n12/M4n13/M4n14/M4n15/M4n16/M4n17/M4n18 MethodSpec 的已执行主路径在 resume 时必须携带 attribution；
 只有 M4n10 及更早 implementation ID 允许缺省，避免方法版本前移后把 M4n11 工件错误解释为 root=0。
 
 Evidence 结论优先级已统一为 `post-root Oracle finding → witness-instantiated → provider-response-failed
@@ -630,7 +637,11 @@ election incarnation 聚焦 race。canary v4 已调用外部模型，使用 11 c
    和 Oracle 主线，不恢复已删除的 Episode 分支兼容层。
 3. M4n16 使用完整 Trace 直接驱动 Agentic qualified execution、Bundle fresh Replay 和 evaluator-owned Replay。
 4. M4n17 将选主与 typed Invoke 收回可信 bootstrap，仅在战略 frontier 调用 Agent，并把 finding 归因边界
-   移到首个 Agent 战略 Action；下一步只做 closure-disabled 决策与跨 Target 回归，不建设第二套调度 contract。
-5. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
+   移到首个 Agent 战略 Action。
+5. M4n18 的 closure-disabled 回归证明两个现存 closure 唯一支持的 Drop 路径均可由公共 causal progress
+   到达同一 terminal/witness：etcd/raft 需要 17 或 19 个 post-intervention decisions，OmniPaxos 在扩大
+   预算后同样闭合；target-local selector 只缩短路径，不再提供可达性。下一提交删除其 Agent/Artifact
+   状态和两个协议专用实现，保留这些公共路径回归。
+6. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
    attribution capability，不作为 Agent discovery benchmark。正式报告披露 Oracle-backed portfolio 偏置，
    仅将 witness 已实例化且对应 property 出现 post-root finding 的结果称为 Agent discovery。

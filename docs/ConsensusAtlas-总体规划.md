@@ -272,6 +272,10 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   closure selector 只能选择 Effect/Deliver/Temporal，歧义或无可选动作必须返回
   正常反馈，不能在闭合阶段继续制造新的故障干预；公共层必须保留不可变权威
   frontier，且预算最后一个 Action 产生的 terminal/Risk 结果必须在预算判定前采集；
+- closure-disabled 同前缀回归进一步证明，两个现存 selector 唯一支持的 etcd/raft 与 OmniPaxos
+  Drop 路径都能由公共 causal progress 在扩大但仍有界的预算内闭合。selector 只缩短路径，不提供
+  新的可达性，也从未覆盖 Crash/Duplicate/Restart/换主；因此它们作为历史消融证据保留在 Git，
+  活动主线将删除 closure handoff/候选/工件字段与协议专用实现；
 - factory 只在可信 Trace 已记录真实干预后激活；未配置 factory 的 Target 行为不变，
   已激活 factory 的歧义/无候选不能回退公共固定顺序，fresh Replay 不调用 selector；
 - 已晋升路径必须跨 `continue/revise` 保存最近的可信干预上下文；闭合预算、歧义和
@@ -288,7 +292,7 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   战略 Action，整条 Trace 都属于 setup；
 - closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n17-strategic-bootstrap-v1`；旧 M4n16 及更早版本只读兼容；
+  `m4n18-closure-disabled-progress-v1`；旧 M4n17 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/

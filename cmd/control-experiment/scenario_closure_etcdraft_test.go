@@ -389,9 +389,10 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if public.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
-		len(public.Execution.Steps) != 3 {
-		t.Fatalf("public fixed order did not yield on a changed strategic frontier: %#v", public)
+	if public.StopReason != controlexperiment.ScenarioProgressBudget ||
+		len(public.Execution.Steps) != 11 ||
+		public.Execution.FinalRisk.Status == semantic.RiskWitnessReached {
+		t.Fatalf("bounded public progress unexpectedly closed or stopped early: %#v", public)
 	}
 	publicExtended, err := controlexperiment.ExecuteScenarioNaturalProgress(
 		ctx, "etcdraft-public-fixed-closure-extended", 32, spec, intervention.FinalRisk,
@@ -400,9 +401,10 @@ func TestEtcdraftAlternateQuorumClosureAfterDroppedAppendResponse(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if publicExtended.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
-		len(publicExtended.Execution.Steps) != 3 {
-		t.Fatalf("public semantic-yield boundary changed with a larger budget: %#v", publicExtended)
+	if publicExtended.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
+		len(publicExtended.Execution.Steps) != 17 ||
+		publicExtended.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
+		t.Fatalf("closure-disabled public progress did not complete: %#v", publicExtended)
 	}
 
 	selector, participants, err := newEtcdraftAlternateQuorumClosureSelector(
@@ -617,10 +619,12 @@ func TestM4l8EtcdraftSharedAgentPrefixBackendAblation(t *testing.T) {
 	if targetEqual.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
 		len(targetEqual.Execution.Steps) != equalBudget ||
 		targetEqual.Execution.FinalRisk.Status != semantic.RiskWitnessReached ||
-		publicEqual.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
+		publicEqual.StopReason != controlexperiment.ScenarioProgressBudget ||
+		len(publicEqual.Execution.Steps) != equalBudget ||
 		publicEqual.Execution.FinalRisk.Status != semantic.RiskWitnessNotReached ||
-		publicExtended.StopReason != controlexperiment.ScenarioProgressSemanticYield ||
-		publicExtended.Execution.FinalRisk.Status != semantic.RiskWitnessNotReached {
+		publicExtended.StopReason != controlexperiment.ScenarioProgressClientTerminal ||
+		len(publicExtended.Execution.Steps) != 19 ||
+		publicExtended.Execution.FinalRisk.Status != semantic.RiskWitnessReached {
 		t.Fatalf("M4l8 backend outcomes drifted: public=%#v target=%#v extended=%#v",
 			publicEqual, targetEqual, publicExtended)
 	}

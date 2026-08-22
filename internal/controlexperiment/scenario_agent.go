@@ -312,6 +312,39 @@ func exploreScenarioWithPlanner(
 		if remaining <= 0 {
 			break
 		}
+		automaticGoal := scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
+		if len(preparer) == 1 && automaticGoal.autoInvoke &&
+			scenarioCoordinationInvokeReady(&currentSemantics) {
+			automatic, frontier, semantics, applied, automaticErr :=
+				executeScenarioAutomaticGoal(
+					ctx, ordinal, spec, currentRisk, currentTrace, currentSemantics,
+					runtimeConfig, faultEnvelope, newAdapter, projector,
+					semanticProjector, automaticGoal, preparer[0],
+				)
+			if automaticErr != nil {
+				return result, automaticErr
+			}
+			if applied {
+				executed := len(automatic.FinalTrace.Records) - len(currentTrace.Records)
+				usedDecisions += executed
+				result.DecisionsUsed = usedDecisions
+				addScenarioExecutionWork(&result.ExecutionWork, automatic.Work)
+				mergeScenarioExecution(&result, automatic)
+				currentTrace, currentRisk = automatic.FinalTrace, automatic.FinalRisk
+				currentFrontier, currentSemantics = frontier, semantics
+				result.SelectedPathDecisions = len(currentTrace.Records) -
+					ScenarioAgentAttributionRootDecisions(*result.Execution)
+				if currentRisk.Status == semantic.RiskWitnessReached {
+					return finishScenarioAgentResult(
+						result, root, ScenarioAgentStopWitnessInstantiated,
+					), nil
+				}
+				remaining = maxDecisions - usedDecisions
+				if remaining <= 0 {
+					return finishScenarioAgentResult(result, root, ScenarioAgentStopDecisionBudget), nil
+				}
+			}
+		}
 		remainingCalls := maxCalls - ordinal + 1
 		progressQuantum := (remaining + remainingCalls - 1) / remainingCalls
 		progressLimit := ScenarioNaturalProgressSlice
@@ -479,7 +512,7 @@ func exploreScenarioWithPlanner(
 		}
 		inheritedIntervention := latestScenarioExecutionClosureIntervention(result.Execution)
 		inheritedClosureChoices := scenarioExecutionClosureChoices(result.Execution)
-		automaticGoal := scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
+		automaticGoal = scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
 		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
 			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, remaining,
 			spec, currentRisk, currentTrace,
@@ -610,6 +643,63 @@ func scenarioAutomaticGoalFor(
 		}
 	}
 	return scenarioAutomaticProgressGoal{}
+}
+
+func executeScenarioAutomaticGoal(
+	ctx context.Context,
+	ordinal int,
+	spec semantic.RiskWitnessSpec,
+	currentRisk semantic.RiskWitnessResult,
+	currentTrace controlruntime.Trace,
+	currentSemantics ScenarioSemanticExposure,
+	runtimeConfig RuntimeConfig,
+	faultEnvelope *FaultEnvelope,
+	newAdapter AdapterFactory,
+	projector SemanticPrefixProjector,
+	semanticProjector ScenarioSemanticProjector,
+	goal scenarioAutomaticProgressGoal,
+	preparer ScenarioActionPreparer,
+) (ScenarioExecution, RiskFrontierView, ScenarioSemanticExposure, bool, error) {
+	if !goal.autoInvoke || !scenarioCoordinationInvokeReady(&currentSemantics) || preparer == nil {
+		return ScenarioExecution{}, RiskFrontierView{}, ScenarioSemanticExposure{}, false, nil
+	}
+	id := fmt.Sprintf("scenario-automatic-goal-%02d", ordinal)
+	progress, err := executeScenarioNaturalProgress(
+		ctx, id, 1, spec, currentRisk, currentTrace, runtimeConfig,
+		faultEnvelope, newAdapter, projector, nil, goal, preparer,
+		semanticProjector, &currentSemantics,
+	)
+	if err != nil {
+		return ScenarioExecution{}, RiskFrontierView{}, ScenarioSemanticExposure{}, false, err
+	}
+	if len(progress.Execution.Steps) != 1 || progress.Execution.Steps[0].Choice == nil ||
+		progress.Execution.Steps[0].Choice.Action.Kind != control.ActionInvoke {
+		return ScenarioExecution{}, RiskFrontierView{}, ScenarioSemanticExposure{}, false,
+			errors.New("EXPERIMENT_SCENARIO_AUTOMATIC_INVOKE_UNAVAILABLE")
+	}
+	execution := progress.Execution
+	execution.AutomaticProgress = cloneScenarioStepFeedback(execution.Steps)
+	execution.Steps = nil
+	execution.NaturalProgressStop = progress.StopReason
+	if execution.FinalRisk.Status == semantic.RiskWitnessReached {
+		return execution, RiskFrontierView{}, currentSemantics, true, nil
+	}
+	frontier, snapshot, reconstruction, err := ReconstructRiskFrontierState(
+		ctx, id+"-continuation", spec, execution.FinalRisk, execution.FinalTrace,
+		len(execution.FinalTrace.Records), runtimeConfig, faultEnvelope, newAdapter,
+	)
+	addScenarioPhase(&execution.Work.FrontierReconstruction, reconstruction)
+	execution.Work.TotalWorkUnits = execution.Work.FrontierReconstruction.WorkUnits +
+		execution.Work.ChildMaterialization.WorkUnits + execution.Work.ChildVerification.WorkUnits
+	if err != nil {
+		return ScenarioExecution{}, RiskFrontierView{}, ScenarioSemanticExposure{}, false, err
+	}
+	semantics, err := semanticProjector(execution.FinalTrace, frontier, snapshot)
+	if err != nil || semantics.Validate(frontier) != nil {
+		return ScenarioExecution{}, RiskFrontierView{}, ScenarioSemanticExposure{}, false,
+			errors.Join(errors.New("EXPERIMENT_SCENARIO_AUTOMATIC_SEMANTICS_INVALID"), err)
+	}
+	return execution, frontier, semantics, true, nil
 }
 
 func finishScenarioAgentResult(

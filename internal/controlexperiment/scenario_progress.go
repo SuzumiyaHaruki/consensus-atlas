@@ -181,7 +181,7 @@ func ExecuteScenarioNaturalProgress(
 ) (ScenarioProgressResult, error) {
 	return executeScenarioNaturalProgress(
 		ctx, id, maxDecisions, spec, rootRisk, root, runtimeConfig,
-		faultEnvelope, newAdapter, projector, nil, scenarioAutomaticProgressGoal{}, nil,
+		faultEnvelope, newAdapter, projector, nil, scenarioAutomaticProgressGoal{}, nil, nil, nil,
 	)
 }
 
@@ -206,7 +206,7 @@ func ExecuteScenarioNaturalProgressWithClosure(
 	}
 	return executeScenarioNaturalProgress(
 		ctx, id, maxDecisions, spec, rootRisk, root, runtimeConfig,
-		faultEnvelope, newAdapter, projector, selector, scenarioAutomaticProgressGoal{}, nil,
+		faultEnvelope, newAdapter, projector, selector, scenarioAutomaticProgressGoal{}, nil, nil, nil,
 	)
 }
 
@@ -224,6 +224,8 @@ func executeScenarioNaturalProgress(
 	selector ScenarioClosureSelector,
 	goal scenarioAutomaticProgressGoal,
 	preparer ScenarioActionPreparer,
+	semanticProjector ScenarioSemanticProjector,
+	rootSemantics *ScenarioSemanticExposure,
 ) (ScenarioProgressResult, error) {
 	if !validMethodToken(id) || maxDecisions <= 0 || maxDecisions > ScenarioAgentMaxDecisions ||
 		spec.Validate() != nil || rootRisk.Validate(spec) != nil || root.Validate() != nil ||
@@ -247,7 +249,7 @@ func executeScenarioNaturalProgress(
 	}
 	live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
-		faultEnvelope, runtime, projector, selector, nil, nil, nil, goal, preparer,
+		faultEnvelope, runtime, projector, selector, nil, semanticProjector, rootSemantics, goal, preparer,
 	)
 	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
@@ -537,6 +539,13 @@ func scenarioPublicProgressShouldYield(
 			// instead the point at which the Agent regains ownership.
 			return false
 		}
+	}
+	if !goal.yieldForStrategic {
+		// A candidate investigates one strategic intervention at a time. Once
+		// that intervention is recorded and the next trusted milestone is
+		// ordinary protocol progress, newly derived fault controls are choices
+		// for another investigation, not a reason to interrupt this one.
+		return false
 	}
 	current, err := scenarioStrategicActionKeys(actions)
 	if err != nil {
