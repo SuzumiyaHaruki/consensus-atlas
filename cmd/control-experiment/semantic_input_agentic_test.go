@@ -355,6 +355,23 @@ func assertBootstrapScenarioEstablishesCoordination(
 		func(_ context.Context, view controlexperiment.ScenarioAgentView) (
 			[]byte, controlexperiment.ModelWork, error,
 		) {
+			invokeAlreadyObserved := view.Frontier.Progress.FirstMissingMilestone != risk.Spec.Milestones[0].ID
+			if view.Prior != nil && view.Prior.ProgressDelta != nil {
+				for _, milestone := range view.Prior.ProgressDelta.NewMilestones {
+					invokeAlreadyObserved = invokeAlreadyObserved || milestone == risk.Spec.Milestones[0].ID
+				}
+			}
+			if invokeAlreadyObserved {
+				coordinationSeen = view.Semantics.Coordination != nil &&
+					view.Semantics.Coordination.Status == controlexperiment.ConsensusCoordinatorPresent
+				invokePlanned = true
+				encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
+					Intent: controlexperiment.ScenarioIntentAbandon,
+				})
+				return encoded, controlexperiment.ModelWork{
+					Calls: 1, InputTokens: 3, OutputTokens: 2, TotalTokens: 5,
+				}, marshalErr
+			}
 			if invokePlanned {
 				encoded, marshalErr := json.Marshal(controlexperiment.ScenarioInvestigationProposal{
 					Intent: controlexperiment.ScenarioIntentAbandon,
@@ -441,6 +458,17 @@ func assertBootstrapScenarioEstablishesCoordination(
 		t.Fatalf("bootstrap execution materialized %d Invokes, want exactly one: %#v",
 			invokeCount, result.Agent.Execution)
 	}
+	if nodeCount == 3 {
+		automaticInvokes := 0
+		for _, progress := range result.Agent.Execution.AutomaticProgress {
+			if progress.Choice != nil && progress.Choice.Action.Kind == control.ActionInvoke {
+				automaticInvokes++
+			}
+		}
+		if automaticInvokes != 1 {
+			t.Fatalf("three-node bootstrap used %d typed automatic Invokes, want one", automaticInvokes)
+		}
+	}
 	qualified, err := target.Execute(ctx, risk, projector, *result.Agent.Execution, "")
 	if err != nil {
 		t.Fatalf("bootstrap Scenario did not seal as a qualified Bundle: %v", err)
@@ -451,6 +479,13 @@ func assertBootstrapScenarioEstablishesCoordination(
 		t.Fatalf("bootstrap qualified evidence drifted: trace=%s scenario=%s replay=%#v oracle=%#v",
 			qualified.Bundle.Trace.Digest, result.Agent.Execution.FinalTrace.Digest,
 			qualified.Replay, qualified.Oracle)
+	}
+	if nodeCount == 3 && (result.Agent.SelectedPathDecisions != 0 ||
+		qualified.OracleAttribution == nil ||
+		qualified.OracleAttribution.RootDecisions != len(qualified.Bundle.Trace.Records) ||
+		len(qualified.agentPathOracleViolations()) != 0) {
+		t.Fatalf("automatic bootstrap received Agent finding attribution: selected=%d attribution=%#v",
+			result.Agent.SelectedPathDecisions, qualified.OracleAttribution)
 	}
 }
 

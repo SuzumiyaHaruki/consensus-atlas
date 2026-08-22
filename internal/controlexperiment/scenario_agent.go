@@ -479,12 +479,13 @@ func exploreScenarioWithPlanner(
 		}
 		inheritedIntervention := latestScenarioExecutionClosureIntervention(result.Execution)
 		inheritedClosureChoices := scenarioExecutionClosureChoices(result.Execution)
+		automaticGoal := scenarioAutomaticGoalFor(acceptedHypothesis, currentRisk)
 		execution, err := executeSemanticBoundedScenarioPlanWithClosureContext(
 			ctx, plan.ID, plan, viewMaxSteps, attemptAllowance, remaining,
 			spec, currentRisk, currentTrace,
 			runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 			closureFactory, inheritedIntervention, inheritedClosureChoices,
-			naturalProgressAllowance, preparer...,
+			automaticGoal, naturalProgressAllowance, preparer...,
 		)
 		addScenarioExecutionWork(&result.ExecutionWork, execution.Work)
 		if err != nil {
@@ -566,7 +567,8 @@ func exploreScenarioWithPlanner(
 		currentTrace, currentRisk = finalTrace, finalRisk
 		currentFrontier, currentSemantics = frontier, semantics
 		result.Execution = path.Execution
-		result.SelectedPathDecisions = len(currentTrace.Records) - len(root.Records)
+		result.SelectedPathDecisions = len(currentTrace.Records) -
+			ScenarioAgentAttributionRootDecisions(*result.Execution)
 		result.Attempts = append(result.Attempts, attempt)
 		prior = &result.Attempts[len(result.Attempts)-1].Feedback
 		if currentRisk.Status == semantic.RiskWitnessReached {
@@ -583,6 +585,33 @@ func exploreScenarioWithPlanner(
 	return finishScenarioAgentResult(result, root, stop), nil
 }
 
+func scenarioAutomaticGoalFor(
+	accepted *AcceptedHypothesisContext,
+	current semantic.RiskWitnessResult,
+) scenarioAutomaticProgressGoal {
+	if accepted == nil || len(current.MissingMilestones) == 0 {
+		return scenarioAutomaticProgressGoal{}
+	}
+	missing := current.MissingMilestones[0]
+	for _, predicate := range accepted.Candidate.Predicates {
+		if predicate.MilestoneID == missing {
+			strategic := false
+			switch predicate.Kind {
+			case semantic.ObservationMessageDropped,
+				semantic.ObservationNodeCrashed,
+				semantic.ObservationNodeRestarted:
+				strategic = true
+			}
+			return scenarioAutomaticProgressGoal{
+				autoInvoke:        predicate.Kind == semantic.ObservationWorkloadInvoked,
+				yieldForStrategic: strategic,
+				invokeMilestone:   predicate.MilestoneID,
+			}
+		}
+	}
+	return scenarioAutomaticProgressGoal{}
+}
+
 func finishScenarioAgentResult(
 	result ScenarioAgentResult,
 	root controlruntime.Trace,
@@ -591,7 +620,8 @@ func finishScenarioAgentResult(
 	result.StopReason = stopReason
 	if result.Execution != nil {
 		result.Status = ScenarioAgentCompleted
-		result.SelectedPathDecisions = len(result.Execution.FinalTrace.Records) - len(root.Records)
+		result.SelectedPathDecisions = len(result.Execution.FinalTrace.Records) -
+			ScenarioAgentAttributionRootDecisions(*result.Execution)
 	}
 	return result
 }

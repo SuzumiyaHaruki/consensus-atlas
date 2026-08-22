@@ -143,9 +143,10 @@ PSS、Risk reached 和 candidate accepted 都不是缺陷 verdict。缺陷结论
 后续 evaluator 对保存证据重新判断。
 完整 Oracle 会保留 root prefix 和 Agent path 上的全部 violation，但二者分别归因：确定性 root 中已存在的
 violation 只计为 Oracle sensitivity，只有 root 之后首次出现的 violation 才能计为 Agent finding。formal loader
-从 Scenario frontier reconstruction work 推导 root boundary，并与保存的 boundary 以及
-`Trace decisions - selected_path_decisions` 交叉核对；evaluator-owned Replay 后用该机械核对过的 boundary
-重新归因，不能用初始状态已有的问题给 Agent 记功。evaluator 当前不独立重建生成 Scenario root 的策略。
+从 `Trace decisions - selected_path_decisions` 推导首个 Agent 战略 Action 之前的 root boundary，并与保存的
+boundary 交叉核对；公共 bootstrap、自动 Invoke 和其他非战略推进都属于 setup。evaluator-owned Replay
+后用该机械核对过的 boundary 重新归因，不能用准备阶段已有的问题给 Agent 记功。evaluator 当前不独立重建
+生成 Scenario root 或 attribution boundary 的方法侧策略。
 对 formal Investigation trial，evaluator 在给予 finding credit 前汇总全部 Episode 主路径的 decisions 与
 qualified primary work，不允许每个 Episode 单独重用完整预算。
 

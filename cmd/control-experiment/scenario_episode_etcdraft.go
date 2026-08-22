@@ -164,7 +164,10 @@ func executeEtcdraftScenarioQualifiedRisk(
 		return scenarioTestingResult{}, errors.New("ETCDRAFT_SCENARIO_QUALIFIED_TRACE_MISMATCH")
 	}
 	registry := etcdraftAgenticOracleRegistry()
-	result := newScenarioTestingResult(execution.PlanID, bundle, risk, registry, len(root.Records))
+	result := newScenarioTestingResult(
+		execution.PlanID, bundle, risk, registry,
+		controlexperiment.ScenarioAgentAttributionRootDecisions(execution),
+	)
 	if err := validateScenarioTestingRisk(
 		result, spec, projector, etcdraftv2.DecisionProjector{}, registry,
 	); err != nil {

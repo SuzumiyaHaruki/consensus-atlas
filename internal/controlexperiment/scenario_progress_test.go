@@ -73,21 +73,47 @@ func TestScenarioBootstrapProgressYieldsOnlyOnTrustedSemanticChange(t *testing.T
 	unchanged := ScenarioSemanticExposure{Coordination: &ConsensusCoordinationStatus{
 		Status: ConsensusCoordinatorAbsent,
 	}}
+	candidate := ScenarioSemanticExposure{Coordination: &ConsensusCoordinationStatus{
+		Status: ConsensusCoordinatorAmbiguous,
+		ElectionProgress: ConsensusElectionProgress{
+			CandidateNodes: []control.NodeID{"n1"}, TermOrBallotChanged: true,
+		},
+	}}
 	newFaultChoice := []FrontierActionRef{{
 		ActionID: "drop", ActionDigest: "drop-digest", Kind: control.ActionDropMessage,
 	}}
 	if scenarioPublicProgressShouldYield(
 		rootRisk, currentRisk, map[string]struct{}{}, newFaultChoice, &root, &unchanged,
+		scenarioAutomaticProgressGoal{},
 	) {
 		t.Fatal("bootstrap progress yielded merely because ordinary traffic exposed a fault control")
+	}
+	if scenarioPublicProgressShouldYield(
+		rootRisk, currentRisk, map[string]struct{}{}, newFaultChoice, &root, &candidate,
+		scenarioAutomaticProgressGoal{},
+	) {
+		t.Fatal("bootstrap progress yielded for ordinary candidate/term progress")
+	}
+	if !scenarioPublicProgressShouldYield(
+		rootRisk, currentRisk, map[string]struct{}{}, newFaultChoice, &root, &candidate,
+		scenarioAutomaticProgressGoal{yieldForStrategic: true},
+	) {
+		t.Fatal("bootstrap progress did not return a newly exposed strategic intervention")
 	}
 	present := ScenarioSemanticExposure{Coordination: &ConsensusCoordinationStatus{
 		Status: ConsensusCoordinatorPresent, CoordinatorNode: "n1", InvokeReady: true,
 	}}
 	if !scenarioPublicProgressShouldYield(
 		rootRisk, currentRisk, map[string]struct{}{}, newFaultChoice, &root, &present,
+		scenarioAutomaticProgressGoal{},
 	) {
 		t.Fatal("bootstrap progress did not yield when trusted coordination changed")
+	}
+	if scenarioPublicProgressShouldYield(
+		rootRisk, currentRisk, map[string]struct{}{}, newFaultChoice, &root, &present,
+		scenarioAutomaticProgressGoal{autoInvoke: true, invokeMilestone: "invoke"},
+	) {
+		t.Fatal("operation Risk yielded before typed automatic Invoke could run")
 	}
 }
 

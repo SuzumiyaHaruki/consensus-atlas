@@ -2,7 +2,7 @@
 
 更新时间：2026-08-22
 分支：`feature/agentic-consensus-testing`
-阶段：M4n16 recorded schedule 统一执行
+阶段：M4n17 战略 Agent 与可信 bootstrap 收敛
 
 ## 一句话状态
 
@@ -35,10 +35,18 @@ Scenario Agent 现在只保留单路径、单战略 Action 协议：每次只提
 只使用 `continue/revise/abandon`。branch/control/ablate/select/minimize 的类型、Schema、运行状态、
 Episode 分支执行、sidecar、恢复和 formal loader 路径均已删除；对照与消融由外层多个 Episode 编排。
 协调者已经存在时公共自然推进每次最多执行 4 个非干预 Action；bootstrap 阶段使用最多 16 个
-decision 的有界切片，并优先沿所选 Action 的 item dependency、再沿参与者方向推进。在协调状态、
-term/ballot 状态或 milestone 发生可信变化时返回 `ProgressDelta`；仅因普通选举消息派生出新的
-Drop/Duplicate 控制不会立即打断 bootstrap 切片。Target closure 仍可持续拥有已接管的因果闭合，且
+decision 的有界切片，并优先沿所选 Action 的 item dependency、再沿参与者方向推进。candidate 形成和
+普通 term/ballot 变化本身不再消耗一次 Agent 调用。若下一个可信 milestone 是 workload invoke，系统
+只在唯一 coordinator 已 present 且 invoke-ready 后，通过 Target 已有的 typed Action preparer 投放并
+执行一次普通 `Invoke`；它仍进入同一 Trace、Replay 和成本账本。若下一个 milestone 本身要求
+Drop/Crash/Restart，则新出现的对应战略控制会把所有权交还 Agent。仅因普通选举消息派生出新的
+Drop/Duplicate 控制不会打断其他 bootstrap 切片。Target closure 仍可持续拥有已接管的因果闭合，且
 只能消费公共 Runtime 已 enabled 的 Effect/Deliver/Temporal。
+
+Oracle attribution 的 root 不再固定为最初 Scenario root，而是到“首个 Agent 选择的战略 Action”
+之前为止。公共 bootstrap、自动 Invoke，以及 Agent 偶然选择的 Effect/Deliver/Temporal 都不获得
+finding 归因；如果 Agent 从未选择战略 Action，整条 Trace 都属于 setup。Episode summary、Target
+Oracle attribution 和 formal loader 从同一个 `selected_path_decisions` 边界交叉校验，不新增工件字段。
 
 Agent 主路径不再把完整 Trace 复制成逐 decision `Policy.Rules`。成功的 Scenario Trace 本身就是
 recorded schedule：可信执行器在记录的位置重建 Invoke/Partition，重新查询 enabled/admissible
@@ -84,7 +92,7 @@ Risk Prompt 要求按 property → invariant → 合法 fault condition → 实�
 search→read→portfolio 后最多一次机械资格修复。
 
 新运行的 MethodSpec implementation identity 为
-`m4n16-recorded-schedule-execution-v1`，M4n15 及更早工件仅作只读兼容；源码暴露模式为
+`m4n17-strategic-bootstrap-v1`，M4n16 及更早工件仅作只读兼容；源码暴露模式为
 `mounted-repository-search-readonly-v3`。Risk Prompt/Schema 已升级为
 `risk-agent-navigation-v10`：search 前只暴露 search schema，成功 search 后只暴露其真实
 match 引用的 bounded-read schema，完成 read 后只暴露 portfolio schema。search query 明确为
@@ -147,16 +155,16 @@ leader observation 的去重键包含 term、RaftID 和 incarnation，避免同�
 该 monitor 不宣称能从任意中途快照恢复一次历史选举；以后若支持跨 Episode live Trace continuation，
 需要另行提供显式 election witness。
 
-Oracle attribution 已明确划分 deterministic root prefix 与 Agent path。在线 summary、主 Bundle 和分支
-evidence 保留完整 Oracle，只额外保存 root decision boundary；root 与 post-root violation 均从完整结果派生，
+Oracle attribution 已明确划分 setup prefix 与 Agent strategic path。在线 summary 和主 Bundle
+保留完整 Oracle，只额外保存 root decision boundary；root 与 post-root violation 均从完整结果派生，
 不再重复持久化两份数组。Assessment 和 `oracle_findings` 只把 post-root violation 计作 Agent finding。
-formal loader 从 Episode summary 中的 Scenario frontier reconstruction work 推导 boundary，并与保存值以及主路径
-`Trace decisions - selected_path_decisions` 交叉核对。三项仍都是方法侧工件事实；当前不把这个
-boundary 表述为 evaluator-owned，也不声称能识别 artifact producer 对三项的一致篡改。
+formal loader 从 `Trace decisions - selected_path_decisions` 推导首个 Agent 战略 Action 前的 boundary，
+并与保存值交叉核对。两项仍都是方法侧工件事实；当前不把这个 boundary 表述为 evaluator-owned，
+也不声称能识别 artifact producer 对两项的一致篡改。
 private/formal evaluator 在 evaluator-owned SUT Replay 后
 重新执行完整 registry，并只以 post-root violation 决定 killed/false-positive；
 root violation 以 `root_prefix_oracle_findings` 单列，不能给 Agent 记功。
-M4n11 以及当前 M4n12/M4n13/M4n14/M4n15/M4n16 MethodSpec 的已执行主路径在 resume 时必须携带 attribution；
+M4n11 以及当前 M4n12/M4n13/M4n14/M4n15/M4n16/M4n17 MethodSpec 的已执行主路径在 resume 时必须携带 attribution；
 只有 M4n10 及更早 implementation ID 允许缺省，避免方法版本前移后把 M4n11 工件错误解释为 root=0。
 
 Evidence 结论优先级已统一为 `post-root Oracle finding → witness-instantiated → provider-response-failed
@@ -618,10 +626,11 @@ election incarnation 聚焦 race。canary v4 已调用外部模型，使用 11 c
 ## 下一步
 
 1. M4n14 已作为独立提交 `90a3243` 收口；dirty `suts/etcdraft` 未进入提交。
-2. M4n15 完成后作为第二个独立提交收口，保留 continue/revise/abandon、单路径反馈、qualified execution
+2. M4n15 删除非主线分支状态，保留 continue/revise/abandon、单路径反馈、qualified execution
    和 Oracle 主线，不恢复已删除的 Episode 分支兼容层。
-3. M4n16 使用完整 Trace 直接驱动 Agentic qualified execution、Bundle fresh Replay 和 evaluator-owned Replay；
-   下一步进入假设到单步 Action 的转换质量改进，不再建设第二套调度 contract。
-4. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
+3. M4n16 使用完整 Trace 直接驱动 Agentic qualified execution、Bundle fresh Replay 和 evaluator-owned Replay。
+4. M4n17 将选主与 typed Invoke 收回可信 bootstrap，仅在战略 frontier 调用 Agent，并把 finding 归因边界
+   移到首个 Agent 战略 Action；下一步只做 closure-disabled 决策与跨 Target 回归，不建设第二套调度 contract。
+5. 正式材料仍必须在选择受控修改或历史问题前固定；当前自然启动即可暴露的降低 quorum 变体只用于管线与
    attribution capability，不作为 Agent discovery benchmark。正式报告披露 Oracle-backed portfolio 偏置，
    仅将 witness 已实例化且对应 property 出现 post-root finding 的结果称为 Agent discovery。

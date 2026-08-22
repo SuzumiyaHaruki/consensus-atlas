@@ -187,11 +187,11 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   policy、workload 与 Target config）；private input 额外提供 build audit、SUT binary
   和可信 executor。evaluator 在隔离子进程中调用现有 qualified executor，逐 Action
   比较 fresh Trace，然后才重新投影并运行 Oracle；
-- Scenario root 的 decision boundary 随主 Bundle 和每个候选 Bundle 一起进入 evaluator 输入；formal loader
-  从 Episode summary 中的 Scenario frontier reconstruction work 推导它，并与保存值以及主路径
-  Trace 长度减去 selected-path decisions 交叉核对。这是多字段交叉验证的方法侧边界，不是
+- Scenario attribution boundary 随主 Bundle 和每个候选 Bundle 一起进入 evaluator 输入；formal loader
+  从主路径 Trace 长度减去 selected-path decisions 推导它，并与保存值交叉核对。该 boundary 位于首个
+  Agent 战略 Action 之前，公共 bootstrap 和自动 Invoke 仍属于 setup。这是方法侧边界，不是
   独立 evaluator-owned root boundary；当前 formal 威胁模型不声称防止 artifact producer 一致篡改
-  这三项事实。完整 Oracle
+  这两项事实。完整 Oracle
   结果不删除 root violation，但正式 finding 只由 evaluator-owned Replay 中 root 之后的 violation 产生。
   root 中已有的异常单独报告为 Oracle sensitivity，不能归因于 Agent；
 - Agentic semantic input 显式声明 `root_mode`。正式盲测使用 `bootstrap`：只清空启动
@@ -281,9 +281,14 @@ Runtime 总预算。公开 calibration、private holdout 和新发现 case study
   共用“必要时按原参数重建 Invoke/Partition → 查询 enabled/admissible → 精确 ActionID
   选择 → 完整 ActionRecord 比较”的解释语义。现有 Config 只保留 Action-kind surface
   以复用 admission/recipe，手写 Policy fixture 继续走历史执行入口；不新增调度 contract；
+- Agent 只在可信 milestone 所需的新战略 frontier 上作选择。选主、普通 term/ballot 推进和
+  coordinator 就绪属于公共 bootstrap；下一 milestone 为 workload invoke 时，由 Target 已有
+  typed Action preparer 在唯一 coordinator 就绪后投放一次普通 Invoke。自动动作继续写入同一
+  Trace、成本和 Replay，但 finding attribution 从首个 Agent 选择的战略 Action 才开始；若没有
+  战略 Action，整条 Trace 都属于 setup；
 - closure handoff、正式 Risk 输入、节点规模/调用预算、bootstrap root、紧凑 Action 前沿、因果推进和
   token-stop 证据封存属于方法实现变化，当前 MethodSpec implementation identity 为
-  `m4n16-recorded-schedule-execution-v1`；旧 M4n15 及更早版本只读兼容；
+  `m4n17-strategic-bootstrap-v1`；旧 M4n16 及更早版本只读兼容；
   `m4n12-bootstrap-root-and-action-coherence-v1`/
   `m4n11-provider-recovery-and-quorum-oracle-v1`/
   `m4n10-deep-candidate-investigation-v1`/

@@ -142,7 +142,7 @@ func ExecuteBoundedScenarioPlan(
 	return executeBoundedScenarioPlan(
 		ctx, executionID, plan, maxSteps, maxDecisions, maxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, nil, nil, nil, nil,
-		naturalProgressLimit, preparers...,
+		scenarioAutomaticProgressGoal{}, naturalProgressLimit, preparers...,
 	)
 }
 
@@ -170,7 +170,7 @@ func ExecuteSemanticBoundedScenarioPlan(
 	return executeSemanticBoundedScenarioPlanWithClosureContext(
 		ctx, executionID, plan, maxSteps, maxDecisions, maxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
-		closureFactory, nil, nil, naturalProgressLimit, preparers...,
+		closureFactory, nil, nil, scenarioAutomaticProgressGoal{}, naturalProgressLimit, preparers...,
 	)
 }
 
@@ -192,6 +192,7 @@ func executeSemanticBoundedScenarioPlanWithClosureContext(
 	closureFactory ScenarioClosureFactory,
 	inheritedIntervention *FrontierChoice,
 	inheritedClosureChoices []FrontierChoice,
+	automaticGoal scenarioAutomaticProgressGoal,
 	naturalProgressLimit int,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
@@ -202,7 +203,7 @@ func executeSemanticBoundedScenarioPlanWithClosureContext(
 		ctx, executionID, plan, maxSteps, maxDecisions, closureMaxDecisions, spec, rootRisk, root,
 		runtimeConfig, faultEnvelope, newAdapter, projector, semanticProjector,
 		closureFactory, inheritedIntervention, inheritedClosureChoices,
-		naturalProgressLimit, preparers...,
+		automaticGoal, naturalProgressLimit, preparers...,
 	)
 }
 
@@ -224,6 +225,7 @@ func executeBoundedScenarioPlan(
 	closureFactory ScenarioClosureFactory,
 	inheritedIntervention *FrontierChoice,
 	inheritedClosureChoices []FrontierChoice,
+	automaticGoal scenarioAutomaticProgressGoal,
 	naturalProgressLimit int,
 	preparers ...ScenarioActionPreparer,
 ) (ScenarioExecution, error) {
@@ -618,10 +620,15 @@ func executeBoundedScenarioPlan(
 				semantics.Coordination.Status == ConsensusCoordinatorPresent {
 				naturalFocus = nil
 			}
+			effectiveGoal := automaticGoal
+			if effectiveGoal.autoInvoke &&
+				scenarioRiskHasMilestone(result.FinalRisk, effectiveGoal.invokeMilestone) {
+				effectiveGoal.autoInvoke = false
+			}
 			live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 				ctx, executionID+"-natural", remaining, spec, result.FinalRisk,
 				result.FinalTrace, view, snapshot, faultEnvelope, runtime, projector, selector,
-				naturalFocus, semanticProjector, &semantics,
+				naturalFocus, semanticProjector, &semantics, effectiveGoal, preparer,
 			)
 			addScenarioPhase(&result.Work.ChildMaterialization, live.Work.ChildMaterialization)
 			result.NaturalProgressStop = live.StopReason
@@ -817,6 +824,25 @@ func scenarioFeedbackMatchesRecord(feedback ScenarioStepFeedback, record control
 	}
 	digest, err := control.CanonicalDigest(record.Action)
 	return err == nil && digest == feedback.Choice.Action.ActionDigest
+}
+
+// ScenarioAgentAttributionRootDecisions returns the prefix before the first
+// Agent-selected strategic Action. Public bootstrap/automatic progress before
+// that Action is setup evidence; if the Agent never selects an intervention,
+// the complete Trace remains setup and cannot earn finding credit.
+func ScenarioAgentAttributionRootDecisions(execution ScenarioExecution) int {
+	boundary := len(execution.FinalTrace.Records)
+	for _, step := range execution.Steps {
+		if step.Outcome != ScenarioStepApplied || step.Choice == nil ||
+			scenarioNaturalProgressKind(step.Choice.Action.Kind) {
+			continue
+		}
+		candidate := step.Decision - 1
+		if candidate >= 0 && candidate < boundary {
+			boundary = candidate
+		}
+	}
+	return boundary
 }
 
 func scenarioTraceHasPrefix(trace controlruntime.Trace, prefix controlruntime.Trace) bool {

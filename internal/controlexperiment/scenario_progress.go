@@ -39,6 +39,15 @@ type scenarioCausalProgressFocus struct {
 	items map[control.ItemID]struct{}
 }
 
+// scenarioAutomaticProgressGoal is derived from the trusted predicate for the
+// next missing milestone. It is in-memory execution guidance, not a persisted
+// Agent assertion or a new scheduling contract.
+type scenarioAutomaticProgressGoal struct {
+	autoInvoke        bool
+	yieldForStrategic bool
+	invokeMilestone   string
+}
+
 func newScenarioCausalProgressFocus(action FrontierActionRef) *scenarioCausalProgressFocus {
 	nodes := make(map[control.NodeID]struct{}, 4)
 	for _, node := range []control.NodeID{
@@ -172,7 +181,7 @@ func ExecuteScenarioNaturalProgress(
 ) (ScenarioProgressResult, error) {
 	return executeScenarioNaturalProgress(
 		ctx, id, maxDecisions, spec, rootRisk, root, runtimeConfig,
-		faultEnvelope, newAdapter, projector, nil,
+		faultEnvelope, newAdapter, projector, nil, scenarioAutomaticProgressGoal{}, nil,
 	)
 }
 
@@ -197,7 +206,7 @@ func ExecuteScenarioNaturalProgressWithClosure(
 	}
 	return executeScenarioNaturalProgress(
 		ctx, id, maxDecisions, spec, rootRisk, root, runtimeConfig,
-		faultEnvelope, newAdapter, projector, selector,
+		faultEnvelope, newAdapter, projector, selector, scenarioAutomaticProgressGoal{}, nil,
 	)
 }
 
@@ -213,6 +222,8 @@ func executeScenarioNaturalProgress(
 	newAdapter AdapterFactory,
 	projector SemanticPrefixProjector,
 	selector ScenarioClosureSelector,
+	goal scenarioAutomaticProgressGoal,
+	preparer ScenarioActionPreparer,
 ) (ScenarioProgressResult, error) {
 	if !validMethodToken(id) || maxDecisions <= 0 || maxDecisions > ScenarioAgentMaxDecisions ||
 		spec.Validate() != nil || rootRisk.Validate(spec) != nil || root.Validate() != nil ||
@@ -236,7 +247,7 @@ func executeScenarioNaturalProgress(
 	}
 	live, liveErr := executeScenarioNaturalProgressOnLiveRuntime(
 		ctx, id, maxDecisions, spec, rootRisk, root, view, snapshot,
-		faultEnvelope, runtime, projector, selector, nil, nil, nil,
+		faultEnvelope, runtime, projector, selector, nil, nil, nil, goal, preparer,
 	)
 	addScenarioPhase(&result.Execution.Work.ChildMaterialization, live.Work.ChildMaterialization)
 	result.StopReason = live.StopReason
@@ -296,20 +307,87 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 	focus *scenarioCausalProgressFocus,
 	semanticProjector ScenarioSemanticProjector,
 	rootSemantics *ScenarioSemanticExposure,
+	goal scenarioAutomaticProgressGoal,
+	preparer ScenarioActionPreparer,
 ) (scenarioLiveProgressResult, error) {
 	result := scenarioLiveProgressResult{FinalTrace: root, FinalRisk: rootRisk}
 	rootInterventions, err := scenarioStrategicActionKeys(view.Actions)
 	if err != nil {
 		return result, err
 	}
+	automaticInvokeAttempted := false
+	currentSemantics := rootSemantics
 	for decision := 0; decision < maxDecisions; decision++ {
 		if scenarioClientTerminal(snapshot) {
 			result.StopReason = ScenarioProgressClientTerminal
 			break
 		}
-		action, ok, stopReason, stopFrontier, closureCandidates, err := scenarioProgressAction(
-			view, selector, focus,
-		)
+		var preparedInvoke control.ActionID
+		preparedAction := false
+		if selector == nil && goal.autoInvoke && !automaticInvokeAttempted && preparer != nil &&
+			scenarioCoordinationInvokeReady(currentSemantics) {
+			automaticInvokeAttempted = true
+			preparedID, prepared, prepareErr := preparer(
+				ctx, FrontierActionSelector{Kind: control.ActionInvoke}, result.FinalTrace, runtime,
+			)
+			if prepareErr != nil {
+				return result, prepareErr
+			}
+			if prepared {
+				preparedAction = true
+				chargePrepareActions(&result.Work.ChildMaterialization, 1)
+				preparedInvoke = preparedID
+				enabled, enabledErr := runtime.EnabledActions(ctx)
+				if enabledErr != nil {
+					return result, enabledErr
+				}
+				snapshot = runtime.Snapshot()
+				admissible := admissibleActions(
+					faultEnvelope, faultUsageFromRecords(result.FinalTrace.Records), enabled, snapshot,
+				)
+				actionFrontier, frontierErr := newActionFrontierView(
+					fmt.Sprintf("%s-auto-invoke-frontier", id), result.FinalTrace,
+					snapshot, enabled, admissible,
+				)
+				if frontierErr != nil {
+					return result, frontierErr
+				}
+				progress, progressErr := semantic.NewRiskWitnessProgress(spec, result.FinalRisk)
+				if progressErr != nil {
+					return result, progressErr
+				}
+				view, frontierErr = newRiskFrontierView(
+					actionFrontier.ID, spec, progress, actionFrontier,
+				)
+				if frontierErr != nil {
+					return result, frontierErr
+				}
+				if semanticProjector != nil {
+					projected, semanticErr := semanticProjector(result.FinalTrace, view, snapshot)
+					if semanticErr != nil || projected.Validate(view) != nil {
+						return result, errors.Join(
+							errors.New("EXPERIMENT_SCENARIO_PROGRESS_SEMANTICS_INVALID"), semanticErr,
+						)
+					}
+					currentSemantics = &projected
+				}
+			}
+		}
+		var action FrontierActionRef
+		var ok bool
+		var stopReason string
+		var stopFrontier *ActionFrontierView
+		var closureCandidates []FrontierActionRef
+		if preparedInvoke != "" {
+			action, ok = scenarioActionByID(view.Actions, preparedInvoke)
+			if !ok || action.Kind != control.ActionInvoke {
+				return result, errors.New("EXPERIMENT_SCENARIO_AUTOMATIC_INVOKE_MISMATCH")
+			}
+		} else {
+			action, ok, stopReason, stopFrontier, closureCandidates, err = scenarioProgressAction(
+				view, selector, focus,
+			)
+		}
 		if err != nil {
 			return result, err
 		}
@@ -334,8 +412,12 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 		if err != nil {
 			return result, err
 		}
+		var preparedPrefixes []controlruntime.Trace
+		if preparedAction {
+			preparedPrefixes = append(preparedPrefixes, result.FinalTrace)
+		}
 		child, materialization, err := executeScenarioChildOnLiveRuntime(
-			ctx, frontier, choice.Action, runtime,
+			ctx, frontier, choice.Action, runtime, preparedPrefixes...,
 		)
 		addScenarioPhase(&result.Work.ChildMaterialization, materialization)
 		if err != nil {
@@ -375,17 +457,18 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 			if err != nil {
 				return result, err
 			}
-			var currentSemantics *ScenarioSemanticExposure
+			var projectedSemantics *ScenarioSemanticExposure
 			if semanticProjector != nil && rootSemantics != nil {
 				projected, semanticErr := semanticProjector(result.FinalTrace, view, snapshot)
 				if semanticErr != nil || projected.Validate(view) != nil {
 					return result, errors.Join(errors.New("EXPERIMENT_SCENARIO_PROGRESS_SEMANTICS_INVALID"), semanticErr)
 				}
+				projectedSemantics = &projected
 				currentSemantics = &projected
 			}
 			if selector == nil && scenarioPublicProgressShouldYield(
 				rootRisk, result.FinalRisk, rootInterventions, view.Actions,
-				rootSemantics, currentSemantics,
+				rootSemantics, projectedSemantics, goal,
 			) {
 				result.StopReason = ScenarioProgressSemanticYield
 				frontier, frontierErr := scenarioActionFrontier(view)
@@ -407,6 +490,21 @@ func executeScenarioNaturalProgressOnLiveRuntime(
 	return result, nil
 }
 
+func scenarioCoordinationInvokeReady(semantics *ScenarioSemanticExposure) bool {
+	return semantics != nil && semantics.Coordination != nil &&
+		semantics.Coordination.Status == ConsensusCoordinatorPresent &&
+		semantics.Coordination.CoordinatorNode != "" && semantics.Coordination.InvokeReady
+}
+
+func scenarioActionByID(actions []FrontierActionRef, id control.ActionID) (FrontierActionRef, bool) {
+	for _, action := range actions {
+		if action.ActionID == id {
+			return action, true
+		}
+	}
+	return FrontierActionRef{}, false
+}
+
 func scenarioPublicProgressShouldYield(
 	rootRisk semantic.RiskWitnessResult,
 	currentRisk semantic.RiskWitnessResult,
@@ -414,6 +512,7 @@ func scenarioPublicProgressShouldYield(
 	actions []FrontierActionRef,
 	rootSemantics *ScenarioSemanticExposure,
 	currentSemantics *ScenarioSemanticExposure,
+	goal scenarioAutomaticProgressGoal,
 ) bool {
 	if len(currentRisk.SatisfiedMilestones) > len(rootRisk.SatisfiedMilestones) {
 		return true
@@ -423,13 +522,19 @@ func scenarioPublicProgressShouldYield(
 		rootCoordination := *rootSemantics.Coordination
 		currentCoordination := *currentSemantics.Coordination
 		if scenarioCoordinationMeaningfullyChanged(rootCoordination, currentCoordination) {
+			if goal.autoInvoke && rootCoordination.Status != ConsensusCoordinatorPresent &&
+				scenarioCoordinationInvokeReady(currentSemantics) {
+				return false
+			}
 			return true
 		}
-		if rootCoordination.Status != ConsensusCoordinatorPresent {
+		if rootCoordination.Status != ConsensusCoordinatorPresent && !goal.yieldForStrategic {
 			// During bootstrap, newly offered Drop/Duplicate controls are a
 			// mechanical consequence of ordinary election traffic. Preserve the
 			// Agent-selected participant direction until the trusted coordination
-			// state changes or the bounded slice ends.
+			// state changes or the bounded slice ends. If the next trusted
+			// milestone requires an intervention, the newly exposed control is
+			// instead the point at which the Agent regains ownership.
 			return false
 		}
 	}
@@ -449,6 +554,13 @@ func scenarioCoordinationMeaningfullyChanged(
 	root ConsensusCoordinationStatus,
 	current ConsensusCoordinationStatus,
 ) bool {
+	// Candidate formation and ordinary term/ballot churn are bootstrap
+	// mechanics, not a strategic decision boundary. Keep progressing until a
+	// unique coordinator is actually ready, or until the bounded slice ends.
+	if root.Status != ConsensusCoordinatorPresent &&
+		current.Status != ConsensusCoordinatorPresent {
+		return false
+	}
 	return root.Status != current.Status || root.CoordinatorNode != current.CoordinatorNode ||
 		root.InvokeReady != current.InvokeReady ||
 		root.ElectionProgress.TermOrBallotChanged != current.ElectionProgress.TermOrBallotChanged

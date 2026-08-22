@@ -370,11 +370,10 @@ func loadAgenticEpisodeEvidence(
 			return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_BUNDLE_INVALID: %s", trialID)
 		}
 		current.Bundle = &bundle
-		rootDecisions := summary.Work.ScenarioFrontier.SchedulerDecisions
+		rootDecisions := len(bundle.Trace.Records) - summary.SelectedPathDecisions
 		if summary.OracleAttribution == nil || rootDecisions < 0 ||
 			summary.OracleAttribution.RootDecisions != rootDecisions ||
-			rootDecisions > len(bundle.Trace.Records) ||
-			summary.SelectedPathDecisions != len(bundle.Trace.Records)-rootDecisions {
+			rootDecisions > len(bundle.Trace.Records) {
 			return defectbench.AgenticTrialEvidence{}, fmt.Errorf("AGENTIC_HOLDOUT_CLI_ORACLE_BOUNDARY_INVALID: %s", trialID)
 		}
 		current.BundleRootDecisions = rootDecisions

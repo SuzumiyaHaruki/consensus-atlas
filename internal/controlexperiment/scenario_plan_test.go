@@ -506,7 +506,7 @@ func TestScenarioAgentLongInvestigationReturnsPeriodicCompactFeedback(t *testing
 		len(result.Attempts) != 4 || result.Attempts[3].Feedback.ProgressDelta == nil ||
 		result.Attempts[3].Feedback.ProgressDelta.Decisions != 5 ||
 		result.StopReason != ScenarioAgentStopCallBudget || result.DecisionsUsed != 20 ||
-		result.SelectedPathDecisions != 20 ||
+		result.SelectedPathDecisions != 0 ||
 		result.ExecutionWork.ChildMaterialization.SchedulerDecisions != 20 ||
 		result.ExecutionWork.FrontierReconstruction.SetupAttempts > 12 ||
 		result.ExecutionWork.ChildVerification.SetupAttempts > 8 {
@@ -777,9 +777,36 @@ func TestScenarioAgentPreservesVerifiedPrefixWhenLengthRepairFails(t *testing.T)
 		result.StopReason != ScenarioAgentStopProviderResponse || len(result.Attempts) != 3 ||
 		result.Attempts[1].Feedback.ReasonCode != ScenarioAgentReasonResponseFinishLength ||
 		result.Attempts[2].Feedback.ReasonCode != ScenarioAgentReasonResponseFinishLength ||
-		result.Execution.FinalTrace.Digest != verifiedDigest || result.SelectedPathDecisions == 0 ||
+		result.Execution.FinalTrace.Digest != verifiedDigest || result.SelectedPathDecisions != 0 ||
 		result.ModelWork != (ModelWork{Calls: 3, InputTokens: 12, OutputTokens: 8, TotalTokens: 20}) {
 		t.Fatalf("failed repair did not stop in-band with the verified prefix: %#v calls=%d err=%v", result, calls, err)
+	}
+}
+
+func TestScenarioAgentAttributionStartsAtFirstStrategicAction(t *testing.T) {
+	execution := ScenarioExecution{
+		FinalTrace: controlruntime.Trace{Records: make([]controlruntime.ActionRecord, 7)},
+		Steps: []ScenarioStepFeedback{
+			{
+				Outcome: ScenarioStepApplied, Decision: 3,
+				Choice: &FrontierChoice{Action: FrontierActionRef{Kind: control.ActionFireTemporal}},
+			},
+			{
+				Outcome: ScenarioStepApplied, Decision: 5,
+				Choice: &FrontierChoice{Action: FrontierActionRef{Kind: control.ActionDropMessage}},
+			},
+		},
+		AutomaticProgress: []ScenarioStepFeedback{{
+			Outcome: ScenarioStepApplied, Decision: 4,
+			Choice: &FrontierChoice{Action: FrontierActionRef{Kind: control.ActionInvoke}},
+		}},
+	}
+	if got := ScenarioAgentAttributionRootDecisions(execution); got != 4 {
+		t.Fatalf("automatic setup was credited to the Agent: got root=%d want=4", got)
+	}
+	execution.Steps = execution.Steps[:1]
+	if got := ScenarioAgentAttributionRootDecisions(execution); got != 7 {
+		t.Fatalf("natural-only plan received Agent finding credit: got root=%d want=7", got)
 	}
 }
 
